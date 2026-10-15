@@ -1,20 +1,48 @@
-//! A few lines about the machine for the sidebar.
+//! What the dashboard shows about the machine.
 
 use helixforge_platform::LinuxInfo;
-use std::{fs, process::Command};
+use std::{fs, path::Path, process::Command};
 
-pub fn gather(platform: &LinuxInfo) -> Vec<(&'static str, String)> {
-    let mut entries = vec![("OS", platform.pretty_name.clone())];
-    if let Some(cpu) = cpu_model() {
-        entries.push(("CPU", cpu));
+pub struct Overview {
+    pub rows: Vec<(&'static str, String)>,
+}
+
+impl Overview {
+    pub fn gather(platform: &LinuxInfo) -> Self {
+        let mut rows = vec![
+            ("Distribution", platform.pretty_name.clone()),
+            (
+                "Package manager",
+                platform
+                    .manager
+                    .map(|manager| manager.executable().to_string())
+                    .unwrap_or_else(|| "none supported".to_string()),
+            ),
+        ];
+        if let Some(desktop) = std::env::var_os("XDG_CURRENT_DESKTOP") {
+            rows.push(("Desktop", desktop.to_string_lossy().into_owned()));
+        }
+        if let Some(shell) = std::env::var_os("SHELL") {
+            let name = Path::new(&shell)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            rows.push(("Shell", name));
+        }
+        if let Ok(kernel) = fs::read_to_string("/proc/sys/kernel/osrelease") {
+            rows.push(("Kernel", kernel.trim().to_string()));
+        }
+        if let Some(cpu) = cpu_model() {
+            rows.push(("CPU", cpu));
+        }
+        if let Some(memory) = memory_total() {
+            rows.push(("Memory", memory));
+        }
+        if let Some(disk) = root_disk() {
+            rows.push(("Root disk", disk));
+        }
+        Self { rows }
     }
-    if let Some(memory) = memory_total() {
-        entries.push(("RAM", memory));
-    }
-    if let Some(disk) = root_disk() {
-        entries.push(("DISK", disk));
-    }
-    entries
 }
 
 fn cpu_model() -> Option<String> {

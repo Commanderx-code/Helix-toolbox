@@ -14,15 +14,18 @@
 - Tests in every crate, screen tests of the interface, and fixture-based
   end-to-end tests that run a safe script through a real shell
 
-## Milestone 2: functional TUI
+## Milestone 2: functional TUI (done)
 
-- Sidebar as a menu of screens: Dashboard, Applications, Install Plan, and
-  Configurations, System Doctor, Maintenance, Security, Profiles, History,
-  Settings, after the dashboard design
-- Dashboard with the system overview and quick actions
-- Install Plan screen for the queue, with the plan's risk and requirements
-- History screen reading the JSONL records and saved logs
-- Settings: theme, confirmation, catalog validation
+- Sidebar as a menu of screens after the dashboard design: Dashboard,
+  Applications and Install Plan under Main menu; Configurations, Helix
+  Doctor, Maintenance, Security, Profiles, History and Settings under More
+  tools; a header with the status badge and a hint line at the bottom
+- Dashboard with the system overview and quick actions that open screens
+- Install Plan: the queue built with Space in any area, planned live with
+  step count, risk, requirements and notes; run, remove or clear from there
+- History screen over the JSONL records, opening saved logs
+- Settings: theme, confirmation, showing hidden entries (reloads the catalog)
+- Help popup with every key
 
 ## Milestone 3: installer compatibility
 

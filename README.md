@@ -21,12 +21,17 @@ cargo run -p helixforge              # the terminal interface
 cargo run -p helixforge -- --help    # the command line
 ```
 
-In the interface: `Tab` moves between tabs, `j`/`k` or the arrows move in the
-list, `Enter` opens a group or runs an entry, `d` shows the description, `p`
-the script or command, `/` searches every tab, `v` queues several entries,
-`g` explains the flags column, `t` switches the theme and `q` quits. Each run
-asks `[Y]` first and then runs in a terminal inside the window; `Ctrl-C` stops
-it, `l` saves its output.
+In the interface the sidebar is a menu of screens. `Tab` or `j`/`k` in the
+sidebar move between Dashboard, Applications, Install Plan, and the other
+areas, History and Settings; `Enter` or `l` opens the selected screen and
+`h` returns to the sidebar. In an area, `j`/`k` or the arrows move in the
+list, `Enter` opens a group or runs an entry, `Space` adds it to the install
+plan, `d` shows the description, `p` the script or command, `g` explains the
+flags column and `/` searches every area. The Install Plan shows what is
+queued with its risk and requirements; `Enter` runs it. Each run asks `[Y]`
+first and then runs in a terminal inside the window; `Ctrl-C` stops it, `l`
+saves its output, and History lists every run. `?` shows all keys and `q`
+quits.
 
 From the command line:
 

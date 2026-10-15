@@ -1,21 +1,22 @@
-//! The screen and its keys.
+//! The screens: a header, a sidebar menu, the current screen and a hint line,
+//! after the HelixForge dashboard design.
 
 use super::{
-    hints::{self, Hint},
+    hints::Hint,
     popup::{ConfirmPopup, Decision, TextPopup, centered},
     running::RunningView,
-    sysinfo,
+    sysinfo::Overview,
     theme::Theme,
 };
 use crate::TuiArgs;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use helixforge_catalog::Catalog;
 use helixforge_core::{Action, Entry, Item};
-use helixforge_engine::{Plan, plan};
+use helixforge_engine::{Plan, history, plan};
 use helixforge_platform::LinuxInfo;
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Flex, Layout, Rect},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::Style,
     symbols::border,
     text::{Line, Span, Text},
@@ -24,12 +25,11 @@ use ratatui::{
 
 const MIN_WIDTH: u16 = 100;
 const MIN_HEIGHT: u16 = 25;
-const TITLE: &str = " HELIXFORGE ";
+const SIDEBAR_WIDTH: u16 = 28;
 const HIGHLIGHT: &str = "> ";
 const GROUP_ICON: &str = "[D]";
 const ENTRY_ICON: &str = "[*]";
-const PICKED_ICON: &str = "*";
-const LOGO: [&str; 5] = ["⬡ HELIXFORGE", "", "BUILD", "CONFIGURE", "OPTIMIZE"];
+const QUEUED_ICON: &str = "*";
 const ROOT_WARNING: &str = "You are running HelixForge as root.\n\nEvery entry then has full access to the system. The entries expect to run as your normal user and ask for your password when they need it.";
 const FLAGS_GUIDE: &str = "The flags column names what an entry does:
 
@@ -44,12 +44,54 @@ SS - service actions (privileged)
 RP - package removal
 
 P* - the same action, privileged
+
+Risk in a plan: D, K and SI are high; installs, services and anything privileged are medium; the rest is low.
+";
+const HELP: &str = "Everywhere
+  Tab / Shift-Tab   next / previous screen       t   switch theme
+  /                 search every area            ?   this help
+  q / Ctrl-C        quit
+
+Sidebar
+  j / k             move                         Enter / l   open the screen
+
+Dashboard
+  j / k             move                         Enter       quick action
+
+Areas (Applications and the other catalog screens)
+  j / k             move                         Enter / l   open a group or run an entry
+  h                 parent group, or the sidebar Space       add to or remove from the install plan
+  d                 description                  p           preview the script or command
+  g                 flags guide
+
+Install Plan
+  Enter             run the plan                 x / Delete  remove the selected entry
+  c                 clear the plan
+
+History
+  Enter             show the saved log           r           reload
+
+Settings
+  Enter / Space     change the selected setting
+
+Running window
+  Ctrl-C            stop                         Enter / q   close when finished
+  l                 save the log                 Page up / down   scroll
 ";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Screen {
+    Dashboard,
+    Area(usize),
+    Plan,
+    History,
+    Settings,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Focus {
-    TabList,
-    List,
+    Sidebar,
+    Main,
     Search,
 }
 
@@ -59,7 +101,6 @@ enum Popup {
     Running(RunningView),
 }
 
-/// One visible row of the list.
 #[derive(Clone)]
 enum Row {
     Up,
@@ -67,60 +108,77 @@ enum Row {
     Entry(Entry),
 }
 
+struct MenuItem {
+    label: String,
+    screen: Screen,
+    section: &'static str,
+}
+
+/// Where the user was in one catalog area.
+#[derive(Clone, Default)]
+struct AreaState {
+    path: Vec<(usize, usize)>,
+    selected: usize,
+}
+
+const QUICK_ACTIONS: [(&str, &str); 4] = [
+    ("Browse Applications", "Search and install tools"),
+    ("Review the Install Plan", "See what is queued and run it"),
+    ("Run System Doctor", "Reports about this machine"),
+    ("View History", "Past runs and their logs"),
+];
+
 pub struct App {
     catalog: Catalog,
     platform: LinuxInfo,
     theme: Theme,
     focus: Focus,
-    current_tab: usize,
-    tab_state: ListState,
-    tab_width: u16,
-    /// The groups entered in the current tab, each with the row that was selected there.
-    path: Vec<(usize, usize)>,
-    list_state: ListState,
+    screen: Screen,
+    menu: Vec<MenuItem>,
+    menu_state: ListState,
+    main_state: ListState,
+    areas: Vec<AreaState>,
     rows: Vec<Row>,
     search: Vec<char>,
     cursor: usize,
     completion: Option<String>,
-    multi_select: bool,
-    picked: Vec<Entry>,
+    queue: Vec<Entry>,
     pending: Option<Plan>,
     popup: Option<Popup>,
+    records: Vec<history::Record>,
+    overview: Overview,
     size_bypass: bool,
     skip_confirmation: bool,
-    info: Vec<(&'static str, String)>,
+    show_hidden: bool,
 }
 
 impl App {
     pub fn new(catalog: Catalog, platform: LinuxInfo, args: &TuiArgs) -> Self {
-        let tab_width = catalog
-            .tabs
-            .iter()
-            .map(|tab| tab.name.chars().count())
-            .max()
-            .unwrap_or(0) as u16;
-        let info = sysinfo::gather(&platform);
+        let menu = build_menu(&catalog);
+        let areas = vec![AreaState::default(); catalog.tabs.len()];
+        let overview = Overview::gather(&platform);
         let mut app = Self {
             catalog,
             platform,
             theme: args.theme,
-            focus: Focus::List,
-            current_tab: 0,
-            tab_state: ListState::default().with_selected(Some(0)),
-            tab_width,
-            path: Vec::new(),
-            list_state: ListState::default().with_selected(Some(0)),
+            focus: Focus::Sidebar,
+            screen: Screen::Dashboard,
+            menu,
+            menu_state: ListState::default().with_selected(Some(0)),
+            main_state: ListState::default().with_selected(Some(0)),
+            areas,
             rows: Vec::new(),
             search: Vec::new(),
             cursor: 0,
             completion: None,
-            multi_select: false,
-            picked: Vec::new(),
+            queue: Vec::new(),
             pending: None,
             popup: None,
+            records: Vec::new(),
+            overview,
             size_bypass: args.size_bypass,
             skip_confirmation: args.skip_confirmation,
-            info,
+            show_hidden: args.override_validation,
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -133,39 +191,38 @@ impl App {
         app
     }
 
-    fn group_path(&self) -> Vec<usize> {
-        self.path.iter().map(|(index, _)| *index).collect()
+    // ----- state helpers -----
+
+    fn current_area(&self) -> Option<usize> {
+        match self.screen {
+            Screen::Area(index) => Some(index),
+            _ => None,
+        }
     }
 
+    fn area_mut(&mut self) -> Option<&mut AreaState> {
+        self.current_area().map(|index| &mut self.areas[index])
+    }
+
+    #[cfg(test)]
     fn at_root(&self) -> bool {
-        self.path.is_empty()
+        self.current_area()
+            .is_none_or(|index| self.areas[index].path.is_empty())
     }
 
     fn searching(&self) -> bool {
         !self.search.is_empty()
     }
 
-    /// The visible rows: the current group's items, or every entry matching
-    /// the search across all tabs.
+    fn is_queued(&self, entry: &Entry) -> bool {
+        self.queue.iter().any(|other| other.id == entry.id)
+    }
+
+    /// The visible rows of an area screen: the current group's items, or
+    /// every entry matching the search across all areas.
     fn update_rows(&mut self) {
         let query = self.search.iter().collect::<String>().to_lowercase();
-        self.rows = if query.is_empty() {
-            let mut rows = Vec::new();
-            if !self.at_root() {
-                rows.push(Row::Up);
-            }
-            let items = self.catalog.tabs[self.current_tab]
-                .items_at(&self.group_path())
-                .unwrap_or(&[]);
-            rows.extend(items.iter().enumerate().map(|(index, item)| match item {
-                Item::Group(group) => Row::Group {
-                    index,
-                    name: group.name.clone(),
-                },
-                Item::Entry(entry) => Row::Entry(entry.clone()),
-            }));
-            rows
-        } else {
+        self.rows = if !query.is_empty() {
             let mut found: Vec<Entry> = self
                 .catalog
                 .entries()
@@ -175,6 +232,24 @@ impl App {
                 .collect();
             found.sort_by(|a, b| a.name.cmp(&b.name));
             found.into_iter().map(Row::Entry).collect()
+        } else if let Some(index) = self.current_area() {
+            let area = &self.areas[index];
+            let path: Vec<usize> = area.path.iter().map(|(group, _)| *group).collect();
+            let mut rows = Vec::new();
+            if !area.path.is_empty() {
+                rows.push(Row::Up);
+            }
+            let items = self.catalog.tabs[index].items_at(&path).unwrap_or(&[]);
+            rows.extend(items.iter().enumerate().map(|(index, item)| match item {
+                Item::Group(group) => Row::Group {
+                    index,
+                    name: group.name.clone(),
+                },
+                Item::Entry(entry) => Row::Entry(entry.clone()),
+            }));
+            rows
+        } else {
+            Vec::new()
         };
         self.completion = if query.is_empty() {
             None
@@ -188,9 +263,23 @@ impl App {
                 _ => None,
             })
         };
-        let count = self.rows.len();
-        let selected = self.list_state.selected().unwrap_or(0);
-        self.list_state.select(Some(if count == 0 {
+        self.clamp_main();
+    }
+
+    fn main_len(&self) -> usize {
+        match self.screen {
+            Screen::Dashboard => QUICK_ACTIONS.len(),
+            Screen::Area(_) => self.rows.len(),
+            Screen::Plan => self.queue.len(),
+            Screen::History => self.records.len(),
+            Screen::Settings => 4,
+        }
+    }
+
+    fn clamp_main(&mut self) {
+        let count = self.main_len();
+        let selected = self.main_state.selected().unwrap_or(0);
+        self.main_state.select(Some(if count == 0 {
             0
         } else {
             selected.min(count - 1)
@@ -198,7 +287,7 @@ impl App {
     }
 
     fn selected_row(&self) -> Option<&Row> {
-        self.rows.get(self.list_state.selected()?)
+        self.rows.get(self.main_state.selected()?)
     }
 
     fn selected_entry(&self) -> Option<&Entry> {
@@ -206,6 +295,33 @@ impl App {
             Some(Row::Entry(entry)) => Some(entry),
             _ => None,
         }
+    }
+
+    fn open_screen(&mut self, screen: Screen) {
+        // Remember the row in the area being left.
+        if let Some(index) = self.current_area() {
+            self.areas[index].selected = self.main_state.selected().unwrap_or(0);
+        }
+        self.screen = screen;
+        self.search.clear();
+        self.cursor = 0;
+        if let Some(position) = self.menu.iter().position(|item| item.screen == screen) {
+            self.menu_state.select(Some(position));
+        }
+        let selected = match screen {
+            Screen::Area(index) => self.areas[index].selected,
+            _ => 0,
+        };
+        self.main_state.select(Some(selected));
+        if screen == Screen::History {
+            self.reload_history();
+        }
+        self.update_rows();
+    }
+
+    fn reload_history(&mut self) {
+        self.records = history::read(200).unwrap_or_default();
+        self.clamp_main();
     }
 
     /// Whether something changed without a key press: a finished command.
@@ -240,148 +356,239 @@ impl App {
             frame.render_widget(warning, rows[1]);
             return;
         }
-
-        let (scope, hint_list) = self.hints();
-        let hints_block = Block::bordered()
-            .title(format!(" {scope} "))
-            .border_set(border::PLAIN)
-            .border_style(Style::default().fg(self.theme.unfocused()))
-            .title_style(Style::default().fg(self.theme.title()).bold())
-            .padding(Padding::horizontal(1));
-        let hint_lines = hints::lines(&hint_list, hints_block.inner(area).width);
-        let hint_height = hint_lines.len() as u16 + 2;
-        let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(hint_height)])
-            .flex(Flex::Legacy)
-            .split(area);
-        let columns = Layout::horizontal([
-            Constraint::Length(self.tab_width.max(20) + 11),
-            Constraint::Fill(1),
+        let rows = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Min(1),
+            Constraint::Length(1),
         ])
-        .split(rows[0]);
-
+        .split(area);
+        self.draw_header(frame, rows[0]);
+        let columns = Layout::horizontal([Constraint::Length(SIDEBAR_WIDTH), Constraint::Fill(1)])
+            .split(rows[1]);
         self.draw_sidebar(frame, columns[0]);
-        let right = Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).split(columns[1]);
-        self.draw_search(frame, right[0]);
-        self.draw_list(frame, right[1]);
-
+        let main = columns[1];
+        match self.screen {
+            Screen::Dashboard => self.draw_dashboard(frame, main),
+            Screen::Area(_) => self.draw_area(frame, main),
+            Screen::Plan => self.draw_plan(frame, main),
+            Screen::History => self.draw_history(frame, main),
+            Screen::Settings => self.draw_settings(frame, main),
+        }
         match &mut self.popup {
-            Some(Popup::Text(popup)) => popup.draw(frame, centered(right[1], 95, 95), self.theme),
-            Some(Popup::Confirm(popup)) => {
-                popup.draw(frame, centered(right[1], 70, 60), self.theme)
-            }
-            Some(Popup::Running(popup)) => {
-                popup.draw(frame, centered(right[1], 95, 95), self.theme)
-            }
+            Some(Popup::Text(popup)) => popup.draw(frame, centered(main, 95, 95), self.theme),
+            Some(Popup::Confirm(popup)) => popup.draw(frame, centered(main, 80, 70), self.theme),
+            Some(Popup::Running(popup)) => popup.draw(frame, centered(main, 96, 96), self.theme),
             None => {}
         }
+        self.draw_footer(frame, rows[2]);
+    }
+
+    fn draw_header(&self, frame: &mut Frame, area: Rect) {
+        let status = match &self.popup {
+            Some(Popup::Running(running)) if !running.is_finished() => {
+                ("● RUNNING", self.theme.title())
+            }
+            _ => ("● SYSTEM READY", self.theme.success()),
+        };
+        let block = Block::default()
+            .padding(Padding::horizontal(2))
+            .style(Style::default());
+        let inner = block.inner(area);
+        let left = Text::from(vec![
+            Line::from(vec![
+                Span::styled("⬡ ", Style::default().fg(self.theme.focused())),
+                Span::styled("HELIX", Style::default().fg(self.theme.focused()).bold()),
+                Span::styled("FORGE", Style::default().fg(self.theme.title()).bold()),
+            ]),
+            Line::from(Span::styled(
+                "BUILD • CONFIGURE • OPTIMIZE",
+                Style::default().fg(self.theme.muted()),
+            )),
+        ]);
+        frame.render_widget(Paragraph::new(left), inner);
         frame.render_widget(
-            Paragraph::new(Text::from(hint_lines)).block(hints_block),
-            rows[1],
+            Paragraph::new(Line::from(Span::styled(
+                status.0,
+                Style::default().fg(status.1),
+            )))
+            .alignment(Alignment::Right),
+            inner,
+        );
+        let rule = Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1);
+        frame.render_widget(
+            Paragraph::new("─".repeat(area.width as usize))
+                .style(Style::default().fg(self.theme.muted())),
+            rule,
         );
     }
 
     fn draw_sidebar(&mut self, frame: &mut Frame, area: Rect) {
-        let logo_height = (LOGO.len() as u16 + 2).min(area.height.saturating_sub(4));
-        let info_height = if self.info.is_empty() {
-            0
-        } else {
-            self.info.len() as u16 + 2
-        };
-        let show_info = info_height > 0 && area.height > logo_height + info_height + 3;
-        let parts = Layout::vertical([
-            Constraint::Length(logo_height),
-            Constraint::Min(1),
-            Constraint::Length(if show_info { info_height } else { 0 }),
-        ])
-        .split(area);
+        let focused = self.focus == Focus::Sidebar;
+        let mut lines: Vec<Line> = Vec::new();
+        let mut section = "";
+        for item in &self.menu {
+            if item.section != section {
+                section = item.section;
+                if !lines.is_empty() {
+                    lines.push(Line::from(""));
+                }
+                lines.push(Line::styled(
+                    format!(" {section}"),
+                    Style::default().fg(self.theme.muted()),
+                ));
+            }
+            let current = item.screen == self.screen;
+            let style = if current && focused {
+                Style::default()
+                    .bg(self.theme.focused())
+                    .fg(self.theme.on_highlight())
+                    .bold()
+            } else if current {
+                Style::default().fg(self.theme.focused()).bold()
+            } else {
+                Style::default().fg(self.theme.entry())
+            };
+            let marker = if current { HIGHLIGHT } else { "  " };
+            lines.push(Line::styled(
+                format!(
+                    " {marker}{:<width$}",
+                    item.label,
+                    width = area.width as usize - 4
+                ),
+                style,
+            ));
+        }
+        let block = Block::default()
+            .padding(Padding::new(1, 0, 1, 0))
+            .border_set(border::PLAIN)
+            .borders(ratatui::widgets::Borders::RIGHT)
+            .border_style(Style::default().fg(self.theme.muted()));
+        frame.render_widget(Paragraph::new(Text::from(lines)).block(block), area);
+    }
 
-        let mut logo: Vec<Line> =
-            vec![Line::from(LOGO[0]).style(Style::default().fg(self.theme.focused()).bold())];
-        logo.extend(
-            LOGO[1..]
-                .iter()
-                .map(|line| Line::from(*line).style(Style::default().fg(self.theme.title()))),
-        );
-        logo.push(Line::from(""));
-        logo.push(
-            Line::from(format!("v{}", env!("CARGO_PKG_VERSION")))
-                .style(Style::default().fg(self.theme.muted())),
-        );
+    fn screen_block(&self, title: &str, subtitle: &str) -> Block<'static> {
+        Block::default()
+            .padding(Padding::new(2, 2, 1, 0))
+            .title(Line::from(vec![
+                Span::styled(
+                    format!(" {title} "),
+                    Style::default().fg(self.theme.entry()).bold(),
+                ),
+                Span::styled(
+                    subtitle.to_string(),
+                    Style::default().fg(self.theme.muted()),
+                ),
+            ]))
+    }
+
+    fn card(&self, title: &str) -> Block<'static> {
+        Block::bordered()
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(self.theme.muted()))
+            .title(format!(" {title} "))
+            .title_style(Style::default().fg(self.theme.entry()).bold())
+            .padding(Padding::horizontal(1))
+    }
+
+    fn draw_dashboard(&mut self, frame: &mut Frame, area: Rect) {
+        let block = self.screen_block("Dashboard", "Welcome to your Linux command center.");
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        let overview_height = self.overview.rows.len() as u16 + 2;
+        let parts = Layout::vertical([
+            Constraint::Length(overview_height),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(1),
+        ])
+        .split(inner);
+        let width = parts[0].width.saturating_sub(4) as usize;
+        let lines: Vec<Line> = self
+            .overview
+            .rows
+            .iter()
+            .map(|(label, value)| {
+                let gap = width.saturating_sub(label.len() + value.chars().count());
+                Line::from(vec![
+                    Span::styled(*label, Style::default().fg(self.theme.muted())),
+                    Span::raw(" ".repeat(gap)),
+                    Span::styled(value.clone(), Style::default().fg(self.theme.entry())),
+                ])
+            })
+            .collect();
         frame.render_widget(
-            Paragraph::new(Text::from(logo)).alignment(Alignment::Center),
+            Paragraph::new(Text::from(lines)).block(self.card("System Overview")),
             parts[0],
         );
-
-        let focused = self.focus == Focus::TabList;
-        let border = Style::default().fg(if focused {
-            self.theme.focused()
-        } else {
-            self.theme.unfocused()
-        });
-        let highlight = if focused {
-            Style::default()
-                .bg(self.theme.focused())
-                .fg(self.theme.on_highlight())
-                .bold()
-        } else {
-            Style::default().fg(self.theme.unfocused())
-        };
-        let names: Vec<&str> = self
-            .catalog
-            .tabs
+        frame.render_widget(
+            Paragraph::new(Line::styled(
+                "Quick Actions",
+                Style::default().fg(self.theme.entry()).bold(),
+            )),
+            parts[2],
+        );
+        let focused = self.focus == Focus::Main;
+        let items: Vec<Line> = QUICK_ACTIONS
             .iter()
-            .map(|tab| tab.name.as_str())
+            .map(|(title, detail)| {
+                Line::from(vec![
+                    Span::styled(*title, Style::default().fg(self.theme.entry()).bold()),
+                    Span::styled(
+                        format!("   {detail}"),
+                        Style::default().fg(self.theme.muted()),
+                    ),
+                ])
+            })
             .collect();
-        let tabs = List::new(names)
-            .block(
-                Block::bordered()
-                    .border_set(border::PLAIN)
-                    .border_style(border)
-                    .padding(Padding::horizontal(1)),
-            )
-            .style(Style::default().fg(self.theme.title()))
-            .highlight_style(highlight)
-            .highlight_symbol(HIGHLIGHT);
-        frame.render_stateful_widget(tabs, parts[1], &mut self.tab_state);
+        let list = List::new(items)
+            .highlight_style(if focused {
+                Style::default()
+                    .bg(self.theme.focused())
+                    .fg(self.theme.on_highlight())
+                    .bold()
+            } else {
+                Style::default()
+            })
+            .highlight_symbol(if focused { HIGHLIGHT } else { "  " });
+        frame.render_stateful_widget(list, parts[3], &mut self.main_state);
+    }
 
-        if show_info {
-            let block = Block::bordered()
-                .border_set(border::PLAIN)
-                .border_style(Style::default().fg(self.theme.unfocused()))
-                .title(" SYSTEM ")
-                .title_style(Style::default().fg(self.theme.title()).bold())
-                .padding(Padding::horizontal(1));
-            let width = block.inner(parts[2]).width as usize;
-            let lines: Vec<Line> = self
-                .info
-                .iter()
-                .map(|(label, value)| {
-                    let prefix = format!("{label:>4}: ");
-                    let room = width.saturating_sub(prefix.len());
-                    let value = if value.chars().count() > room {
-                        let mut short: String =
-                            value.chars().take(room.saturating_sub(1)).collect();
-                        short.push('…');
-                        short
-                    } else {
-                        value.clone()
-                    };
-                    Line::from(vec![
-                        Span::styled(prefix, Style::default().fg(self.theme.title()).bold()),
-                        Span::styled(value, Style::default().fg(self.theme.entry())),
-                    ])
-                })
-                .collect();
-            frame.render_widget(Paragraph::new(Text::from(lines)).block(block), parts[2]);
-        }
+    fn draw_area(&mut self, frame: &mut Frame, area: Rect) {
+        let Some(index) = self.current_area() else {
+            return;
+        };
+        let name = self.catalog.tabs[index].name.clone();
+        let trail: Vec<String> = {
+            let tab = &self.catalog.tabs[index];
+            let mut names = Vec::new();
+            let mut items = tab.items.as_slice();
+            for (group, _) in &self.areas[index].path {
+                if let Some(Item::Group(group)) = items.get(*group) {
+                    names.push(group.name.clone());
+                    items = &group.items;
+                }
+            }
+            names
+        };
+        let subtitle = if trail.is_empty() {
+            format!("{} entries", self.catalog.tabs[index].entries().len())
+        } else {
+            trail.join(" › ")
+        };
+        let block = self.screen_block(&name, &subtitle);
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        let parts = Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).split(inner);
+        self.draw_search(frame, parts[0]);
+        self.draw_list(frame, parts[1]);
     }
 
     fn draw_search(&self, frame: &mut Frame, area: Rect) {
         let searching = self.focus == Focus::Search;
         let text = if !searching && self.search.is_empty() {
             Line::from(Span::styled(
-                "Type to search (/)",
-                Style::default().fg(self.theme.unfocused()).dim(),
+                "Type to search every area (/)",
+                Style::default().fg(self.theme.muted()),
             ))
         } else {
             let mut spans = vec![Span::styled(
@@ -399,13 +606,11 @@ impl App {
         let colour = if searching {
             self.theme.focused()
         } else {
-            self.theme.unfocused()
+            self.theme.muted()
         };
         let block = Block::bordered()
-            .border_set(border::PLAIN)
+            .border_set(border::ROUNDED)
             .border_style(Style::default().fg(colour))
-            .title(" SEARCH ")
-            .title_style(Style::default().fg(self.theme.title()).bold())
             .padding(Padding::horizontal(1));
         if searching {
             let inner = block.inner(area);
@@ -416,79 +621,283 @@ impl App {
     }
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
-        let focused = self.focus == Focus::List;
-        let dim = if focused {
-            Style::default()
-        } else {
-            Style::default().dim()
-        };
-        let border = Style::default().fg(if focused {
-            self.theme.focused()
-        } else {
-            self.theme.unfocused()
-        });
-        let title = if self.multi_select {
-            format!("{TITLE}[Multi-select] ")
-        } else {
-            TITLE.to_string()
-        };
-        let block = Block::bordered()
-            .border_set(border::PLAIN)
-            .border_style(border)
-            .title(title)
-            .title(Line::from(" FLAGS ").right_aligned())
-            .padding(Padding::horizontal(1));
+        let focused = self.focus == Focus::Main;
+        let block = self
+            .card(if self.searching() {
+                "Results"
+            } else {
+                "Entries"
+            })
+            .title(Line::from(" FLAGS ").right_aligned());
         let content_width = (block.inner(area).width as usize).saturating_sub(HIGHLIGHT.len());
-
         let lines: Vec<Line> = self
             .rows
             .iter()
             .map(|row| match row {
                 Row::Up => Line::from(format!("{GROUP_ICON}  .."))
-                    .style(Style::default().fg(self.theme.group()))
-                    .patch_style(dim),
+                    .style(Style::default().fg(self.theme.group())),
                 Row::Group { name, .. } => Line::from(format!("{GROUP_ICON}  {name}"))
-                    .style(Style::default().fg(self.theme.group()))
-                    .patch_style(dim),
+                    .style(Style::default().fg(self.theme.group())),
                 Row::Entry(entry) => {
-                    let picked = self.picked.iter().any(|other| other.id == entry.id);
-                    let style = if picked {
-                        Style::default().bold()
-                    } else if self.multi_select && !entry.multi_select {
-                        Style::default().fg(self.theme.disabled())
+                    let queued = self.is_queued(entry);
+                    let style = if queued {
+                        Style::default().fg(self.theme.focused()).bold()
                     } else {
-                        Style::default()
+                        Style::default().fg(self.theme.entry())
                     };
                     let left = format!(
                         "{ENTRY_ICON}  {} {}",
                         entry.name,
-                        if picked { PICKED_ICON } else { "" }
+                        if queued { QUEUED_ICON } else { "" }
                     );
                     let right = format!("{} ", entry.flags);
                     let gap = " "
                         .repeat(content_width.saturating_sub(left.chars().count() + right.len()));
-                    Line::from(format!("{left}{gap}{right}"))
-                        .style(Style::default().fg(self.theme.entry()))
-                        .patch_style(style)
-                        .patch_style(dim)
+                    Line::from(format!("{left}{gap}{right}")).style(style)
                 }
             })
             .collect();
-
         let highlight = if focused {
             Style::default()
                 .bg(self.theme.focused())
                 .fg(self.theme.on_highlight())
                 .bold()
         } else {
-            dim
+            Style::default()
         };
         let list = List::new(lines)
             .block(block)
             .highlight_style(highlight)
             .highlight_symbol(if focused { HIGHLIGHT } else { "  " })
             .scroll_padding(1);
-        frame.render_stateful_widget(list, area, &mut self.list_state);
+        frame.render_stateful_widget(list, area, &mut self.main_state);
+    }
+
+    fn draw_plan(&mut self, frame: &mut Frame, area: Rect) {
+        let block = self.screen_block("Install Plan", "Review planned changes before they run.");
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        if self.queue.is_empty() {
+            frame.render_widget(
+                Paragraph::new(
+                    "Nothing is queued. In an area, press Space on an entry to add it here.",
+                )
+                .style(Style::default().fg(self.theme.muted()))
+                .wrap(Wrap { trim: true }),
+                inner,
+            );
+            return;
+        }
+        let planned = plan(self.queue.iter(), &self.platform, &|id| {
+            self.catalog.find(id)
+        });
+        let summary = match &planned {
+            Ok(planned) => {
+                let mut lines = vec![format!(
+                    "{} step{}, risk {}{}",
+                    planned.steps.len(),
+                    if planned.steps.len() == 1 { "" } else { "s" },
+                    planned.risk.label(),
+                    if planned.privileged {
+                        ", asks for your password"
+                    } else {
+                        ""
+                    }
+                )];
+                if !planned.requirements.is_empty() {
+                    lines.push(format!("Needs: {}", planned.requirements.join(", ")));
+                }
+                lines.extend(planned.notes.iter().cloned());
+                lines
+            }
+            Err(error) => vec![format!("Cannot plan: {error}")],
+        };
+        let summary_height = summary.len() as u16 + 2;
+        let parts =
+            Layout::vertical([Constraint::Length(summary_height), Constraint::Min(1)]).split(inner);
+        frame.render_widget(
+            Paragraph::new(Text::from(
+                summary.into_iter().map(Line::from).collect::<Vec<_>>(),
+            ))
+            .block(self.card("Summary"))
+            .wrap(Wrap { trim: true }),
+            parts[0],
+        );
+        let focused = self.focus == Focus::Main;
+        let steps = planned.map(|planned| planned.steps).unwrap_or_default();
+        let items: Vec<Line> = self
+            .queue
+            .iter()
+            .map(|entry| {
+                let command = steps
+                    .iter()
+                    .find(|step| step.id() == entry.id)
+                    .map(|step| step.display())
+                    .unwrap_or_else(|| "nothing to do".to_string());
+                Line::from(vec![
+                    Span::styled(
+                        entry.name.clone(),
+                        Style::default().fg(self.theme.entry()).bold(),
+                    ),
+                    Span::styled(
+                        format!("   {command}"),
+                        Style::default().fg(self.theme.muted()),
+                    ),
+                ])
+            })
+            .collect();
+        let list = List::new(items)
+            .block(self.card("Queued entries"))
+            .highlight_style(if focused {
+                Style::default()
+                    .bg(self.theme.focused())
+                    .fg(self.theme.on_highlight())
+                    .bold()
+            } else {
+                Style::default()
+            })
+            .highlight_symbol(if focused { HIGHLIGHT } else { "  " });
+        frame.render_stateful_widget(list, parts[1], &mut self.main_state);
+    }
+
+    fn draw_history(&mut self, frame: &mut Frame, area: Rect) {
+        let block = self.screen_block("History", "Past runs, newest first.");
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        if self.records.is_empty() {
+            frame.render_widget(
+                Paragraph::new("No runs recorded yet.")
+                    .style(Style::default().fg(self.theme.muted())),
+                inner,
+            );
+            return;
+        }
+        let focused = self.focus == Focus::Main;
+        let items: Vec<Line> = self
+            .records
+            .iter()
+            .map(|record| {
+                let (status, colour) = if record.success {
+                    ("ok", self.theme.success())
+                } else {
+                    ("failed", self.theme.failure())
+                };
+                Line::from(vec![
+                    Span::styled(format!("{:<7}", status), Style::default().fg(colour).bold()),
+                    Span::styled(
+                        format!("{:<20}", timestamp(record.unix_timestamp)),
+                        Style::default().fg(self.theme.muted()),
+                    ),
+                    Span::styled(
+                        record.names.join(", "),
+                        Style::default().fg(self.theme.entry()),
+                    ),
+                    Span::styled(
+                        format!("   {}", record.result),
+                        Style::default().fg(self.theme.muted()),
+                    ),
+                    Span::styled(
+                        if record.log.is_some() { "   log" } else { "" },
+                        Style::default().fg(self.theme.focused()),
+                    ),
+                ])
+            })
+            .collect();
+        let list = List::new(items)
+            .block(self.card("Runs"))
+            .highlight_style(if focused {
+                Style::default()
+                    .bg(self.theme.focused())
+                    .fg(self.theme.on_highlight())
+                    .bold()
+            } else {
+                Style::default()
+            })
+            .highlight_symbol(if focused { HIGHLIGHT } else { "  " });
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
+    }
+
+    fn settings(&self) -> Vec<(String, String)> {
+        vec![
+            (
+                "Theme".to_string(),
+                match self.theme {
+                    Theme::Default => "default".to_string(),
+                    Theme::Compatible => "compatible".to_string(),
+                },
+            ),
+            (
+                "Ask before running".to_string(),
+                if self.skip_confirmation {
+                    "no".to_string()
+                } else {
+                    "yes".to_string()
+                },
+            ),
+            (
+                "Show entries hidden on this machine".to_string(),
+                if self.show_hidden {
+                    "yes".to_string()
+                } else {
+                    "no".to_string()
+                },
+            ),
+            (
+                "Log level (HELIXFORGE_LOG)".to_string(),
+                std::env::var("HELIXFORGE_LOG").unwrap_or_else(|_| "info".to_string()),
+            ),
+        ]
+    }
+
+    fn draw_settings(&mut self, frame: &mut Frame, area: Rect) {
+        let block = self.screen_block("Settings", "Enter changes the selected setting.");
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        let focused = self.focus == Focus::Main;
+        let width = inner.width.saturating_sub(6) as usize;
+        let items: Vec<Line> = self
+            .settings()
+            .into_iter()
+            .map(|(label, value)| {
+                let gap = width.saturating_sub(label.len() + value.len());
+                Line::from(vec![
+                    Span::styled(label, Style::default().fg(self.theme.entry())),
+                    Span::raw(" ".repeat(gap)),
+                    Span::styled(value, Style::default().fg(self.theme.focused()).bold()),
+                ])
+            })
+            .collect();
+        let list = List::new(items)
+            .block(self.card("Settings"))
+            .highlight_style(if focused {
+                Style::default()
+                    .bg(self.theme.focused())
+                    .fg(self.theme.on_highlight())
+                    .bold()
+            } else {
+                Style::default()
+            })
+            .highlight_symbol(if focused { HIGHLIGHT } else { "  " });
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
+    }
+
+    fn draw_footer(&self, frame: &mut Frame, area: Rect) {
+        let (_, hints) = self.hints();
+        let mut spans: Vec<Span> = vec![Span::raw(" ")];
+        for (index, hint) in hints.iter().enumerate() {
+            if index > 0 {
+                spans.push(Span::styled(" · ", Style::default().fg(self.theme.muted())));
+            }
+            spans.push(Span::styled(
+                hint.keys().join("/"),
+                Style::default().fg(self.theme.entry()).bold(),
+            ));
+            spans.push(Span::styled(
+                format!(" {}", hint.text()),
+                Style::default().fg(self.theme.muted()),
+            ));
+        }
+        frame.render_widget(Paragraph::new(Line::from(spans)), area);
     }
 
     fn hints(&self) -> (&'static str, Vec<Hint>) {
@@ -498,72 +907,52 @@ impl App {
             Some(Popup::Running(popup)) => return popup.hints(),
             None => {}
         }
+        let mut list = Vec::new();
         match self.focus {
-            Focus::Search => (
-                "Search",
-                vec![
-                    Hint::new(&["Enter"], "Keep the results"),
-                    Hint::new(&["Esc"], "Clear the search"),
-                ],
-            ),
-            Focus::TabList => (
-                "Tabs",
-                vec![
-                    Hint::new(&["q", "Ctrl-c"], "Quit"),
-                    Hint::new(&["l", "Right", "Enter"], "Focus the list"),
-                    Hint::new(&["k", "Up"], "Tab above"),
-                    Hint::new(&["j", "Down"], "Tab below"),
-                    Hint::new(&["/"], "Search"),
-                    Hint::new(&["t"], "Switch theme"),
-                    Hint::new(&["g"], "Flags guide"),
-                ],
-            ),
-            Focus::List => {
-                let mut list = vec![Hint::new(&["q", "Ctrl-c"], "Quit")];
-                match self.selected_row() {
-                    Some(Row::Up) => list.push(Hint::new(
-                        &["l", "Right", "Enter", "h", "Left"],
-                        "Parent group",
-                    )),
-                    Some(Row::Group { .. }) => {
-                        list.push(Hint::new(
-                            &["h", "Left"],
-                            if self.at_root() {
-                                "Focus the tabs"
-                            } else {
-                                "Parent group"
-                            },
-                        ));
-                        list.push(Hint::new(&["l", "Right", "Enter"], "Open"));
-                    }
-                    Some(Row::Entry(_)) => {
-                        list.push(Hint::new(
-                            &["h", "Left"],
-                            if self.at_root() {
-                                "Focus the tabs"
-                            } else {
-                                "Parent group"
-                            },
-                        ));
-                        list.push(Hint::new(&["l", "Right", "Enter"], "Run"));
-                        list.push(Hint::new(&["p"], "Preview"));
-                        list.push(Hint::new(&["d"], "Description"));
-                    }
-                    None => {}
-                }
-                list.push(Hint::new(&["k", "Up"], "Row above"));
-                list.push(Hint::new(&["j", "Down"], "Row below"));
-                list.push(Hint::new(&["/"], "Search"));
-                list.push(Hint::new(&["Tab", "Shift-Tab"], "Next / previous tab"));
-                list.push(Hint::new(&["v"], "Multi-select mode"));
-                if self.multi_select {
-                    list.push(Hint::new(&["Space"], "Pick for the queue"));
-                }
-                list.push(Hint::new(&["t"], "Switch theme"));
-                list.push(Hint::new(&["g"], "Flags guide"));
-                ("Entries", list)
+            Focus::Search => {
+                list.push(Hint::new(&["Enter"], "Keep results"));
+                list.push(Hint::new(&["Esc"], "Clear"));
+                return ("Search", list);
             }
+            Focus::Sidebar => {
+                list.push(Hint::new(&["↑↓"], "Navigate"));
+                list.push(Hint::new(&["Enter"], "Open"));
+            }
+            Focus::Main => match self.screen {
+                Screen::Dashboard => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    list.push(Hint::new(&["Enter"], "Select"));
+                }
+                Screen::Area(_) => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    match self.selected_row() {
+                        Some(Row::Up) => list.push(Hint::new(&["Enter", "h"], "Parent")),
+                        Some(Row::Group { .. }) => list.push(Hint::new(&["Enter"], "Open")),
+                        Some(Row::Entry(_)) => {
+                            list.push(Hint::new(&["Enter"], "Run"));
+                            list.push(Hint::new(&["Space"], "Plan"));
+                            list.push(Hint::new(&["d"], "Describe"));
+                            list.push(Hint::new(&["p"], "Preview"));
+                        }
+                        None => {}
+                    }
+                }
+                Screen::Plan => {
+                    list.push(Hint::new(&["Enter"], "Run plan"));
+                    list.push(Hint::new(&["x"], "Remove"));
+                    list.push(Hint::new(&["c"], "Clear"));
+                }
+                Screen::History => {
+                    list.push(Hint::new(&["Enter"], "Show log"));
+                    list.push(Hint::new(&["r"], "Reload"));
+                }
+                Screen::Settings => list.push(Hint::new(&["Enter"], "Change")),
+            },
         }
+        list.push(Hint::new(&["/"], "Search"));
+        list.push(Hint::new(&["?"], "Help"));
+        list.push(Hint::new(&["q"], "Quit"));
+        ("HelixForge", list)
     }
 
     // ----- keys -----
@@ -600,12 +989,14 @@ impl App {
             Some(Popup::Running(popup)) => {
                 if popup.handle_key(key) {
                     self.popup = None;
+                    if self.screen == Screen::History {
+                        self.reload_history();
+                    }
                 }
                 return true;
             }
             None => {}
         }
-
         if self.focus == Focus::Search {
             self.handle_search_key(key);
             return true;
@@ -614,61 +1005,143 @@ impl App {
             return false;
         }
         match key.code {
-            KeyCode::Tab => self.next_tab(1),
-            KeyCode::BackTab => self.next_tab(-1),
+            KeyCode::Tab => self.next_menu(1),
+            KeyCode::BackTab => self.next_menu(-1),
             KeyCode::Char('/') => {
+                if self.current_area().is_none() {
+                    self.open_screen(Screen::Area(self.first_area()));
+                }
                 self.focus = Focus::Search;
                 self.cursor = self.search.len();
             }
-            KeyCode::Char('t') | KeyCode::Char('T') => self.theme = self.theme.next(),
-            KeyCode::Char('g') | KeyCode::Char('G') => {
-                self.popup = Some(Popup::Text(TextPopup::new("Flags", FLAGS_GUIDE, true)))
+            KeyCode::Char('?') => {
+                self.popup = Some(Popup::Text(TextPopup::new("Keys", HELP, false)));
             }
-            KeyCode::Char('v') | KeyCode::Char('V') => {
-                self.multi_select = !self.multi_select;
-                if !self.multi_select {
-                    self.picked.clear();
-                }
+            KeyCode::Char('t') | KeyCode::Char('T') => self.theme = self.theme.next(),
+            KeyCode::Char('g') | KeyCode::Char('G') if matches!(self.screen, Screen::Area(_)) => {
+                self.popup = Some(Popup::Text(TextPopup::new("Flags", FLAGS_GUIDE, true)));
             }
             _ => match self.focus {
-                Focus::TabList => match key.code {
-                    KeyCode::Char('j') | KeyCode::Down => self.next_tab(1),
-                    KeyCode::Char('k') | KeyCode::Up => self.next_tab(-1),
-                    KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
-                        self.focus = Focus::List
-                    }
-                    _ => {}
-                },
-                Focus::List => match key.code {
-                    KeyCode::Char('j') | KeyCode::Down => self.move_selection(1),
-                    KeyCode::Char('k') | KeyCode::Up => self.move_selection(-1),
-                    KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.enter(),
-                    KeyCode::Char('h') | KeyCode::Left => self.back(),
-                    KeyCode::Char('p') | KeyCode::Char('P') => self.preview(),
-                    KeyCode::Char('d') | KeyCode::Char('D') => self.describe(),
-                    KeyCode::Char(' ') if self.multi_select => self.toggle_pick(),
-                    _ => {}
-                },
+                Focus::Sidebar => self.handle_sidebar_key(key),
+                Focus::Main => self.handle_main_key(key),
                 Focus::Search => {}
             },
         }
         true
     }
 
+    fn first_area(&self) -> usize {
+        self.menu
+            .iter()
+            .find_map(|item| match item.screen {
+                Screen::Area(index) => Some(index),
+                _ => None,
+            })
+            .unwrap_or(0)
+    }
+
+    fn handle_sidebar_key(&mut self, key: &KeyEvent) {
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => self.next_menu(1),
+            KeyCode::Char('k') | KeyCode::Up => self.next_menu(-1),
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.focus = Focus::Main,
+            _ => {}
+        }
+    }
+
+    fn next_menu(&mut self, step: isize) {
+        let count = self.menu.len() as isize;
+        let current = self.menu_state.selected().unwrap_or(0) as isize;
+        let next = ((current + step).rem_euclid(count)) as usize;
+        let screen = self.menu[next].screen;
+        self.open_screen(screen);
+    }
+
+    fn handle_main_key(&mut self, key: &KeyEvent) {
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => self.move_selection(1),
+            KeyCode::Char('k') | KeyCode::Up => self.move_selection(-1),
+            _ => {}
+        }
+        match self.screen {
+            Screen::Dashboard => match key.code {
+                KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+                    let screen = match self.main_state.selected().unwrap_or(0) {
+                        0 => Screen::Area(self.first_area()),
+                        1 => Screen::Plan,
+                        2 => self
+                            .catalog
+                            .tabs
+                            .iter()
+                            .position(|tab| tab.id == "doctor")
+                            .map(Screen::Area)
+                            .unwrap_or(Screen::Dashboard),
+                        _ => Screen::History,
+                    };
+                    self.open_screen(screen);
+                }
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::Area(_) => match key.code {
+                KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.enter(),
+                KeyCode::Char('h') | KeyCode::Left => self.back(),
+                KeyCode::Char('p') | KeyCode::Char('P') => self.preview(),
+                KeyCode::Char('d') | KeyCode::Char('D') => self.describe(),
+                KeyCode::Char(' ') => self.toggle_queue(),
+                _ => {}
+            },
+            Screen::Plan => match key.code {
+                KeyCode::Enter => self.confirm(self.queue.clone()),
+                KeyCode::Char('x') | KeyCode::Delete => {
+                    if let Some(selected) = self.main_state.selected()
+                        && selected < self.queue.len()
+                    {
+                        self.queue.remove(selected);
+                        self.clamp_main();
+                    }
+                }
+                KeyCode::Char('c') => {
+                    self.queue.clear();
+                    self.clamp_main();
+                }
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::History => match key.code {
+                KeyCode::Enter => self.show_log(),
+                KeyCode::Char('r') => self.reload_history(),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::Settings => match key.code {
+                KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') | KeyCode::Right => {
+                    self.change_setting()
+                }
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+        }
+    }
+
     fn handle_search_key(&mut self, key: &KeyEvent) {
         match key.code {
             KeyCode::Enter => {
-                self.focus = Focus::List;
-                self.list_state.select(Some(0));
+                self.focus = Focus::Main;
+                self.main_state.select(Some(0));
             }
-            KeyCode::Esc | KeyCode::Char('c')
-                if key.code == KeyCode::Esc || key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
+            KeyCode::Esc => {
                 self.search.clear();
                 self.cursor = 0;
-                self.focus = Focus::List;
+                self.focus = Focus::Main;
                 self.update_rows();
-                self.list_state.select(Some(0));
+                self.main_state.select(Some(0));
+            }
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.search.clear();
+                self.cursor = 0;
+                self.focus = Focus::Main;
+                self.update_rows();
             }
             KeyCode::Tab => {
                 if let Some(completion) = self.completion.take() {
@@ -703,24 +1176,13 @@ impl App {
         }
     }
 
-    fn next_tab(&mut self, step: isize) {
-        let count = self.catalog.tabs.len() as isize;
-        self.current_tab = ((self.current_tab as isize + step).rem_euclid(count)) as usize;
-        self.tab_state.select(Some(self.current_tab));
-        self.path.clear();
-        self.search.clear();
-        self.cursor = 0;
-        self.list_state.select(Some(0));
-        self.update_rows();
-    }
-
     fn move_selection(&mut self, step: isize) {
-        let count = self.rows.len();
+        let count = self.main_len();
         if count == 0 {
             return;
         }
-        let current = self.list_state.selected().unwrap_or(0) as isize;
-        self.list_state
+        let current = self.main_state.selected().unwrap_or(0) as isize;
+        self.main_state
             .select(Some((current + step).clamp(0, count as isize - 1) as usize));
     }
 
@@ -728,21 +1190,14 @@ impl App {
         match self.selected_row().cloned() {
             Some(Row::Up) => self.back(),
             Some(Row::Group { index, .. }) => {
-                let row = self.list_state.selected().unwrap_or(0);
-                self.path.push((index, row));
-                self.list_state.select(Some(0));
+                let row = self.main_state.selected().unwrap_or(0);
+                if let Some(area) = self.area_mut() {
+                    area.path.push((index, row));
+                }
+                self.main_state.select(Some(0));
                 self.update_rows();
             }
-            Some(Row::Entry(entry)) => {
-                if self.multi_select {
-                    if !self.picked.is_empty() {
-                        self.confirm_picked();
-                    }
-                } else {
-                    self.picked = vec![entry];
-                    self.confirm_picked();
-                }
-            }
+            Some(Row::Entry(entry)) => self.confirm(vec![entry]),
             None => {}
         }
     }
@@ -752,29 +1207,35 @@ impl App {
             self.search.clear();
             self.cursor = 0;
             self.update_rows();
-            self.list_state.select(Some(0));
+            self.main_state.select(Some(0));
             return;
         }
-        match self.path.pop() {
+        let popped = self.area_mut().and_then(|area| area.path.pop());
+        match popped {
             Some((_, row)) => {
                 self.update_rows();
-                self.list_state.select(Some(row));
+                self.main_state.select(Some(row));
             }
-            None => self.focus = Focus::TabList,
+            None => self.focus = Focus::Sidebar,
         }
     }
 
-    fn toggle_pick(&mut self) {
+    fn toggle_queue(&mut self) {
         let Some(entry) = self.selected_entry().cloned() else {
             return;
         };
         if !entry.multi_select {
+            self.popup = Some(Popup::Text(TextPopup::new(
+                entry.name.clone(),
+                "This entry runs on its own and cannot be queued with others. Press Enter to run it.",
+                true,
+            )));
             return;
         }
-        if let Some(position) = self.picked.iter().position(|other| other.id == entry.id) {
-            self.picked.remove(position);
+        if let Some(position) = self.queue.iter().position(|other| other.id == entry.id) {
+            self.queue.remove(position);
         } else {
-            self.picked.push(entry);
+            self.queue.push(entry);
         }
     }
 
@@ -814,10 +1275,60 @@ impl App {
         self.popup = Some(Popup::Text(TextPopup::new(entry.name.clone(), text, true)));
     }
 
-    /// Plan the picked entries; ask before running what can run.
-    fn confirm_picked(&mut self) {
-        let picked = std::mem::take(&mut self.picked);
-        let planned = match plan(picked.iter(), &self.platform, &|id| self.catalog.find(id)) {
+    fn show_log(&mut self) {
+        let Some(record) = self
+            .main_state
+            .selected()
+            .and_then(|index| self.records.get(index))
+        else {
+            return;
+        };
+        let title = record.names.join(", ");
+        let text = match &record.log {
+            Some(path) => std::fs::read(path)
+                .map(|bytes| strip_escapes(&String::from_utf8_lossy(&bytes)))
+                .unwrap_or_else(|error| format!("The log cannot be read: {error}")),
+            None => format!(
+                "{}\n\nNo log was saved for this run. Press l in the running window after a run finishes to save one.",
+                record.result
+            ),
+        };
+        self.popup = Some(Popup::Text(TextPopup::new(title, text, false)));
+    }
+
+    fn change_setting(&mut self) {
+        match self.main_state.selected().unwrap_or(0) {
+            0 => self.theme = self.theme.next(),
+            1 => self.skip_confirmation = !self.skip_confirmation,
+            2 => {
+                self.show_hidden = !self.show_hidden;
+                match Catalog::builtin(!self.show_hidden) {
+                    Ok(catalog) => {
+                        self.catalog = catalog;
+                        self.menu = build_menu(&self.catalog);
+                        self.areas = vec![AreaState::default(); self.catalog.tabs.len()];
+                        self.queue.clear();
+                        self.update_rows();
+                    }
+                    Err(error) => {
+                        self.popup = Some(Popup::Text(TextPopup::new(
+                            "Cannot reload the catalog",
+                            error.to_string(),
+                            true,
+                        )));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Plan entries; ask before running what can run.
+    fn confirm(&mut self, entries: Vec<Entry>) {
+        if entries.is_empty() {
+            return;
+        }
+        let planned = match plan(entries.iter(), &self.platform, &|id| self.catalog.find(id)) {
             Ok(planned) => planned,
             Err(error) => {
                 self.popup = Some(Popup::Text(TextPopup::new(
@@ -870,11 +1381,115 @@ impl App {
             std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("helixforge"));
         self.popup = Some(
             match RunningView::start(&planned, &self.catalog.lib_dir(), &this) {
-                Ok(running) => Popup::Running(running),
+                Ok(running) => {
+                    // What ran from the plan screen leaves the queue.
+                    if self.screen == Screen::Plan {
+                        self.queue.clear();
+                        self.clamp_main();
+                    }
+                    Popup::Running(running)
+                }
                 Err(error) => Popup::Text(TextPopup::new("Cannot run", error, true)),
             },
         );
     }
+}
+
+fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
+    let area = |id: &str| catalog.tabs.iter().position(|tab| tab.id == id);
+    let mut menu = vec![MenuItem {
+        label: "Dashboard".into(),
+        screen: Screen::Dashboard,
+        section: "MAIN MENU",
+    }];
+    if let Some(index) = area("applications") {
+        menu.push(MenuItem {
+            label: catalog.tabs[index].name.clone(),
+            screen: Screen::Area(index),
+            section: "MAIN MENU",
+        });
+    }
+    menu.push(MenuItem {
+        label: "Install Plan".into(),
+        screen: Screen::Plan,
+        section: "MAIN MENU",
+    });
+    for (index, tab) in catalog.tabs.iter().enumerate() {
+        if tab.id != "applications" {
+            menu.push(MenuItem {
+                label: tab.name.clone(),
+                screen: Screen::Area(index),
+                section: "MORE TOOLS",
+            });
+        }
+    }
+    menu.push(MenuItem {
+        label: "History".into(),
+        screen: Screen::History,
+        section: "MORE TOOLS",
+    });
+    menu.push(MenuItem {
+        label: "Settings".into(),
+        screen: Screen::Settings,
+        section: "MORE TOOLS",
+    });
+    menu
+}
+
+/// A local date and time without pulling in a time library: UTC is fine for a list.
+fn timestamp(unix: u64) -> String {
+    let days = unix / 86_400;
+    let seconds = unix % 86_400;
+    // Civil-from-days (Howard Hinnant's algorithm).
+    let z = days as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if month <= 2 { year + 1 } else { year };
+    format!(
+        "{year:04}-{month:02}-{day:02} {:02}:{:02} UTC",
+        seconds / 3600,
+        (seconds % 3600) / 60
+    )
+}
+
+/// Terminal output without its escape sequences, for reading a saved log.
+fn strip_escapes(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(character) = chars.next() {
+        if character == '\u{1b}' {
+            match chars.peek() {
+                Some('[') => {
+                    chars.next();
+                    for next in chars.by_ref() {
+                        if next.is_ascii_alphabetic() || next == '~' {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    chars.next();
+                    for next in chars.by_ref() {
+                        if next == '\u{7}' {
+                            break;
+                        }
+                    }
+                }
+                _ => {
+                    chars.next();
+                }
+            }
+        } else if character != '\r' {
+            result.push(character);
+        }
+    }
+    result
 }
 
 #[cfg(test)]
@@ -912,16 +1527,26 @@ mod tests {
         app.handle_key(&KeyEvent::new(code, KeyModifiers::NONE))
     }
 
+    fn type_text(app: &mut App, text: &str) {
+        for character in text.chars() {
+            press(app, KeyCode::Char(character));
+        }
+    }
+
     #[test]
-    fn the_first_screen_shows_tabs_groups_and_hints() {
+    fn the_dashboard_is_the_first_screen() {
         let mut app = app();
         let text = screen(&mut app, 120, 40);
         assert!(text.contains("HELIXFORGE"));
-        assert!(text.contains("Applications"));
-        assert!(text.contains("Helix Doctor"));
-        assert!(text.contains("FLAGS"));
-        assert!(text.contains("[D]  Developer Tools"));
-        assert!(text.contains("Quit"));
+        assert!(text.contains("SYSTEM READY"));
+        assert!(text.contains("MAIN MENU"));
+        assert!(text.contains("MORE TOOLS"));
+        assert!(text.contains("Dashboard"));
+        assert!(text.contains("System Overview"));
+        assert!(text.contains("Garuda Linux"));
+        assert!(text.contains("Quick Actions"));
+        assert!(text.contains("Browse Applications"));
+        assert!(text.contains("Navigate"));
     }
 
     #[test]
@@ -933,30 +1558,51 @@ mod tests {
     }
 
     #[test]
-    fn groups_open_and_close_and_remember_the_row() {
+    fn the_sidebar_opens_areas_and_groups_remember_their_row() {
         let mut app = app();
         press(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.screen, Screen::Area(0));
         press(&mut app, KeyCode::Enter);
-        assert_eq!(app.path.len(), 1);
+        assert_eq!(app.focus, Focus::Main);
+        let text = screen(&mut app, 120, 40);
+        assert!(text.contains("[D]  Developer Tools"));
+        assert!(text.contains("FLAGS"));
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.areas[0].path.len(), 1);
         assert!(screen(&mut app, 120, 40).contains("[D]  .."));
         press(&mut app, KeyCode::Char('h'));
         assert!(app.at_root());
-        assert_eq!(app.list_state.selected(), Some(1));
+        assert_eq!(app.main_state.selected(), Some(1));
+        press(&mut app, KeyCode::Char('h'));
+        assert_eq!(app.focus, Focus::Sidebar);
     }
 
     #[test]
-    fn search_spans_every_tab_and_escape_clears_it() {
+    fn quick_actions_open_screens() {
+        let mut app = app();
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            matches!(app.screen, Screen::Area(index) if app.catalog.tabs[index].id == "doctor")
+        );
+        assert!(screen(&mut app, 120, 40).contains("Machine Summary"));
+    }
+
+    #[test]
+    fn search_spans_every_area_and_escape_clears_it() {
         let mut app = app();
         press(&mut app, KeyCode::Char('/'));
-        for character in "git".chars() {
-            press(&mut app, KeyCode::Char(character));
-        }
+        assert!(matches!(app.screen, Screen::Area(_)));
+        type_text(&mut app, "git");
         assert!(!app.rows.is_empty());
         assert!(app.rows.iter().all(
             |row| matches!(row, Row::Entry(entry) if entry.name.to_lowercase().contains("git"))
         ));
         press(&mut app, KeyCode::Enter);
-        assert_eq!(app.focus, Focus::List);
+        assert_eq!(app.focus, Focus::Main);
         press(&mut app, KeyCode::Char('/'));
         press(&mut app, KeyCode::Esc);
         assert!(app.search.is_empty());
@@ -964,15 +1610,45 @@ mod tests {
     }
 
     #[test]
+    fn entries_queue_into_the_install_plan_and_run_from_it() {
+        let mut app = app();
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "System Report (script)");
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char(' '));
+        assert!(
+            matches!(app.popup, Some(Popup::Text(_))),
+            "a solo entry explains it cannot be queued"
+        );
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Char('h'));
+        type_text(&mut app, "/Machine Summary");
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char(' '));
+        assert_eq!(app.queue.len(), 1);
+        assert!(screen(&mut app, 120, 40).contains("Machine Summary *"));
+        app.open_screen(Screen::Plan);
+        app.focus = Focus::Main;
+        let text = screen(&mut app, 120, 40);
+        assert!(text.contains("Install Plan"));
+        assert!(text.contains("1 step, risk low"));
+        assert!(text.contains("helixforge native system-report"));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        assert!(screen(&mut app, 120, 40).contains("Risk: low"));
+        press(&mut app, KeyCode::Char('n'));
+        press(&mut app, KeyCode::Char('x'));
+        assert!(app.queue.is_empty());
+        assert!(screen(&mut app, 120, 40).contains("Nothing is queued"));
+    }
+
+    #[test]
     fn running_an_entry_asks_first_and_quitting_works() {
         let mut app = app();
         press(&mut app, KeyCode::Char('/'));
-        for character in "System Report (script)".chars() {
-            press(&mut app, KeyCode::Char(character));
-        }
+        type_text(&mut app, "System Report (script)");
         press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Char('d'));
-        assert!(matches!(app.popup, Some(Popup::Text(_))));
         assert!(screen(&mut app, 120, 40).contains("Print the distribution"));
         press(&mut app, KeyCode::Esc);
         press(&mut app, KeyCode::Char('p'));
@@ -981,8 +1657,7 @@ mod tests {
         press(&mut app, KeyCode::Enter);
         assert!(matches!(app.popup, Some(Popup::Confirm(_))));
         let text = screen(&mut app, 120, 40);
-        assert!(text.contains("Risk: low"), "{text}");
-        assert!(text.contains("1. System Report"), "{text}");
+        assert!(text.contains("1. System Report (script)"), "{text}");
         assert!(text.contains("system-report.sh"), "{text}");
         press(&mut app, KeyCode::Char('n'));
         assert!(app.popup.is_none());
@@ -990,13 +1665,57 @@ mod tests {
     }
 
     #[test]
-    fn the_flags_guide_and_theme_toggle_work_from_the_tab_list() {
+    fn the_history_screen_lists_records() {
+        let state = tempfile::tempdir().unwrap();
         let mut app = app();
-        press(&mut app, KeyCode::Char('h'));
-        assert_eq!(app.focus, Focus::TabList);
-        press(&mut app, KeyCode::Char('t'));
+        history::record_in(
+            state.path(),
+            &[("git".into(), "Git".into())],
+            false,
+            "exit 1",
+            None,
+        )
+        .unwrap();
+        app.records = history::read_in(state.path(), 10).unwrap();
+        app.screen = Screen::History;
+        app.focus = Focus::Main;
+        app.clamp_main();
+        let text = screen(&mut app, 120, 40);
+        assert!(text.contains("failed"));
+        assert!(text.contains("Git"));
+        assert!(text.contains("exit 1"));
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 120, 40).contains("No log was saved"));
+    }
+
+    #[test]
+    fn settings_change_the_theme_and_the_confirmation() {
+        let mut app = app();
+        app.open_screen(Screen::Settings);
+        app.focus = Focus::Main;
+        assert!(screen(&mut app, 120, 40).contains("Ask before running"));
+        press(&mut app, KeyCode::Enter);
         assert_eq!(app.theme, Theme::Compatible);
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Enter);
+        assert!(app.skip_confirmation);
+    }
+
+    #[test]
+    fn help_and_flags_guide_open_as_popups() {
+        let mut app = app();
+        press(&mut app, KeyCode::Char('?'));
+        assert!(screen(&mut app, 120, 40).contains("Install Plan"));
+        press(&mut app, KeyCode::Esc);
+        app.open_screen(Screen::Area(0));
         press(&mut app, KeyCode::Char('g'));
         assert!(screen(&mut app, 120, 40).contains("privileged"));
+    }
+
+    #[test]
+    fn timestamps_and_escape_stripping_are_sane() {
+        assert_eq!(timestamp(0), "1970-01-01 00:00 UTC");
+        assert_eq!(timestamp(1_700_000_000), "2023-11-14 22:13 UTC");
+        assert_eq!(strip_escapes("a\u{1b}[31mb\u{1b}[0m\r\n"), "ab\n");
     }
 }

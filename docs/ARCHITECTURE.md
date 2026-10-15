@@ -85,11 +85,15 @@ panel too.
 
 ## Interface
 
-Tabs on the left with a system panel, the search bar and entry list on the
-right, key hints along the bottom. Popups over the list show text, the
-confirmation with the plan's risk line, and the running terminal. Milestone
-2 turns the sidebar into a menu of screens (dashboard, the catalog areas, the
-install plan, history, settings) following the HelixForge dashboard design.
+A header with the name, tagline and a status badge; a sidebar menu of
+screens in two sections; the current screen; a hint line. The screens are
+the Dashboard (system overview and quick actions), one screen per catalog
+area (search bar and entry list with the flags column, groups opened in
+place), the Install Plan (the queue, planned live), History (the records,
+with saved logs) and Settings. Popups over the current screen show text, the
+confirmation with the plan's risk line, and the running terminal. All of it
+is one `App` in `apps/helixforge/src/tui/app.rs` driven by key events; screen
+tests render it into a test backend.
 
 ## Graphical interface, later
 
