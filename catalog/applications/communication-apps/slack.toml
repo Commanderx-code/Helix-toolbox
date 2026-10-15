@@ -4,6 +4,6 @@ flags = "I"
 order = 104
 
 [package]
-binary = "com.slack.Slack"
+binary = "slack"
 aur = "slack-desktop"
 flatpak = "com.slack.Slack"

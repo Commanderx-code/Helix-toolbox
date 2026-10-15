@@ -1,5 +1,5 @@
 name = "WINE Staging"
-description = "WINE with the staging patches, newer fixes that are not yet in WINE itself. It replaces WINE, so remove WINE first; while WINE is installed this shows as already installed. Arch only."
+description = "WINE with the staging patches, newer fixes that are not yet in WINE itself. It replaces WINE: when WINE is installed, pacman asks before removing it. Arch only."
 flags = "I"
 order = 106
 
@@ -9,6 +9,6 @@ check = "command_exists"
 values = ["pacman"]
 
 [package]
-binary = "wine"
 arch = "wine-staging"
+conflicts = ["wine"]
 removable = true

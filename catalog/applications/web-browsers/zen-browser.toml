@@ -4,6 +4,6 @@ flags = "I"
 order = 112
 
 [package]
-binary = "io.github.zen_browser.zen"
+binary = "zen-browser"
 aur = "zen-browser-bin"
 flatpak = "io.github.zen_browser.zen"

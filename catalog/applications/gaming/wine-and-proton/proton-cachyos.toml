@@ -8,8 +8,6 @@ matches = true
 check = "command_exists"
 values = ["pacman"]
 
-# A Steam compatibility tool adds no command; the package manager confirms it.
 [package]
-binary = "proton-cachyos-slr"
 aur = "proton-cachyos-slr"
 removable = true

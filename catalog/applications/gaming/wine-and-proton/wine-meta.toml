@@ -8,8 +8,6 @@ matches = true
 check = { containing_file = "/etc/os-release" }
 values = ["ID=garuda"]
 
-# A meta-package adds no command of its own; the package manager confirms it.
 [package]
-binary = "wine-meta"
 arch = "wine-meta"
 removable = true

@@ -163,7 +163,20 @@ pub struct App {
     settings_path: Option<std::path::PathBuf>,
     /// The banner picture, when the terminal can show one.
     banner: Option<Protocol>,
+    /// The Install Plan screen's plan, kept briefly: planning asks the
+    /// package manager about every queued package.
+    planned: Option<PlanCache>,
 }
+
+/// A plan of the queue as it was, from when it was made.
+struct PlanCache {
+    ids: Vec<String>,
+    made: std::time::Instant,
+    result: Result<Plan, String>,
+}
+
+/// How long a cached plan is trusted, for changes made outside HelixForge.
+const PLAN_KEPT: std::time::Duration = std::time::Duration::from_secs(3);
 
 impl App {
     pub fn new(catalog: Catalog, platform: LinuxInfo, args: &TuiArgs) -> Self {
@@ -195,6 +208,7 @@ impl App {
             icons: !args.plain,
             settings_path: None,
             banner: None,
+            planned: None,
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -1078,9 +1092,27 @@ impl App {
             );
             return;
         }
-        let planned = plan(self.queue.iter(), &self.platform, &|id| {
-            self.catalog.find(id)
-        });
+        let ids: Vec<String> = self.queue.iter().map(|entry| entry.id.clone()).collect();
+        let fresh = self
+            .planned
+            .as_ref()
+            .is_some_and(|cache| cache.ids == ids && cache.made.elapsed() < PLAN_KEPT);
+        if !fresh {
+            let result = plan(self.queue.iter(), &self.platform, &|id| {
+                self.catalog.find(id)
+            })
+            .map_err(|error| error.to_string());
+            self.planned = Some(PlanCache {
+                ids,
+                made: std::time::Instant::now(),
+                result,
+            });
+        }
+        let planned = self
+            .planned
+            .as_ref()
+            .map(|cache| cache.result.clone())
+            .unwrap_or_else(|| Err("not planned".to_string()));
         let summary = match &planned {
             Ok(planned) => {
                 let mut lines = vec![format!(
@@ -1396,6 +1428,8 @@ impl App {
             }
             Some(Popup::Running(popup)) => {
                 if popup.handle_key(key) {
+                    // What is installed may have changed.
+                    self.planned = None;
                     self.popup = popup
                         .take_problem()
                         .map(|problem| Popup::Text(TextPopup::new("Not recorded", problem, true)));

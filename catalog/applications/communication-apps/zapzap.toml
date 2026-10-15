@@ -4,6 +4,6 @@ flags = "I"
 order = 107
 
 [package]
-binary = "com.rtosta.zapzap"
+binary = "zapzap"
 aur = "zapzap"
 flatpak = "com.rtosta.zapzap"

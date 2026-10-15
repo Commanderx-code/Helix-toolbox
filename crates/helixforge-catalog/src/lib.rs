@@ -224,7 +224,10 @@ struct EntryFile {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PackageFile {
-    binary: String,
+    #[serde(default)]
+    binary: Option<String>,
+    #[serde(default)]
+    conflicts: Vec<String>,
     #[serde(default)]
     arch: Option<String>,
     #[serde(default)]
@@ -489,9 +492,13 @@ fn action_of(
             .iter()
             .filter_map(|(_, name)| *name)
             .chain(package.aur.as_deref())
+            .chain(package.conflicts.iter().map(String::as_str))
             .all(valid_package_name);
         let has_source = !packages.is_empty() || package.aur.is_some() || package.flatpak.is_some();
-        if !valid_binary_name(&package.binary)
+        if package
+            .binary
+            .as_deref()
+            .is_some_and(|binary| !valid_binary_name(binary))
             || !names_valid
             || !has_source
             || package
@@ -509,6 +516,7 @@ fn action_of(
             packages,
             aur: package.aur.clone(),
             flatpak: package.flatpak.clone(),
+            conflicts: package.conflicts.clone(),
             removable: package.removable,
         }));
     }

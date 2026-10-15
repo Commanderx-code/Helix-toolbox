@@ -4,7 +4,7 @@ flags = "I FI"
 order = 104
 
 [package]
-binary = "org.gnome.meld"
+binary = "meld"
 arch = "meld"
 debian = "meld"
 alpine = "meld"

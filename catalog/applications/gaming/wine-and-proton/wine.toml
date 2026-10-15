@@ -6,6 +6,7 @@ order = 105
 [package]
 binary = "wine"
 arch = "wine"
+conflicts = ["wine-staging"]
 debian = "wine"
 fedora = "wine"
 removable = true

@@ -89,13 +89,21 @@ description = "A digital audio workstation."
 flags = "I"                      # what it does; g in the interface explains the codes
 
 [package]                        # tried in order: the family's package, the AUR, Flathub
-binary = "ardour"                # installed when this is on the PATH (or its Flatpak is)
+binary = "ardour"                # optional: its command, for installs made another way
 debian = "ardour"                # also arch, fedora, suse, alpine, void, solus
 fedora = "ardour"
 aur = "ardour"                   # Arch, through paru or yay, when arch is not given
 flatpak = "org.ardour.Ardour"    # for families with no package
 removable = true                 # offer removal: r in the interface, helixforge remove
 ```
+
+Whether an entry is installed is asked of the package manager (`pacman -Q`,
+`dpkg-query`, `rpm -q` and the like) for its own packages, then of Flatpak.
+Only when none of them is installed does `binary` count, so a tool installed
+through Nix, Home Manager or a download is not installed twice. An entry
+that replaces another package names it in `conflicts` (WINE Staging has
+`conflicts = ["wine"]`): when that package is installed, the plan says it
+will be replaced instead of taking the entry as installed.
 
 ```toml
 [script]                         # scripts/installers/system-report.sh, run from its directory
@@ -162,9 +170,10 @@ Flathub)`). When a source fails, or finishes without the package being
 installed, the run says so and tries the next one; a source whose tool is
 missing is skipped. A command stopped with `Ctrl-C` stops the run instead.
 
-After a run, HelixForge checks each package step: an install passes when the
-entry's program is on the PATH, its package manager lists the package, or
-its Flatpak is installed; a removal passes when the package is gone. The
+After a run, HelixForge checks each package step: an install passes when its
+package manager lists one of the entry's packages or its Flatpak is
+installed (the command counts only where nothing can be asked, as on Solus);
+a removal passes when the package is gone. The
 running window's title says `FINISHED · VERIFIED`, the command line prints a
 `Verified:` line for each package, and the history records `exit 0,
 verified`. A run whose program succeeded but whose package cannot be found

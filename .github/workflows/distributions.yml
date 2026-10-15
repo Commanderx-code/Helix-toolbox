@@ -93,10 +93,11 @@ jobs:
           yes | bin/helixforge run htop ripgrep --yes | tee run.txt
           command -v htop
           command -v rg
-          grep -q '^Verified: htop: htop is on the PATH' run.txt
-          grep -q '^Verified: Ripgrep: rg is on the PATH' run.txt
+          # Verified by the package manager, not by the command on the PATH.
+          grep -qE '^Verified: htop: (pacman|dpkg|dnf) lists htop' run.txt
+          grep -qE '^Verified: Ripgrep: (pacman|dpkg|dnf) lists ripgrep' run.txt
           bin/helixforge plan developer-basics | tee plan.txt
-          grep -q 'already installed (rg is on the PATH)' plan.txt
+          grep -qE 'Ripgrep: already installed \((pacman|dpkg|dnf) lists ripgrep\)' plan.txt
           bin/helixforge history --limit 1 | grep -q 'ok .*exit 0, verified'
       - name: WINE and gaming packages the catalog names exist here
         run: |

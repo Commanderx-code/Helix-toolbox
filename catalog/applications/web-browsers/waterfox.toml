@@ -4,6 +4,6 @@ flags = "FI"
 order = 111
 
 [package]
-binary = "net.waterfox.waterfox"
+binary = "waterfox"
 aur = "waterfox-bin"
 flatpak = "net.waterfox.waterfox"

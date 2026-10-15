@@ -83,9 +83,16 @@ more, or a kill from the interface, is recorded as interrupted, never as
 success.
 
 Inside a package step the program tries each `Source` until one exits 0 and
-leaves the package installed: the program on the PATH, or the source's
-`Probe` (`pacman -Q`, `dpkg-query`, `rpm -q`, `apk info -e`, `xbps-query`, or
-the Flatpak's directory). A source whose tools are missing is skipped; an
+leaves the package installed, as the source's `Probe` says (`pacman -Q`,
+`dpkg-query`, `rpm -q`, `apk info -e`, `xbps-query`, or the Flatpak's
+directory); only a source without a probe falls back to the entry's command
+on the PATH. Before planning, `package_state()` asks the same probes about
+the entry's own packages, then about the packages it `conflicts` with, and
+only then whether its optional `binary` is on the PATH: `Installed`,
+`OnPath` (an install HelixForge did not make, such as Nix's) or `Absent`
+with the installed packages it would replace. Removal and verification use
+the same order. `Machine` carries the two questions so tests can answer
+them. A source whose tools are missing is skipped; an
 exit status of 128 or more ends the run. When the program succeeds,
 `verify()` asks the same questions from Rust, and the `Finished` result,
 outcome plus checks, is what the history records. A package step whose first

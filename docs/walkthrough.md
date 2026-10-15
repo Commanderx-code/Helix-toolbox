@@ -191,7 +191,7 @@ WINE for running Windows programs, and the Proton builds and compatibility tools
 - **Proton CachyOS**: CachyOS's Proton build for Steam, with extra fixes and optimisations (the Steam Linux Runtime build). Choose it under a game's Properties, Compatibility in Steam. Arch only, from Chaotic-AUR or the AUR (proton-cachyos-slr).
 - **Protontricks**: Winetricks for Steam's Proton games: install Windows components and change settings in a game's prefix. Debian has it only in contrib; Flathub is the fallback.
 - **WINE**: Runs Windows programs on Linux. The distribution's own build; WINE Staging and WINE Meta are alternatives on Arch and Garuda.
-- **WINE Staging**: WINE with the staging patches, newer fixes that are not yet in WINE itself. It replaces WINE, so remove WINE first; while WINE is installed this shows as already installed. Arch only.
+- **WINE Staging**: WINE with the staging patches, newer fixes that are not yet in WINE itself. It replaces WINE: when WINE is installed, pacman asks before removing it. Arch only.
 - **WINE Meta**: Garuda's meta-package for WINE: WINE with Gecko, Mono, Winetricks, WineASIO and the libraries Windows games commonly need. Garuda only.
 - **Winetricks**: Installs Windows components (fonts, runtimes, DirectX pieces) and changes settings in WINE prefixes. Debian has it only in contrib.
 

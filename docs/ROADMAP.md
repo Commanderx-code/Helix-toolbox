@@ -123,10 +123,24 @@ Remaining before the next phase:
       Flathub
 
 Found while doing it: seven package entries (Meld, Slack, Zoom, ZapZap, WPS
-Office, Waterfox, Zen Browser) give their Flatpak ID as `binary`, so a
-native or AUR install of them is not seen as installed before a run.
-Verification asks the package manager as well, so it is not misled; the
-`binary` values themselves are still to be corrected.
+Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
+"Installed state from package identity" below.
+
+## Installed state from package identity (done)
+
+- [x] Whether a package entry is installed comes from its own packages (the
+      family's, the AUR's on Arch, its Flatpak), asked of the package manager
+      and Flatpak, not from a command on the PATH; plans, removals and
+      verification all ask in that order
+- [x] `conflicts` names the packages an entry replaces: WINE Staging is no
+      longer taken as installed because WINE's `wine` command is on the
+      PATH, and the plan says WINE will be replaced
+- [x] `binary` is optional and only recognises installs made another way
+      (Nix, Home Manager, a download); the seven Flatpak IDs became the real
+      commands, and the compatibility tools and WINE Meta, which add none,
+      have none
+- [x] The Install Plan screen keeps its plan for a few seconds and drops it
+      after a run, since planning now asks the package manager
 
 ## Logo and banner (done)
 

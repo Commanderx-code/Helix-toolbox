@@ -9,8 +9,11 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use helixforge_catalog::Catalog;
 use helixforge_core::{Action, Entry, Item, NativeAction};
-use helixforge_engine::{InheritedRunner, Plan, execute, history, plan, plan_removal, run_native};
-use helixforge_platform::{LinuxInfo, binary_exists};
+use helixforge_engine::{
+    InheritedRunner, Machine, PackageState, Plan, execute, history, package_state, plan,
+    plan_removal, run_native,
+};
+use helixforge_platform::LinuxInfo;
 use std::{
     io::{self, BufRead, IsTerminal, Write},
     path::PathBuf,
@@ -163,16 +166,23 @@ fn main() -> Result<()> {
                     packages,
                     aur,
                     flatpak,
+                    conflicts,
                     removable,
                 } => {
-                    println!(
-                        "Kind: package, provides {binary} ({})",
-                        if binary_exists(binary) {
-                            "installed"
-                        } else {
-                            "not installed"
+                    let state = match package_state(entry, &platform, Machine::real()) {
+                        Some(PackageState::Installed(found)) => format!("installed: {found}"),
+                        Some(PackageState::OnPath(found)) => {
+                            format!("installed some other way: {found}")
                         }
-                    );
+                        Some(PackageState::Absent { replaces }) if !replaces.is_empty() => {
+                            format!("not installed; would replace {}", replaces.join(", "))
+                        }
+                        _ => "not installed".to_string(),
+                    };
+                    println!("Kind: package ({state})");
+                    if let Some(binary) = binary {
+                        println!("  Command: {binary}");
+                    }
                     for (family, name) in packages.all() {
                         if let Some(name) = name {
                             println!("  {family}: {name}");
@@ -183,6 +193,9 @@ fn main() -> Result<()> {
                     }
                     if let Some(flatpak) = flatpak {
                         println!("  Flathub, for other families: {flatpak}");
+                    }
+                    if !conflicts.is_empty() {
+                        println!("  Replaces: {}", conflicts.join(", "));
                     }
                     if *removable {
                         println!("Removable: helixforge remove {}", entry.id);

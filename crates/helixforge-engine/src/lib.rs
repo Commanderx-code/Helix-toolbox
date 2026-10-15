@@ -56,8 +56,8 @@ pub enum Step {
     Package {
         id: String,
         name: String,
-        /// The executable the package provides.
-        binary: String,
+        /// A command the package provides, asked only where no probe can.
+        binary: Option<String>,
         sources: Vec<Source>,
         removal: bool,
     },
@@ -189,8 +189,24 @@ impl Probe {
         }
     }
 
+    /// What answers the probe, for a sentence saying it did not.
+    fn subject(&self) -> String {
+        match self {
+            Probe::Package {
+                manager: PackageManager::Debian,
+                name,
+            } => format!("dpkg ({name})"),
+            Probe::Package { manager, name } => format!("{} ({name})", manager.executable()),
+            Probe::Flatpak(id) => format!("Flatpak ({id})"),
+        }
+    }
+
     pub fn describe(&self) -> String {
         match self {
+            Probe::Package {
+                manager: PackageManager::Debian,
+                name,
+            } => format!("dpkg lists {name}"),
             Probe::Package { manager, name } => {
                 format!("{} lists {name}", manager.executable())
             }
@@ -321,16 +337,136 @@ impl Plan {
     }
 }
 
+/// The questions planning asks the machine, so tests can answer them.
+#[derive(Clone, Copy)]
+pub struct Machine<'a> {
+    /// Whether a package manager or Flatpak lists a package as installed.
+    pub holds: &'a dyn Fn(&Probe) -> bool,
+    /// Whether a command is on the PATH.
+    pub on_path: &'a dyn Fn(&str) -> bool,
+}
+
+impl Machine<'static> {
+    /// This machine.
+    pub fn real() -> Self {
+        Machine {
+            holds: &|probe: &Probe| probe.holds(),
+            on_path: &binary_exists,
+        }
+    }
+}
+
+/// How a package entry stands on a machine.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PackageState {
+    /// One of its own packages is installed; how it was found.
+    Installed(String),
+    /// None of its packages is, but its command is on the PATH from another
+    /// install (Nix, Home Manager, a download).
+    OnPath(String),
+    /// Not installed. `replaces` lists the installed packages it conflicts
+    /// with, which installing it would replace.
+    Absent { replaces: Vec<String> },
+}
+
+/// The probes for an entry's own packages on this machine: the family's
+/// package, on Arch its AUR package, and its Flatpak.
+fn own_probes(
+    packages: &helixforge_core::PackageNames,
+    aur: Option<&str>,
+    flatpak: Option<&str>,
+    manager: Option<PackageManager>,
+) -> Vec<Probe> {
+    let mut probes = Vec::new();
+    if let Some(manager) = manager {
+        probes.extend(
+            packages
+                .for_manager(manager)
+                .and_then(|name| Probe::package(manager, name)),
+        );
+        if manager == PackageManager::Arch {
+            probes.extend(aur.and_then(|name| Probe::package(manager, name)));
+        }
+    }
+    probes.extend(flatpak.map(|id| Probe::Flatpak(id.to_string())));
+    probes
+}
+
+/// How a package entry stands: its own packages first, then the packages it
+/// conflicts with, and its command only when neither is installed. None for
+/// an entry that is not a package.
+pub fn package_state(
+    entry: &Entry,
+    platform: &LinuxInfo,
+    machine: Machine,
+) -> Option<PackageState> {
+    let Action::Package {
+        binary,
+        packages,
+        aur,
+        flatpak,
+        conflicts,
+        ..
+    } = &entry.action
+    else {
+        return None;
+    };
+    let probes = own_probes(
+        packages,
+        aur.as_deref(),
+        flatpak.as_deref(),
+        platform.manager,
+    );
+    if let Some(found) = probes.iter().find(|probe| (machine.holds)(probe)) {
+        return Some(PackageState::Installed(found.describe()));
+    }
+    let replaces: Vec<String> = match platform.manager {
+        Some(manager) => conflicts
+            .iter()
+            .filter(|name| {
+                valid_package_name(name)
+                    && Probe::package(manager, name).is_some_and(|probe| (machine.holds)(&probe))
+            })
+            .cloned()
+            .collect(),
+        None => Vec::new(),
+    };
+    if replaces.is_empty()
+        && let Some(binary) = binary
+        && (machine.on_path)(binary)
+    {
+        return Some(PackageState::OnPath(format!("{binary} is on the PATH")));
+    }
+    Some(PackageState::Absent { replaces })
+}
+
 /// Plan one or more entries. Profiles expand into their members; a package
-/// whose executable is already on the PATH becomes a note instead of a step.
+/// that is already installed becomes a note instead of a step.
 pub fn plan<'a>(
     entries: impl IntoIterator<Item = &'a Entry>,
     platform: &LinuxInfo,
     lookup: &dyn Fn(&str) -> Option<&'a Entry>,
 ) -> Result<Plan, EngineError> {
+    plan_with(entries, platform, lookup, Machine::real())
+}
+
+/// `plan` with the machine's answers supplied.
+pub fn plan_with<'a>(
+    entries: impl IntoIterator<Item = &'a Entry>,
+    platform: &LinuxInfo,
+    lookup: &dyn Fn(&str) -> Option<&'a Entry>,
+    machine: Machine,
+) -> Result<Plan, EngineError> {
     let mut result = Plan::default();
     for entry in entries {
-        add_entry(entry, platform, lookup, &mut result, &mut Vec::new())?;
+        add_entry(
+            entry,
+            platform,
+            lookup,
+            machine,
+            &mut result,
+            &mut Vec::new(),
+        )?;
     }
     result.requirements.sort();
     result.requirements.dedup();
@@ -347,6 +483,7 @@ fn add_entry<'a>(
     entry: &'a Entry,
     platform: &LinuxInfo,
     lookup: &dyn Fn(&str) -> Option<&'a Entry>,
+    machine: Machine,
     into: &mut Plan,
     trail: &mut Vec<String>,
 ) -> Result<(), EngineError> {
@@ -358,10 +495,20 @@ fn add_entry<'a>(
             flatpak,
             ..
         } => {
-            if let Some(found) = installed(binary, flatpak.as_deref()) {
-                into.notes
-                    .push(format!("{}: already installed ({found})", entry.name));
-                return Ok(());
+            match package_state(entry, platform, machine) {
+                Some(PackageState::Installed(found) | PackageState::OnPath(found)) => {
+                    into.notes
+                        .push(format!("{}: already installed ({found})", entry.name));
+                    return Ok(());
+                }
+                Some(PackageState::Absent { replaces }) if !replaces.is_empty() => {
+                    into.notes.push(format!(
+                        "{}: replaces {}, which is installed; the package manager asks before removing it",
+                        entry.name,
+                        replaces.join(", ")
+                    ));
+                }
+                _ => {}
             }
             let sources = install_sources(
                 entry,
@@ -415,7 +562,7 @@ fn add_entry<'a>(
             for member in entries {
                 let found = lookup(member)
                     .ok_or_else(|| EngineError::UnknownMember(entry.id.clone(), member.clone()))?;
-                add_entry(found, platform, lookup, into, trail)?;
+                add_entry(found, platform, lookup, machine, into, trail)?;
             }
             trail.pop();
             return Ok(());
@@ -473,16 +620,6 @@ fn words(base: Vec<&str>, extra: &[&str]) -> Vec<String> {
         .chain(extra.iter().copied())
         .map(str::to_string)
         .collect()
-}
-
-/// Where an installed package was found: its executable on the PATH, or its
-/// Flatpak in the system or user installation.
-fn installed(binary: &str, flatpak: Option<&str>) -> Option<String> {
-    if binary_exists(binary) {
-        return Some(format!("{binary} is on the PATH"));
-    }
-    let id = flatpak?;
-    flatpak_installed_in(&flatpak_roots(), id).then(|| format!("{id} is installed from Flathub"))
 }
 
 /// Where Flatpak keeps installed applications: the system's and the user's.
@@ -579,11 +716,21 @@ fn install_sources(
 }
 
 /// Plan removing package entries. An entry is removed the way it is found
-/// installed: its Flatpak, else the family's package, else on Arch the AUR
-/// package with pacman. Entries that are not installed become notes.
+/// installed: its Flatpak, the family's package or, on Arch, its AUR package
+/// with pacman. Entries that are not installed become notes, as do entries
+/// found only by their command, which HelixForge did not install.
 pub fn plan_removal<'a>(
     entries: impl IntoIterator<Item = &'a Entry>,
     platform: &LinuxInfo,
+) -> Result<Plan, EngineError> {
+    plan_removal_with(entries, platform, Machine::real())
+}
+
+/// `plan_removal` with the machine's answers supplied.
+pub fn plan_removal_with<'a>(
+    entries: impl IntoIterator<Item = &'a Entry>,
+    platform: &LinuxInfo,
+    machine: Machine,
 ) -> Result<Plan, EngineError> {
     let mut result = Plan::default();
     for entry in entries {
@@ -593,6 +740,7 @@ pub fn plan_removal<'a>(
             aur,
             flatpak,
             removable,
+            ..
         } = &entry.action
         else {
             return Err(EngineError::NotRemovable(entry.id.clone()));
@@ -600,42 +748,65 @@ pub fn plan_removal<'a>(
         if !removable {
             return Err(EngineError::NotRemovable(entry.id.clone()));
         }
-        let source = if let Some(id) = flatpak
+        let probes = own_probes(
+            packages,
+            aur.as_deref(),
+            flatpak.as_deref(),
+            platform.manager,
+        );
+        let found = probes.into_iter().find(|probe| (machine.holds)(probe));
+        let on_path = binary
             .as_deref()
-            .filter(|id| flatpak_installed_in(&flatpak_roots(), id))
-        {
-            Source {
+            .is_some_and(|binary| (machine.on_path)(binary));
+        let source = match found {
+            Some(Probe::Flatpak(id)) => Source {
                 label: "Flathub".to_string(),
-                commands: vec![words(vec!["sudo", "flatpak", "uninstall"], &[id])],
+                commands: vec![words(vec!["sudo", "flatpak", "uninstall"], &[&id])],
                 requires: vec!["flatpak".to_string(), "sudo".to_string()],
-                probe: Some(Probe::Flatpak(id.to_string())),
+                probe: Some(Probe::Flatpak(id)),
+            },
+            Some(Probe::Package { manager, name }) => {
+                if !valid_package_name(&name) {
+                    return Err(EngineError::Invalid(entry.id.clone()));
+                }
+                Source {
+                    label: manager.executable().to_string(),
+                    commands: vec![words(manager.remove_command(), &[&name])],
+                    requires: vec![manager.executable().to_string(), "sudo".to_string()],
+                    probe: Some(Probe::Package { manager, name }),
+                }
             }
-        } else if !binary_exists(binary) {
-            result
-                .notes
-                .push(format!("{}: not installed, nothing to remove", entry.name));
-            continue;
-        } else {
-            let manager = platform.manager.ok_or(EngineError::UnsupportedPlatform)?;
-            let package = packages.for_manager(manager).or(match manager {
-                PackageManager::Arch => aur.as_deref(),
-                _ => None,
-            });
-            let Some(package) = package else {
+            // Solus cannot be asked; there the command stands in for its package.
+            None if on_path
+                && platform.manager == Some(PackageManager::Solus)
+                && packages.solus.is_some() =>
+            {
+                let name = packages.solus.as_deref().unwrap_or_default();
+                if !valid_package_name(name) {
+                    return Err(EngineError::Invalid(entry.id.clone()));
+                }
+                Source {
+                    label: PackageManager::Solus.executable().to_string(),
+                    commands: vec![words(PackageManager::Solus.remove_command(), &[name])],
+                    requires: vec![
+                        PackageManager::Solus.executable().to_string(),
+                        "sudo".to_string(),
+                    ],
+                    probe: None,
+                }
+            }
+            None if on_path => {
                 result.notes.push(format!(
                     "{}: installed, but not by a package HelixForge knows; remove it the way it was installed",
                     entry.name
                 ));
                 continue;
-            };
-            if !valid_package_name(package) {
-                return Err(EngineError::Invalid(entry.id.clone()));
             }
-            Source {
-                label: manager.executable().to_string(),
-                commands: vec![words(manager.remove_command(), &[package])],
-                requires: vec![manager.executable().to_string(), "sudo".to_string()],
-                probe: Probe::package(manager, package),
+            None => {
+                result
+                    .notes
+                    .push(format!("{}: not installed, nothing to remove", entry.name));
+                continue;
             }
         };
         result.privileged = true;
@@ -697,7 +868,7 @@ pub fn shell_program(plan: &Plan, lib_dir: &Path, this: &Path) -> String {
                 sources,
                 removal,
                 ..
-            } => package_program(name, binary, sources, *removal),
+            } => package_program(name, binary.as_deref(), sources, *removal),
             Step::Script {
                 file,
                 program,
@@ -733,7 +904,7 @@ pub fn shell_program(plan: &Plan, lib_dir: &Path, this: &Path) -> String {
 /// The body of a package step. An install tries each source in turn until
 /// one succeeds and leaves the package installed; an interrupted command
 /// stops the run instead. A removal fails if the package is still there.
-fn package_program(name: &str, binary: &str, sources: &[Source], removal: bool) -> String {
+fn package_program(name: &str, binary: Option<&str>, sources: &[Source], removal: bool) -> String {
     let commands = |source: &Source, indent: &str| {
         source
             .commands
@@ -742,12 +913,18 @@ fn package_program(name: &str, binary: &str, sources: &[Source], removal: bool) 
             .collect::<Vec<_>>()
             .join(" &&\n")
     };
-    let on_path = format!("command -v {} >/dev/null 2>&1", quote(binary));
+    // The package manager's answer; the command only where it cannot give one.
+    let on_path = binary.map(|binary| format!("command -v {} >/dev/null 2>&1", quote(binary)));
     if removal {
         let Some(source) = sources.first() else {
             return "exit 1".to_string();
         };
-        let present = source.probe.as_ref().map(Probe::shell).unwrap_or(on_path);
+        let present = source
+            .probe
+            .as_ref()
+            .map(Probe::shell)
+            .or(on_path)
+            .unwrap_or_else(|| "false".to_string());
         return format!(
             "{}\nhf_rc=$?\n[ \"$hf_rc\" -eq 0 ] || exit \"$hf_rc\"\n\
              if {present}; then\n  printf 'HelixForge: %s is still installed\\n' {}\n  exit 1\nfi\n\
@@ -769,9 +946,10 @@ fn package_program(name: &str, binary: &str, sources: &[Source], removal: bool) 
                 .collect::<Vec<_>>()
                 .join(" && ")
         };
-        let installed = match &source.probe {
-            Some(probe) => format!("{{ {on_path} || {}; }}", probe.shell()),
-            None => on_path.clone(),
+        let installed = match (&source.probe, &on_path) {
+            (Some(probe), _) => probe.shell(),
+            (None, Some(on_path)) => on_path.clone(),
+            (None, None) => "true".to_string(),
         };
         let label = quote(&source.label);
         let trying = if index == 0 {
@@ -876,6 +1054,8 @@ pub fn verify_with(
         else {
             continue;
         };
+        let on_path = |binary: &Option<String>| binary.as_deref().is_some_and(on_path);
+        let shown = binary.as_deref().unwrap_or("its command");
         let check = if *removal {
             let probe = sources.first().and_then(|source| source.probe.as_ref());
             let still = match probe {
@@ -887,34 +1067,53 @@ pub fn verify_with(
                 passed: !still,
                 detail: match (still, probe) {
                     (true, Some(probe)) => format!("still installed: {}", probe.describe()),
-                    (true, None) => format!("still installed: {binary} is on the PATH"),
+                    (true, None) => format!("still installed: {shown} is on the PATH"),
                     (false, _) if on_path(binary) => {
-                        format!("removed; {binary} is still on the PATH from another install")
+                        format!("removed; {shown} is still on the PATH from another install")
                     }
                     (false, _) => "removed".to_string(),
                 },
             }
-        } else if on_path(binary) {
-            Check {
-                name: name.clone(),
-                passed: true,
-                detail: format!("{binary} is on the PATH"),
-            }
-        } else if let Some(probe) = sources
-            .iter()
-            .filter_map(|source| source.probe.as_ref())
-            .find(|probe| holds(probe))
-        {
-            Check {
-                name: name.clone(),
-                passed: true,
-                detail: probe.describe(),
-            }
         } else {
-            Check {
-                name: name.clone(),
-                passed: false,
-                detail: format!("not found after the run: {binary} is not on the PATH"),
+            // Its own packages answer; the command only where none can.
+            let probes: Vec<&Probe> = sources
+                .iter()
+                .filter_map(|source| source.probe.as_ref())
+                .collect();
+            match probes.iter().find(|probe| holds(probe)) {
+                Some(probe) => Check {
+                    name: name.clone(),
+                    passed: true,
+                    detail: probe.describe(),
+                },
+                None if probes.is_empty() && on_path(binary) => Check {
+                    name: name.clone(),
+                    passed: true,
+                    detail: format!("{shown} is on the PATH"),
+                },
+                None if probes.is_empty() && binary.is_none() => Check {
+                    name: name.clone(),
+                    passed: true,
+                    detail: "finished; nothing here can confirm it".to_string(),
+                },
+                None if probes.is_empty() => Check {
+                    name: name.clone(),
+                    passed: false,
+                    detail: format!("not found after the run: {shown} is not on the PATH"),
+                },
+                None => Check {
+                    name: name.clone(),
+                    passed: false,
+                    detail: format!(
+                        "not found after the run: {} {} not list it",
+                        probes
+                            .iter()
+                            .map(|probe| probe.subject())
+                            .collect::<Vec<_>>()
+                            .join(" and "),
+                        if probes.len() == 1 { "does" } else { "do" }
+                    ),
+                },
             }
         };
         checks.push(check);
@@ -1173,7 +1372,7 @@ mod tests {
             "sample",
             "I",
             Action::Package {
-                binary: "helixforge-nonexistent-binary-12345".into(),
+                binary: Some("helixforge-nonexistent-binary-12345".into()),
                 packages: PackageNames {
                     arch: Some("sample".into()),
                     debian: Some("sample-deb".into()),
@@ -1181,6 +1380,7 @@ mod tests {
                 },
                 aur: None,
                 flatpak: None,
+                conflicts: Vec::new(),
                 removable: true,
             },
         )
@@ -1214,13 +1414,14 @@ mod tests {
     fn aur_and_flatpak_routes_and_the_other_families() {
         let mut entry = package_entry();
         entry.action = Action::Package {
-            binary: "helixforge-nonexistent-binary-12345".into(),
+            binary: Some("helixforge-nonexistent-binary-12345".into()),
             packages: PackageNames {
                 suse: Some("sample-suse".into()),
                 ..Default::default()
             },
             aur: Some("sample-bin".into()),
             flatpak: Some("org.example.Sample".into()),
+            conflicts: Vec::new(),
             removable: false,
         };
         let suse = plan([&entry], &platform(Some(PackageManager::Suse)), &none).unwrap();
@@ -1259,32 +1460,166 @@ mod tests {
     }
 
     #[test]
+    fn installed_state_comes_from_packages_and_conflicts_before_commands() {
+        let arch = platform(Some(PackageManager::Arch));
+        let package = |name: &str, binary: Option<&str>, conflicts: &[&str]| {
+            entry(
+                name,
+                "I",
+                Action::Package {
+                    binary: binary.map(Into::into),
+                    packages: PackageNames {
+                        arch: Some(name.into()),
+                        ..Default::default()
+                    },
+                    aur: None,
+                    flatpak: Some(format!("org.example.{name}")),
+                    conflicts: conflicts.iter().map(|name| name.to_string()).collect(),
+                    removable: true,
+                },
+            )
+        };
+        let staging = package("wine-staging", None, &["wine"]);
+        let wine = package("wine", Some("wine"), &["wine-staging"]);
+        // Plain WINE installed: wine on the PATH, pacman lists wine.
+        let plain = Machine {
+            holds: &|probe| probe == &Probe::package(PackageManager::Arch, "wine").unwrap(),
+            on_path: &|binary| binary == "wine",
+        };
+        assert_eq!(
+            package_state(&staging, &arch, plain),
+            Some(PackageState::Absent {
+                replaces: vec!["wine".into()]
+            })
+        );
+        let planned = plan_with([&staging], &arch, &none, plain).unwrap();
+        assert_eq!(
+            planned.steps.len(),
+            1,
+            "staging is planned, not taken as installed"
+        );
+        assert_eq!(
+            planned.notes,
+            [
+                "WINE-STAGING: replaces wine, which is installed; the package manager asks before removing it"
+            ]
+        );
+        assert_eq!(
+            package_state(&wine, &arch, plain),
+            Some(PackageState::Installed("pacman lists wine".into()))
+        );
+        // Staging installed: its wine command does not make plain WINE installed.
+        let staged = Machine {
+            holds: &|probe| probe == &Probe::package(PackageManager::Arch, "wine-staging").unwrap(),
+            on_path: &|binary| binary == "wine",
+        };
+        assert_eq!(
+            package_state(&wine, &arch, staged),
+            Some(PackageState::Absent {
+                replaces: vec!["wine-staging".into()]
+            })
+        );
+        // From Nix or a download: no package listed, the command on the PATH.
+        let elsewhere = Machine {
+            holds: &|_| false,
+            on_path: &|binary| binary == "wine",
+        };
+        assert_eq!(
+            package_state(&wine, &arch, elsewhere),
+            Some(PackageState::OnPath("wine is on the PATH".into()))
+        );
+        let noted = plan_with([&wine], &arch, &none, elsewhere).unwrap();
+        assert!(noted.steps.is_empty());
+        assert_eq!(
+            noted.notes,
+            ["WINE: already installed (wine is on the PATH)"]
+        );
+        // Without a command, nothing on the PATH counts.
+        assert_eq!(
+            package_state(&staging, &arch, elsewhere),
+            Some(PackageState::Absent { replaces: vec![] })
+        );
+        // Its Flatpak counts on any family.
+        let flatpak = Machine {
+            holds: &|probe| matches!(probe, Probe::Flatpak(_)),
+            on_path: &|_| false,
+        };
+        assert_eq!(
+            package_state(&staging, &platform(Some(PackageManager::Fedora)), flatpak),
+            Some(PackageState::Installed(
+                "org.example.wine-staging is installed from Flathub".into()
+            ))
+        );
+        let script = entry(
+            "script",
+            "",
+            Action::Command {
+                line: "true".into(),
+            },
+        );
+        assert_eq!(package_state(&script, &arch, plain), None);
+    }
+
+    #[test]
     fn removal_follows_how_the_package_is_installed() {
         let mut present = package_entry();
         present.action = Action::Package {
-            binary: "sh".into(),
+            binary: Some("sh".into()),
             packages: PackageNames {
                 debian: Some("dash".into()),
                 ..Default::default()
             },
             aur: Some("sh-bin".into()),
             flatpak: None,
+            conflicts: Vec::new(),
             removable: true,
         };
-        let debian = plan_removal([&present], &platform(Some(PackageManager::Debian))).unwrap();
+        // Every package listed, and sh on the PATH.
+        let listed = Machine {
+            holds: &|_| true,
+            on_path: &|binary| binary == "sh",
+        };
+        let remove = |entry: &Entry, manager, machine| {
+            plan_removal_with([entry], &platform(Some(manager)), machine).unwrap()
+        };
+        let debian = remove(&present, PackageManager::Debian, listed);
         assert_eq!(debian.steps[0].display(), "sudo apt-get remove dash");
         assert_eq!(debian.steps[0].name(), "Remove SAMPLE");
         assert!(debian.privileged);
         assert_eq!(debian.risk, Risk::Medium);
-        let arch = plan_removal([&present], &platform(Some(PackageManager::Arch))).unwrap();
+        let arch = remove(&present, PackageManager::Arch, listed);
         assert_eq!(arch.steps[0].display(), "sudo pacman -R sh-bin");
-        let fedora = plan_removal([&present], &platform(Some(PackageManager::Fedora))).unwrap();
-        assert!(fedora.steps.is_empty());
-        assert!(fedora.notes[0].contains("not by a package"));
-        let absent =
-            plan_removal([&package_entry()], &platform(Some(PackageManager::Arch))).unwrap();
+        // Nothing listed: the command alone is someone else's install.
+        let unlisted = Machine {
+            holds: &|_| false,
+            on_path: &|binary| binary == "sh",
+        };
+        let other = remove(&present, PackageManager::Arch, unlisted);
+        assert!(other.steps.is_empty());
+        assert!(other.notes[0].contains("not by a package"));
+        let fedora = remove(&present, PackageManager::Fedora, listed);
+        assert!(fedora.steps.is_empty(), "Fedora has no package for it");
+        let nothing = Machine {
+            holds: &|_| false,
+            on_path: &|_| false,
+        };
+        let absent = remove(&package_entry(), PackageManager::Arch, nothing);
         assert!(absent.steps.is_empty());
         assert!(absent.notes[0].contains("not installed"));
+        // The Flatpak is found and removed as such.
+        let mut flatpak = package_entry();
+        if let Action::Package { flatpak: id, .. } = &mut flatpak.action {
+            *id = Some("org.example.Sample".into());
+        }
+        let only_flatpak = Machine {
+            holds: &|probe| matches!(probe, Probe::Flatpak(_)),
+            on_path: &|_| false,
+        };
+        let removed = remove(&flatpak, PackageManager::Arch, only_flatpak);
+        assert_eq!(
+            removed.steps[0].display(),
+            "sudo flatpak uninstall org.example.Sample"
+        );
         let mut fixed = package_entry();
         if let Action::Package { removable, .. } = &mut fixed.action {
             *removable = false;
@@ -1322,13 +1657,14 @@ mod tests {
             "shell",
             "I",
             Action::Package {
-                binary: "sh".into(),
+                binary: Some("sh".into()),
                 packages: PackageNames {
                     arch: Some("sh".into()),
                     ..Default::default()
                 },
                 aur: None,
                 flatpak: None,
+                conflicts: Vec::new(),
                 removable: true,
             },
         );
@@ -1570,7 +1906,7 @@ mod tests {
             steps: vec![Step::Package {
                 id: "sample".into(),
                 name: "Sample".into(),
-                binary: "hf-sample".into(),
+                binary: Some("hf-sample".into()),
                 sources: sources
                     .into_iter()
                     .map(|(label, line, requires)| Source {
@@ -1739,17 +2075,22 @@ mod tests {
             probe,
         };
         let listed = Probe::package(PackageManager::Arch, "meld").unwrap();
-        let step = |name: &str, binary: &str, removal: bool| Step::Package {
-            id: name.to_lowercase(),
-            name: name.into(),
-            binary: binary.into(),
-            sources: vec![source(Some(listed.clone()))],
-            removal,
+        let probed =
+            |name: &str, binary: &str, probe: Option<Probe>, removal: bool| Step::Package {
+                id: name.to_lowercase(),
+                name: name.into(),
+                binary: Some(binary.into()),
+                sources: vec![source(probe)],
+                removal,
+            };
+        let step = |name: &str, binary: &str, removal: bool| {
+            probed(name, binary, Some(listed.clone()), removal)
         };
         let plan = Plan {
             steps: vec![
-                step("Ripgrep", "rg", false),
-                step("Meld", "org.gnome.meld", false),
+                // Without a probe (Solus) the command is the only answer.
+                probed("Ripgrep", "rg", None, false),
+                step("Meld", "meld", false),
                 Step::Command {
                     id: "c".into(),
                     name: "C".into(),
@@ -1769,8 +2110,12 @@ mod tests {
         assert!(!checks[1].passed);
         assert_eq!(
             checks[1].detail,
-            "not found after the run: org.gnome.meld is not on the PATH"
+            "not found after the run: pacman (meld) does not list it"
         );
+        // A command from another install is no proof where the package
+        // manager can be asked.
+        let elsewhere = verify_with(&plan, &|_| false, &|_| true);
+        assert!(!elsewhere[1].passed);
         let finished = Finished {
             outcome: Outcome::Success,
             checks,
@@ -1778,7 +2123,7 @@ mod tests {
         assert!(!finished.succeeded());
         assert_eq!(
             finished.describe(),
-            "exit 0, not verified: Meld (not found after the run: org.gnome.meld is not on the PATH)"
+            "exit 0, not verified: Meld (not found after the run: pacman (meld) does not list it)"
         );
         let removal = Plan {
             steps: vec![step("Remove Meld", "meld", true)],
@@ -1829,7 +2174,7 @@ mod tests {
             steps: vec![Step::Package {
                 id: "p".into(),
                 name: "P".into(),
-                binary: "p".into(),
+                binary: Some("p".into()),
                 sources,
                 removal: false,
             }],

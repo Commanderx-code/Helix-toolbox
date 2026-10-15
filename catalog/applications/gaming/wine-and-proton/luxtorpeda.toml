@@ -8,8 +8,7 @@ matches = true
 check = "command_exists"
 values = ["pacman"]
 
-# A Steam compatibility tool adds no command; the package manager confirms it.
 [package]
-binary = "luxtorpeda-bin"
 aur = "luxtorpeda-bin"
+conflicts = ["luxtorpeda-git"]
 removable = true

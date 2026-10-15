@@ -122,11 +122,17 @@ pub enum Action {
     /// Install one package: the family's native package, else on Arch the
     /// AUR package through paru or yay, else the Flatpak from Flathub.
     Package {
-        /// The executable whose presence means the package is installed.
-        binary: String,
+        /// A command the package provides. Whether the entry is installed is
+        /// asked of the package manager and Flatpak first; the command only
+        /// recognises an install made some other way (Nix, a download) when
+        /// none of its packages, and none it conflicts with, is installed.
+        binary: Option<String>,
         packages: PackageNames,
         aur: Option<String>,
         flatpak: Option<String>,
+        /// Packages of the same family this one replaces, such as wine for
+        /// wine-staging: when one is installed, the plan says so.
+        conflicts: Vec<String>,
         /// Whether the entry offers removal as well.
         removable: bool,
     },

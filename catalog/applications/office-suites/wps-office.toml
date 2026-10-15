@@ -3,6 +3,6 @@ flags = "I"
 order = 104
 
 [package]
-binary = "com.wps.Office"
+binary = "wps"
 aur = "wps-office"
 flatpak = "com.wps.Office"

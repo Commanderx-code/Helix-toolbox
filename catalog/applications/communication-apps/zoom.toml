@@ -4,6 +4,6 @@ flags = "I"
 order = 108
 
 [package]
-binary = "us.zoom.Zoom"
+binary = "zoom"
 aur = "zoom"
 flatpak = "us.zoom.Zoom"
