@@ -55,30 +55,30 @@ impl RunningView {
         false
     }
 
-    fn record(&mut self, success: bool, result: &str) {
-        if self.recorded {
+    /// Write the history record once, when the window closes, so a saved log
+    /// is part of it.
+    fn record(&mut self) {
+        if self.recorded || !self.is_finished() {
             return;
         }
         self.recorded = true;
-        let _ = history::record(&self.entries, success, result, self.log.clone());
+        let (success, result) = match self.session.exit_status() {
+            Some(status) if status.success() => (true, "exit 0".to_string()),
+            Some(status) => (false, format!("exit {}", status.exit_code())),
+            None => (false, "could not start".to_string()),
+        };
+        let _ = history::record(&self.entries, success, &result, self.log.clone());
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, theme: Theme) {
         let (title, colour) = if self.is_finished() {
             match self.session.exit_status() {
-                Some(status) if status.success() => {
-                    self.record(true, "exit 0");
-                    (" FINISHED ".to_string(), theme.success())
-                }
-                Some(status) => {
-                    let result = format!("exit {}", status.exit_code());
-                    self.record(false, &result);
-                    (format!(" FAILED ({result}) "), theme.failure())
-                }
-                None => {
-                    self.record(false, "could not start");
-                    (" FAILED ".to_string(), theme.failure())
-                }
+                Some(status) if status.success() => (" FINISHED ".to_string(), theme.success()),
+                Some(status) => (
+                    format!(" FAILED (exit {}) ", status.exit_code()),
+                    theme.failure(),
+                ),
+                None => (" FAILED ".to_string(), theme.failure()),
             }
         } else {
             (" RUNNING ".to_string(), theme.focused())
@@ -112,12 +112,13 @@ impl RunningView {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.session.kill()
             }
-            KeyCode::Enter | KeyCode::Char('q') if self.is_finished() => return true,
-            KeyCode::Char('l') if self.is_finished() => {
+            KeyCode::Enter | KeyCode::Char('q') if self.is_finished() => {
+                self.record();
+                return true;
+            }
+            KeyCode::Char('l') if self.is_finished() && self.log.is_none() => {
                 if let Ok(path) = history::save_log(&self.session.output()) {
-                    self.log = Some(path.clone());
-                    // The record was written without a log; add one that names it.
-                    let _ = history::record(&self.entries, true, "log saved", Some(path));
+                    self.log = Some(path);
                 }
             }
             KeyCode::PageUp => self.scrollback += 10,
@@ -179,5 +180,11 @@ impl RunningView {
                 ],
             )
         }
+    }
+}
+
+impl Drop for RunningView {
+    fn drop(&mut self) {
+        self.record();
     }
 }
