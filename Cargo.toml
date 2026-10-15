@@ -11,13 +11,15 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 license = "MIT"
 
 [workspace.dependencies]
 anyhow = "1"
 clap = { version = "4.5", features = ["derive"] }
-crossterm = "0.29"
+# The poll(2) event source: the default edge-triggered one can leave a key
+# unread when it arrives together with a resize, until the next key.
+crossterm = { version = "0.29", features = ["use-dev-tty"] }
 ratatui = "0.30"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

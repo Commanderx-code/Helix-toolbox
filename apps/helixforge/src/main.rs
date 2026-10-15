@@ -26,6 +26,10 @@ use tui::theme::Theme;
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
+    /// Read the catalog and scripts from this directory instead of the copy
+    /// built into the program; for tests with a fixture catalog.
+    #[arg(long, global = true, hide = true, value_name = "DIR")]
+    catalog_dir: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -99,18 +103,31 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     logging::init();
     let platform = LinuxInfo::detect().context("HelixForge needs Linux with /etc/os-release")?;
+    let source = cli.catalog_dir;
+    let load = |validate: bool| -> Result<Catalog> {
+        match &source {
+            Some(directory) => Catalog::from_directory(directory, validate)
+                .with_context(|| format!("cannot load the catalog in {}", directory.display())),
+            None => Catalog::builtin(validate).context("cannot load the catalog"),
+        }
+    };
     match cli.command.unwrap_or(Command::Tui(TuiArgs::default())) {
         Command::Tui(args) => {
-            let catalog =
-                Catalog::builtin(!args.override_validation).context("cannot load the catalog")?;
-            tui::run(catalog, platform, args)
+            // Keys are read from the controlling terminal, not standard
+            // input, so `curl … | sh` still works.
+            if !io::stdout().is_terminal() || std::fs::File::open("/dev/tty").is_err() {
+                bail!(
+                    "the menu needs a terminal; run helixforge from one, or see helixforge --help for the commands that work without it"
+                );
+            }
+            tui::run(load(!args.override_validation)?, platform, args)
         }
         Command::System => {
             print!("{}", run_native(NativeAction::SystemReport, &platform));
             Ok(())
         }
         Command::List { all } => {
-            let catalog = Catalog::builtin(!all).context("cannot load the catalog")?;
+            let catalog = load(!all)?;
             for tab in &catalog.tabs {
                 println!("{}", tab.name);
                 list_items(&tab.items, 1);
@@ -118,7 +135,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::Info { id } => {
-            let catalog = Catalog::builtin(false)?;
+            let catalog = load(false)?;
             let entry = find(&catalog, &id)?;
             println!("{} ({})", entry.name, entry.id);
             if !entry.description.is_empty() {
@@ -171,18 +188,18 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::Plan { ids } => {
-            let catalog = Catalog::builtin(false)?;
+            let catalog = load(false)?;
             let planned = plan_ids(&catalog, &platform, &ids)?;
             print_plan(&planned);
             Ok(())
         }
         Command::Run { ids, dry_run, yes } => {
-            let catalog = Catalog::builtin(false)?;
+            let catalog = load(false)?;
             let planned = plan_ids(&catalog, &platform, &ids)?;
             confirm_and_run(&catalog, &planned, dry_run, yes, "RUN")
         }
         Command::Remove { ids, dry_run, yes } => {
-            let catalog = Catalog::builtin(false)?;
+            let catalog = load(false)?;
             let mut entries = Vec::new();
             for id in &ids {
                 entries.push(find(&catalog, id)?);
@@ -211,7 +228,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::Docgen { file } => {
-            let catalog = Catalog::builtin(false)?;
+            let catalog = load(false)?;
             std::fs::write(&file, docgen::walkthrough(&catalog.tabs))
                 .with_context(|| format!("cannot write {}", file.display()))?;
             Ok(())

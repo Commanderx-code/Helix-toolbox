@@ -76,7 +76,7 @@ Settings
   Enter / Space     change the selected setting
 
 Running window
-  Ctrl-C            stop                         Enter / q   close when finished
+  Ctrl-C            stop; again, kill what is left  Enter / q   close when finished
   l                 save the log                 Page up / down   scroll
 ";
 
@@ -1001,7 +1001,9 @@ impl App {
             }
             Some(Popup::Running(popup)) => {
                 if popup.handle_key(key) {
-                    self.popup = None;
+                    self.popup = popup
+                        .take_problem()
+                        .map(|problem| Popup::Text(TextPopup::new("Not recorded", problem, true)));
                     if self.screen == Screen::History {
                         self.reload_history();
                     }

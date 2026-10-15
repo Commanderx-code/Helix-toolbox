@@ -38,9 +38,11 @@ list, `Enter` opens a group or runs an entry, `Space` adds it to the install
 plan, `d` shows the description, `p` the script or command, `g` explains the
 flags column and `/` searches every area. The Install Plan shows what is
 queued with its risk and requirements; `Enter` runs it. Each run asks `[Y]`
-first and then runs in a terminal inside the window; `Ctrl-C` stops it, `l`
-saves its output, and History lists every run. `?` shows all keys and `q`
-quits.
+first and then runs in a terminal inside the window; `Ctrl-C` stops it and
+everything it started (if something ignores that, the window says so and a
+second `Ctrl-C` kills it), `l` saves its output, and History lists every run.
+`?` shows all keys and `q` quits. The menu needs a terminal; the commands
+below also work without one.
 
 From the command line:
 
@@ -122,8 +124,9 @@ values = ["sddm"]
 
 Scripts source the shared helpers with `. "$HELIXFORGE_LIB/common-script.sh"`.
 The catalog and scripts are embedded into the binary at build time and
-unpacked to a temporary directory when it starts, so scripts run as real
-files.
+unpacked to a private temporary directory when it starts, so scripts run as
+real files. The copy is removed on exit; one left behind by a HelixForge that
+was killed is removed the next time HelixForge starts.
 
 ## Plans
 
@@ -165,8 +168,12 @@ how a release is published from every tested revision.
 scripts/verify.sh
 ```
 
-runs the formatter, clippy, the tests, a release build and regenerates the
-walkthrough. The GitHub workflow runs the same.
+runs the formatter, clippy, the Rust tests (including the program driven in
+a pseudo-terminal against a fixture catalog), the installer tests,
+shellcheck, a fresh render of the dotfiles and Myfish exports, a release
+build and the walkthrough. The Checks workflow runs the same on every pull
+request. [docs/TESTING.md](docs/TESTING.md) describes the test layers and
+what they cannot cover.
 
 ## License
 

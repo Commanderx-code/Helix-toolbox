@@ -4,7 +4,9 @@
 //! under `scripts/installers/` by id, or keeps one beside its TOML file; the
 //! shared helpers live in `scripts/shared/`. Both trees are embedded into the
 //! binary and unpacked to a temporary directory when the application starts,
-//! so scripts are real files when they run.
+//! so scripts are real files when they run. Each unpacked copy holds a lock
+//! for as long as its process lives; copies left behind by a process that was
+//! killed are removed the next time HelixForge starts.
 
 use helixforge_core::{
     Action, Check, Entry, Group, Item, NativeAction, NixAction, PackageNames, Precondition, Tab,
@@ -15,7 +17,8 @@ use include_dir::{Dir, include_dir};
 use serde::Deserialize;
 use std::{
     collections::HashSet,
-    fs,
+    fs::{self, File},
+    os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
 };
 use thiserror::Error;
@@ -39,16 +42,93 @@ pub struct Catalog {
     /// The directory holding `catalog/` and `scripts/`.
     pub root: PathBuf,
     /// Keeps the unpacked trees alive while the catalog is used.
-    _unpacked: Option<tempfile::TempDir>,
+    _unpacked: Option<Unpacked>,
+}
+
+/// Prefix of the temporary directories the embedded trees are unpacked to.
+const UNPACK_PREFIX: &str = "helixforge-";
+/// The file inside an unpacked copy that its process keeps locked.
+const LOCK_FILE: &str = ".helixforge-lock";
+
+/// An unpacked copy of the embedded trees, removed when dropped.
+#[derive(Debug)]
+struct Unpacked {
+    // Dropped first, so the directory is removed while the lock is still held.
+    directory: tempfile::TempDir,
+    _lock: File,
+}
+
+impl Unpacked {
+    /// Make a locked, empty directory under `parent`. The lock file is locked
+    /// before it gets its name, so a sweep never sees it unlocked.
+    fn create(parent: &Path) -> std::io::Result<Self> {
+        let directory = tempfile::Builder::new()
+            .prefix(UNPACK_PREFIX)
+            .tempdir_in(parent)?;
+        let staging = directory.path().join(".helixforge-lock.new");
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&staging)?;
+        lock.try_lock()
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        fs::rename(&staging, directory.path().join(LOCK_FILE))?;
+        Ok(Self {
+            directory,
+            _lock: lock,
+        })
+    }
+
+    fn path(&self) -> &Path {
+        self.directory.path()
+    }
+}
+
+/// Remove unpacked copies under `parent` whose process has ended: they belong
+/// to this user, carry a lock file, and nobody holds the lock. Copies without
+/// a lock file, other users' copies and anything that is not a plain directory
+/// are left alone. Returns how many were removed.
+pub fn sweep_stale(parent: &Path) -> usize {
+    let Ok(listing) = fs::read_dir(parent) else {
+        return 0;
+    };
+    let uid = fs::metadata("/proc/self").map(|meta| meta.uid()).ok();
+    let mut removed = 0;
+    for item in listing.flatten() {
+        if !item
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with(UNPACK_PREFIX))
+        {
+            continue;
+        }
+        let path = item.path();
+        let Ok(meta) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if !meta.is_dir() || Some(meta.uid()) != uid {
+            continue;
+        }
+        // The directory is private to its owner, so the lock file is ours.
+        let Ok(lock) = File::open(path.join(LOCK_FILE)) else {
+            continue;
+        };
+        if lock.try_lock().is_ok() && fs::remove_dir_all(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
 }
 
 impl Catalog {
     /// Unpack the embedded catalog and read it. With `validate`, entries whose
     /// preconditions fail on this machine are left out.
     pub fn builtin(validate: bool) -> Result<Self, CatalogError> {
-        let directory = tempfile::Builder::new()
-            .prefix("helixforge-")
-            .tempdir()
+        let parent = std::env::temp_dir();
+        sweep_stale(&parent);
+        let directory = Unpacked::create(&parent)
             .map_err(|error| CatalogError::Io(PathBuf::from("temporary directory"), error))?;
         EMBEDDED_CATALOG
             .extract(directory.path().join("catalog"))
@@ -581,6 +661,49 @@ fn holds(condition: &Precondition) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_sweep_removes_copies_whose_process_ended_and_keeps_live_ones() {
+        let parent = tempfile::tempdir().unwrap();
+        let live = Unpacked::create(parent.path()).unwrap();
+        fs::write(live.path().join("data"), "x").unwrap();
+        // A copy whose process was killed: the lock file stays, nobody holds it.
+        let dead = Unpacked::create(parent.path()).unwrap();
+        let dead_path = dead.path().to_path_buf();
+        let kept = dead.directory.keep();
+        drop(dead._lock);
+        assert!(kept.join(LOCK_FILE).exists());
+        // Something else with the prefix and no lock file is not ours to remove.
+        let foreign = parent.path().join("helixforge-foreign");
+        fs::create_dir(&foreign).unwrap();
+        // Nor is a plain file with the prefix.
+        fs::write(parent.path().join("helixforge-file"), "x").unwrap();
+        assert_eq!(sweep_stale(parent.path()), 1);
+        assert!(!dead_path.exists());
+        assert!(live.path().join("data").exists());
+        assert!(foreign.exists());
+        assert!(parent.path().join("helixforge-file").exists());
+        let live_path = live.path().to_path_buf();
+        drop(live);
+        assert!(!live_path.exists());
+    }
+
+    #[test]
+    fn the_builtin_catalog_unpacks_into_a_locked_copy_that_is_removed_after_use() {
+        let catalog = Catalog::builtin(false).unwrap();
+        let root = catalog.root.clone();
+        assert!(root.join(LOCK_FILE).exists());
+        assert!(root.join("scripts/shared").is_dir());
+        // A sweep from another process must leave a copy in use alone.
+        assert!(
+            File::open(root.join(LOCK_FILE))
+                .unwrap()
+                .try_lock()
+                .is_err()
+        );
+        drop(catalog);
+        assert!(!root.exists());
+    }
 
     fn write(root: &Path, name: &str, text: &str) {
         let path = root.join(name);

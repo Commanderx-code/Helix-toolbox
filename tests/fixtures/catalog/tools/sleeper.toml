@@ -1,0 +1,5 @@
+name = "Sleeper"
+description = "Starts a long sleep and records its process id, so a test can stop it with Ctrl-C and check nothing is left running."
+
+[script]
+id = "sleeper"

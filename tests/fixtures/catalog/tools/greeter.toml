@@ -1,0 +1,5 @@
+name = "Greeter"
+description = "Asks for a name and greets it, so a test can type into a running entry."
+
+[script]
+id = "greeter"

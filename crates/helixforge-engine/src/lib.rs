@@ -696,6 +696,10 @@ pub fn execute_in(
         )
     {
         warn!(%error, "the run was not recorded");
+        eprintln!(
+            "HelixForge could not record this run in {}: {error}",
+            directory.display()
+        );
     }
     Ok(outcome)
 }

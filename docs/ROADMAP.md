@@ -54,6 +54,58 @@
 - [x] Retire Commander Toolbox: the dotfiles `toolbox` command opens
       HelixForge, and the old repository is archived
 
+## Phase 1: release stability and safe end-to-end testing (done)
+
+Reviewed on 2026-10-15 against release `helixforge-0eac13844ec2`, without
+running any entry on a real machine. `docs/TESTING.md` describes the layers.
+
+- [x] Local verification suite passes; it now also runs the installer tests,
+      shellcheck and a fresh render of the dotfiles and Myfish exports
+- [x] Checks, Distributions and Sync sources pass for the release commit; the
+      release is not a draft, targets that commit and carries the binary and
+      `SHA256SUMS`
+- [x] Release integrity: the checksum matches, the binary needs glibc 2.34,
+      `--version` and `--help` work
+- [x] The built program is driven in a pseudo-terminal against a fixture
+      catalog: navigation, search, install plan, confirmation, typing into a
+      run, `Ctrl-C`, history, resizing, and the command line
+- [x] The Checks workflow on pull requests runs the installer tests,
+      shellcheck and the source render, which only the release workflow ran
+      before (a shellcheck failure once reached `main` that way)
+
+Defects found and fixed:
+
+- Opening the menu without a terminal panicked (exit 101); it now says the
+  menu needs a terminal. It checks for a controlling terminal rather than
+  standard input, so `curl … | sh` keeps working.
+- A key pressed together with a terminal resize stayed unread until the next
+  key, so a `Ctrl-C` right after a resize did nothing. crossterm's default
+  event source is edge-triggered; HelixForge now uses its `poll(2)` source.
+- `Ctrl-C` signalled only the run's shell: a child ignoring the hangup kept
+  running while the window said INTERRUPTED. The whole process group is
+  signalled now, survivors are shown and recorded, and a second `Ctrl-C`
+  kills them.
+- A killed HelixForge left its unpacked catalog in `/tmp` for good. Copies
+  hold a lock now, and the next start removes copies nobody holds.
+- A run whose history could not be written was silently unrecorded; the
+  command line and the menu now say so.
+
+Remaining before the next phase:
+
+- **Scheduled source sync never observed.** The Sync sources workflow has run
+  only on pushes; no scheduled (`17,47 * * * *`) run has appeared yet. Watch
+  that one does; until then sources are adopted on pushes to `main`.
+- **A run is lost when HelixForge itself dies mid-run** (terminal closed,
+  killed): history is written when the run ends. Writing a "started" record
+  first and marking unmatched ones "did not finish" changes the history
+  format, so it waits for a decision.
+- **No real-machine or virtual-machine runs.** Boot, login-screen and desktop
+  entries, Flatpak installs, Nix entries and `sudo` prompts have no automated
+  test; containers cannot cover them.
+- **The command line confirms through standard input,** so
+  `curl … | sh -s -- run <entry>` cannot be confirmed; the menu is
+  unaffected.
+
 ## Milestone 5: graphical interface
 
 - Tauri 2 frontend on the same crates, with an embedded terminal panel for

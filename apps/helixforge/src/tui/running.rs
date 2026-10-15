@@ -19,6 +19,8 @@ pub struct RunningView {
     entries: Vec<(String, String)>,
     recorded: bool,
     log: Option<PathBuf>,
+    /// Why the history record or the log could not be written, if so.
+    problem: Option<String>,
     scrollback: usize,
     finish_drawn: bool,
 }
@@ -34,6 +36,7 @@ impl RunningView {
             entries: plan.entries(),
             recorded: false,
             log: None,
+            problem: None,
             scrollback: 0,
             finish_drawn: false,
         })
@@ -65,12 +68,25 @@ impl RunningView {
             .outcome()
             .unwrap_or_else(|| Outcome::CouldNotStart("unknown".into()));
         tracing::info!(outcome = outcome.describe(), "run finished");
-        let _ = history::record(
+        let mut result = outcome.describe();
+        let left = self.session.survivors();
+        if left > 0 {
+            result.push_str(&format!("; {left} process(es) left running"));
+        }
+        if let Err(error) = history::record(
             &self.entries,
             outcome.succeeded(),
-            &outcome.describe(),
+            &result,
             self.log.clone(),
-        );
+        ) {
+            tracing::warn!(%error, "the run was not recorded");
+            self.problem = Some(format!("The run was not recorded in the history: {error}"));
+        }
+    }
+
+    /// Why the run could not be recorded, once the window has closed.
+    pub fn take_problem(&mut self) -> Option<String> {
+        self.problem.take()
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, theme: Theme) {
@@ -87,10 +103,18 @@ impl RunningView {
         } else {
             (" RUNNING ".to_string(), theme.focused())
         };
-        let note = if self.is_finished() {
-            match &self.log {
-                Some(path) => format!(" Log saved to {} ", path.display()),
-                None => " Enter closes, l saves the log ".to_string(),
+        let left = if self.is_finished() && self.session.stop_requested() {
+            self.session.survivors()
+        } else {
+            0
+        };
+        let note = if left > 0 {
+            format!(" {left} process(es) of this run still running; Ctrl-C again kills them ")
+        } else if self.is_finished() {
+            match (&self.log, &self.problem) {
+                (_, Some(problem)) => format!(" {problem} "),
+                (Some(path), None) => format!(" Log saved to {} ", path.display()),
+                (None, None) => " Enter closes, l saves the log ".to_string(),
             }
         } else {
             " Ctrl-C stops the command ".to_string()
@@ -121,8 +145,9 @@ impl RunningView {
                 return true;
             }
             KeyCode::Char('l') if self.is_finished() && self.log.is_none() => {
-                if let Ok(path) = history::save_log(&self.session.output()) {
-                    self.log = Some(path);
+                match history::save_log(&self.session.output()) {
+                    Ok(path) => self.log = Some(path),
+                    Err(error) => self.problem = Some(format!("The log was not saved: {error}")),
                 }
             }
             KeyCode::PageUp => self.scrollback += 10,

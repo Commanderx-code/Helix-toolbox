@@ -22,4 +22,5 @@ tui-term = "0.3"
 vt100 = "0.16"
 
 [dev-dependencies]
+portable-pty = "0.9"
 tempfile = "3"

@@ -19,10 +19,24 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: Install shellcheck and fish
+        run: sudo apt-get update && sudo apt-get install -y shellcheck fish
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - name: Installer tests
+        run: python3 -B -m unittest discover -s tests/installers -v
+      - name: Shellcheck
+        run: |
+          shellcheck -x -P . scripts/shared/*.sh scripts/installers/*.sh scripts/installers/commander/*.sh \
+              tests/fixtures/scripts/shared/*.sh tests/fixtures/scripts/installers/*.sh start.sh
+          find scripts/installers -name '*.sh' -not -path '*/commander/*' -print0 | xargs -0 shellcheck -x -P . -S error
+      - name: Catalog matches the dotfiles and Myfish exports
+        run: |
+          python3 -B scripts/sync-sources.py --render
+          git diff --exit-code -- catalog scripts/installers/commander
       - run: cargo build --release -p helixforge
+      - run: target/release/helixforge --version
       - name: Walkthrough is current
         run: |
           target/release/helixforge docgen docs/walkthrough.md

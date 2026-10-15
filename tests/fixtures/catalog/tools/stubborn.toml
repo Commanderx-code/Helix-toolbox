@@ -1,0 +1,5 @@
+name = "Stubborn"
+description = "Starts a child that ignores the hangup a stop sends, so a test can check that a second Ctrl-C still stops it."
+
+[script]
+id = "stubborn"
