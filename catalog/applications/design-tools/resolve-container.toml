@@ -1,0 +1,13 @@
+name = "DaVinci Resolve - Davincibox"
+description = "Install DaVinci Resolve using Davincibox on Fedora, Arch, Debian, Ubuntu or their supported derivatives. Requires the official extracted Linux .run installer and a working GPU driver. Installs dependencies and a compatibility launcher; Free or licensed Studio. See docs/resolve.md for requirements and limitations."
+flags = "I PFM MP FM"
+multi_select = false
+order = 2
+
+[[preconditions]]
+matches = false
+check = "file_exists"
+values = ["/run/ostree-booted"]
+
+[script]
+id = "commander/resolve-container"

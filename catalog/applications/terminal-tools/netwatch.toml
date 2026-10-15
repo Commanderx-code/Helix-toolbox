@@ -1,0 +1,13 @@
+name = "NetWatch Network Dashboard"
+description = "Install pinned NetWatch through Nix on Linux x86_64. Ordinary monitoring is unprivileged; capture permissions remain a separate choice."
+flags = "FM MP"
+multi_select = false
+order = 2
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["nix", "git"]
+
+[script]
+id = "commander/netwatch"

@@ -17,52 +17,52 @@ they are brought across (see `THIRD_PARTY_NOTICES.md` once that happens).
 
 | Old entry | Old tab / group | HelixForge area | Status |
 | :--- | :--- | :--- | :--- |
-| DaVinci Resolve - Native | Applications Setup / Design Tools | Applications | planned |
-| DaVinci Resolve - Davincibox | Applications Setup / Design Tools | Applications | planned |
-| DaVinci Resolve Maintenance | Applications Setup / Design Tools | Applications | planned |
-| Commander Workstation Setup | Applications Setup | Applications | planned |
-| Myfish Fish (Native) | Applications Setup / Myfish Shell Setup | Applications | planned |
-| Myfish Bash (Native) | Applications Setup / Myfish Shell Setup | Applications | planned |
-| Myfish Zsh (Native) | Applications Setup / Myfish Shell Setup | Applications | planned |
-| Myfish Guided Setup | Applications Setup / Myfish Shell Setup | Applications | planned |
-| Commander Neovim Config | Applications Setup / Dotfiles | Applications | planned |
-| Commander Fastfetch Config | Applications Setup / Dotfiles | Applications | planned |
-| Commander Starship Config | Applications Setup / Dotfiles | Applications | planned |
-| Commander Konsole Config | Applications Setup / Dotfiles | Applications | planned |
-| Commander Ghostty Config | Applications Setup / Dotfiles | Applications | planned |
-| Zellij Terminal Sessions | Applications Setup / Dotfiles | Applications | planned |
-| NetWatch Network Dashboard | Applications Setup / Dotfiles | Applications | planned |
-| TFM Visual File Manager | Applications Setup / Dotfiles | Applications | planned |
-| Cassette Spotify Player | Applications Setup / Dotfiles | Applications | planned |
-| Commander GRUB Theme | Applications Setup / Grub Theme | Applications | planned |
-| CachyOS GRUB Theme | Applications Setup / Grub Theme | Applications | planned |
-| Catppuccin Mocha GRUB Theme | Applications Setup / Grub Theme | Applications | planned |
-| Dracula GRUB Theme | Applications Setup / Grub Theme | Applications | planned |
-| Tela GRUB Theme | Applications Setup / Grub Theme | Applications | planned |
-| Vimix GRUB Theme | Applications Setup / Grub Theme | Applications | planned |
-| CyberRe GRUB Theme | Applications Setup / Grub Theme | Applications | planned |
-| Cyberpunk GRUB Theme | Applications Setup / Grub Theme | Applications | planned |
-| Shodan GRUB Theme | Applications Setup / Grub Theme | Applications | planned |
-| Fallout GRUB Theme | Applications Setup / Grub Theme | Applications | planned |
-| DedSec GRUB Theme | Applications Setup / Grub Theme | Applications | planned |
-| Minegrub (Minecraft) GRUB Theme | Applications Setup / Grub Theme | Applications | planned |
-| BSOL GRUB Theme | Applications Setup / Grub Theme | Applications | planned |
-| Restore Default GRUB Appearance | Applications Setup / Grub Theme | Applications | planned |
-| Commander Boot Splash | Applications Setup / Boot Splash | Applications | planned |
-| Boot Splash Theme | Applications Setup / Boot Splash | Applications | planned |
-| Enable Boot Splash | Applications Setup / Boot Splash | Applications | planned |
-| Disable Boot Splash | Applications Setup / Boot Splash | Applications | planned |
-| CachyOS Limine Boot Menu | Applications Setup / Limine Boot Menu | Applications | planned |
-| Garuda Limine Boot Menu | Applications Setup / Limine Boot Menu | Applications | planned |
-| SDDM Theme | Applications Setup | Applications | planned |
-| AppArmor Setup and Status | Security | Security | planned |
-| Fedora SELinux Tools and Status | Security | Security | planned |
-| Commander Topgrade | System Setup | Maintenance | planned |
-| System Diagnostics | Utilities / Toolbox Maintenance | Maintenance | planned |
-| Config Backup Restore | Utilities / Toolbox Maintenance | Maintenance | planned |
-| Toolbox Updater | Utilities / Toolbox Maintenance | Maintenance | planned |
+| DaVinci Resolve - Native | Applications Setup / Design Tools | Applications | done: `scripts/installers/commander/`, same script and tests |
+| DaVinci Resolve - Davincibox | Applications Setup / Design Tools | Applications | done: `scripts/installers/commander/`, same script and tests |
+| DaVinci Resolve Maintenance | Applications Setup / Design Tools | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Commander Workstation Setup | Applications Setup | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Myfish Fish (Native) | Applications Setup / Myfish Shell Setup | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Myfish Bash (Native) | Applications Setup / Myfish Shell Setup | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Myfish Zsh (Native) | Applications Setup / Myfish Shell Setup | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Myfish Guided Setup | Applications Setup / Myfish Shell Setup | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Commander Neovim Config | Applications Setup / Dotfiles | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Commander Fastfetch Config | Applications Setup / Dotfiles | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Commander Starship Config | Applications Setup / Dotfiles | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Commander Konsole Config | Applications Setup / Dotfiles | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Commander Ghostty Config | Applications Setup / Dotfiles | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Zellij Terminal Sessions | Applications Setup / Dotfiles | Applications | done: `scripts/installers/commander/`, same script and tests |
+| NetWatch Network Dashboard | Applications Setup / Dotfiles | Applications | done: `scripts/installers/commander/`, same script and tests |
+| TFM Visual File Manager | Applications Setup / Dotfiles | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Cassette Spotify Player | Applications Setup / Dotfiles | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Commander GRUB Theme | Applications Setup / Grub Theme | Applications | done: `scripts/installers/commander/`, same script and tests |
+| CachyOS GRUB Theme | Applications Setup / Grub Theme | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Catppuccin Mocha GRUB Theme | Applications Setup / Grub Theme | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Dracula GRUB Theme | Applications Setup / Grub Theme | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Tela GRUB Theme | Applications Setup / Grub Theme | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Vimix GRUB Theme | Applications Setup / Grub Theme | Applications | done: `scripts/installers/commander/`, same script and tests |
+| CyberRe GRUB Theme | Applications Setup / Grub Theme | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Cyberpunk GRUB Theme | Applications Setup / Grub Theme | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Shodan GRUB Theme | Applications Setup / Grub Theme | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Fallout GRUB Theme | Applications Setup / Grub Theme | Applications | done: `scripts/installers/commander/`, same script and tests |
+| DedSec GRUB Theme | Applications Setup / Grub Theme | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Minegrub (Minecraft) GRUB Theme | Applications Setup / Grub Theme | Applications | done: `scripts/installers/commander/`, same script and tests |
+| BSOL GRUB Theme | Applications Setup / Grub Theme | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Restore Default GRUB Appearance | Applications Setup / Grub Theme | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Commander Boot Splash | Applications Setup / Boot Splash | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Boot Splash Theme | Applications Setup / Boot Splash | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Enable Boot Splash | Applications Setup / Boot Splash | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Disable Boot Splash | Applications Setup / Boot Splash | Applications | done: `scripts/installers/commander/`, same script and tests |
+| CachyOS Limine Boot Menu | Applications Setup / Limine Boot Menu | Applications | done: `scripts/installers/commander/`, same script and tests |
+| Garuda Limine Boot Menu | Applications Setup / Limine Boot Menu | Applications | done: `scripts/installers/commander/`, same script and tests |
+| SDDM Theme | Applications Setup | Applications | done: `scripts/installers/commander/`, same script and tests |
+| AppArmor Setup and Status | Security | Security | done: `scripts/installers/commander/`, same script and tests |
+| Fedora SELinux Tools and Status | Security | Security | done: `scripts/installers/commander/`, same script and tests |
+| Commander Topgrade | System Setup | Maintenance | done: `scripts/installers/commander/`, same script and tests |
+| System Diagnostics | Utilities / Toolbox Maintenance | Maintenance | done: `scripts/installers/commander/`, same script and tests |
+| Config Backup Restore | Utilities / Toolbox Maintenance | Maintenance | done: `scripts/installers/commander/`, same script and tests |
+| Toolbox Updater | Utilities / Toolbox Maintenance | Maintenance | dropped: HelixForge updates through its releases (Milestone 3) |
 | Installation History | Utilities / Toolbox Maintenance | Maintenance | done (history command and record; a screen is planned) |
-| Driverless Printer Setup | Utilities / Printers | Maintenance | planned |
+| Driverless Printer Setup | Utilities / Printers | Maintenance | done: `scripts/installers/commander/`, same script and tests |
 
 ## General catalog
 
@@ -258,6 +258,7 @@ they are brought across (see `THIRD_PARTY_NOTICES.md` once that happens).
 | Nix operations | done (profile install, Home Manager switch); untested on a real Nix machine |
 | Profiles as reviewable plans | done |
 | Shared shell helpers (`common-script.sh`, `common-service-script.sh`) | done, under `scripts/shared/` |
+| Commander installer tests (Python) | done, under `tests/installers/`; the three menu-format tests were replaced by the catalog loader's own checks |
 | Dotfiles and Myfish source sync | planned |
 | Releases and the `start.sh` launcher | planned |
 | Dashboard, history and settings screens | planned (Milestone 2) |

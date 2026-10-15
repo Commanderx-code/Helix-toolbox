@@ -1,0 +1,8 @@
+name = "Zellij Terminal Sessions"
+description = "Install Zellij and create an optional Tokyo Night Storm preset. Preserve existing configuration; no automatic startup. Requires a distro package or an existing Zellij installation."
+flags = "I FM MP"
+multi_select = false
+order = 1
+
+[script]
+id = "commander/zellij"

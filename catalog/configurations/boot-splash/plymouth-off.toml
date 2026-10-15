@@ -1,0 +1,8 @@
+name = "Disable Boot Splash"
+description = "Remove 'splash' and 'rhgb' from the kernel command line in /etc/default/grub or /etc/default/limine and regenerate the boot menu, so the system boots with text output. Plymouth and its themes stay installed. Backups are created before changes."
+flags = "PFM"
+multi_select = false
+order = 4
+
+[script]
+id = "commander/plymouth-off"

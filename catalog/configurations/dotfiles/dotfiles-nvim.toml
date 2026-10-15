@@ -1,0 +1,8 @@
+name = "Commander Neovim Config"
+description = "Install your Neovim configuration from dotfiles with a backup of existing files. Install the application separately."
+flags = "I FM MP"
+multi_select = false
+order = 1
+
+[script]
+id = "commander/dotfiles-nvim"

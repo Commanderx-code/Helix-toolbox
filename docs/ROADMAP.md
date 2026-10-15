@@ -27,12 +27,15 @@
 - Settings: theme, confirmation, showing hidden entries (reloads the catalog)
 - Help popup with every key
 
-## Milestone 3: installer compatibility
+## Milestone 3: installer compatibility (in progress)
 
-- Bring the Commander installers across with their shared helpers and tests
-- Home Manager ownership protection as an engine check
-- Port the dotfiles and Myfish source synchronisation
-- Release workflow: static Linux x86_64 build, checksum, launcher
+- [x] Bring the Commander installers across with their shared helpers and
+      tests: 44 entries in Applications, Configurations, Helix Doctor,
+      Maintenance and Security, run through `HELIXFORGE_LIB`
+- [ ] Home Manager ownership protection as an engine check (today the
+      installers refuse symlink-managed files themselves)
+- [ ] Port the dotfiles and Myfish source synchronisation
+- [ ] Release workflow: static Linux x86_64 build, checksum, launcher
 
 ## Milestone 4: feature parity
 

@@ -1,0 +1,13 @@
+name = "Dracula GRUB Theme"
+description = "Install the dark Dracula theme from dracula/grub. Backups are created before changes; the regenerated menu is syntax-checked before replacing the current one."
+flags = "I PFM MP"
+multi_select = false
+order = 4
+
+[[preconditions]]
+matches = true
+check = "file_exists"
+values = ["/etc/default/grub"]
+
+[script]
+id = "commander/grub-dracula"

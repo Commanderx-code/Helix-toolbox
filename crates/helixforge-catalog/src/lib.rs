@@ -397,7 +397,8 @@ fn action_of(
     if let Some(script) = &entry.script {
         let file = match (&script.id, &script.path) {
             (Some(id), None) => {
-                if !valid_id(id) {
+                // A script id may name a subdirectory of installers/, one valid id per segment.
+                if id.is_empty() || !id.split('/').all(valid_id) {
                     return Err(CatalogError::Invalid(format!(
                         "{} names an invalid script id: {id}",
                         path.display()
@@ -707,6 +708,10 @@ mod tests {
                 "name = \"Native\"\n[native]\naction = \"format-disk\"\n",
             ),
             ("nix.toml", "name = \"Nix\"\n[nix]\n"),
+            (
+                "updir.toml",
+                "name = \"Updir\"\n[script]\nid = \"../etc/x\"\n",
+            ),
             (
                 "both.toml",
                 "name = \"Both\"\n[script]\nid = \"a\"\npath = \"b.sh\"\n",

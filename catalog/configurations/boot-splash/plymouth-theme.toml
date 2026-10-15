@@ -1,0 +1,13 @@
+name = "Boot Splash Theme"
+description = "Choose an installed Plymouth theme for the splash shown while the system starts, then rebuild the boot images with the distro's own tool (dracut-rebuild, dracut, mkinitcpio or update-initramfs). Kernel arguments are not changed."
+flags = "PFM"
+multi_select = false
+order = 2
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["plymouth-set-default-theme"]
+
+[script]
+id = "commander/plymouth-theme"

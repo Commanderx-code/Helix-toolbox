@@ -1,0 +1,8 @@
+name = "Commander Fastfetch Config"
+description = "Install your Fastfetch layout, automatic distro PNG logo and terminal-aware launcher and ImageMagick dependencies with backups. Installs Fastfetch when missing and checks image-backend support. Requires an image-capable terminal."
+flags = "I FM MP"
+multi_select = false
+order = 2
+
+[script]
+id = "commander/dotfiles-fastfetch"

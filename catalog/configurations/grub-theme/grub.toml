@@ -1,0 +1,13 @@
+name = "Garuda GRUB Theme"
+description = "Install the Garuda dr460nized GRUB theme that the dotfiles GRUB settings use, from the grub-theme-garuda-dr460nized package in the Garuda repositories. Back up existing settings and regenerate the current machine's GRUB menu while preserving kernel arguments."
+flags = "I PFM MP"
+multi_select = false
+order = 1
+
+[[preconditions]]
+matches = true
+check = "file_exists"
+values = ["/etc/default/grub"]
+
+[script]
+id = "commander/grub"

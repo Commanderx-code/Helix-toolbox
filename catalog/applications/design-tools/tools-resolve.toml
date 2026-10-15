@@ -1,0 +1,8 @@
+name = "DaVinci Resolve Maintenance"
+description = "Check native/container dependencies, inspect the Resolve container, repair backed-up launchers or remove the dedicated container after confirmation. Includes native uninstall guidance."
+flags = "FM RP"
+multi_select = false
+order = 3
+
+[script]
+id = "commander/tools-resolve"

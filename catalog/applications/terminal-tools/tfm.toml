@@ -1,0 +1,13 @@
+name = "TFM Visual File Manager"
+description = "Install the pinned TFM beta through Nix on Linux x86_64, with preview and Wayland clipboard helpers. Use Ghostty for image previews."
+flags = "FM MP"
+multi_select = false
+order = 3
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["nix", "git"]
+
+[script]
+id = "commander/tfm"

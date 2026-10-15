@@ -1,0 +1,13 @@
+name = "DedSec GRUB Theme"
+description = "Install DedSec from ChrisTitusTech/bootloader-themes at a pinned commit. Back up current settings and syntax-check the regenerated menu while preserving kernel arguments and boot timeout."
+flags = "I PFM MP"
+multi_select = false
+order = 11
+
+[[preconditions]]
+matches = true
+check = "file_exists"
+values = ["/etc/default/grub"]
+
+[script]
+id = "commander/grub-ctt-dedsec"

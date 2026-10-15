@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "myfish-fish",
+      "name": "Myfish Fish (Native)",
+      "description": "Install Myfish with Fish using your native package manager. The installer confirms configuration changes.",
+      "type": "builtin",
+      "handler": "myfish-fish"
+    },
+    {
+      "id": "myfish-bash",
+      "name": "Myfish Bash (Native)",
+      "description": "Install Myfish with Bash using your native package manager. The installer confirms configuration changes.",
+      "type": "builtin",
+      "handler": "myfish-bash"
+    },
+    {
+      "id": "myfish-zsh",
+      "name": "Myfish Zsh (Native)",
+      "description": "Install Myfish with Zsh using your native package manager. The installer confirms configuration changes.",
+      "type": "builtin",
+      "handler": "myfish-zsh"
+    },
+    {
+      "id": "myfish",
+      "name": "Myfish Guided Setup",
+      "description": "Choose native packages or Home Manager, then your shell and greeting. Use native packages on Fedora to preserve SELinux.",
+      "type": "builtin",
+      "handler": "myfish"
+    }
+  ]
+}

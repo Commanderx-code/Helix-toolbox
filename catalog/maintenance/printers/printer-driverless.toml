@@ -1,0 +1,13 @@
+name = "Driverless Printer Setup"
+description = "Install CUPS and network discovery, enable their services and add a compatible IPP Everywhere printer. Supports Fedora, Arch and Debian/Ubuntu on systemd; preserves existing queues."
+flags = "I MP SS PFM"
+multi_select = false
+order = 1
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["systemctl"]
+
+[script]
+id = "commander/printer-driverless"

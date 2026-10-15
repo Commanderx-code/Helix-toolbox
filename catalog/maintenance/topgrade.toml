@@ -1,0 +1,8 @@
+name = "Topgrade Updates"
+description = "Install your Topgrade configuration adapted to this distro, with backups and update confirmations. Optionally run updates afterward."
+flags = "I FM PFM MP"
+multi_select = false
+order = 1
+
+[script]
+id = "commander/topgrade"

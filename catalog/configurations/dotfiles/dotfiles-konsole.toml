@@ -1,0 +1,8 @@
+name = "Commander Konsole Config"
+description = "Install your Konsole configuration from dotfiles with a backup of existing files. Install the application separately."
+flags = "I FM MP"
+multi_select = false
+order = 4
+
+[script]
+id = "commander/dotfiles-konsole"

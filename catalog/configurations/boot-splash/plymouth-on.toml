@@ -1,0 +1,8 @@
+name = "Enable Boot Splash"
+description = "Install Plymouth, add 'splash' to the kernel command line in /etc/default/grub or, with the Limine entry tool as on CachyOS, /etc/default/limine (and the plymouth hook on mkinitcpio systems), regenerate the boot menu and rebuild the boot images. Backups are created before changes; a regenerated GRUB menu is syntax-checked before replacing the current one."
+flags = "I PFM MP"
+multi_select = false
+order = 3
+
+[script]
+id = "commander/plymouth-on"

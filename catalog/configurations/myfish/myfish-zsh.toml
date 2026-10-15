@@ -1,0 +1,8 @@
+name = "Myfish Zsh (Native)"
+description = "Install Myfish with Zsh using your native package manager. The installer confirms configuration changes."
+flags = "I FM MP"
+multi_select = false
+order = 3
+
+[script]
+id = "commander/myfish-zsh"

@@ -1,0 +1,13 @@
+name = "Cassette Spotify Player"
+description = "Install pinned Cassette and librespot through Nix on Linux x86_64. Requires Spotify Premium, your own Client ID and interactive browser login."
+flags = "FM MP"
+multi_select = false
+order = 4
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["nix", "git"]
+
+[script]
+id = "commander/cassette"

@@ -1,0 +1,13 @@
+name = "Fedora SELinux Tools and Status"
+description = "Install Fedora SELinux policy, management and diagnostic tools and show status. Preserves enforcement mode and existing local policy."
+flags = "I MP"
+multi_select = false
+order = 2
+
+[[preconditions]]
+matches = true
+check = { containing_file = "/etc/os-release" }
+values = ["ID=fedora"]
+
+[script]
+id = "commander/selinux"

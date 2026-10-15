@@ -1,0 +1,13 @@
+name = "Dotfiles Boot Splash"
+description = "Select the Plymouth theme named in dotfiles (plymouth/theme), fetching it from the repository or a distro package when it is not installed yet, then rebuild the boot images with the distro's own tool. A theme from the KDE Store must be fetched with Get New first. Kernel arguments are not changed."
+flags = "I PFM MP"
+multi_select = false
+order = 1
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["plymouth-set-default-theme"]
+
+[script]
+id = "commander/plymouth-dotfiles"

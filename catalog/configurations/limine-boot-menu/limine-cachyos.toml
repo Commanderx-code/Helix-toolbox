@@ -1,0 +1,13 @@
+name = "CachyOS Limine Boot Menu"
+description = "Install the CachyOS look from dotfiles on a machine that boots with Limine: the CachyOS wallpaper, colours and a two-second timeout merged into the global settings of limine.conf. Boot entries and kernel arguments stay as they are; the previous file is backed up."
+flags = "PFM"
+multi_select = false
+order = 1
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["limine"]
+
+[script]
+id = "commander/limine-cachyos"

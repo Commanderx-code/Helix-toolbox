@@ -38,5 +38,7 @@ must leave no diff). Run it before committing.
 - Commits are plain messages in the repository owner's name, with no
   attribution lines for tools or assistants.
 - Catalog entries are one TOML file per entry; see `README.md` for the
-  format. Scripts referenced by id live in `scripts/installers/`.
+  format. Scripts referenced by id live in `scripts/installers/`; the
+  installers from the previous toolbox are under `scripts/installers/commander/`
+  with their tests in `tests/installers/`, and `scripts/verify.sh` runs both.
 - Documentation does not say that something was written by an AI tool.

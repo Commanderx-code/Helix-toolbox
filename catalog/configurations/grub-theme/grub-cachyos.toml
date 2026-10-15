@@ -1,0 +1,13 @@
+name = "CachyOS GRUB Theme"
+description = "Install the CachyOS theme by diegons490 (GPL-3.0), kept in dotfiles, so a GRUB machine can match the CachyOS Limine look. Backups are created before changes; the regenerated menu is syntax-checked before replacing the current one."
+flags = "I PFM MP"
+multi_select = false
+order = 2
+
+[[preconditions]]
+matches = true
+check = "file_exists"
+values = ["/etc/default/grub"]
+
+[script]
+id = "commander/grub-cachyos"

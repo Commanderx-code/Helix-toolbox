@@ -4,6 +4,12 @@
 ## Applications
 
 
+### Design Tools
+
+- **DaVinci Resolve - Native**: Install DaVinci Resolve using Native on Fedora or Arch-family Linux. Requires the official extracted Linux .run installer and a working GPU driver. Installs dependencies and a compatibility launcher; Free or licensed Studio. See docs/resolve.md for requirements and limitations.
+- **DaVinci Resolve - Davincibox**: Install DaVinci Resolve using Davincibox on Fedora, Arch, Debian, Ubuntu or their supported derivatives. Requires the official extracted Linux .run installer and a working GPU driver. Installs dependencies and a compatibility launcher; Free or licensed Studio. See docs/resolve.md for requirements and limitations.
+- **DaVinci Resolve Maintenance**: Check native/container dependencies, inspect the Resolve container, repair backed-up launchers or remove the dedicated container after confirmation. Includes native uninstall guidance.
+
 ### Developer Tools
 
 - **Git**: Distributed version control.
@@ -16,19 +22,81 @@
 - **btop**: Resource monitor with a terminal interface.
 - **htop**: Interactive process viewer.
 
+### Terminal Tools
+
+- **Zellij Terminal Sessions**: Install Zellij and create an optional Tokyo Night Storm preset. Preserve existing configuration; no automatic startup. Requires a distro package or an existing Zellij installation.
+- **NetWatch Network Dashboard**: Install pinned NetWatch through Nix on Linux x86_64. Ordinary monitoring is unprivileged; capture permissions remain a separate choice.
+- **TFM Visual File Manager**: Install the pinned TFM beta through Nix on Linux x86_64, with preview and Wayland clipboard helpers. Use Ghostty for image previews.
+- **Cassette Spotify Player**: Install pinned Cassette and librespot through Nix on Linux x86_64. Requires Spotify Premium, your own Client ID and interactive browser login.
+
 ## Configurations
 
+- **Workstation Setup**: Clone Commander dotfiles to ~/github/projects/dotfiles (or update a checkout there) and run its guided setup: Zed and Ghostty, optionally Nix and Home Manager with Fish, Starship, Fastfetch, Neovim and Restic backups, optional everyday apps, the SilentSDDM login screen, the GRUB or Limine boot menu with AppArmor, the boot splash and the UFW firewall. For Arch-based systems with pacman, such as Garuda or CachyOS. The setup shows its plan and waits for APPLY before changing anything.
+
+### Myfish Shell Setup
+
+- **Myfish Fish (Native)**: Install Myfish with Fish using your native package manager. The installer confirms configuration changes.
+- **Myfish Bash (Native)**: Install Myfish with Bash using your native package manager. The installer confirms configuration changes.
+- **Myfish Zsh (Native)**: Install Myfish with Zsh using your native package manager. The installer confirms configuration changes.
+- **Myfish Guided Setup**: Choose native packages or Home Manager, then your shell and greeting. Use native packages on Fedora to preserve SELinux.
+- **SDDM Theme**: Install SilentSDDM with the Kratos login preset and the other presets, backgrounds and settings from dotfiles, plus Qt6 dependencies and fonts. Requires SDDM 0.21+ and a successful graphical preview before activation; when another display manager runs the login screen, offers to switch it to SDDM at the next reboot.
+
+### Dotfiles
+
+- **Commander Neovim Config**: Install your Neovim configuration from dotfiles with a backup of existing files. Install the application separately.
+- **Commander Fastfetch Config**: Install your Fastfetch layout, automatic distro PNG logo and terminal-aware launcher and ImageMagick dependencies with backups. Installs Fastfetch when missing and checks image-backend support. Requires an image-capable terminal.
+- **Commander Starship Config**: Install your Starship configuration from dotfiles with a backup of existing files. Install the application separately.
+- **Commander Konsole Config**: Install your Konsole configuration from dotfiles with a backup of existing files. Install the application separately.
+- **Commander Ghostty Config**: Install the Ghostty starting preset, the palette theme and tab-bar style it reads, and the Spotify profile from dotfiles, with backups of existing files. Install Ghostty and the MesloLGS Nerd Font separately.
+
+### GRUB Theme
+
+- **Garuda GRUB Theme**: Install the Garuda dr460nized GRUB theme that the dotfiles GRUB settings use, from the grub-theme-garuda-dr460nized package in the Garuda repositories. Back up existing settings and regenerate the current machine's GRUB menu while preserving kernel arguments.
+- **CachyOS GRUB Theme**: Install the CachyOS theme by diegons490 (GPL-3.0), kept in dotfiles, so a GRUB machine can match the CachyOS Limine look. Backups are created before changes; the regenerated menu is syntax-checked before replacing the current one.
+- **Catppuccin Mocha GRUB Theme**: Install the pastel Mocha theme from catppuccin/grub. Backups are created before changes; the regenerated menu is syntax-checked before replacing the current one.
+- **Dracula GRUB Theme**: Install the dark Dracula theme from dracula/grub. Backups are created before changes; the regenerated menu is syntax-checked before replacing the current one.
+- **Tela GRUB Theme**: Install Tela from vinceliuice/grub2-themes; choose 1080p, 2K or 4K assets. Backups are created before changes; the regenerated menu is syntax-checked before replacing the current one.
+- **Vimix GRUB Theme**: Install Vimix from vinceliuice/grub2-themes; choose 1080p, 2K or 4K assets. Backups are created before changes; the regenerated menu is syntax-checked before replacing the current one.
+- **CyberRe GRUB Theme**: Install CyberRe from ChrisTitusTech/bootloader-themes at a pinned commit. Back up current settings and syntax-check the regenerated menu while preserving kernel arguments and boot timeout.
+- **Cyberpunk GRUB Theme**: Install Cyberpunk from ChrisTitusTech/bootloader-themes at a pinned commit. Back up current settings and syntax-check the regenerated menu while preserving kernel arguments and boot timeout.
+- **Shodan GRUB Theme**: Install Shodan from ChrisTitusTech/bootloader-themes at a pinned commit. Back up current settings and syntax-check the regenerated menu while preserving kernel arguments and boot timeout.
+- **Fallout GRUB Theme**: Install Fallout from ChrisTitusTech/bootloader-themes at a pinned commit. Back up current settings and syntax-check the regenerated menu while preserving kernel arguments and boot timeout.
+- **DedSec GRUB Theme**: Install DedSec from ChrisTitusTech/bootloader-themes at a pinned commit. Back up current settings and syntax-check the regenerated menu while preserving kernel arguments and boot timeout.
+- **Minegrub (Minecraft) GRUB Theme**: Install Minegrub (Minecraft) from ChrisTitusTech/bootloader-themes at a pinned commit. Back up current settings and syntax-check the regenerated menu while preserving kernel arguments and boot timeout.
+- **BSOL GRUB Theme**: Install BSOL from ChrisTitusTech/bootloader-themes at a pinned commit. Back up current settings and syntax-check the regenerated menu while preserving kernel arguments and boot timeout.
+- **Restore Default GRUB Appearance**: Disable custom themes and backgrounds and restore a plain console menu. Preserves current kernel arguments, disk settings and boot entries; does not reinstall GRUB. Backups are created before changes; the regenerated menu is syntax-checked before replacing the current one.
+
+### Boot Splash
+
+- **Dotfiles Boot Splash**: Select the Plymouth theme named in dotfiles (plymouth/theme), fetching it from the repository or a distro package when it is not installed yet, then rebuild the boot images with the distro's own tool. A theme from the KDE Store must be fetched with Get New first. Kernel arguments are not changed.
+- **Boot Splash Theme**: Choose an installed Plymouth theme for the splash shown while the system starts, then rebuild the boot images with the distro's own tool (dracut-rebuild, dracut, mkinitcpio or update-initramfs). Kernel arguments are not changed.
+- **Enable Boot Splash**: Install Plymouth, add 'splash' to the kernel command line in /etc/default/grub or, with the Limine entry tool as on CachyOS, /etc/default/limine (and the plymouth hook on mkinitcpio systems), regenerate the boot menu and rebuild the boot images. Backups are created before changes; a regenerated GRUB menu is syntax-checked before replacing the current one.
+- **Disable Boot Splash**: Remove 'splash' and 'rhgb' from the kernel command line in /etc/default/grub or /etc/default/limine and regenerate the boot menu, so the system boots with text output. Plymouth and its themes stay installed. Backups are created before changes.
+
+### Limine Boot Menu
+
+- **CachyOS Limine Boot Menu**: Install the CachyOS look from dotfiles on a machine that boots with Limine: the CachyOS wallpaper, colours and a two-second timeout merged into the global settings of limine.conf. Boot entries and kernel arguments stay as they are; the previous file is backed up.
+- **Garuda Limine Boot Menu**: Install the Garuda dr460nized look from dotfiles on a machine that boots with Limine: the dr460nized wallpaper and colours with a two-second timeout merged into the global settings of limine.conf. Boot entries and kernel arguments stay as they are; the previous file is backed up.
 
 ## Helix Doctor
 
 - **Machine Summary**: Print what HelixForge knows about this machine, implemented in Rust by the engine itself, without changing anything.
+- **System Diagnostics**: Inspect GPU drivers, OpenCL/Vulkan, Secure Boot, disk space and virtualization. Missing tools are reported, not installed. Optionally save a private report.
 - **System Report (script)**: Print the distribution, kernel, package manager and shell helpers that HelixForge detects, through a shell script, without changing anything.
 
 ## Maintenance
 
+- **Topgrade Updates**: Install your Topgrade configuration adapted to this distro, with backups and update confirmations. Optionally run updates afterward.
+- **Restore Configuration Backups**: Browse Commander user-configuration backups and restore one, backing up the current configuration first. Symlink-managed configurations and system boot files are excluded.
+
+### Printers
+
+- **Driverless Printer Setup**: Install CUPS and network discovery, enable their services and add a compatible IPP Everywhere printer. Supports Fedora, Arch and Debian/Ubuntu on systemd; preserves existing queues.
 
 ## Security
 
+- **AppArmor Setup and Status**: Install AppArmor tools/profiles and enable its service on Arch or Debian/Ubuntu. On an Arch-family system that boots with GRUB, or with Limine and its entry tool as on CachyOS, and has not enabled AppArmor yet, first offers to add the lsm= kernel parameter from the dotfiles boot settings and regenerate the boot menu, with backups; reboot and rerun afterwards. Does not replace SELinux.
+- **Fedora SELinux Tools and Status**: Install Fedora SELinux policy, management and diagnostic tools and show status. Preserves enforcement mode and existing local policy.
 
 ## Profiles
 

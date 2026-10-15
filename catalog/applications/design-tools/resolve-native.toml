@@ -1,0 +1,13 @@
+name = "DaVinci Resolve - Native"
+description = "Install DaVinci Resolve using Native on Fedora or Arch-family Linux. Requires the official extracted Linux .run installer and a working GPU driver. Installs dependencies and a compatibility launcher; Free or licensed Studio. See docs/resolve.md for requirements and limitations."
+flags = "I PFM MP FM"
+multi_select = false
+order = 1
+
+[[preconditions]]
+matches = false
+check = "file_exists"
+values = ["/run/ostree-booted"]
+
+[script]
+id = "commander/resolve-native"

@@ -1,0 +1,8 @@
+name = "System Diagnostics"
+description = "Inspect GPU drivers, OpenCL/Vulkan, Secure Boot, disk space and virtualization. Missing tools are reported, not installed. Optionally save a private report."
+flags = "FM"
+multi_select = false
+order = 1
+
+[script]
+id = "commander/tools-diagnostics"

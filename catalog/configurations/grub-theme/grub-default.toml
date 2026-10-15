@@ -1,0 +1,13 @@
+name = "Restore Default GRUB Appearance"
+description = "Disable custom themes and backgrounds and restore a plain console menu. Preserves current kernel arguments, disk settings and boot entries; does not reinstall GRUB. Backups are created before changes; the regenerated menu is syntax-checked before replacing the current one."
+flags = "PFM"
+multi_select = false
+order = 14
+
+[[preconditions]]
+matches = true
+check = "file_exists"
+values = ["/etc/default/grub"]
+
+[script]
+id = "commander/grub-default"

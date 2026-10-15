@@ -1,0 +1,8 @@
+name = "Commander Ghostty Config"
+description = "Install the Ghostty starting preset, the palette theme and tab-bar style it reads, and the Spotify profile from dotfiles, with backups of existing files. Install Ghostty and the MesloLGS Nerd Font separately."
+flags = "I FM MP"
+multi_select = false
+order = 5
+
+[script]
+id = "commander/dotfiles-ghostty"

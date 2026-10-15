@@ -1,0 +1,13 @@
+name = "Workstation Setup"
+description = "Clone Commander dotfiles to ~/github/projects/dotfiles (or update a checkout there) and run its guided setup: Zed and Ghostty, optionally Nix and Home Manager with Fish, Starship, Fastfetch, Neovim and Restic backups, optional everyday apps, the SilentSDDM login screen, the GRUB or Limine boot menu with AppArmor, the boot splash and the UFW firewall. For Arch-based systems with pacman, such as Garuda or CachyOS. The setup shows its plan and waits for APPLY before changing anything."
+flags = "I FM MP PFM SS"
+multi_select = false
+order = 1
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["pacman"]
+
+[script]
+id = "commander/workstation"

@@ -1,0 +1,13 @@
+name = "SDDM Theme"
+description = "Install SilentSDDM with the Kratos login preset and the other presets, backgrounds and settings from dotfiles, plus Qt6 dependencies and fonts. Requires SDDM 0.21+ and a successful graphical preview before activation; when another display manager runs the login screen, offers to switch it to SDDM at the next reboot."
+flags = "I PFM MP"
+multi_select = false
+order = 2
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["sddm"]
+
+[script]
+id = "commander/sddm"

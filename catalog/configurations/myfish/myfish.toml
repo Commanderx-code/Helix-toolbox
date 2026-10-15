@@ -1,0 +1,8 @@
+name = "Myfish Guided Setup"
+description = "Choose native packages or Home Manager, then your shell and greeting. Use native packages on Fedora to preserve SELinux."
+flags = "I FM MP"
+multi_select = false
+order = 4
+
+[script]
+id = "commander/myfish"
