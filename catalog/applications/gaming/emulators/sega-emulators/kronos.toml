@@ -1,0 +1,7 @@
+name = "Kronos"
+description = "A Sega Saturn emulator. NO Games are included"
+flags = "FM"
+order = 103
+
+[script]
+id = "gaming/emulators/sega/kronos"

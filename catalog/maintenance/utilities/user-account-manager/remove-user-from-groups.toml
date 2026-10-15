@@ -1,0 +1,6 @@
+name = "Remove User From Groups"
+flags = ""
+order = 105
+
+[script]
+id = "utils/user-account-manager/remove_from_group"

@@ -1,0 +1,6 @@
+name = "FreeOffice"
+flags = "I"
+order = 101
+
+[script]
+id = "applications-setup/office-suites/freeoffice"

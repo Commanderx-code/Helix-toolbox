@@ -1,0 +1,7 @@
+name = "Set Resolution"
+description = "This script is designed to change the resolution of monitors connected to your system"
+flags = ""
+order = 112
+
+[script]
+id = "utils/monitor-control/set_resolutions"

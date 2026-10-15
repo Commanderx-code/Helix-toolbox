@@ -58,7 +58,8 @@ jobs:
           cargo clippy --workspace --all-targets -- -D warnings
           cargo test --workspace
           python3 -B -m unittest discover -s tests/installers -v
-          shellcheck -x -P . scripts/shared/*.sh scripts/installers/commander/*.sh
+          shellcheck -x -P . scripts/shared/*.sh scripts/installers/*.sh scripts/installers/commander/*.sh
+          find scripts/installers -name '*.sh' -not -path '*/commander/*' -print0 | xargs -0 shellcheck -x -P . -S error
           cargo build --release -p helixforge
           target/release/helixforge docgen docs/walkthrough.md
           target/release/helixforge --help >/dev/null

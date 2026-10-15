@@ -27,7 +27,7 @@
 - Settings: theme, confirmation, showing hidden entries (reloads the catalog)
 - Help popup with every key
 
-## Milestone 3: installer compatibility (done, pending the first release)
+## Milestone 3: installer compatibility (done)
 
 - [x] Bring the Commander installers across with their shared helpers and
       tests: 44 entries in Applications, Configurations, Helix Doctor,
@@ -37,13 +37,17 @@
       the plan (the installers keep their own refusal as a second line)
 - [x] Port the dotfiles and Myfish source synchronisation to catalog files
 - [x] Release workflow (Linux x86_64 build with a checksum) and `start.sh`
-- [ ] First release once the repository is on GitHub
+- [x] First release published from the workflow
 
 ## Milestone 4: feature parity
 
-- Bring the general catalog across: package entries as data, scripts otherwise
-- Distribution checks in disposable VMs; the migration matrix all "done"
-- Retire the Commander Toolbox as the stable version
+- [x] Bring the general catalog across: 177 entries, scripts unchanged
+- [x] Every carried-over script parses, every entry names an existing script,
+      and the catalog gates shellcheck errors
+- [x] The migration matrix is all "done" (two entries dropped on purpose)
+- [ ] Distribution checks in disposable VMs (Debian, Ubuntu, Fedora, Arch)
+- [ ] Turn plain package installs into data-only package entries
+- [ ] Retire the Commander Toolbox as the stable version
 
 ## Milestone 5: graphical interface
 

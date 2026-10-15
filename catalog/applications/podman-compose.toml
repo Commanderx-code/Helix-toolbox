@@ -1,0 +1,7 @@
+name = "Podman-compose"
+description = "Podman Compose is a tool for defining and running multi-container applications using Podman."
+flags = "I SS"
+order = 123
+
+[script]
+id = "applications-setup/podman-compose-setup"

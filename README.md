@@ -8,9 +8,9 @@ inside the application after a confirmation, with a record of every run. It is
 written in Rust and built so a graphical interface can share the same engine
 later.
 
-> Milestones 1 and 2 are complete, and the installers of the previous
-> toolbox have come across (Milestone 3 in progress): see `docs/ROADMAP.md`
-> and `docs/MIGRATION.md`.
+> Milestones 1 to 3 are complete and the whole catalog of the previous
+> toolbox has come across: 230 entries. See `docs/ROADMAP.md` for what is
+> left before the previous toolbox is retired.
 
 ## Run
 
@@ -140,7 +140,7 @@ crates/helixforge-platform/ distribution and package manager detection
 crates/helixforge-engine/   plans, the shell program, runners, the pseudo-terminal, history
 catalog/                    the entries, one TOML file each, in six areas
 scripts/shared/             the shell helpers scripts source
-scripts/installers/         the scripts by id; commander/ holds the installers from the previous toolbox
+scripts/installers/         the scripts by id: commander/ from the previous toolbox, the rest from Linutil's catalog
 tests/installers/           the installers' Python tests, run against fixtures
 tests/fixtures/             a small catalog for the end-to-end tests
 docs/                       architecture, roadmap, security, migration matrix, walkthrough
@@ -167,4 +167,5 @@ walkthrough. The GitHub workflow runs the same.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). The general catalog started as Linutil's, also
+MIT; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

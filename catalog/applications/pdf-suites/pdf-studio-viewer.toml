@@ -1,0 +1,6 @@
+name = "PDF Studio Viewer"
+flags = ""
+order = 104
+
+[script]
+id = "applications-setup/pdf-suites/pdfstudioviewer"

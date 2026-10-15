@@ -1,0 +1,7 @@
+name = "WiFi Manager"
+description = "This utility is designed to manage wifi in your system"
+flags = "I SS"
+order = 118
+
+[script]
+id = "utils/wifi-control"

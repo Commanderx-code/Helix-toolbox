@@ -1,0 +1,7 @@
+name = "Blender"
+description = "Blender is a free and open-source 3D computer graphics software tool set."
+flags = "I"
+order = 103
+
+[script]
+id = "applications-setup/design-tools/blender"

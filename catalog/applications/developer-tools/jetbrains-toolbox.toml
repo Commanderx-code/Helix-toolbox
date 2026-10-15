@@ -1,0 +1,7 @@
+name = "JetBrains Toolbox"
+description = "JetBrains Toolbox is a collection of tools and an app that help developers work with JetBrains products."
+flags = "I"
+order = 103
+
+[script]
+id = "applications-setup/developer-tools/jetbrains-toolbox"

@@ -1,0 +1,7 @@
+name = "Change Orientation"
+description = "This script is designed to change the orientation of monitors in your system"
+flags = ""
+order = 102
+
+[script]
+id = "utils/monitor-control/change_orientation"

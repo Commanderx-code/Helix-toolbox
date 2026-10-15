@@ -1,0 +1,7 @@
+name = "Mupen 64 Plus"
+description = "N64 Emulator. NO Games are included"
+flags = "FM"
+order = 106
+
+[script]
+id = "gaming/emulators/nintendo/mupen64plus"

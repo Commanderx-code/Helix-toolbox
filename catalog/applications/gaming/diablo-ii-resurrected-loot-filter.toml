@@ -1,0 +1,7 @@
+name = "Diablo II Resurrected Loot Filter"
+description = "Installs a loot filter for Diablo II Resurrected from ChrisTitusTech/d2r-loot-filter. Highlights high runes and other valuable items. Works on Battle.net and single player. After install, add launch option: -mod lootfilter -txt"
+flags = "FM"
+order = 105
+
+[script]
+id = "gaming/diablo2-titus-mod"

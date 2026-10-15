@@ -8,7 +8,7 @@
 
 use helixforge_core::{
     Action, Check, Entry, Group, Item, NativeAction, NixAction, PackageNames, Precondition, Tab,
-    valid_id, valid_package_name,
+    valid_id, valid_package_name, valid_script_segment,
 };
 use helixforge_platform::binary_exists;
 use include_dir::{Dir, include_dir};
@@ -401,7 +401,7 @@ fn action_of(
         let file = match (&script.id, &script.path) {
             (Some(id), None) => {
                 // A script id may name a subdirectory of installers/, one valid id per segment.
-                if id.is_empty() || !id.split('/').all(valid_id) {
+                if id.is_empty() || !id.split('/').all(valid_script_segment) {
                     return Err(CatalogError::Invalid(format!(
                         "{} names an invalid script id: {id}",
                         path.display()
@@ -761,6 +761,11 @@ mod tests {
         assert_eq!(catalog.tabs.len(), 6);
         assert!(catalog.find("git").is_some());
         assert!(catalog.find("system-report").is_some());
+        // The installers from the previous toolbox and the general catalog.
+        assert!(catalog.find("dotfiles-nvim").is_some());
+        assert!(catalog.find("discord").is_some());
+        assert!(catalog.find("neovim-titus").is_some());
+        assert!(catalog.entries().len() >= 230);
         assert!(catalog.lib_dir().join("common-script.sh").is_file());
     }
 }

@@ -1,0 +1,11 @@
+name = "Ubuntu"
+
+[[preconditions]]
+matches = true
+check = { containing_file = "/etc/os-release" }
+values = ["ID=ubuntu"]
+
+[[preconditions]]
+matches = true
+check = { containing_file = "/etc/os-release" }
+values = ["VERSION_ID=\"24.04\""]

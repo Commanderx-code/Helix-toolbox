@@ -1,0 +1,7 @@
+name = "Nvidia Drivers & Hardware Acceleration"
+description = "Opens the Arch-specific NVIDIA installer (kept under System Setup / Arch)."
+flags = "I"
+order = 106
+
+[script]
+id = "system-setup/arch/nvidia-drivers"

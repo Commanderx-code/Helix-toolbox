@@ -1,0 +1,7 @@
+name = "XEMU"
+description = "An Original Xbox emulator. NO Games or Bios' are included"
+flags = "FM"
+order = 101
+
+[script]
+id = "gaming/emulators/xbox/xemu"

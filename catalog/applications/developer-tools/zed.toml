@@ -1,0 +1,7 @@
+name = "Zed"
+description = "Zed is a next-generation code editor written in rust, designed for high-performance collaboration with humans and AI."
+flags = "I"
+order = 110
+
+[script]
+id = "applications-setup/developer-tools/zed"

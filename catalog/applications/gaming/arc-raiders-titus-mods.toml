@@ -1,0 +1,7 @@
+name = "Arc Raiders Titus Mods"
+description = "Applies optimized game configuration files from ChrisTitusTech/arc-raiders. Sets Engine.ini to read-only to prevent the game from overwriting the settings, disables motion blur, and enables VRR optimizations."
+flags = "FM"
+order = 104
+
+[script]
+id = "gaming/arc-raiders-mod"

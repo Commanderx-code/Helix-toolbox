@@ -1,0 +1,7 @@
+name = "Ngrok"
+description = "Ngrok is a tool that creates secure, temporary tunnels to expose local servers to the internet for testing and development."
+flags = "I"
+order = 106
+
+[script]
+id = "applications-setup/developer-tools/ngrok"

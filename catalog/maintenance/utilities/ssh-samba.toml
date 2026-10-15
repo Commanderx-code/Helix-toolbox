@@ -1,0 +1,6 @@
+name = "SSH Samba"
+flags = "I SS PFM"
+order = 115
+
+[script]
+id = "utils/samba-ssh-setup"

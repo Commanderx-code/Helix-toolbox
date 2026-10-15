@@ -1,0 +1,7 @@
+name = "ProtonPlus"
+description = "Manage ProtonPlus installation with native packages first and Flatpak fallback."
+flags = "FI"
+order = 107
+
+[script]
+id = "gaming/protonplus"

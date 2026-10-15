@@ -1,0 +1,7 @@
+name = "LibreWolf"
+description = "LibreWolf is a fork of Firefox, focused on privacy, security, and freedom."
+flags = "I"
+order = 105
+
+[script]
+id = "applications-setup/browsers/librewolf"

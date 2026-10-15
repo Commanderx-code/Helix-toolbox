@@ -1,0 +1,7 @@
+name = "Pacman Config"
+description = "Enables Color, ILoveCandy, ParallelDownloads, VerbosePkgLists, multilib in pacman.conf and sets MAKEFLAGS in makepkg.conf."
+flags = "PFM"
+order = 109
+
+[script]
+id = "system-setup/arch/pacman-config"

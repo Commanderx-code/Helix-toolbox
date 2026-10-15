@@ -1,0 +1,7 @@
+name = "Lutris"
+description = "Manage Lutris launcher installation with Install, Uninstall, or Abort actions."
+flags = "FI"
+order = 102
+
+[script]
+id = "gaming/lutris-launcher"

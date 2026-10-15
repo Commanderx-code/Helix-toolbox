@@ -1,0 +1,6 @@
+name = "Add User To Groups"
+flags = ""
+order = 102
+
+[script]
+id = "utils/user-account-manager/add_to_group"

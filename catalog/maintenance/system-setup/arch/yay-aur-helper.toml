@@ -1,0 +1,7 @@
+name = "Yay AUR Helper"
+description = "Yet Another Yogurt - An AUR Helper Written in Go. To know more about AUR helpers visit: https://wiki.archlinux.org/title/AUR_helpers"
+flags = "I"
+order = 114
+
+[script]
+id = "system-setup/arch/yay-setup"

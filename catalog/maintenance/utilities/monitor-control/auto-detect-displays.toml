@@ -1,0 +1,7 @@
+name = "Auto Detect Displays"
+description = "This script is designed to detect and apply recommended configuration for monitors connected with your system"
+flags = ""
+order = 101
+
+[script]
+id = "utils/monitor-control/auto_detect_displays"

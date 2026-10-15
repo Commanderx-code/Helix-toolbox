@@ -1,0 +1,7 @@
+name = "Mozilla Firefox"
+description = "Mozilla Firefox is a free and open-source web browser developed by the Mozilla Foundation."
+flags = "I"
+order = 107
+
+[script]
+id = "applications-setup/browsers/firefox"

@@ -1,0 +1,6 @@
+name = "Evince"
+flags = "I"
+order = 101
+
+[script]
+id = "applications-setup/pdf-suites/evince"

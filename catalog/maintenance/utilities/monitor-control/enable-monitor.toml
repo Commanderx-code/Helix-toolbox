@@ -1,0 +1,7 @@
+name = "Enable Monitor"
+description = "This script is designed to enable a monitor in your system"
+flags = ""
+order = 105
+
+[script]
+id = "utils/monitor-control/enable_monitor"

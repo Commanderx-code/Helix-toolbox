@@ -1,0 +1,7 @@
+name = "Discord"
+description = "Discord is a versatile communication platform for gamers and communities, offering voice, video, and text chat features."
+flags = "I"
+order = 101
+
+[script]
+id = "applications-setup/communication-apps/discord-setup"

@@ -1,0 +1,7 @@
+name = "OpenShot"
+description = "OpenShot Video Editor is a free and open-source video editor."
+flags = "I"
+order = 116
+
+[script]
+id = "applications-setup/design-tools/openshot"

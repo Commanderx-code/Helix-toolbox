@@ -1,0 +1,7 @@
+name = "Rofi"
+description = "Rofi is a window switcher, run dialog, ssh-launcher and dmenu replacement that started as a clone of simpleswitcher, written by Sean Pringle and later expanded by Dave Davenport. This command installs and configures rofi with configuration from CTT's DWM repo. https://github.com/ChrisTitusTech/dwm-titus"
+flags = "I FM"
+order = 124
+
+[script]
+id = "applications-setup/rofi-setup"

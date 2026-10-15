@@ -262,6 +262,17 @@ pub fn valid_package_name(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"+._@-".contains(&b))
 }
 
+/// One directory or file name in a script id: lowercase, digits, hyphens and
+/// underscores, as the scripts carried over from Linutil are named.
+pub fn valid_script_segment(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment.len() <= 64
+        && !segment.starts_with(['-', '_'])
+        && segment
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
+}
+
 /// Entry, group and tab identifiers: lowercase, digits and hyphens.
 pub fn valid_id(id: &str) -> bool {
     !id.is_empty()
@@ -291,6 +302,10 @@ mod tests {
         assert!(valid_id("commander-ghostty"));
         for bad in ["", "-x", "Caps", "a b", "a/b"] {
             assert!(!valid_id(bad));
+        }
+        assert!(valid_script_segment("utility_functions"));
+        for bad in ["", "..", "_x", "A", "a.b"] {
+            assert!(!valid_script_segment(bad));
         }
     }
 

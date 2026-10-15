@@ -1,0 +1,7 @@
+name = "VS Codium"
+description = "VSCodium is a free, open-source version of Visual Studio Code (VS Code) that removes Microsoft-specific telemetry and branding."
+flags = "I"
+order = 109
+
+[script]
+id = "applications-setup/developer-tools/vscodium"

@@ -1,0 +1,7 @@
+name = "snes9x"
+description = "Super Nintendo Emulator. NO Games are included"
+flags = "FM"
+order = 108
+
+[script]
+id = "gaming/emulators/nintendo/snes9x"

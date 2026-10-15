@@ -1,0 +1,12 @@
+name = "FirewallD Firewall Baselines (CTT)"
+description = "Configure FirewallD with CTT's recommended baseline rules for improved system security. For more information visit: https://christitus.com/linux-security-mistakes"
+flags = "I SS"
+order = 101
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["firewall-cmd"]
+
+[script]
+id = "security/firewalld-baselines"

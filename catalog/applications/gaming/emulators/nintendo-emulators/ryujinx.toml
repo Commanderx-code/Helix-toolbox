@@ -1,0 +1,7 @@
+name = "Ryujinx"
+description = "Nintendo Switch emulator. NO Games are included"
+flags = "FM"
+order = 107
+
+[script]
+id = "gaming/emulators/nintendo/ryujinx"

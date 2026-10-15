@@ -1,0 +1,7 @@
+name = "Jitsi"
+description = "Jitsi Meet is an open-source video conferencing tool that allows users to host and join secure meetings directly from their web browsers without the need for downloads."
+flags = "I"
+order = 102
+
+[script]
+id = "applications-setup/communication-apps/jitsi-setup"

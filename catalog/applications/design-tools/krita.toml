@@ -1,0 +1,7 @@
+name = "Krita"
+description = "Krita is a free and open-source raster graphics editor designed primarily for digital art and 2D animation."
+flags = "I"
+order = 111
+
+[script]
+id = "applications-setup/design-tools/krita"

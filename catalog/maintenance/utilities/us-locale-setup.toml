@@ -1,0 +1,7 @@
+name = "US Locale Setup"
+description = "This fixes US UTF-8 Locale and Folder listings"
+flags = "FM"
+order = 117
+
+[script]
+id = "utils/locale-us-setup"

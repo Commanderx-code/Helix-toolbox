@@ -9,9 +9,39 @@
 - **DaVinci Resolve - Native**: Install DaVinci Resolve using Native on Fedora or Arch-family Linux. Requires the official extracted Linux .run installer and a working GPU driver. Installs dependencies and a compatibility launcher; Free or licensed Studio. See docs/resolve.md for requirements and limitations.
 - **DaVinci Resolve - Davincibox**: Install DaVinci Resolve using Davincibox on Fedora, Arch, Debian, Ubuntu or their supported derivatives. Requires the official extracted Linux .run installer and a working GPU driver. Installs dependencies and a compatibility launcher; Free or licensed Studio. See docs/resolve.md for requirements and limitations.
 - **DaVinci Resolve Maintenance**: Check native/container dependencies, inspect the Resolve container, repair backed-up launchers or remove the dedicated container after confirmation. Includes native uninstall guidance.
+- **Ardour**: Ardour is a free and open-source digital audio workstation and hard disk recorder.
+- **Audacity**: Audacity is a free and open-source digital audio editor and recording application software.
+- **Blender**: Blender is a free and open-source 3D computer graphics software tool set.
+- **Darktable**: Darktable is a free and open-source photography application and raw developer.
+- **GNU Image Manipulation Program (GIMP)**: GIMP is a free and open-source raster graphics editor. It is commonly used for photo retouching, image editing, free-hand drawing, and converting between different image file formats.
+- **Handbrake**: HandBrake is a free and open-source transcoder for digital video files.
+- **Inkscape**: Inkscape is a free and open-source software vector graphics editor.
+- **Krita**: Krita is a free and open-source raster graphics editor designed primarily for digital art and 2D animation.
+- **MyPaint**: MyPaint is a free and open-source raster graphics editor for digital painting.
+- **Natron**: Natron is a powerful, free, and open-source VFX compositing application geared towards digital post-production work.
+- **OBS Studio**: OBS Studio is a free and open-source, cross-platform screencasting and live streaming software application.
+- **Olive**: Olive is a free and open-source cross-platform non-linear video editing application.
+- **OpenShot**: OpenShot Video Editor is a free and open-source video editor.
+- **Pinta**: Pinta is an open-source, cross-platform bitmap image drawing and editing program inspired by Paint.NET.
+- **Scribus**: Scribus is free and open-source desktop publishing software available for most desktop operating systems.
+- **Synfig Studio**: Synfig Studio is a free and open-source vector-based 2D animation software.
+- **Tenacity**: Tenacity is an easy-to-use, cross-platform multi-track audio editor/recorder.
 
 ### Developer Tools
 
+- **Cursor**: Next-generation AI-powered code editor built on VS Code, designed for enhanced productivity with integrated AI assistance.
+- **Github Desktop**: GitHub Desktop is a user-friendly application that simplifies the process of managing Git repositories and interacting with GitHub, providing a graphical interface for tasks like committing, branching, and syncing changes.
+- **JetBrains Toolbox**: JetBrains Toolbox is a collection of tools and an app that help developers work with JetBrains products.
+- **Meld**: Meld is a visual diff and merge tool that helps compare files, directories, and version-controlled projects.
+- **Neovim with Titus Config**: Neovim is a refactor, and sometimes redactor, in the tradition of Vim.
+It is not a rewrite but a continuation and extension of Vim.
+This command configures neovim from CTT's neovim configuration.
+https://github.com/ChrisTitusTech/neovim
+- **Ngrok**: Ngrok is a tool that creates secure, temporary tunnels to expose local servers to the internet for testing and development.
+- **Sublime Text**: Sublime Text is a fast, lightweight, and customizable text editor known for its simplicity, powerful features, and wide range of plugins for various programming languages.
+- **VS Code**: Visual Studio Code (VS Code) is a lightweight, open-source code editor with built-in support for debugging, version control, and extensions for various programming languages and frameworks.
+- **VS Codium**: VSCodium is a free, open-source version of Visual Studio Code (VS Code) that removes Microsoft-specific telemetry and branding.
+- **Zed**: Zed is a next-generation code editor written in rust, designed for high-performance collaboration with humans and AI.
 - **Git**: Distributed version control.
 - **Neovim**: Extensible terminal-based text editor.
 - **Ripgrep**: Fast recursive text search (rg).
@@ -28,6 +58,114 @@
 - **NetWatch Network Dashboard**: Install pinned NetWatch through Nix on Linux x86_64. Ordinary monitoring is unprivileged; capture permissions remain a separate choice.
 - **TFM Visual File Manager**: Install the pinned TFM beta through Nix on Linux x86_64, with preview and Wayland clipboard helpers. Use Ghostty for image previews.
 - **Cassette Spotify Player**: Install pinned Cassette and librespot through Nix on Linux x86_64. Requires Spotify Premium, your own Client ID and interactive browser login.
+
+### Gaming
+
+- **Arc Raiders Titus Mods**: Applies optimized game configuration files from ChrisTitusTech/arc-raiders. Sets Engine.ini to read-only to prevent the game from overwriting the settings, disables motion blur, and enables VRR optimizations.
+- **Diablo II Resurrected Loot Filter**: Installs a loot filter for Diablo II Resurrected from ChrisTitusTech/d2r-loot-filter. Highlights high runes and other valuable items. Works on Battle.net and single player. After install, add launch option: -mod lootfilter -txt
+- **EverQuest Legends MIDI Fix**: Configures native Lutris to start a stable FluidSynth MIDI device, maps Wine to it, and loads the SC-55 SoundCanvas bank for EverQuest Legends music. Downloads a verified 177 MiB SoundFont and preserves the original Lutris and Wine registry configuration.
+- **Fallout 76 INI and Mods**: Installs a custom Fallout76Custom.ini and mods from ChrisTitusTech/fallout76-configs via Steam. Improves performance and stability with quality of life tweaks.
+- **Starfield Titus INI and Mods**: Installs custom Starfield mods from ChrisTitusTech/starfield-config via steam.
+
+### Emulators
+
+
+### Multi-System Emulators
+
+- **RetroArch Game Emulator**: Frontend for emulators, game engines and media players. NO Games or Bios' are included
+
+### Nintendo Emulators
+
+- **bsnes**: Super Nintendo Emulator. NO Games are included
+- **Dolphin Emulator**: GameCube and Wii Emulator. NO Games are included
+- **Gopher 64**: N64 Emulator. NO Games are included
+- **MelonDS**: Nintendo DS and DSi Emulator. NO Games are included
+- **mGBA**: Nintendo Game Boy Advance Emulator. NO Games are included
+- **Mupen 64 Plus**: N64 Emulator. NO Games are included
+- **Ryujinx**: Nintendo Switch emulator. NO Games are included
+- **snes9x**: Super Nintendo Emulator. NO Games are included
+
+### PlayStation Emulators
+
+- **PCSX2**: A Playstation 2 emulator. NO Games or Bios' are included
+- **Play!**: An Experimental Playstation 2 emulator. NO Games or Bios' are included
+- **RPCS3**: A Playstation 3 emulator. NO Games or Bios' are included
+
+### Sega Emulators
+
+- **Blastem**: A Genesis emulator. NO Games are included
+- **Flycast**: A Dreamcast emulator. NO Games are included
+- **Kronos**: A Sega Saturn emulator. NO Games are included
+
+### Xbox Emulators
+
+- **XEMU**: An Original Xbox emulator. NO Games or Bios' are included
+- **Xenia**: An Experimental Xbox 360 emulator. NO Games or Bios' are included
+
+### Game Launchers
+
+- **Heroic**: Manage Heroic launcher installation with Install, Uninstall, or Abort actions.
+- **Lutris**: Manage Lutris launcher installation with Install, Uninstall, or Abort actions.
+- **RetroArch**: Manage RetroArch launcher installation with Install, Uninstall, or Abort actions.
+- **Steam**: Manage Steam launcher installation with Install, Uninstall, or Abort actions.
+
+### Tools and Setups
+
+- **Auto CPU Frequency**: Automatic CPU speed & power optimizer.
+https://github.com/AdnanHodzic/auto-cpufreq
+- **Auto Mount Drive**: This utility is designed to help with automating the process of mounting a drive on to your system.
+- **Bottles**: Bottles allows Windows software, like applications and games, to run on Linux. Bottles also provides tools to categorize, organize and optimize your applications.
+- **Gaming Dependencies**: Installs gaming runtime dependencies across distributions. Steam and Lutris are managed separately from Game Launchers.
+- **General GPU Drivers**: Auto-detects your GPU and installs a recommended driver stack for your distro, with NixOS guidance.
+- **Nvidia Drivers & Hardware Acceleration**: Opens the Arch-specific NVIDIA installer (kept under System Setup / Arch).
+- **ProtonPlus**: Manage ProtonPlus installation with native packages first and Flatpak fallback.
+- **ProtonUp-Qt**: Manage ProtonUp-Qt installation with native packages first and Flatpak fallback.
+- **Waydroid**: Waydroid is an emulator that allows you to run Android apps and games on Linux.
+- **Alacritty**: Alacritty is a modern terminal emulator that comes with sensible defaults, but allows for extensive configuration. By integrating with other applications, rather than reimplementing their functionality, it manages to provide a flexible set of features with high performance. The supported platforms currently consist of BSD, Linux, macOS and Windows. This command installs and configures alacritty terminal emulator.
+- **Android Debloater**: Universal Android Debloater (UAD) is a tool designed to help users remove bloatware and unnecessary pre-installed applications from Android devices, enhancing performance and user experience.
+- **Dank Shell**: DankMaterialShell is a complete desktop shell for niri, Hyprland, MangoWC, Sway, labwc, Scroll, Miracle WM, and other Wayland compositors. It replaces waybar, swaylock, swayidle, mako, fuzzel, polkit, and everything else you'd normally stitch together to make a desktop
+- **Docker**: Docker is an open platform that uses OS-level virtualization to deliver software in packages called containers.
+- **Flatpak / Flathub**: Flatpak is a universal application sandbox for Linux that uses isolated packages from Flathub to prevent conflicts and system alterations, while alleviating dependency concerns. This command installs Flatpak and adds the Flathub repository
+- **Ghostty**: Ghostty is a terminal emulator that has embedded web technologies, allowing for a highly customizable and visually appealing terminal experience.
+- **Kitty**: kitty is a free and open-source GPU-accelerated terminal emulator for Linux, macOS, and some BSD distributions, focused on performance and features. kitty is written in a mix of C and Python programming languages. This command installs and configures kitty.
+- **Noctalia Shell**: Noctalia is a native Wayland desktop shell for people who want a polished, configurable Linux desktop without stitching together a separate bar, launcher, notification daemon, lock screen, wallpaper tool, and settings UI.
+- **Podman**: Podman is a daemon-less open platform that uses OS-level virtualization to deliver software in packages called containers.
+- **Podman-compose**: Podman Compose is a tool for defining and running multi-container applications using Podman.
+- **Rofi**: Rofi is a window switcher, run dialog, ssh-launcher and dmenu replacement that started as a clone of simpleswitcher, written by Sean Pringle and later expanded by Dave Davenport. This command installs and configures rofi with configuration from CTT's DWM repo. https://github.com/ChrisTitusTech/dwm-titus
+- **Shelly**: Shelly is a modern, visual, and intuitive interface for your Arch Linux system. Not just a wrapper, but a native ground-up experience.
+
+### Communication Apps
+
+- **Discord**: Discord is a versatile communication platform for gamers and communities, offering voice, video, and text chat features.
+- **Jitsi**: Jitsi Meet is an open-source video conferencing tool that allows users to host and join secure meetings directly from their web browsers without the need for downloads.
+- **Signal**: Signal is a privacy-focused messaging app that provides end-to-end encryption for secure text, voice, and video communication.
+- **Slack**: Slack is a collaboration platform designed for team communication, featuring channels, direct messaging, file sharing, and integrations with various productivity tools.
+- **Telegram**: Telegram is a cloud-based messaging app known for its speed and security, offering features like group chats, channels, and end-to-end encrypted calls.
+- **Thunderbird**: Thunderbird is a free, open-source email client that offers powerful features like customizable email management, a built-in calendar, and extensive add-ons for enhanced functionality.
+- **ZapZap**: ZapZap is an open source whatsapp desktop client for Linux users developed by rafatosta.
+- **Zoom**: Zoom is a widely-used video conferencing platform that allows users to host virtual meetings, webinars, and online collaboration with features like screen sharing and recording.
+
+### Office Suites
+
+
+### PDF Suites
+
+
+### Web Browsers
+
+- **Brave**: Brave is a free and open-source web browser developed by Brave Software, Inc. based on the Chromium web browser.
+- **Brave Origin**: Brave Origin is a minimalist version of Brave that strips out optional features like VPN, crypto wallet, Rewards, and Leo AI, keeping only core privacy protections and ad blocking.
+- **Chromium**: Chromium is an open-source web browser project started by Google, to provide the source code for the proprietary Google Chrome browser.
+- **Google Chrome**: Google Chrome is a fast, secure, and free web browser, built for the modern web.
+- **LibreWolf**: LibreWolf is a fork of Firefox, focused on privacy, security, and freedom.
+- **Lynx**: Lynx is a highly configurable text-based web browser for use on cursor-addressable character cell terminals.
+- **Mozilla Firefox**: Mozilla Firefox is a free and open-source web browser developed by the Mozilla Foundation.
+- **Thorium**: Thorium is a Chromium-based browser focused on privacy and performance.
+- **Tor Browser**: Tor Browser is a free and open-source firefox-based web browser designed for anonymity and censorship circumvention.
+- **Vivaldi**: Vivaldi is a freeware, cross-platform web browser developed by Vivaldi Technologies.
+- **waterfox**: Waterfox is the privacy-focused web browser engineered to give you speed, control, and peace of mind on the internet.
+- **Zen Browser**: Zen Browser is a privacy-focused web browser designed for enhanced security and a seamless browsing experience.
+- **Helium Browser**: Helium Browser is a free, privacy-focused and open-source chromium-based browser designed for enhanced security and a seamless browsing experience.
 
 ## Configurations
 
@@ -86,17 +224,115 @@
 
 ## Maintenance
 
+
+### System Setup
+
+- **Build Prerequisites**: This script is designed to handle the installation of various software dependencies across different Linux distributions
+- **Enable SSD TRIM**: Enable weekly SSD TRIM through systemd's fstrim.timer and run an initial trim. This is the recommended alternative to mounting with the continuous discard option. For more information visit: https://wiki.archlinux.org/title/Solid_state_drive#TRIM
+- **Full System Cleanup**: This script is designed to remove unnecessary packages, clean old cache files, remove temporary files, and to empty the trash.
+- **Full System Update**: This command updates your system to the latest packages available for your distro
+- **Global Theme**: This script is designed to handle the installation and configuration of global theming
+- **PipeWire Audio**: Installs PipeWire with WirePlumber session manager for audio (replaces PulseAudio).
+- **Remove Snaps**: This script is designed to remove snap
+- **TTY Fonts**: This Script will set the default TTY font to Terminus size 32 Bold
+- **Zram Swap**: Configures compressed RAM swap via zram-generator with zstd algorithm.
+
+### Alpine
+
+- **Alpine Update**: Upgrades Alpine Linux to either latest stable or edge repositories
+
+### Arch
+
+- **Arch Server Setup**: This command installs a minimal arch server setup under 5 minutes.
+- **DWM-Titus**: DWM is a dynamic window manager for X.
+It manages windows in tiled, monocle and floating layouts.
+All of the layouts can be applied dynamically, optimising the environment for the application in use and the task performed.
+This command installs and configures DWM and a desktop manager.
+The list of patches applied can be found in CTT's DWM repository
+https://github.com/ChrisTitusTech/dwm-titus
+- **Hyprland JaKooLit**: Install JaKooLit's Hyprland configuration
+- **Install CachyOS Repository and Kernel**: To deliver a performance-optimized distribution, CachyOS recompiles Arch Linux packages specifically for the x86-64-v3, x86-64-v4, and Zen4+ architectures.
+- **Install Chaotic-AUR Repository**: Chaotic-AUR provides prebuilt binaries for popular AUR packages, saving compilation time. To know more visit: https://aur.chaotic.cx/
+- **Linux Neptune for SteamDeck**: Valve's fork of Linux Kernel for the SteamDeck
+- **Nvidia Drivers & Hardware Acceleration**: This script installs and configures nvidia drivers with Hardware Acceleration.
+- **Omarchy Rice by DHH**: Simplified Hyprland configuration by DHH the ruby on rails dude.
+- **Pacman Config**: Enables Color, ILoveCandy, ParallelDownloads, VerbosePkgLists, multilib in pacman.conf and sets MAKEFLAGS in makepkg.conf.
+- **Paru AUR Helper**: Paru is your standard pacman wrapping AUR helper with lots of features and minimal interaction. To know more about AUR helpers visit: https://wiki.archlinux.org/title/AUR_helpers
+- **Snapper Snapshots**: Sets up Snapper with hourly Btrfs snapshots, snap-pac hooks, and GRUB boot menu entries.
+- **System Maintenance**: Enables paccache.timer, removes orphan packages, and cleans system journals.
+- **Virtualization**: QEMU, Libvirt, Virt-Manager installation and configuration.
+- **Yay AUR Helper**: Yet Another Yogurt - An AUR Helper Written in Go. To know more about AUR helpers visit: https://wiki.archlinux.org/title/AUR_helpers
+
+### Debian / Ubuntu
+
+- **Nala Package Manager**: Install Nala on Debian, Ubuntu and derivatives such as Zorin from enabled distribution repositories and configure apt as an interactive alias for nala in Bash, Zsh or Fish, with a backup. Use sudo nala for elevated commands; system APT remains available.
+- **Hyprland JaKooLit**: Install JaKooLit's Hyprland configuration
+
+### Desktop Environment Setup
+
+- **Install Desktop Environment**: This script allows you to install various desktop environments (GNOME, KDE, XFCE, Cinnamon, MATE, Budgie, LXQt, LXDE) and window managers (i3, Sway, DWM, Awesome, BSPWM, Openbox, Fluxbox) using your distro's package manager. The script provides an interactive menu to select your preferred desktop environment or window manager, and handles the installation process automatically.
+- **Uninstall Desktop Environment**: This script allows you to uninstall desktop environments and window managers that were previously installed. It provides an interactive menu to select which desktop environment or window manager to remove, and handles the uninstallation process automatically.
+
+### Fedora
+
+- **Btrfs Assistant, Snapper Config, grub-btrfs**: Installs Btrfs Assistant, Snapper, dnf snapper plugin and takes the first root(/) and /home snapshots. Enables snapper-timeline and snapper-cleanup services. Installs Grub-Btrfs. Notice: To perform a system recovery via grub-btrfs, perform a restore operation with Btrfs Assistant GUI after booting into the snapshot. Notice: If you used the default Fedora disk partitioning during OS installation, the /boot configured as an separate EXT4 partition. Therefore, it cannot be included in root snapshots. Backup separately.
+- **Configure DNF**: Optimizes DNF for parallel downloads
+- **Hyprland JaKooLit**: Install JaKooLit's Hyprland configuration
+- **Multimedia Codecs**: This script is designed to install multimedia codecs, and to ensure RPM Fusion repositories are installed.
+- **Nvidia Proprietary Drivers**: This script is designed to download the proprietary NVIDIA drivers in Fedora.
+- **RPM Fusion**: RPM Fusion provides software that the Fedora Project or Red Hat doesn't want to ship. That software is provided as precompiled RPMs for all current Fedora versions and current Red Hat Enterprise Linux or clones versions; you can use the RPM Fusion repositories with tools like yum and PackageKit. For more information visit: https://rpmfusion.org/
+- **Upgrade to a New Fedora Release**: Upgrades system to the next Fedora release
+- **Virtualization**: Enables Virtualization through dnf
+
+### Ubuntu
+
+- **Hyprland JaKooLit**: Install JaKooLit's Hyprland configuration
 - **Topgrade Updates**: Install your Topgrade configuration adapted to this distro, with backups and update confirmations. Optionally run updates afterward.
 - **Restore Configuration Backups**: Browse Commander user-configuration backups and restore one, backing up the current configuration first. Symlink-managed configurations and system boot files are excluded.
+
+### Utilities
+
+- **Bluetooth Manager**: This utility is designed to manage bluetooth in your system
+- **Locale Setup**: This allows the user to set their locale
+- **Numlock on Startup**: This utility is designed to enable Num Lock at boot, rather than within desktop environments like KDE or GNOME
+- **Ollama**: This utility is designed to manage ollama in your system
+- **Ramalama**: This utility is designed to manage ramalama in your system
+- **Service Manager**: This utility is designed to manage services in your system
+- **US Locale Setup**: This fixes US UTF-8 Locale and Folder listings
+- **WiFi Manager**: This utility is designed to manage wifi in your system
+
+### Monitor Control
+
+- **Auto Detect Displays**: This script is designed to detect and apply recommended configuration for monitors connected with your system
+- **Change Orientation**: This script is designed to change the orientation of monitors in your system
+- **Disable Monitor**: This script is designed to disable a monitor in your system
+- **Duplicate Displays**: This script is designed to duplicate display among multi-monitor setup in your system
+- **Enable Monitor**: This script is designed to enable a monitor in your system
+- **Extend Displays**: This script is designed to extend display among multi-monitor setup in your system
+- **Manage Arrangement**: This script is designed to arrange monitors in multi-monitor setup in your system
+- **Reset Scaling**: This script is designed to reset scaling of a monitor in your system
+- **Scale Monitors**: This script is designed to change the scaling of monitors in your system
+- **Set Brightness**: This script is designed to change the Brightness of monitors connected to your system
+- **Set Primary Monitor**: This script is designed to set a Primary monitor in your system
+- **Set Resolution**: This script is designed to change the resolution of monitors connected to your system
+
+### User Account Manager
+
 
 ### Printers
 
 - **Driverless Printer Setup**: Install CUPS and network discovery, enable their services and add a compatible IPP Everywhere printer. Supports Fedora, Arch and Debian/Ubuntu on systemd; preserves existing queues.
+- **CUPS**: This script will install the CUPS system, required for most printer drivers on Linux.
+- **Epson printer drivers**: This script will install the Epson printer drivers.
+- **HP printer drivers**: This script will install HP printer drivers.
 
 ## Security
 
 - **AppArmor Setup and Status**: Install AppArmor tools/profiles and enable its service on Arch or Debian/Ubuntu. On an Arch-family system that boots with GRUB, or with Limine and its entry tool as on CachyOS, and has not enabled AppArmor yet, first offers to add the lsm= kernel parameter from the dotfiles boot settings and regenerate the boot menu, with backups; reboot and rerun afterwards. Does not replace SELinux.
 - **Fedora SELinux Tools and Status**: Install Fedora SELinux policy, management and diagnostic tools and show status. Preserves enforcement mode and existing local policy.
+- **FirewallD Firewall Baselines (CTT)**: Configure FirewallD with CTT's recommended baseline rules for improved system security. For more information visit: https://christitus.com/linux-security-mistakes
+- **Lynis Security Audit**: Install Lynis when needed, run an elevated system security audit with live results, then optionally remove Lynis.
+- **UFW Firewall Baselines (CTT)**: Developed to ease iptables firewall configuration, UFW provides a user friendly way to create an IPv4 or IPv6 host-based firewall. This command installs UFW and configures UFW based on CTT's recommended rules. For more information visit: https://christitus.com/linux-security-mistakes
 
 ## Profiles
 

@@ -1,0 +1,7 @@
+name = "Thunderbird"
+description = "Thunderbird is a free, open-source email client that offers powerful features like customizable email management, a built-in calendar, and extensive add-ons for enhanced functionality."
+flags = "I"
+order = 106
+
+[script]
+id = "applications-setup/communication-apps/thunderbird-setup"

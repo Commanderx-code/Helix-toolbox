@@ -1,0 +1,13 @@
+name = "Enable SSD TRIM"
+description = "Enable weekly SSD TRIM through systemd's fstrim.timer and run an initial trim. This is the recommended alternative to mounting with the continuous discard option. For more information visit: https://wiki.archlinux.org/title/Solid_state_drive#TRIM"
+flags = "D I SS"
+multi_select = false
+order = 108
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["systemctl"]
+
+[script]
+id = "system-setup/fstrim-setup"

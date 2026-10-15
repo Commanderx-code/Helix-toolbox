@@ -1,0 +1,7 @@
+name = "Virtualization"
+description = "Enables Virtualization through dnf"
+flags = "I"
+order = 108
+
+[script]
+id = "system-setup/fedora/virtualization"

@@ -1,0 +1,7 @@
+name = "Handbrake"
+description = "HandBrake is a free and open-source transcoder for digital video files."
+flags = "I"
+order = 109
+
+[script]
+id = "applications-setup/design-tools/handbrake"

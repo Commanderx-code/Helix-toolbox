@@ -1,0 +1,7 @@
+name = "Upgrade to a New Fedora Release"
+description = "Upgrades system to the next Fedora release"
+flags = "MP"
+order = 107
+
+[script]
+id = "system-setup/fedora/fedora-upgrade"

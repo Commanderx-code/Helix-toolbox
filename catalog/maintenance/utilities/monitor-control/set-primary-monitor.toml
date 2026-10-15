@@ -1,0 +1,7 @@
+name = "Set Primary Monitor"
+description = "This script is designed to set a Primary monitor in your system"
+flags = ""
+order = 111
+
+[script]
+id = "utils/monitor-control/set_primary_monitor"

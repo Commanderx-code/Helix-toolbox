@@ -1,0 +1,7 @@
+name = "Signal"
+description = "Signal is a privacy-focused messaging app that provides end-to-end encryption for secure text, voice, and video communication."
+flags = "I"
+order = 103
+
+[script]
+id = "applications-setup/communication-apps/signal-setup"

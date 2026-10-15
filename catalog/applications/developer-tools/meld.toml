@@ -1,0 +1,7 @@
+name = "Meld"
+description = "Meld is a visual diff and merge tool that helps compare files, directories, and version-controlled projects."
+flags = "I FI"
+order = 104
+
+[script]
+id = "applications-setup/developer-tools/meld"

@@ -1,0 +1,7 @@
+name = "Starfield Titus INI and Mods"
+description = "Installs custom Starfield mods from ChrisTitusTech/starfield-config via steam."
+flags = "FM"
+order = 108
+
+[script]
+id = "gaming/starfield-titus-mod"

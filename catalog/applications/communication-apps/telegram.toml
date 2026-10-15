@@ -1,0 +1,7 @@
+name = "Telegram"
+description = "Telegram is a cloud-based messaging app known for its speed and security, offering features like group chats, channels, and end-to-end encrypted calls."
+flags = "I"
+order = 105
+
+[script]
+id = "applications-setup/communication-apps/telegram-setup"

@@ -1,0 +1,18 @@
+name = "EverQuest Legends MIDI Fix"
+description = "Configures native Lutris to start a stable FluidSynth MIDI device, maps Wine to it, and loads the SC-55 SoundCanvas bank for EverQuest Legends music. Downloads a verified 177 MiB SoundFont and preserves the original Lutris and Wine registry configuration."
+flags = "I MP FM"
+multi_select = false
+order = 106
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["curl", "flock", "lutris", "mkfifo", "pgrep", "ps", "python3", "sha256sum", "stat"]
+
+[[preconditions]]
+matches = false
+check = "command_exists"
+values = ["apk"]
+
+[script]
+id = "gaming/eq-legends-midi"

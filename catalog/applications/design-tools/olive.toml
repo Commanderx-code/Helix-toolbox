@@ -1,0 +1,7 @@
+name = "Olive"
+description = "Olive is a free and open-source cross-platform non-linear video editing application."
+flags = "I"
+order = 115
+
+[script]
+id = "applications-setup/design-tools/olive"

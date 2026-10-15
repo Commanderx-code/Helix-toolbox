@@ -1,0 +1,7 @@
+name = "Manage Arrangement"
+description = "This script is designed to arrange monitors in multi-monitor setup in your system"
+flags = ""
+order = 107
+
+[script]
+id = "utils/monitor-control/manage_arrangement"

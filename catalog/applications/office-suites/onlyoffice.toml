@@ -1,0 +1,6 @@
+name = "OnlyOffice"
+flags = "I"
+order = 103
+
+[script]
+id = "applications-setup/office-suites/onlyoffice"

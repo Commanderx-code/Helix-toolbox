@@ -1,0 +1,7 @@
+name = "Flatpak / Flathub"
+description = "Flatpak is a universal application sandbox for Linux that uses isolated packages from Flathub to prevent conflicts and system alterations, while alleviating dependency concerns. This command installs Flatpak and adds the Flathub repository"
+flags = "I"
+order = 117
+
+[script]
+id = "applications-setup/setup-flatpak"

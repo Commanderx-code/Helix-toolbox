@@ -1,0 +1,11 @@
+name = "Fedora"
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["dnf"]
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["btrfs"]

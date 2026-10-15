@@ -1,0 +1,7 @@
+name = "Build Prerequisites"
+description = "This script is designed to handle the installation of various software dependencies across different Linux distributions"
+flags = "I"
+order = 107
+
+[script]
+id = "system-setup/compile-setup"

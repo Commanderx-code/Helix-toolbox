@@ -1,0 +1,6 @@
+name = "SSH Commands"
+flags = "I FM SS"
+order = 114
+
+[script]
+id = "utils/ssh"

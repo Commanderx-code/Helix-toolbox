@@ -1,0 +1,6 @@
+name = "Add User"
+flags = ""
+order = 101
+
+[script]
+id = "utils/user-account-manager/add_user"

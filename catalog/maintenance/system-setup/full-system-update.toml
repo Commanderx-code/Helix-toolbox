@@ -1,0 +1,8 @@
+name = "Full System Update"
+description = "This command updates your system to the latest packages available for your distro"
+flags = "PFM"
+multi_select = false
+order = 110
+
+[script]
+id = "system-setup/system-update"

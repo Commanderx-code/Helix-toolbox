@@ -1,0 +1,7 @@
+name = "Sublime Text"
+description = "Sublime Text is a fast, lightweight, and customizable text editor known for its simplicity, powerful features, and wide range of plugins for various programming languages."
+flags = "I"
+order = 107
+
+[script]
+id = "applications-setup/developer-tools/sublime"

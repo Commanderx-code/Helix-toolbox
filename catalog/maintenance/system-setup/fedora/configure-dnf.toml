@@ -1,0 +1,7 @@
+name = "Configure DNF"
+description = "Optimizes DNF for parallel downloads"
+flags = "PFM"
+order = 102
+
+[script]
+id = "system-setup/fedora/configure-dnf"

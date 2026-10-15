@@ -1,0 +1,7 @@
+name = "Vivaldi"
+description = "Vivaldi is a freeware, cross-platform web browser developed by Vivaldi Technologies."
+flags = "I"
+order = 110
+
+[script]
+id = "applications-setup/browsers/vivaldi"

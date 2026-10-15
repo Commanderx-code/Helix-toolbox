@@ -1,0 +1,7 @@
+name = "Inkscape"
+description = "Inkscape is a free and open-source software vector graphics editor."
+flags = "I"
+order = 110
+
+[script]
+id = "applications-setup/design-tools/inkscape"

@@ -1,0 +1,7 @@
+name = "TTY Fonts"
+description = "This Script will set the default TTY font to Terminus size 32 Bold"
+flags = "I PFM"
+order = 115
+
+[script]
+id = "system-setup/terminus-tty"

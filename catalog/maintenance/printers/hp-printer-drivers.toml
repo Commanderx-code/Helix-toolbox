@@ -1,0 +1,7 @@
+name = "HP printer drivers"
+description = "This script will install HP printer drivers."
+flags = "I"
+order = 104
+
+[script]
+id = "utils/printers/install-hp-printer-drivers"

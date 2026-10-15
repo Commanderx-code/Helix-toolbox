@@ -1,0 +1,7 @@
+name = "Ghostty"
+description = "Ghostty is a terminal emulator that has embedded web technologies, allowing for a highly customizable and visually appealing terminal experience."
+flags = "I FM"
+order = 118
+
+[script]
+id = "applications-setup/ghostty-setup"

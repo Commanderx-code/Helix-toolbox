@@ -7,11 +7,13 @@ every entry of the old catalog and where it stands here. Status values:
 - **partial**: available with a difference noted
 - **planned**: not yet available; the old toolbox remains the stable way to run it
 
-The old toolbox's own installers (the Commander group) move across first,
-with their shared helpers and Python tests; the general catalog follows,
-as data-only package entries where an entry is a plain package install and
-as scripts otherwise. Scripts from the old catalog keep their MIT notice when
-they are brought across (see `THIRD_PARTY_NOTICES.md` once that happens).
+Both parts of the old catalog have come across. The Commander installers
+live under `scripts/installers/commander/` with their Python tests; the
+general catalog's scripts keep their old directory tree under
+`scripts/installers/` and source the shared helpers through two forwarding
+shims, so none of them was edited. They keep their MIT notice; see
+`THIRD_PARTY_NOTICES.md`. Turning the plain package installs among them into
+data-only package entries is a later clean-up, not needed for parity.
 
 ## Commander installers
 
@@ -68,183 +70,183 @@ they are brought across (see `THIRD_PARTY_NOTICES.md` once that happens).
 
 | Old entry | Old tab / group | HelixForge area | Status |
 | :--- | :--- | :--- | :--- |
-| Discord | Applications Setup / Communication Apps | Applications | planned |
-| Jitsi | Applications Setup / Communication Apps | Applications | planned |
-| Signal | Applications Setup / Communication Apps | Applications | planned |
-| Slack | Applications Setup / Communication Apps | Applications | planned |
-| Telegram | Applications Setup / Communication Apps | Applications | planned |
-| Thunderbird | Applications Setup / Communication Apps | Applications | planned |
-| ZapZap | Applications Setup / Communication Apps | Applications | planned |
-| Zoom | Applications Setup / Communication Apps | Applications | planned |
-| Ardour | Applications Setup / Design Tools | Applications | planned |
-| Audacity | Applications Setup / Design Tools | Applications | planned |
-| Blender | Applications Setup / Design Tools | Applications | planned |
-| Darktable | Applications Setup / Design Tools | Applications | planned |
-| GNU Image Manipulation Program (GIMP) | Applications Setup / Design Tools | Applications | planned |
-| Handbrake | Applications Setup / Design Tools | Applications | planned |
-| Inkscape | Applications Setup / Design Tools | Applications | planned |
-| Krita | Applications Setup / Design Tools | Applications | planned |
-| MyPaint | Applications Setup / Design Tools | Applications | planned |
-| Natron | Applications Setup / Design Tools | Applications | planned |
-| OBS Studio | Applications Setup / Design Tools | Applications | planned |
-| Olive | Applications Setup / Design Tools | Applications | planned |
-| OpenShot | Applications Setup / Design Tools | Applications | planned |
-| Pinta | Applications Setup / Design Tools | Applications | planned |
-| Scribus | Applications Setup / Design Tools | Applications | planned |
-| Synfig Studio | Applications Setup / Design Tools | Applications | planned |
-| Tenacity | Applications Setup / Design Tools | Applications | planned |
-| Cursor | Applications Setup / Developer Tools | Applications | planned |
-| Github Desktop | Applications Setup / Developer Tools | Applications | planned |
-| JetBrains Toolbox | Applications Setup / Developer Tools | Applications | planned |
-| Meld | Applications Setup / Developer Tools | Applications | planned |
-| Neovim | Applications Setup / Developer Tools | Applications | planned |
-| Ngrok | Applications Setup / Developer Tools | Applications | planned |
-| Sublime Text | Applications Setup / Developer Tools | Applications | planned |
-| VS Code | Applications Setup / Developer Tools | Applications | planned |
-| VS Codium | Applications Setup / Developer Tools | Applications | planned |
-| Zed | Applications Setup / Developer Tools | Applications | planned |
-| FreeOffice | Applications Setup / Office Suites | Applications | planned |
-| LibreOffice | Applications Setup / Office Suites | Applications | planned |
-| OnlyOffice | Applications Setup / Office Suites | Applications | planned |
-| WPS Office | Applications Setup / Office Suites | Applications | planned |
-| Evince | Applications Setup / PDF Suites | Applications | planned |
-| Okular | Applications Setup / PDF Suites | Applications | planned |
-| PDF Studio | Applications Setup / PDF Suites | Applications | planned |
-| PDF Studio Viewer | Applications Setup / PDF Suites | Applications | planned |
-| Brave | Applications Setup / Web Browsers | Applications | planned |
-| Brave Origin | Applications Setup / Web Browsers | Applications | planned |
-| Chromium | Applications Setup / Web Browsers | Applications | planned |
-| Google Chrome | Applications Setup / Web Browsers | Applications | planned |
-| LibreWolf | Applications Setup / Web Browsers | Applications | planned |
-| Lynx | Applications Setup / Web Browsers | Applications | planned |
-| Mozilla Firefox | Applications Setup / Web Browsers | Applications | planned |
-| Thorium | Applications Setup / Web Browsers | Applications | planned |
-| Tor Browser | Applications Setup / Web Browsers | Applications | planned |
-| Vivaldi | Applications Setup / Web Browsers | Applications | planned |
-| waterfox | Applications Setup / Web Browsers | Applications | planned |
-| Zen Browser | Applications Setup / Web Browsers | Applications | planned |
-| Helium Browser | Applications Setup / Web Browsers | Applications | planned |
-| Alacritty | Applications Setup | Applications | planned |
-| Android Debloater | Applications Setup | Applications | planned |
-| Dank Shell | Applications Setup | Applications | planned |
-| Docker | Applications Setup | Applications | planned |
-| Flatpak / Flathub | Applications Setup | Applications | planned |
-| Ghostty | Applications Setup | Applications | planned |
-| Kitty | Applications Setup | Applications | planned |
-| Noctalia Shell | Applications Setup | Applications | planned |
-| Podman | Applications Setup | Applications | planned |
-| Podman-compose | Applications Setup | Applications | planned |
-| Rofi | Applications Setup | Applications | planned |
-| Shelly | Applications Setup | Applications | planned |
-| RetroArch Game Emulator | Gaming / Multi-System Emulators | Applications | planned |
-| bsnes | Gaming / Nintendo Emulators | Applications | planned |
-| Dolphin Emulator | Gaming / Nintendo Emulators | Applications | planned |
-| Gopher 64 | Gaming / Nintendo Emulators | Applications | planned |
-| MelonDS | Gaming / Nintendo Emulators | Applications | planned |
-| mGBA | Gaming / Nintendo Emulators | Applications | planned |
-| Mupen 64 Plus | Gaming / Nintendo Emulators | Applications | planned |
-| Ryujinx | Gaming / Nintendo Emulators | Applications | planned |
-| snes9x | Gaming / Nintendo Emulators | Applications | planned |
-| PCSX2 | Gaming / PlayStation Emulators | Applications | planned |
-| Play! | Gaming / PlayStation Emulators | Applications | planned |
-| RPCS3 | Gaming / PlayStation Emulators | Applications | planned |
-| Blastem | Gaming / Sega Emulators | Applications | planned |
-| Flycast | Gaming / Sega Emulators | Applications | planned |
-| Kronos | Gaming / Sega Emulators | Applications | planned |
-| XEMU | Gaming / Xbox Emulators | Applications | planned |
-| Xenia | Gaming / Xbox Emulators | Applications | planned |
-| Heroic | Gaming / Game Launchers | Applications | planned |
-| Lutris | Gaming / Game Launchers | Applications | planned |
-| RetroArch | Gaming / Game Launchers | Applications | planned |
-| Steam | Gaming / Game Launchers | Applications | planned |
-| Auto CPU Frequency | Gaming / Tools and Setups | Applications | planned |
-| Auto Mount Drive | Gaming / Tools and Setups | Applications | planned |
-| Bottles | Gaming / Tools and Setups | Applications | planned |
-| Gaming Dependencies | Gaming / Tools and Setups | Applications | planned |
-| General GPU Drivers | Gaming / Tools and Setups | Applications | planned |
-| Nvidia Drivers & Hardware Acceleration | Gaming / Tools and Setups | Applications | planned |
-| ProtonPlus | Gaming / Tools and Setups | Applications | planned |
-| ProtonUp-Qt | Gaming / Tools and Setups | Applications | planned |
-| Waydroid | Gaming / Tools and Setups | Applications | planned |
-| Arc Raiders Titus Mods | Gaming | Applications | planned |
-| Diablo II Resurrected Loot Filter | Gaming | Applications | planned |
-| EverQuest Legends MIDI Fix | Gaming | Applications | planned |
-| Fallout 76 INI and Mods | Gaming | Applications | planned |
-| Starfield Titus INI and Mods | Gaming | Applications | planned |
-| FirewallD Firewall Baselines (CTT) | Security | Security | planned |
-| Lynis Security Audit | Security | Security | planned |
-| UFW Firewall Baselines (CTT) | Security | Security | planned |
-| Alpine Update | System Setup / Alpine | Maintenance | planned |
-| Arch Server Setup | System Setup / Arch | Maintenance | planned |
-| DWM-Titus | System Setup / Arch | Maintenance | planned |
-| Hyprland JaKooLit | System Setup / Arch | Maintenance | planned |
-| Install CachyOS Repository and Kernel | System Setup / Arch | Maintenance | planned |
-| Install Chaotic-AUR Repository | System Setup / Arch | Maintenance | planned |
-| Linux Neptune for SteamDeck | System Setup / Arch | Maintenance | planned |
-| Nvidia Drivers & Hardware Acceleration | System Setup / Arch | Maintenance | planned |
-| Omarchy Rice by DHH | System Setup / Arch | Maintenance | planned |
-| Pacman Config | System Setup / Arch | Maintenance | planned |
-| Paru AUR Helper | System Setup / Arch | Maintenance | planned |
-| Snapper Snapshots | System Setup / Arch | Maintenance | planned |
-| System Maintenance | System Setup / Arch | Maintenance | planned |
-| Virtualization | System Setup / Arch | Maintenance | planned |
-| Yay AUR Helper | System Setup / Arch | Maintenance | planned |
-| Nala Package Manager | System Setup / Debian / Ubuntu | Maintenance | planned |
-| Hyprland JaKooLit | System Setup / Debian / Ubuntu | Maintenance | planned |
-| Install Desktop Environment | System Setup / Desktop Environment Setup | Maintenance | planned |
-| Uninstall Desktop Environment | System Setup / Desktop Environment Setup | Maintenance | planned |
-| Btrfs Assistant, Snapper Config, grub-btrfs | System Setup / Fedora | Maintenance | planned |
-| Configure DNF | System Setup / Fedora | Maintenance | planned |
-| Hyprland JaKooLit | System Setup / Fedora | Maintenance | planned |
-| Multimedia Codecs | System Setup / Fedora | Maintenance | planned |
-| Nvidia Proprietary Drivers | System Setup / Fedora | Maintenance | planned |
-| RPM Fusion | System Setup / Fedora | Maintenance | planned |
-| Upgrade to a New Fedora Release | System Setup / Fedora | Maintenance | planned |
-| Virtualization | System Setup / Fedora | Maintenance | planned |
-| Hyprland JaKooLit | System Setup / Ubuntu | Maintenance | planned |
-| Build Prerequisites | System Setup | Maintenance | planned |
-| Enable SSD TRIM | System Setup | Maintenance | planned |
-| Full System Cleanup | System Setup | Maintenance | planned |
-| Full System Update | System Setup | Maintenance | planned |
-| Global Theme | System Setup | Maintenance | planned |
-| PipeWire Audio | System Setup | Maintenance | planned |
-| Remove Snaps | System Setup | Maintenance | planned |
-| TTY Fonts | System Setup | Maintenance | planned |
-| Zram Swap | System Setup | Maintenance | planned |
-| Auto Detect Displays | Utilities / Monitor Control | Maintenance | planned |
-| Change Orientation | Utilities / Monitor Control | Maintenance | planned |
-| Disable Monitor | Utilities / Monitor Control | Maintenance | planned |
-| Duplicate Displays | Utilities / Monitor Control | Maintenance | planned |
-| Enable Monitor | Utilities / Monitor Control | Maintenance | planned |
-| Extend Displays | Utilities / Monitor Control | Maintenance | planned |
-| Manage Arrangement | Utilities / Monitor Control | Maintenance | planned |
-| Reset Scaling | Utilities / Monitor Control | Maintenance | planned |
-| Scale Monitors | Utilities / Monitor Control | Maintenance | planned |
-| Set Brightness | Utilities / Monitor Control | Maintenance | planned |
-| Set Primary Monitor | Utilities / Monitor Control | Maintenance | planned |
-| Set Resolution | Utilities / Monitor Control | Maintenance | planned |
-| CUPS | Utilities / Printers | Maintenance | planned |
-| Epson printer drivers | Utilities / Printers | Maintenance | planned |
-| HP printer drivers | Utilities / Printers | Maintenance | planned |
-| Add User | Utilities / User Account Manager | Maintenance | planned |
-| Add User To Groups | Utilities / User Account Manager | Maintenance | planned |
-| Change Password | Utilities / User Account Manager | Maintenance | planned |
-| Delete User | Utilities / User Account Manager | Maintenance | planned |
-| Remove User From Groups | Utilities / User Account Manager | Maintenance | planned |
-| Auto Login | Utilities | Maintenance | planned |
-| Bluetooth Manager | Utilities | Maintenance | planned |
-| Bootable USB Creator | Utilities | Maintenance | planned |
-| Crypto tool | Utilities | Maintenance | planned |
-| Locale Setup | Utilities | Maintenance | planned |
-| Numlock on Startup | Utilities | Maintenance | planned |
-| Ollama | Utilities | Maintenance | planned |
-| Ramalama | Utilities | Maintenance | planned |
-| Service Manager | Utilities | Maintenance | planned |
-| SSH Commands | Utilities | Maintenance | planned |
-| SSH Samba | Utilities | Maintenance | planned |
-| Timeshift Backup | Utilities | Maintenance | planned |
-| US Locale Setup | Utilities | Maintenance | planned |
-| WiFi Manager | Utilities | Maintenance | planned |
+| Discord | Applications Setup / Communication Apps | Applications | done: script carried over unchanged |
+| Jitsi | Applications Setup / Communication Apps | Applications | done: script carried over unchanged |
+| Signal | Applications Setup / Communication Apps | Applications | done: script carried over unchanged |
+| Slack | Applications Setup / Communication Apps | Applications | done: script carried over unchanged |
+| Telegram | Applications Setup / Communication Apps | Applications | done: script carried over unchanged |
+| Thunderbird | Applications Setup / Communication Apps | Applications | done: script carried over unchanged |
+| ZapZap | Applications Setup / Communication Apps | Applications | done: script carried over unchanged |
+| Zoom | Applications Setup / Communication Apps | Applications | done: script carried over unchanged |
+| Ardour | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| Audacity | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| Blender | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| Darktable | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| GNU Image Manipulation Program (GIMP) | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| Handbrake | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| Inkscape | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| Krita | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| MyPaint | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| Natron | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| OBS Studio | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| Olive | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| OpenShot | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| Pinta | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| Scribus | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| Synfig Studio | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| Tenacity | Applications Setup / Design Tools | Applications | done: script carried over unchanged |
+| Cursor | Applications Setup / Developer Tools | Applications | done: script carried over unchanged |
+| Github Desktop | Applications Setup / Developer Tools | Applications | done: script carried over unchanged |
+| JetBrains Toolbox | Applications Setup / Developer Tools | Applications | done: script carried over unchanged |
+| Meld | Applications Setup / Developer Tools | Applications | done: script carried over unchanged |
+| Neovim | Applications Setup / Developer Tools | Applications | done: script carried over unchanged |
+| Ngrok | Applications Setup / Developer Tools | Applications | done: script carried over unchanged |
+| Sublime Text | Applications Setup / Developer Tools | Applications | done: script carried over unchanged |
+| VS Code | Applications Setup / Developer Tools | Applications | done: script carried over unchanged |
+| VS Codium | Applications Setup / Developer Tools | Applications | done: script carried over unchanged |
+| Zed | Applications Setup / Developer Tools | Applications | done: script carried over unchanged |
+| FreeOffice | Applications Setup / Office Suites | Applications | done: script carried over unchanged |
+| LibreOffice | Applications Setup / Office Suites | Applications | done: script carried over unchanged |
+| OnlyOffice | Applications Setup / Office Suites | Applications | done: script carried over unchanged |
+| WPS Office | Applications Setup / Office Suites | Applications | done: script carried over unchanged |
+| Evince | Applications Setup / PDF Suites | Applications | done: script carried over unchanged |
+| Okular | Applications Setup / PDF Suites | Applications | done: script carried over unchanged |
+| PDF Studio | Applications Setup / PDF Suites | Applications | done: script carried over unchanged |
+| PDF Studio Viewer | Applications Setup / PDF Suites | Applications | done: script carried over unchanged |
+| Brave | Applications Setup / Web Browsers | Applications | done: script carried over unchanged |
+| Brave Origin | Applications Setup / Web Browsers | Applications | done: script carried over unchanged |
+| Chromium | Applications Setup / Web Browsers | Applications | done: script carried over unchanged |
+| Google Chrome | Applications Setup / Web Browsers | Applications | done: script carried over unchanged |
+| LibreWolf | Applications Setup / Web Browsers | Applications | done: script carried over unchanged |
+| Lynx | Applications Setup / Web Browsers | Applications | done: script carried over unchanged |
+| Mozilla Firefox | Applications Setup / Web Browsers | Applications | done: script carried over unchanged |
+| Thorium | Applications Setup / Web Browsers | Applications | done: script carried over unchanged |
+| Tor Browser | Applications Setup / Web Browsers | Applications | done: script carried over unchanged |
+| Vivaldi | Applications Setup / Web Browsers | Applications | done: script carried over unchanged |
+| waterfox | Applications Setup / Web Browsers | Applications | done: script carried over unchanged |
+| Zen Browser | Applications Setup / Web Browsers | Applications | done: script carried over unchanged |
+| Helium Browser | Applications Setup / Web Browsers | Applications | done: script carried over unchanged |
+| Alacritty | Applications Setup | Applications | done: script carried over unchanged |
+| Android Debloater | Applications Setup | Applications | done: script carried over unchanged |
+| Dank Shell | Applications Setup | Applications | done: script carried over unchanged |
+| Docker | Applications Setup | Applications | done: script carried over unchanged |
+| Flatpak / Flathub | Applications Setup | Applications | done: script carried over unchanged |
+| Ghostty | Applications Setup | Applications | done: script carried over unchanged |
+| Kitty | Applications Setup | Applications | done: script carried over unchanged |
+| Noctalia Shell | Applications Setup | Applications | done: script carried over unchanged |
+| Podman | Applications Setup | Applications | done: script carried over unchanged |
+| Podman-compose | Applications Setup | Applications | done: script carried over unchanged |
+| Rofi | Applications Setup | Applications | done: script carried over unchanged |
+| Shelly | Applications Setup | Applications | done: script carried over unchanged |
+| RetroArch Game Emulator | Gaming / Multi-System Emulators | Applications | done: script carried over unchanged |
+| bsnes | Gaming / Nintendo Emulators | Applications | done: script carried over unchanged |
+| Dolphin Emulator | Gaming / Nintendo Emulators | Applications | done: script carried over unchanged |
+| Gopher 64 | Gaming / Nintendo Emulators | Applications | done: script carried over unchanged |
+| MelonDS | Gaming / Nintendo Emulators | Applications | done: script carried over unchanged |
+| mGBA | Gaming / Nintendo Emulators | Applications | done: script carried over unchanged |
+| Mupen 64 Plus | Gaming / Nintendo Emulators | Applications | done: script carried over unchanged |
+| Ryujinx | Gaming / Nintendo Emulators | Applications | done: script carried over unchanged |
+| snes9x | Gaming / Nintendo Emulators | Applications | done: script carried over unchanged |
+| PCSX2 | Gaming / PlayStation Emulators | Applications | done: script carried over unchanged |
+| Play! | Gaming / PlayStation Emulators | Applications | done: script carried over unchanged |
+| RPCS3 | Gaming / PlayStation Emulators | Applications | done: script carried over unchanged |
+| Blastem | Gaming / Sega Emulators | Applications | done: script carried over unchanged |
+| Flycast | Gaming / Sega Emulators | Applications | done: script carried over unchanged |
+| Kronos | Gaming / Sega Emulators | Applications | done: script carried over unchanged |
+| XEMU | Gaming / Xbox Emulators | Applications | done: script carried over unchanged |
+| Xenia | Gaming / Xbox Emulators | Applications | done: script carried over unchanged |
+| Heroic | Gaming / Game Launchers | Applications | done: script carried over unchanged |
+| Lutris | Gaming / Game Launchers | Applications | done: script carried over unchanged |
+| RetroArch | Gaming / Game Launchers | Applications | done: script carried over unchanged |
+| Steam | Gaming / Game Launchers | Applications | done: script carried over unchanged |
+| Auto CPU Frequency | Gaming / Tools and Setups | Applications | done: script carried over unchanged |
+| Auto Mount Drive | Gaming / Tools and Setups | Applications | done: script carried over unchanged |
+| Bottles | Gaming / Tools and Setups | Applications | done: script carried over unchanged |
+| Gaming Dependencies | Gaming / Tools and Setups | Applications | done: script carried over unchanged |
+| General GPU Drivers | Gaming / Tools and Setups | Applications | done: script carried over unchanged |
+| Nvidia Drivers & Hardware Acceleration | Gaming / Tools and Setups | Applications | done: script carried over unchanged |
+| ProtonPlus | Gaming / Tools and Setups | Applications | done: script carried over unchanged |
+| ProtonUp-Qt | Gaming / Tools and Setups | Applications | done: script carried over unchanged |
+| Waydroid | Gaming / Tools and Setups | Applications | done: script carried over unchanged |
+| Arc Raiders Titus Mods | Gaming | Applications | done: script carried over unchanged |
+| Diablo II Resurrected Loot Filter | Gaming | Applications | done: script carried over unchanged |
+| EverQuest Legends MIDI Fix | Gaming | Applications | done: script carried over unchanged |
+| Fallout 76 INI and Mods | Gaming | Applications | done: script carried over unchanged |
+| Starfield Titus INI and Mods | Gaming | Applications | done: script carried over unchanged |
+| FirewallD Firewall Baselines (CTT) | Security | Security | done: script carried over unchanged |
+| Lynis Security Audit | Security | Security | done: script carried over unchanged |
+| UFW Firewall Baselines (CTT) | Security | Security | done: script carried over unchanged |
+| Alpine Update | System Setup / Alpine | Maintenance | done: script carried over unchanged |
+| Arch Server Setup | System Setup / Arch | Maintenance | done: script carried over unchanged |
+| DWM-Titus | System Setup / Arch | Maintenance | done: script carried over unchanged |
+| Hyprland JaKooLit | System Setup / Arch | Maintenance | done: script carried over unchanged |
+| Install CachyOS Repository and Kernel | System Setup / Arch | Maintenance | done: script carried over unchanged |
+| Install Chaotic-AUR Repository | System Setup / Arch | Maintenance | done: script carried over unchanged |
+| Linux Neptune for SteamDeck | System Setup / Arch | Maintenance | done: script carried over unchanged |
+| Nvidia Drivers & Hardware Acceleration | System Setup / Arch | Maintenance | done: script carried over unchanged |
+| Omarchy Rice by DHH | System Setup / Arch | Maintenance | done: script carried over unchanged |
+| Pacman Config | System Setup / Arch | Maintenance | done: script carried over unchanged |
+| Paru AUR Helper | System Setup / Arch | Maintenance | done: script carried over unchanged |
+| Snapper Snapshots | System Setup / Arch | Maintenance | done: script carried over unchanged |
+| System Maintenance | System Setup / Arch | Maintenance | done: script carried over unchanged |
+| Virtualization | System Setup / Arch | Maintenance | done: script carried over unchanged |
+| Yay AUR Helper | System Setup / Arch | Maintenance | done: script carried over unchanged |
+| Nala Package Manager | System Setup / Debian / Ubuntu | Maintenance | done: script carried over unchanged |
+| Hyprland JaKooLit | System Setup / Debian / Ubuntu | Maintenance | done: script carried over unchanged |
+| Install Desktop Environment | System Setup / Desktop Environment Setup | Maintenance | done: script carried over unchanged |
+| Uninstall Desktop Environment | System Setup / Desktop Environment Setup | Maintenance | done: script carried over unchanged |
+| Btrfs Assistant, Snapper Config, grub-btrfs | System Setup / Fedora | Maintenance | done: script carried over unchanged |
+| Configure DNF | System Setup / Fedora | Maintenance | done: script carried over unchanged |
+| Hyprland JaKooLit | System Setup / Fedora | Maintenance | done: script carried over unchanged |
+| Multimedia Codecs | System Setup / Fedora | Maintenance | done: script carried over unchanged |
+| Nvidia Proprietary Drivers | System Setup / Fedora | Maintenance | done: script carried over unchanged |
+| RPM Fusion | System Setup / Fedora | Maintenance | done: script carried over unchanged |
+| Upgrade to a New Fedora Release | System Setup / Fedora | Maintenance | done: script carried over unchanged |
+| Virtualization | System Setup / Fedora | Maintenance | done: script carried over unchanged |
+| Hyprland JaKooLit | System Setup / Ubuntu | Maintenance | done: script carried over unchanged |
+| Build Prerequisites | System Setup | Maintenance | done: script carried over unchanged |
+| Enable SSD TRIM | System Setup | Maintenance | done: script carried over unchanged |
+| Full System Cleanup | System Setup | Maintenance | done: script carried over unchanged |
+| Full System Update | System Setup | Maintenance | done: script carried over unchanged |
+| Global Theme | System Setup | Maintenance | done: script carried over unchanged |
+| PipeWire Audio | System Setup | Maintenance | done: script carried over unchanged |
+| Remove Snaps | System Setup | Maintenance | done: script carried over unchanged |
+| TTY Fonts | System Setup | Maintenance | done: script carried over unchanged |
+| Zram Swap | System Setup | Maintenance | done: script carried over unchanged |
+| Auto Detect Displays | Utilities / Monitor Control | Maintenance | done: script carried over unchanged |
+| Change Orientation | Utilities / Monitor Control | Maintenance | done: script carried over unchanged |
+| Disable Monitor | Utilities / Monitor Control | Maintenance | done: script carried over unchanged |
+| Duplicate Displays | Utilities / Monitor Control | Maintenance | done: script carried over unchanged |
+| Enable Monitor | Utilities / Monitor Control | Maintenance | done: script carried over unchanged |
+| Extend Displays | Utilities / Monitor Control | Maintenance | done: script carried over unchanged |
+| Manage Arrangement | Utilities / Monitor Control | Maintenance | done: script carried over unchanged |
+| Reset Scaling | Utilities / Monitor Control | Maintenance | done: script carried over unchanged |
+| Scale Monitors | Utilities / Monitor Control | Maintenance | done: script carried over unchanged |
+| Set Brightness | Utilities / Monitor Control | Maintenance | done: script carried over unchanged |
+| Set Primary Monitor | Utilities / Monitor Control | Maintenance | done: script carried over unchanged |
+| Set Resolution | Utilities / Monitor Control | Maintenance | done: script carried over unchanged |
+| CUPS | Utilities / Printers | Maintenance | done: script carried over unchanged |
+| Epson printer drivers | Utilities / Printers | Maintenance | done: script carried over unchanged |
+| HP printer drivers | Utilities / Printers | Maintenance | done: script carried over unchanged |
+| Add User | Utilities / User Account Manager | Maintenance | done: script carried over unchanged |
+| Add User To Groups | Utilities / User Account Manager | Maintenance | done: script carried over unchanged |
+| Change Password | Utilities / User Account Manager | Maintenance | done: script carried over unchanged |
+| Delete User | Utilities / User Account Manager | Maintenance | done: script carried over unchanged |
+| Remove User From Groups | Utilities / User Account Manager | Maintenance | done: script carried over unchanged |
+| Auto Login | Utilities | Maintenance | done: script carried over unchanged |
+| Bluetooth Manager | Utilities | Maintenance | done: script carried over unchanged |
+| Bootable USB Creator | Utilities | Maintenance | done: script carried over unchanged |
+| Crypto tool | Utilities | Maintenance | done: script carried over unchanged |
+| Locale Setup | Utilities | Maintenance | done: script carried over unchanged |
+| Numlock on Startup | Utilities | Maintenance | done: script carried over unchanged |
+| Ollama | Utilities | Maintenance | done: script carried over unchanged |
+| Ramalama | Utilities | Maintenance | done: script carried over unchanged |
+| Service Manager | Utilities | Maintenance | done: script carried over unchanged |
+| SSH Commands | Utilities | Maintenance | done: script carried over unchanged |
+| SSH Samba | Utilities | Maintenance | done: script carried over unchanged |
+| Timeshift Backup | Utilities | Maintenance | done: script carried over unchanged |
+| US Locale Setup | Utilities | Maintenance | done: script carried over unchanged |
+| WiFi Manager | Utilities | Maintenance | done: script carried over unchanged |
 
 ## Infrastructure
 
@@ -263,3 +265,16 @@ they are brought across (see `THIRD_PARTY_NOTICES.md` once that happens).
 | Releases and the `start.sh` launcher | done, pending the first run on GitHub |
 | Dashboard, history and settings screens | done (Milestone 2) |
 | Graphical interface | planned (Milestone 5) |
+
+## Where the general catalog went
+
+| Old tab | HelixForge |
+| :--- | :--- |
+| Applications Setup | Applications, merged with its groups (Design Tools, Developer Tools) |
+| Gaming | Applications > Gaming |
+| Security | Security |
+| System Setup | Maintenance > System Setup |
+| Utilities | Maintenance > Utilities; Printers merged into Maintenance > Printers |
+
+The old Neovim entry installs Chris Titus's Neovim configuration; it is
+"Neovim with Titus Config" here, beside the plain Neovim package.

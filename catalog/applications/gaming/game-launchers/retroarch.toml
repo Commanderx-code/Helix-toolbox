@@ -1,0 +1,7 @@
+name = "RetroArch"
+description = "Manage RetroArch launcher installation with Install, Uninstall, or Abort actions."
+flags = "FI"
+order = 103
+
+[script]
+id = "gaming/retroarch-launcher"

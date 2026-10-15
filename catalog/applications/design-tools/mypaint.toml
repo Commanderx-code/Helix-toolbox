@@ -1,0 +1,7 @@
+name = "MyPaint"
+description = "MyPaint is a free and open-source raster graphics editor for digital painting."
+flags = "I"
+order = 112
+
+[script]
+id = "applications-setup/design-tools/mypaint"

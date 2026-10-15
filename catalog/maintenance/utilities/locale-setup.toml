@@ -1,0 +1,12 @@
+name = "Locale Setup"
+description = "This allows the user to set their locale"
+flags = "FM"
+order = 109
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["locale-gen"]
+
+[script]
+id = "utils/locale-setup"

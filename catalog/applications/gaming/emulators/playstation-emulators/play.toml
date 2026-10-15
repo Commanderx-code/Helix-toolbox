@@ -1,0 +1,7 @@
+name = "Play!"
+description = "An Experimental Playstation 2 emulator. NO Games or Bios' are included"
+flags = "FM"
+order = 102
+
+[script]
+id = "gaming/emulators/playstation/play-emu"

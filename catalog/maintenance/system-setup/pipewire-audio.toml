@@ -1,0 +1,7 @@
+name = "PipeWire Audio"
+description = "Installs PipeWire with WirePlumber session manager for audio (replaces PulseAudio)."
+flags = "I"
+order = 113
+
+[script]
+id = "system-setup/pipewire-setup"

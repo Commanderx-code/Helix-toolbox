@@ -1,0 +1,12 @@
+name = "Hyprland JaKooLit"
+description = "Install JaKooLit's Hyprland configuration"
+flags = "I MP"
+order = 102
+
+[[preconditions]]
+matches = true
+check = { containing_file = "/etc/os-release" }
+values = ["ID=debian"]
+
+[script]
+id = "system-setup/debian/hyprland-kool-deb"

@@ -1,0 +1,6 @@
+name = "Okular"
+flags = "I"
+order = 102
+
+[script]
+id = "applications-setup/pdf-suites/okular"

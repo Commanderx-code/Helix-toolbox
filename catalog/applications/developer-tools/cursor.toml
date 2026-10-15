@@ -1,0 +1,7 @@
+name = "Cursor"
+description = "Next-generation AI-powered code editor built on VS Code, designed for enhanced productivity with integrated AI assistance."
+flags = "I"
+order = 101
+
+[script]
+id = "applications-setup/developer-tools/cursor"

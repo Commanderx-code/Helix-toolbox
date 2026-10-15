@@ -1,0 +1,6 @@
+name = "Debian / Ubuntu"
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["apt-get"]

@@ -1,0 +1,7 @@
+name = "Darktable"
+description = "Darktable is a free and open-source photography application and raw developer."
+flags = "I"
+order = 107
+
+[script]
+id = "applications-setup/design-tools/darktable"

@@ -1,0 +1,7 @@
+name = "Zoom"
+description = "Zoom is a widely-used video conferencing platform that allows users to host virtual meetings, webinars, and online collaboration with features like screen sharing and recording."
+flags = "I"
+order = 108
+
+[script]
+id = "applications-setup/communication-apps/zoom-setup"

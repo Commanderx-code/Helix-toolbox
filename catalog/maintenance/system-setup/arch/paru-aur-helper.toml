@@ -1,0 +1,7 @@
+name = "Paru AUR Helper"
+description = "Paru is your standard pacman wrapping AUR helper with lots of features and minimal interaction. To know more about AUR helpers visit: https://wiki.archlinux.org/title/AUR_helpers"
+flags = "I"
+order = 110
+
+[script]
+id = "system-setup/arch/paru-setup"

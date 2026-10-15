@@ -1,0 +1,7 @@
+name = "Tor Browser"
+description = "Tor Browser is a free and open-source firefox-based web browser designed for anonymity and censorship circumvention."
+flags = "I"
+order = 109
+
+[script]
+id = "applications-setup/browsers/tor-browser"

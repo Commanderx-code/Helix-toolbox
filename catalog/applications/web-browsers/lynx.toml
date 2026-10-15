@@ -1,0 +1,7 @@
+name = "Lynx"
+description = "Lynx is a highly configurable text-based web browser for use on cursor-addressable character cell terminals."
+flags = "I"
+order = 106
+
+[script]
+id = "applications-setup/browsers/lynx"

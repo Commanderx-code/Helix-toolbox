@@ -1,0 +1,7 @@
+name = "Disable Monitor"
+description = "This script is designed to disable a monitor in your system"
+flags = ""
+order = 103
+
+[script]
+id = "utils/monitor-control/disable_monitor"

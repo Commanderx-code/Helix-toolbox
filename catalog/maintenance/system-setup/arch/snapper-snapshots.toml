@@ -1,0 +1,12 @@
+name = "Snapper Snapshots"
+description = "Sets up Snapper with hourly Btrfs snapshots, snap-pac hooks, and GRUB boot menu entries."
+flags = "I PFM SS"
+order = 111
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["btrfs"]
+
+[script]
+id = "system-setup/arch/snapshot-setup"

@@ -1,0 +1,7 @@
+name = "Tenacity"
+description = "Tenacity is an easy-to-use, cross-platform multi-track audio editor/recorder."
+flags = "I"
+order = 120
+
+[script]
+id = "applications-setup/design-tools/tenacity"

@@ -1,0 +1,7 @@
+name = "Slack"
+description = "Slack is a collaboration platform designed for team communication, featuring channels, direct messaging, file sharing, and integrations with various productivity tools."
+flags = "I"
+order = 104
+
+[script]
+id = "applications-setup/communication-apps/slack-setup"

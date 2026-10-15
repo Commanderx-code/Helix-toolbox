@@ -1,0 +1,8 @@
+name = "Arch Server Setup"
+description = "This command installs a minimal arch server setup under 5 minutes."
+flags = "SI D"
+multi_select = false
+order = 101
+
+[script]
+id = "system-setup/arch/server-setup"

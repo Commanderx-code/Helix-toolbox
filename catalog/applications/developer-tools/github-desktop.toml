@@ -1,0 +1,7 @@
+name = "Github Desktop"
+description = "GitHub Desktop is a user-friendly application that simplifies the process of managing Git repositories and interacting with GitHub, providing a graphical interface for tasks like committing, branching, and syncing changes."
+flags = "I"
+order = 102
+
+[script]
+id = "applications-setup/developer-tools/githubdesktop"

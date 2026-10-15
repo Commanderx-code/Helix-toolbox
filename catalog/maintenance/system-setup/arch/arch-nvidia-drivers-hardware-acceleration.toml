@@ -1,0 +1,7 @@
+name = "Nvidia Drivers & Hardware Acceleration"
+description = "This script installs and configures nvidia drivers with Hardware Acceleration."
+flags = "I FM SS"
+order = 107
+
+[script]
+id = "system-setup/arch/nvidia-drivers"

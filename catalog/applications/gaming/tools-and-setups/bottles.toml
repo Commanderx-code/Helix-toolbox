@@ -1,0 +1,7 @@
+name = "Bottles"
+description = "Bottles allows Windows software, like applications and games, to run on Linux. Bottles also provides tools to categorize, organize and optimize your applications."
+flags = "FI"
+order = 103
+
+[script]
+id = "applications-setup/bottles-setup"

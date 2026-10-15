@@ -1,0 +1,7 @@
+name = "Auto CPU Frequency"
+description = "Automatic CPU speed & power optimizer.\nhttps://github.com/AdnanHodzic/auto-cpufreq"
+flags = "I SS"
+order = 101
+
+[script]
+id = "applications-setup/auto-cpufreq"

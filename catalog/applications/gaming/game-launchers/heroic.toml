@@ -1,0 +1,7 @@
+name = "Heroic"
+description = "Manage Heroic launcher installation with Install, Uninstall, or Abort actions."
+flags = "FI"
+order = 101
+
+[script]
+id = "gaming/heroic-launcher"

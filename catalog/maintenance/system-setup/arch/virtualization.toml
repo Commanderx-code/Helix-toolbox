@@ -1,0 +1,7 @@
+name = "Virtualization"
+description = "QEMU, Libvirt, Virt-Manager installation and configuration."
+flags = "FM I SS RP"
+order = 113
+
+[script]
+id = "system-setup/arch/virtualization"

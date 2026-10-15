@@ -1,0 +1,7 @@
+name = "Ollama"
+description = "This utility is designed to manage ollama in your system"
+flags = "I SS"
+order = 111
+
+[script]
+id = "utils/ollama"

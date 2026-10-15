@@ -1,0 +1,7 @@
+name = "Scribus"
+description = "Scribus is free and open-source desktop publishing software available for most desktop operating systems."
+flags = "I"
+order = 118
+
+[script]
+id = "applications-setup/design-tools/scribus"

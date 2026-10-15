@@ -1,0 +1,6 @@
+name = "Delete User"
+flags = ""
+order = 104
+
+[script]
+id = "utils/user-account-manager/delete_user"

@@ -1,0 +1,7 @@
+name = "Global Theme"
+description = "This script is designed to handle the installation and configuration of global theming"
+flags = "I PFM"
+order = 112
+
+[script]
+id = "system-setup/global-theme"

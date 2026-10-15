@@ -1,0 +1,7 @@
+name = "Hyprland JaKooLit"
+description = "Install JaKooLit's Hyprland configuration"
+flags = "I MP"
+order = 103
+
+[script]
+id = "system-setup/fedora/hyprland-kool-fed"

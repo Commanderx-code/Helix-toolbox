@@ -1,0 +1,7 @@
+name = "System Maintenance"
+description = "Enables paccache.timer, removes orphan packages, and cleans system journals."
+flags = "PFM RP"
+order = 112
+
+[script]
+id = "system-setup/arch/system-maintenance"

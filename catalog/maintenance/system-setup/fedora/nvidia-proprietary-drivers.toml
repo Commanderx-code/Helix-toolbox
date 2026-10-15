@@ -1,0 +1,7 @@
+name = "Nvidia Proprietary Drivers"
+description = "This script is designed to download the proprietary NVIDIA drivers in Fedora."
+flags = "I"
+order = 105
+
+[script]
+id = "system-setup/fedora/nvidia-proprietary-driver-setup"

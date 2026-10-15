@@ -1,0 +1,7 @@
+name = "Android Debloater"
+description = "Universal Android Debloater (UAD) is a tool designed to help users remove bloatware and unnecessary pre-installed applications from Android devices, enhancing performance and user experience."
+flags = "I"
+order = 114
+
+[script]
+id = "applications-setup/android-debloat"

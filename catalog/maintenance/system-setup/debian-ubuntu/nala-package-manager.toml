@@ -1,0 +1,8 @@
+name = "Nala Package Manager"
+description = "Install Nala on Debian, Ubuntu and derivatives such as Zorin from enabled distribution repositories and configure apt as an interactive alias for nala in Bash, Zsh or Fish, with a backup. Use sudo nala for elevated commands; system APT remains available."
+flags = "I MP FM"
+multi_select = false
+order = 101
+
+[script]
+id = "system-setup/debian/nala-setup"

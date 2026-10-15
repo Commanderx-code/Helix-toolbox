@@ -1,0 +1,8 @@
+name = "Hyprland JaKooLit"
+description = "Install JaKooLit's Hyprland configuration"
+flags = "I MP"
+multi_select = false
+order = 103
+
+[script]
+id = "system-setup/arch/hyprland-kool"

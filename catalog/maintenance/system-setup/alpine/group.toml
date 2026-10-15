@@ -1,0 +1,6 @@
+name = "Alpine"
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["apk"]

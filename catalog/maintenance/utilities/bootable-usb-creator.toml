@@ -1,0 +1,6 @@
+name = "Bootable USB Creator"
+flags = "D"
+order = 107
+
+[script]
+id = "utils/create-bootable-usb"

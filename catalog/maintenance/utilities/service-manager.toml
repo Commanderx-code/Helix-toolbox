@@ -1,0 +1,7 @@
+name = "Service Manager"
+description = "This utility is designed to manage services in your system"
+flags = "I PFM SS"
+order = 113
+
+[script]
+id = "utils/service-control"

@@ -1,0 +1,7 @@
+name = "RetroArch Game Emulator"
+description = "Frontend for emulators, game engines and media players. NO Games or Bios' are included"
+flags = "FM"
+order = 101
+
+[script]
+id = "gaming/emulators/retroarch"

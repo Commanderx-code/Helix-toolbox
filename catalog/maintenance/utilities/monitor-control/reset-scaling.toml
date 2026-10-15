@@ -1,0 +1,7 @@
+name = "Reset Scaling"
+description = "This script is designed to reset scaling of a monitor in your system"
+flags = ""
+order = 108
+
+[script]
+id = "utils/monitor-control/reset_scaling"

@@ -1,0 +1,7 @@
+name = "waterfox"
+description = "Waterfox is the privacy-focused web browser engineered to give you speed, control, and peace of mind on the internet."
+flags = "FI"
+order = 111
+
+[script]
+id = "applications-setup/browsers/waterfox"

@@ -1,0 +1,7 @@
+name = "bsnes"
+description = "Super Nintendo Emulator. NO Games are included"
+flags = "FM"
+order = 101
+
+[script]
+id = "gaming/emulators/nintendo/bsnes"

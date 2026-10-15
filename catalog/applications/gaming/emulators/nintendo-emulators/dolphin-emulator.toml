@@ -1,0 +1,7 @@
+name = "Dolphin Emulator"
+description = "GameCube and Wii Emulator. NO Games are included"
+flags = "FM"
+order = 102
+
+[script]
+id = "gaming/emulators/nintendo/dolphin-emu"

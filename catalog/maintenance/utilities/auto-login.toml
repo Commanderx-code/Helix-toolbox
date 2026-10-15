@@ -1,0 +1,6 @@
+name = "Auto Login"
+flags = "DE setup"
+order = 105
+
+[script]
+id = "utils/auto-login"

@@ -1,0 +1,7 @@
+name = "Synfig Studio"
+description = "Synfig Studio is a free and open-source vector-based 2D animation software."
+flags = "I"
+order = 119
+
+[script]
+id = "applications-setup/design-tools/synfigstudio"

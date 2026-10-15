@@ -1,0 +1,7 @@
+name = "Extend Displays"
+description = "This script is designed to extend display among multi-monitor setup in your system"
+flags = ""
+order = 106
+
+[script]
+id = "utils/monitor-control/extend_displays"

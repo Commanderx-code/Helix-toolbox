@@ -1,0 +1,12 @@
+name = "Linux Neptune for SteamDeck"
+description = "Valve's fork of Linux Kernel for the SteamDeck"
+flags = "I PFM K"
+order = 106
+
+[[preconditions]]
+matches = true
+check = { containing_file = "/sys/devices/virtual/dmi/id/board_vendor" }
+values = ["Valve"]
+
+[script]
+id = "system-setup/arch/linux-neptune"

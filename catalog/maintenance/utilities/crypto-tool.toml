@@ -1,0 +1,6 @@
+name = "Crypto tool"
+flags = "I FM"
+order = 108
+
+[script]
+id = "utils/encrypt_decrypt_tool"

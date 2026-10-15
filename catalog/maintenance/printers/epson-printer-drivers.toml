@@ -1,0 +1,7 @@
+name = "Epson printer drivers"
+description = "This script will install the Epson printer drivers."
+flags = "I"
+order = 103
+
+[script]
+id = "utils/printers/install-epson-printer-drivers"

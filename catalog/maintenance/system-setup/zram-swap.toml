@@ -1,0 +1,7 @@
+name = "Zram Swap"
+description = "Configures compressed RAM swap via zram-generator with zstd algorithm."
+flags = "PFM"
+order = 116
+
+[script]
+id = "system-setup/zram-setup"

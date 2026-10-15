@@ -1,0 +1,6 @@
+name = "Arch"
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["pacman"]

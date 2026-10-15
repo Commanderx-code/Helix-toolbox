@@ -1,0 +1,8 @@
+name = "Bluetooth Manager"
+description = "This utility is designed to manage bluetooth in your system"
+flags = "I SS"
+multi_select = false
+order = 106
+
+[script]
+id = "utils/bluetooth-control"

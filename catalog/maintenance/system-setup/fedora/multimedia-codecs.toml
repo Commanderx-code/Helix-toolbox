@@ -1,0 +1,7 @@
+name = "Multimedia Codecs"
+description = "This script is designed to install multimedia codecs, and to ensure RPM Fusion repositories are installed."
+flags = "I"
+order = 104
+
+[script]
+id = "system-setup/fedora/multimedia-codecs"

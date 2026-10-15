@@ -1,0 +1,7 @@
+name = "Steam"
+description = "Manage Steam launcher installation with Install, Uninstall, or Abort actions."
+flags = "FI"
+order = 104
+
+[script]
+id = "gaming/steam-launcher"

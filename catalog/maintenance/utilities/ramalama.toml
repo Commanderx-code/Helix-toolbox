@@ -1,0 +1,7 @@
+name = "Ramalama"
+description = "This utility is designed to manage ramalama in your system"
+flags = "I SS"
+order = 112
+
+[script]
+id = "utils/ramalama"

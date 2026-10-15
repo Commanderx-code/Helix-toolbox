@@ -1,0 +1,12 @@
+name = "Waydroid"
+description = "Waydroid is an emulator that allows you to run Android apps and games on Linux."
+flags = "I SS"
+order = 109
+
+[[preconditions]]
+matches = true
+check = { environment = "XDG_SESSION_TYPE" }
+values = ["wayland", "Wayland"]
+
+[script]
+id = "applications-setup/waydroid-setup"

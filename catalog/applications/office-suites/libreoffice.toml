@@ -1,0 +1,6 @@
+name = "LibreOffice"
+flags = "I"
+order = 102
+
+[script]
+id = "applications-setup/office-suites/libreoffice"

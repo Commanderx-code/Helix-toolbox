@@ -1,0 +1,7 @@
+name = "VS Code"
+description = "Visual Studio Code (VS Code) is a lightweight, open-source code editor with built-in support for debugging, version control, and extensions for various programming languages and frameworks."
+flags = "I"
+order = 108
+
+[script]
+id = "applications-setup/developer-tools/vscode"

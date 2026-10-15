@@ -1,0 +1,8 @@
+name = "Full System Cleanup"
+description = "This script is designed to remove unnecessary packages, clean old cache files, remove temporary files, and to empty the trash."
+flags = "RP PFM"
+multi_select = false
+order = 109
+
+[script]
+id = "system-setup/system-cleanup"

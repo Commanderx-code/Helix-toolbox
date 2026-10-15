@@ -1,0 +1,7 @@
+name = "Pinta"
+description = "Pinta is an open-source, cross-platform bitmap image drawing and editing program inspired by Paint.NET."
+flags = "I"
+order = 117
+
+[script]
+id = "applications-setup/design-tools/pinta"

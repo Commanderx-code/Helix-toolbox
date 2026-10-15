@@ -1,0 +1,7 @@
+name = "Thorium"
+description = "Thorium is a Chromium-based browser focused on privacy and performance."
+flags = "I"
+order = 108
+
+[script]
+id = "applications-setup/browsers/thorium"

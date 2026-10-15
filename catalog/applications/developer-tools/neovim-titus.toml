@@ -1,0 +1,7 @@
+name = "Neovim with Titus Config"
+description = "Neovim is a refactor, and sometimes redactor, in the tradition of Vim.\nIt is not a rewrite but a continuation and extension of Vim.\nThis command configures neovim from CTT's neovim configuration.\nhttps://github.com/ChrisTitusTech/neovim"
+flags = "I FM"
+order = 105
+
+[script]
+id = "applications-setup/developer-tools/neovim"

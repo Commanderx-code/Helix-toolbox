@@ -1,0 +1,8 @@
+name = "Lynis Security Audit"
+description = "Install Lynis when needed, run an elevated system security audit with live results, then optionally remove Lynis."
+flags = "I MP RP"
+multi_select = false
+order = 102
+
+[script]
+id = "security/lynis-audit"

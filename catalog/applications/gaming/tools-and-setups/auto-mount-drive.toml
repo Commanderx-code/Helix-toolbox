@@ -1,0 +1,8 @@
+name = "Auto Mount Drive"
+description = "This utility is designed to help with automating the process of mounting a drive on to your system."
+flags = "PFM"
+multi_select = false
+order = 102
+
+[script]
+id = "utils/auto-mount"

@@ -1,0 +1,7 @@
+name = "Numlock on Startup"
+description = "This utility is designed to enable Num Lock at boot, rather than within desktop environments like KDE or GNOME"
+flags = "PFM SS"
+order = 110
+
+[script]
+id = "utils/numlock"

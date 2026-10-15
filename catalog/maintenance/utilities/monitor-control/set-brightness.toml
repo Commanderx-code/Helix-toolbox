@@ -1,0 +1,7 @@
+name = "Set Brightness"
+description = "This script is designed to change the Brightness of monitors connected to your system"
+flags = ""
+order = 110
+
+[script]
+id = "utils/monitor-control/set_brightness"

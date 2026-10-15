@@ -1,0 +1,7 @@
+name = "CUPS"
+description = "This script will install the CUPS system, required for most printer drivers on Linux."
+flags = "I"
+order = 101
+
+[script]
+id = "utils/printers/install-cups"

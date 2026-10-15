@@ -1,0 +1,7 @@
+name = "RPCS3"
+description = "A Playstation 3 emulator. NO Games or Bios' are included"
+flags = "FM"
+order = 103
+
+[script]
+id = "gaming/emulators/playstation/rpcs3"

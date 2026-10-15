@@ -1,0 +1,7 @@
+name = "Brave Origin"
+description = "Brave Origin is a minimalist version of Brave that strips out optional features like VPN, crypto wallet, Rewards, and Leo AI, keeping only core privacy protections and ad blocking."
+flags = "I"
+order = 102
+
+[script]
+id = "applications-setup/browsers/brave-origin"

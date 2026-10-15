@@ -1,0 +1,7 @@
+name = "Duplicate Displays"
+description = "This script is designed to duplicate display among multi-monitor setup in your system"
+flags = ""
+order = 104
+
+[script]
+id = "utils/monitor-control/duplicate_displays"

@@ -1,0 +1,12 @@
+name = "Shelly"
+description = "Shelly is a modern, visual, and intuitive interface for your Arch Linux system. Not just a wrapper, but a native ground-up experience."
+flags = "I SS"
+order = 125
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["pacman"]
+
+[script]
+id = "applications-setup/shelly-setup"

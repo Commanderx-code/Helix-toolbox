@@ -1,0 +1,7 @@
+name = "Zen Browser"
+description = "Zen Browser is a privacy-focused web browser designed for enhanced security and a seamless browsing experience."
+flags = "I"
+order = 112
+
+[script]
+id = "applications-setup/browsers/zen-browser"

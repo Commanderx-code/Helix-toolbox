@@ -1,0 +1,7 @@
+name = "mGBA"
+description = "Nintendo Game Boy Advance Emulator. NO Games are included"
+flags = "FM"
+order = 105
+
+[script]
+id = "gaming/emulators/nintendo/mgba"

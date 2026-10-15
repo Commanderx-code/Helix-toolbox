@@ -1,0 +1,7 @@
+name = "ZapZap"
+description = "ZapZap is an open source whatsapp desktop client for Linux users developed by rafatosta."
+flags = "I"
+order = 107
+
+[script]
+id = "applications-setup/communication-apps/zapzap-setup"

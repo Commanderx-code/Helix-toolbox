@@ -1,0 +1,7 @@
+name = "Ardour"
+description = "Ardour is a free and open-source digital audio workstation and hard disk recorder."
+flags = "I"
+order = 101
+
+[script]
+id = "applications-setup/design-tools/ardour"

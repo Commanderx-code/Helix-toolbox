@@ -1,0 +1,7 @@
+name = "Gaming Dependencies"
+description = "Installs gaming runtime dependencies across distributions. Steam and Lutris are managed separately from Game Launchers."
+flags = "I"
+order = 104
+
+[script]
+id = "system-setup/gaming-setup"

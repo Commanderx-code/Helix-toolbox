@@ -1,0 +1,7 @@
+name = "Google Chrome"
+description = "Google Chrome is a fast, secure, and free web browser, built for the modern web."
+flags = "I"
+order = 104
+
+[script]
+id = "applications-setup/browsers/google-chrome"

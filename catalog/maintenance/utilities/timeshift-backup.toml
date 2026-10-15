@@ -1,0 +1,11 @@
+name = "Timeshift Backup"
+flags = "I"
+order = 116
+
+[[preconditions]]
+matches = false
+check = "command_exists"
+values = ["dnf"]
+
+[script]
+id = "utils/timeshift"

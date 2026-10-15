@@ -1,0 +1,7 @@
+name = "PCSX2"
+description = "A Playstation 2 emulator. NO Games or Bios' are included"
+flags = "FM"
+order = 101
+
+[script]
+id = "gaming/emulators/playstation/pcsx2"

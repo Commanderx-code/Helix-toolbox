@@ -1,0 +1,8 @@
+name = "Omarchy Rice by DHH"
+description = "Simplified Hyprland configuration by DHH the ruby on rails dude."
+flags = "I MP"
+multi_select = false
+order = 108
+
+[script]
+id = "system-setup/arch/omarchy"

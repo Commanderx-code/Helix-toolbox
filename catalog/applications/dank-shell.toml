@@ -1,0 +1,7 @@
+name = "Dank Shell"
+description = "DankMaterialShell is a complete desktop shell for niri, Hyprland, MangoWC, Sway, labwc, Scroll, Miracle WM, and other Wayland compositors. It replaces waybar, swaylock, swayidle, mako, fuzzel, polkit, and everything else you'd normally stitch together to make a desktop"
+flags = "I FM"
+order = 115
+
+[script]
+id = "applications-setup/dank-shell"

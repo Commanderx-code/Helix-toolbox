@@ -1,0 +1,7 @@
+name = "GNU Image Manipulation Program (GIMP)"
+description = "GIMP is a free and open-source raster graphics editor. It is commonly used for photo retouching, image editing, free-hand drawing, and converting between different image file formats."
+flags = "I"
+order = 108
+
+[script]
+id = "applications-setup/design-tools/gimp"
