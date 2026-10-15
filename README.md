@@ -208,6 +208,34 @@ interface shows it in the confirmation; `helixforge plan` and `helixforge run
 --dry-run` print it. Every run is recorded with its outcome, including runs
 that failed or were interrupted.
 
+Before anything runs, HelixForge checks the plan on this machine. A
+**blocker** stops the run (the menu says why instead of asking, the command
+line exits without changing anything); a **warning** is shown with the
+confirmation:
+
+- a tool the plan needs is missing (an AUR helper, `flatpak`), unless
+  another source of that package can do without it (blocker)
+- two queued entries replace each other, such as WINE and WINE Staging
+  (blocker: queue only one)
+- an entry replaces an installed package (warning: the package manager asks
+  before removing it)
+- an entry needs an Arch repository that is off, such as Steam and multilib
+  (blocker)
+- an entry is for graphics hardware the machine does not have, such as the
+  Nvidia drivers without an Nvidia card (warning)
+- the root file system has less free space than the packages' installed
+  sizes (`pacman -Si`, `apt-cache show`, `dnf repoquery`) plus what scripts
+  say they need (blocker), or would be left with less than 1 GiB (warning)
+
+Entries say what they need from the machine in an optional `[needs]` table:
+
+```toml
+[needs]
+gpu = ["nvidia"]              # nvidia, amd or intel; any one will do
+repositories = ["multilib"]   # Arch repositories that must be enabled
+space_mb = 6000               # free space beyond its packages, for downloads
+```
+
 A package entry lists every source it has on this machine, in order: the
 distribution's package, the AUR on Arch, then Flathub. The plan shows the
 first with the others after it (`sudo pacman -S --needed meld  (else

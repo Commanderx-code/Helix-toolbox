@@ -5,3 +5,7 @@ order = 108
 
 [script]
 id = "system-setup/arch/nvidia-drivers"
+
+# Checked before a run.
+[needs]
+gpu = ["nvidia"]

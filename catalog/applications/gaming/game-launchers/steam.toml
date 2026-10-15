@@ -13,3 +13,7 @@ arch = "steam"
 debian = "steam-installer"
 fedora = "steam"
 flatpak = "com.valvesoftware.Steam"
+
+# Checked before a run.
+[needs]
+repositories = ["multilib"]

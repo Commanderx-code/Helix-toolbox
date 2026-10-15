@@ -18,7 +18,7 @@ use helixforge_core::{Action, Entry, Item};
 use helixforge_engine::{
     EngineError, Plan, history,
     inventory::{Inventory, Status, which},
-    plan, plan_removal,
+    plan, plan_removal, preflight,
 };
 use helixforge_platform::LinuxInfo;
 use ratatui::{
@@ -181,11 +181,13 @@ pub struct App {
     check_statuses: bool,
 }
 
-/// A plan of the queue as it was, from when it was made.
+/// A plan of the queue as it was, from when it was made, with what the
+/// checks before a run found.
 struct PlanCache {
     ids: Vec<String>,
     made: std::time::Instant,
     result: Result<Plan, String>,
+    findings: Vec<preflight::Finding>,
 }
 
 /// How long a cached plan is trusted, for changes made outside HelixForge.
@@ -1199,10 +1201,15 @@ impl App {
                 self.catalog.find(id)
             })
             .map_err(|error| error.to_string());
+            let findings = match &result {
+                Ok(planned) => self.findings(planned),
+                Err(_) => Vec::new(),
+            };
             self.planned = Some(PlanCache {
                 ids,
                 made: std::time::Instant::now(),
                 result,
+                findings,
             });
         }
         let planned = self
@@ -1226,6 +1233,11 @@ impl App {
                 if !planned.requirements.is_empty() {
                     lines.push(format!("Needs: {}", planned.requirements.join(", ")));
                 }
+                lines.extend(
+                    self.planned
+                        .iter()
+                        .flat_map(|cache| cache.findings.iter().map(preflight::Finding::line)),
+                );
                 lines.extend(planned.notes.iter().cloned());
                 lines.extend(
                     planned
@@ -1946,6 +1958,32 @@ impl App {
     }
 
     /// Show a plan's confirmation, or why there is nothing to run.
+    /// What the checks before a run find for a plan on this machine.
+    fn findings(&self, planned: &Plan) -> Vec<preflight::Finding> {
+        if !self.check_statuses {
+            // Tests: no machine questions beyond what planning asked.
+            return preflight::check(
+                planned,
+                &self.platform,
+                &|id| self.catalog.find(id),
+                &preflight::Facts {
+                    present: &|_| true,
+                    free_bytes: &|_| None,
+                    gpus: &Vec::new,
+                    repositories: &|| None,
+                    sizes: &|_, _| None,
+                    ..preflight::Facts::real()
+                },
+            );
+        }
+        preflight::check(
+            planned,
+            &self.platform,
+            &|id| self.catalog.find(id),
+            &preflight::Facts::real(),
+        )
+    }
+
     /// Plan updating entries from the last status check, and ask.
     fn update(&mut self, entries: Vec<Entry>) {
         let Some(inventory) = &self.inventory else {
@@ -1988,7 +2026,17 @@ impl App {
             self.popup = Some(Popup::Text(TextPopup::new("Nothing to run", text, true)));
             return;
         }
-        let header = vec![format!(
+        let findings = self.findings(&planned);
+        if preflight::blocked(&findings) {
+            let lines: Vec<String> = findings.iter().map(preflight::Finding::line).collect();
+            self.popup = Some(Popup::Text(TextPopup::new(
+                "Cannot run yet",
+                format!("{}\n\nNothing was changed.", lines.join("\n")),
+                true,
+            )));
+            return;
+        }
+        let mut header = vec![format!(
             "Risk: {}{}",
             planned.risk.label(),
             if planned.privileged {
@@ -1997,6 +2045,7 @@ impl App {
                 ""
             }
         )];
+        header.extend(findings.iter().map(preflight::Finding::line));
         let mut lines: Vec<(String, String)> = planned
             .steps
             .iter()
@@ -2329,6 +2378,49 @@ mod tests {
             screen(&mut app, 140, 40).contains("Status: Managed (Home Manager 0.74.4)"),
             "the description says it too"
         );
+    }
+
+    #[test]
+    fn a_blocked_plan_says_why_instead_of_asking() {
+        let fixtures =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/packages");
+        let args = TuiArgs {
+            override_validation: true,
+            bypass_root: true,
+            ..TuiArgs::default()
+        };
+        let platform = LinuxInfo::from_os_release("ID=arch\nPRETTY_NAME=\"Arch Linux\"\n").unwrap();
+        let mut app = App::new(
+            Catalog::from_directory(&fixtures, false).unwrap(),
+            platform,
+            &args,
+        );
+        app.icons = false;
+        for name in ["Conflict A", "Conflict B"] {
+            // A fresh search for each.
+            press(&mut app, KeyCode::Char('/'));
+            press(&mut app, KeyCode::Esc);
+            press(&mut app, KeyCode::Char('/'));
+            type_text(&mut app, name);
+            press(&mut app, KeyCode::Enter);
+            press(&mut app, KeyCode::Char(' '));
+        }
+        assert_eq!(app.queue.len(), 2);
+        app.open_screen(Screen::Plan);
+        app.focus = Focus::Main;
+        let plan = screen(&mut app, 140, 40);
+        assert!(
+            plan.contains("Blocked: Conflict A and Conflict B replace each other"),
+            "{plan}"
+        );
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Text(_))), "no confirmation");
+        let shown = screen(&mut app, 140, 40);
+        assert!(
+            shown.contains("Cannot run yet") && shown.contains("Nothing was changed"),
+            "{shown}"
+        );
+        assert!(app.pending.is_none());
     }
 
     #[test]

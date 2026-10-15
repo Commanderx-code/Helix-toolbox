@@ -182,6 +182,17 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] The Install Plan screen keeps its plan for a few seconds and drops it
       after a run, since planning now asks the package manager
 
+## v0.3.0: dependencies, conflicts and the installation queue
+
+- [x] Checks before a run (item 2): missing tools, entries that replace
+      each other, packages that would be replaced, Arch repositories,
+      graphics hardware and free space, as blockers and warnings in the
+      plan, the confirmation and the command line; `[needs]` in the catalog
+      (Nvidia drivers, Steam and the CachyOS sets, DaVinci Resolve)
+- [ ] The installation queue (item 8): dependency ordering, continue or stop
+      after a failure, per-step status and recovery instructions, package
+      managers kept serial
+
 ## Smart status (done)
 
 - [x] Package entries show Installed (source and version), Update (from the

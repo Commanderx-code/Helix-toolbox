@@ -1,0 +1,9 @@
+name = "Conflict A"
+description = "One of two packages that replace each other. The tests queue both and expect the run to be blocked before anything starts."
+flags = "I"
+
+[package]
+arch = "helixforge-conflict-a"
+debian = "helixforge-conflict-a"
+fedora = "helixforge-conflict-a"
+conflicts = ["helixforge-conflict-b"]

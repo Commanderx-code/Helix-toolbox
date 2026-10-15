@@ -11,3 +11,7 @@ values = ["/run/ostree-booted"]
 
 [script]
 id = "commander/resolve-container"
+
+# Checked before a run.
+[needs]
+space_mb = 8000

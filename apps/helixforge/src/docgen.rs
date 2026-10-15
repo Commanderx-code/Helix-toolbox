@@ -57,6 +57,7 @@ mod tests {
                     line: "true".into(),
                 },
                 detect: None,
+                needs: Default::default(),
             })
         };
         let tab = Tab {

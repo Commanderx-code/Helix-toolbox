@@ -12,7 +12,7 @@ use helixforge_core::{Action, Entry, Item, NativeAction};
 use helixforge_engine::{
     InheritedRunner, Machine, PackageState, Plan, execute, history,
     inventory::{Inventory, Status, which},
-    package_state, plan, plan_removal, run_native,
+    package_state, plan, plan_removal, preflight, run_native,
 };
 use helixforge_platform::LinuxInfo;
 use std::{
@@ -263,13 +263,13 @@ fn main() -> Result<()> {
         Command::Plan { ids } => {
             let catalog = load(false)?;
             let planned = plan_ids(&catalog, &platform, &ids)?;
-            print_plan(&planned);
+            print_plan(&catalog, &platform, &planned);
             Ok(())
         }
         Command::Run { ids, dry_run, yes } => {
             let catalog = load(false)?;
             let planned = plan_ids(&catalog, &platform, &ids)?;
-            confirm_and_run(&catalog, &planned, dry_run, yes, "RUN")
+            confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "RUN")
         }
         Command::Remove { ids, dry_run, yes } => {
             let catalog = load(false)?;
@@ -278,7 +278,7 @@ fn main() -> Result<()> {
                 entries.push(find(&catalog, id)?);
             }
             let planned = plan_removal(entries, &platform)?;
-            confirm_and_run(&catalog, &planned, dry_run, yes, "REMOVE")
+            confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "REMOVE")
         }
         Command::Update { ids, dry_run, yes } => {
             let catalog = load(ids.is_empty())?;
@@ -306,7 +306,7 @@ fn main() -> Result<()> {
                 return Ok(());
             }
             let planned = inventory.plan_update(entries, &platform, &which);
-            confirm_and_run(&catalog, &planned, dry_run, yes, "UPDATE")
+            confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "UPDATE")
         }
         Command::History { limit } => {
             let records = history::read(limit)?;
@@ -346,12 +346,13 @@ fn main() -> Result<()> {
 /// Show a plan, ask for the confirmation word unless told not to, and run it.
 fn confirm_and_run(
     catalog: &Catalog,
+    platform: &LinuxInfo,
     planned: &Plan,
     dry_run: bool,
     yes: bool,
     word: &str,
 ) -> Result<()> {
-    print_plan(planned);
+    let findings = print_plan(catalog, platform, planned);
     if planned.is_empty() {
         println!("Nothing to run.");
         return Ok(());
@@ -359,6 +360,9 @@ fn confirm_and_run(
     if dry_run {
         println!("Dry run: nothing was changed.");
         return Ok(());
+    }
+    if preflight::blocked(&findings) {
+        bail!("not run: fix what is blocked above first; nothing was changed");
     }
     if !yes && confirm(word)?.trim() != word {
         bail!("cancelled; nothing was changed");
@@ -444,7 +448,8 @@ fn plan_ids(catalog: &Catalog, platform: &LinuxInfo, ids: &[String]) -> Result<P
     Ok(plan(entries, platform, &|id| catalog.find(id))?)
 }
 
-fn print_plan(planned: &Plan) {
+/// Print a plan and what the checks before a run found; returns the findings.
+fn print_plan(catalog: &Catalog, platform: &LinuxInfo, planned: &Plan) -> Vec<preflight::Finding> {
     for note in &planned.notes {
         println!("{note}");
     }
@@ -468,4 +473,14 @@ fn print_plan(planned: &Plan) {
             }
         );
     }
+    let findings = preflight::check(
+        planned,
+        platform,
+        &|id| catalog.find(id),
+        &preflight::Facts::real(),
+    );
+    for finding in &findings {
+        println!("{}", finding.line());
+    }
+    findings
 }

@@ -764,6 +764,7 @@ mod tests {
                 removable: true,
             },
             detect: None,
+            needs: Default::default(),
         }
     }
 

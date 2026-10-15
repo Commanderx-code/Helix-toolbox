@@ -185,7 +185,9 @@ impl ConfirmPopup {
             .enumerate()
             .skip(self.scroll)
             .map(|(index, line)| {
-                if index < self.header_lines {
+                if index < self.header_lines && line.starts_with("Warning:") {
+                    Line::styled(line.as_str(), Style::default().fg(theme.warning()))
+                } else if index < self.header_lines {
                     Line::styled(line.as_str(), Style::default().fg(theme.title()))
                 } else if line.starts_with(' ') {
                     Line::styled(line.as_str(), Style::default().fg(theme.muted()))

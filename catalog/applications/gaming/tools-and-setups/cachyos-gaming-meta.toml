@@ -10,3 +10,7 @@ values = ["pacman"]
 
 [script]
 id = "commander/cachyos-gaming-meta"
+
+# Checked before a run.
+[needs]
+repositories = ["multilib"]

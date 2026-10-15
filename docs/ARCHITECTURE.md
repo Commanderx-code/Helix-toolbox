@@ -105,6 +105,18 @@ generation's `home-path` has the same file, NixOS for
 `Elsewhere` and `Absent`. The interface gathers it on a background thread
 when it opens and after each run; `helixforge status` prints it.
 
+`preflight::check()` looks at a plan before it runs and returns `Finding`s,
+each a blocker or a warning: requirements no source can do without
+(`missing_requirements()`, which `check_requirements()` also uses), entries in
+the plan whose `conflicts` name each other's packages, entries that replace an
+installed package, `needs.repositories` missing from `/etc/pacman.conf` on
+Arch, `needs.gpu` vendors absent from the PCI display controllers in
+`/sys/bus/pci/devices`, and free space on `/` against the packages' installed
+sizes and `needs.space_mb`. `Facts` carries those questions so tests answer
+them. The command line prints the findings with the plan and refuses a
+blocked run; the interface shows them in the Install Plan's summary and the
+confirmation, and a blocked plan opens "Cannot run yet" instead.
+
 `Entry::identity()` gives what an entry installs, from its package action or,
 for script and command entries, its `detect` table, so detection, status and
 updates treat both alike; scripts still run when chosen. A command on the

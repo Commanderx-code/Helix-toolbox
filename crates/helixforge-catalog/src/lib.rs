@@ -9,8 +9,9 @@
 //! killed are removed the next time HelixForge starts.
 
 use helixforge_core::{
-    Action, Check, Detect, Entry, Group, Item, NativeAction, NixAction, PackageNames, Precondition,
-    Tab, valid_binary_name, valid_flatpak_id, valid_id, valid_package_name, valid_script_segment,
+    Action, Check, Detect, Entry, GPU_VENDORS, Group, Item, NativeAction, Needs, NixAction,
+    PackageNames, Precondition, Tab, valid_binary_name, valid_flatpak_id, valid_id,
+    valid_package_name, valid_script_segment,
 };
 use helixforge_platform::binary_exists;
 use include_dir::{Dir, include_dir};
@@ -222,6 +223,19 @@ struct EntryFile {
     /// What a script or command entry installs, for its status.
     #[serde(default)]
     detect: Option<DetectFile>,
+    #[serde(default)]
+    needs: Option<NeedsFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NeedsFile {
+    #[serde(default)]
+    gpu: Vec<String>,
+    #[serde(default)]
+    repositories: Vec<String>,
+    #[serde(default)]
+    space_mb: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -461,6 +475,7 @@ fn load_items(
                 continue;
             };
             let detect = detect_of(&entry, &path)?;
+            let needs = needs_of(&entry, &path)?;
             if !ids.insert(stem.to_string()) {
                 return Err(CatalogError::Invalid(format!("duplicate entry id: {stem}")));
             }
@@ -477,6 +492,7 @@ fn load_items(
                     writes: entry.writes,
                     action,
                     detect,
+                    needs,
                 }),
             ));
         }
@@ -484,6 +500,32 @@ fn load_items(
     // Groups first, then entries; each by order, then name.
     found.sort_by(|a, b| (a.0, a.1, &a.2).cmp(&(b.0, b.1, &b.2)));
     Ok(found.into_iter().map(|(_, _, _, item)| item).collect())
+}
+
+/// The entry's `needs` table, checked.
+fn needs_of(entry: &EntryFile, path: &Path) -> Result<Needs, CatalogError> {
+    let Some(needs) = &entry.needs else {
+        return Ok(Needs::default());
+    };
+    let valid = needs
+        .gpu
+        .iter()
+        .all(|vendor| GPU_VENDORS.contains(&vendor.as_str()))
+        && needs
+            .repositories
+            .iter()
+            .all(|name| valid_package_name(name));
+    if !valid {
+        return Err(CatalogError::Invalid(format!(
+            "{} has an invalid needs section",
+            path.display()
+        )));
+    }
+    Ok(Needs {
+        gpu: needs.gpu.clone(),
+        repositories: needs.repositories.clone(),
+        space_mb: needs.space_mb,
+    })
 }
 
 /// The entry's `detect` table, checked; a package entry has its own.

@@ -15,6 +15,7 @@
 
 pub mod history;
 pub mod inventory;
+pub mod preflight;
 pub mod pty;
 
 use helixforge_core::{
@@ -510,20 +511,12 @@ fn add_entry<'a>(
             flatpak,
             ..
         } => {
-            match package_state(entry, platform, machine) {
-                Some(PackageState::Installed(found) | PackageState::OnPath(found)) => {
-                    into.notes
-                        .push(format!("{}: already installed ({found})", entry.name));
-                    return Ok(());
-                }
-                Some(PackageState::Absent { replaces }) if !replaces.is_empty() => {
-                    into.notes.push(format!(
-                        "{}: replaces {}, which is installed; the package manager asks before removing it",
-                        entry.name,
-                        replaces.join(", ")
-                    ));
-                }
-                _ => {}
+            if let Some(PackageState::Installed(found) | PackageState::OnPath(found)) =
+                package_state(entry, platform, machine)
+            {
+                into.notes
+                    .push(format!("{}: already installed ({found})", entry.name));
+                return Ok(());
             }
             let sources = install_sources(
                 entry,
@@ -1034,14 +1027,29 @@ fn quoted(words: &[String]) -> String {
 /// A package step whose first source cannot run still starts when another
 /// of its sources can.
 pub fn check_requirements(plan: &Plan) -> Result<(), EngineError> {
-    let present = |requirement: &String| {
-        let path = Path::new(requirement);
-        if path.is_absolute() {
-            path.is_file()
-        } else {
-            binary_exists(requirement)
-        }
-    };
+    match missing_requirements(plan, &requirement_present)
+        .into_iter()
+        .next()
+    {
+        Some(missing) => Err(EngineError::MissingExecutable(missing)),
+        None => Ok(()),
+    }
+}
+
+/// Whether a requirement, a command or an absolute path, is on this machine.
+pub fn requirement_present(requirement: &str) -> bool {
+    let path = Path::new(requirement);
+    if path.is_absolute() {
+        path.is_file()
+    } else {
+        binary_exists(requirement)
+    }
+}
+
+/// The plan's requirements that are missing and that no other source of the
+/// steps needing them can do without.
+pub fn missing_requirements(plan: &Plan, present: &dyn Fn(&str) -> bool) -> Vec<String> {
+    let mut missing = Vec::new();
     for requirement in &plan.requirements {
         if present(requirement) {
             continue;
@@ -1055,14 +1063,14 @@ pub fn check_requirements(plan: &Plan) -> Result<(), EngineError> {
             && needing.iter().all(|step| match step {
                 Step::Package { sources, .. } => sources
                     .iter()
-                    .any(|source| source.requires.iter().all(present)),
+                    .any(|source| source.requires.iter().all(|tool| present(tool))),
                 _ => false,
             });
         if !excused {
-            return Err(EngineError::MissingExecutable(requirement.clone()));
+            missing.push(requirement.clone());
         }
     }
-    Ok(())
+    missing
 }
 
 /// Whether one package step left its package as intended.
@@ -1466,6 +1474,7 @@ mod tests {
             writes: Vec::new(),
             action,
             detect: None,
+            needs: Default::default(),
         }
     }
 
@@ -1600,11 +1609,23 @@ mod tests {
             1,
             "staging is planned, not taken as installed"
         );
+        assert!(planned.notes.is_empty());
+        // The preflight says what it replaces.
+        let facts = preflight::Facts {
+            machine: plain,
+            present: &|_| true,
+            free_bytes: &|_| Some(u64::MAX),
+            gpus: &Vec::new,
+            repositories: &|| None,
+            sizes: &|_, _| None,
+        };
+        let lookup = |id: &str| (id == "wine-staging").then_some(&staging);
         assert_eq!(
-            planned.notes,
-            [
-                "WINE-STAGING: replaces wine, which is installed; the package manager asks before removing it"
-            ]
+            preflight::check(&planned, &arch, &lookup, &facts),
+            [preflight::Finding {
+                severity: preflight::Severity::Warning,
+                message: "WINE-STAGING replaces wine, which is installed; the package manager asks before removing it".into(),
+            }]
         );
         assert_eq!(
             package_state(&wine, &arch, plain),

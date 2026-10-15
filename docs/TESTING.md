@@ -56,6 +56,9 @@ emulator and types keys. It checks:
 - `helixforge status` after real installs of htop and ripgrep: Installed,
   from the family's package manager, with a version, and `update htop
   --dry-run` saying it is up to date (Distributions)
+- two fixture entries that replace each other, queued together: the
+  command line prints the blocker, exits without starting a step or
+  recording a run, and the menu shows "Cannot run yet" instead of asking
 - an update through a stand-in Flatpak: status shows it, `update` with no
   names finds it, runs `flatpak update --user` and verifies 1.0 → 1.1, and
   an update that installs nothing newer is not verified

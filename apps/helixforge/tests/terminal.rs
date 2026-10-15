@@ -966,6 +966,48 @@ esac
 }
 
 #[test]
+fn entries_that_replace_each_other_are_blocked_before_anything_runs() {
+    let home = tempfile::tempdir().unwrap();
+    let path = stand_in_tools(&home.path().join("bin"));
+    let output = Command::new(PROGRAM)
+        .arg("--catalog-dir")
+        .arg(package_fixtures())
+        .args(["run", "conflict-a", "conflict-b", "--yes"])
+        .env("PATH", &path)
+        .env("HOME", home.path())
+        .env("XDG_STATE_HOME", home.path().join("state"))
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    let out = String::from_utf8_lossy(&output.stdout);
+    let err = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{out}\n{err}");
+    assert!(
+        out.contains("Blocked: Conflict A and Conflict B replace each other; queue only one"),
+        "{out}"
+    );
+    assert!(
+        err.contains("not run: fix what is blocked above first"),
+        "{err}"
+    );
+    assert!(!out.contains("==>"), "no step started: {out}");
+    assert!(
+        !home.path().join("state/helixforge/history.jsonl").exists(),
+        "nothing was recorded as run"
+    );
+    // One of them alone is fine to plan.
+    let output = Command::new(PROGRAM)
+        .arg("--catalog-dir")
+        .arg(package_fixtures())
+        .args(["plan", "conflict-a"])
+        .env("PATH", &path)
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("Blocked"));
+}
+
+#[test]
 fn an_update_is_found_run_and_verified_from_the_command_line() {
     let home = tempfile::tempdir().unwrap();
     let path = stand_in_tools(&home.path().join("bin"));

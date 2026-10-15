@@ -265,7 +265,23 @@ pub struct Entry {
     /// What a script or command entry installs, so its status can be shown;
     /// package entries carry this in their action.
     pub detect: Option<Detect>,
+    /// What it needs from the machine, checked before a run.
+    pub needs: Needs,
 }
+
+/// What an entry needs from the machine beyond its tools.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Needs {
+    /// The graphics vendors it is for (nvidia, amd, intel); any one will do.
+    pub gpu: Vec<String>,
+    /// Arch repositories that must be enabled, such as multilib.
+    pub repositories: Vec<String>,
+    /// Free space it needs on the root file system beyond its packages, in MiB.
+    pub space_mb: Option<u64>,
+}
+
+/// The graphics vendors `Needs::gpu` may name.
+pub const GPU_VENDORS: [&str; 3] = ["nvidia", "amd", "intel"];
 
 /// The packages and command that show a non-package entry's software.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -490,6 +506,7 @@ mod tests {
                 line: "true".into(),
             },
             detect: None,
+            needs: Default::default(),
         };
         assert!(!privileged("FM", &entry.action));
         assert!(privileged("I FM", &entry.action));

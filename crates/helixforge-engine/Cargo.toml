@@ -9,7 +9,7 @@ license.workspace = true
 helixforge-catalog = { path = "../helixforge-catalog" }
 helixforge-core = { path = "../helixforge-core" }
 helixforge-platform = { path = "../helixforge-platform" }
-nix = { version = "0.31", features = ["signal"] }
+nix = { version = "0.31", features = ["fs", "signal"] }
 portable-pty = "0.9"
 serde.workspace = true
 serde_json.workspace = true
