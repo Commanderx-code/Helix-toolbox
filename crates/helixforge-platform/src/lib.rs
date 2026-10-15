@@ -102,6 +102,11 @@ pub fn binary_exists(binary: &str) -> bool {
     env::split_paths(&paths).any(|dir| is_executable(&dir.join(binary)))
 }
 
+/// Whether the file at `path` is an executable.
+pub fn binary_exists_at(path: &Path) -> bool {
+    is_executable(path)
+}
+
 #[cfg(unix)]
 fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;

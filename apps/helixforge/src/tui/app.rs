@@ -15,7 +15,11 @@ use crate::TuiArgs;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use helixforge_catalog::Catalog;
 use helixforge_core::{Action, Entry, Item};
-use helixforge_engine::{EngineError, Plan, history, plan, plan_removal};
+use helixforge_engine::{
+    EngineError, Plan, history,
+    inventory::{Inventory, Status, which},
+    plan, plan_removal,
+};
 use helixforge_platform::LinuxInfo;
 use ratatui::{
     Frame,
@@ -26,6 +30,7 @@ use ratatui::{
     widgets::{Block, List, ListState, Padding, Paragraph, Wrap},
 };
 use ratatui_image::{Image, protocol::Protocol};
+use std::{collections::HashMap, sync::mpsc};
 
 const MIN_WIDTH: u16 = 100;
 const MIN_HEIGHT: u16 = 25;
@@ -166,6 +171,11 @@ pub struct App {
     /// The Install Plan screen's plan, kept briefly: planning asks the
     /// package manager about every queued package.
     planned: Option<PlanCache>,
+    /// How each package entry stands, by entry id, from the last check.
+    statuses: HashMap<String, Status>,
+    /// The check running in the background, if any; off in tests.
+    checking: Option<mpsc::Receiver<HashMap<String, Status>>>,
+    check_statuses: bool,
 }
 
 /// A plan of the queue as it was, from when it was made.
@@ -209,6 +219,9 @@ impl App {
             settings_path: None,
             banner: None,
             planned: None,
+            statuses: HashMap::new(),
+            checking: None,
+            check_statuses: false,
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -233,6 +246,43 @@ impl App {
         self.icons = look.icons && !args.plain;
         self.settings_path = path;
         self
+    }
+
+    /// Check in the background how package entries stand, now and after
+    /// every run.
+    pub fn with_status_checks(mut self) -> Self {
+        self.check_statuses = true;
+        self.refresh_statuses();
+        self
+    }
+
+    /// Start a fresh status check; the old answers stay shown until it ends.
+    fn refresh_statuses(&mut self) {
+        if !self.check_statuses {
+            return;
+        }
+        let entries: Vec<Entry> = self
+            .catalog
+            .entries()
+            .into_iter()
+            .filter(|entry| matches!(entry.action, Action::Package { .. }))
+            .cloned()
+            .collect();
+        let platform = self.platform.clone();
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let inventory = Inventory::gather(&platform);
+            let statuses = entries
+                .iter()
+                .filter_map(|entry| {
+                    inventory
+                        .status(entry, &platform, &which)
+                        .map(|status| (entry.id.clone(), status))
+                })
+                .collect();
+            let _ = sender.send(statuses);
+        });
+        self.checking = Some(receiver);
     }
 
     /// Draw this picture as the header where it fits.
@@ -403,6 +453,17 @@ impl App {
 
     /// Whether something changed without a key press: a finished command.
     pub fn needs_redraw(&mut self) -> bool {
+        if let Some(receiver) = &self.checking {
+            match receiver.try_recv() {
+                Ok(statuses) => {
+                    self.statuses = statuses;
+                    self.checking = None;
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.checking = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
         match &mut self.popup {
             Some(Popup::Running(running)) => running.needs_redraw(),
             _ => false,
@@ -1021,7 +1082,8 @@ impl App {
                 "Entries"
             })
             .title(
-                Line::styled(" FLAGS ", Style::default().fg(self.theme.muted())).right_aligned(),
+                Line::styled(" STATUS · FLAGS ", Style::default().fg(self.theme.muted()))
+                    .right_aligned(),
             );
         let marker = self.marker(focused);
         let content_width =
@@ -1053,14 +1115,44 @@ impl App {
                     // Without icons, a queued entry is marked after its name.
                     let suffix = if queued && !self.icons { " *" } else { "" };
                     let left = format!("{icon}  {}{suffix}", entry.name);
-                    let right = format!("{} ", entry.flags);
-                    let gap = " "
-                        .repeat(content_width.saturating_sub(left.chars().count() + right.len()));
+                    let flags = format!("  {} ", entry.flags);
+                    // The status word, then where from, dropped first when short of room.
+                    let (word, detail, colour) = match self.statuses.get(&entry.id) {
+                        Some(status) => (
+                            status.label().to_string(),
+                            status.detail(),
+                            self.status_colour(status),
+                        ),
+                        None => (String::new(), String::new(), self.theme.muted()),
+                    };
+                    let room = content_width.saturating_sub(left.chars().count() + 2);
+                    let mut detail = if detail.is_empty() {
+                        detail
+                    } else {
+                        format!("  {detail}")
+                    };
+                    let width = |detail: &str| {
+                        word.chars().count() + detail.chars().count() + flags.chars().count()
+                    };
+                    if width(&detail) > room {
+                        detail.clear();
+                    }
+                    let flags = if width(&detail) > room {
+                        " ".to_string()
+                    } else {
+                        flags
+                    };
+                    let right =
+                        word.chars().count() + detail.chars().count() + flags.chars().count();
+                    let gap =
+                        " ".repeat(content_width.saturating_sub(left.chars().count() + right));
                     Line::from(vec![
                         Span::styled(icon.to_string(), Style::default().fg(icon_colour)),
                         Span::styled(format!("  {}{suffix}", entry.name), style),
                         Span::raw(gap),
-                        Span::styled(right, Style::default().fg(self.theme.muted())),
+                        Span::styled(word, Style::default().fg(colour)),
+                        Span::styled(detail, Style::default().fg(self.theme.faint())),
+                        Span::styled(flags, Style::default().fg(self.theme.muted())),
                     ])
                 }
             })
@@ -1433,6 +1525,7 @@ impl App {
                     self.popup = popup
                         .take_problem()
                         .map(|problem| Popup::Text(TextPopup::new("Not recorded", problem, true)));
+                    self.refresh_statuses();
                     if self.screen == Screen::History {
                         self.reload_history();
                     }
@@ -1721,15 +1814,37 @@ impl App {
         )));
     }
 
+    /// The colour of a status word.
+    fn status_colour(&self, status: &Status) -> Color {
+        match status {
+            Status::Installed { .. } | Status::Elsewhere { .. } => self.theme.success(),
+            Status::Update { .. } => self.theme.warning(),
+            Status::Managed { .. } => self.theme.title(),
+            Status::Absent { .. } => self.theme.muted(),
+        }
+    }
+
     fn describe(&mut self) {
         let Some(entry) = self.selected_entry() else {
             return;
         };
-        let text = if entry.description.is_empty() {
+        let mut text = if entry.description.is_empty() {
             "This entry has no description.".to_string()
         } else {
             entry.description.clone()
         };
+        if let Some(status) = self.statuses.get(&entry.id) {
+            let detail = status.detail();
+            text.push_str(&format!("\n\nStatus: {}", status.label()));
+            if !detail.is_empty() {
+                text.push_str(&format!(" ({detail})"));
+            }
+            if let Status::Update { .. } = status {
+                text.push_str(
+                    "\nThe repository metadata on this machine has a newer version; your system update installs it.",
+                );
+            }
+        }
         self.popup = Some(Popup::Text(TextPopup::new(entry.name.clone(), text, true)));
     }
 
@@ -2120,6 +2235,53 @@ mod tests {
             matches!(app.screen, Screen::Area(index) if app.catalog.tabs[index].id == "doctor")
         );
         assert!(screen(&mut app, 120, 40).contains("Machine Summary"));
+    }
+
+    #[test]
+    fn entries_show_how_they_stand() {
+        let mut app = app();
+        app.statuses.insert(
+            "ripgrep".into(),
+            Status::Update {
+                source: "pacman".into(),
+                version: Some("15.2.0-1".into()),
+                latest: Some("15.3.0-1".into()),
+                shadowed: None,
+            },
+        );
+        app.statuses.insert(
+            "fzf".into(),
+            Status::Managed {
+                by: "Home Manager".into(),
+                version: Some("0.74.4".into()),
+            },
+        );
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "ripgrep");
+        let wide = screen(&mut app, 140, 40);
+        let row = wide.lines().find(|line| line.contains("Ripgrep")).unwrap();
+        assert!(
+            row.contains("Update  pacman 15.2.0-1 → 15.3.0-1  I"),
+            "{row}"
+        );
+        assert!(wide.contains("STATUS · FLAGS"));
+        // Short of room, the detail goes first and the word stays.
+        app.size_bypass = true;
+        let narrow = screen(&mut app, 70, 30);
+        let row = narrow
+            .lines()
+            .find(|line| line.contains("Ripgrep"))
+            .unwrap();
+        assert!(row.contains("Update") && !row.contains("15.3.0-1"), "{row}");
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "fzf");
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('d'));
+        assert!(
+            screen(&mut app, 140, 40).contains("Status: Managed (Home Manager 0.74.4)"),
+            "the description says it too"
+        );
     }
 
     #[test]

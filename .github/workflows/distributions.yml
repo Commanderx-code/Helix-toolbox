@@ -99,6 +99,10 @@ jobs:
           bin/helixforge plan developer-basics | tee plan.txt
           grep -qE 'Ripgrep: already installed \((pacman|dpkg|dnf) lists ripgrep\)' plan.txt
           bin/helixforge history --limit 1 | grep -q 'ok .*exit 0, verified'
+          # Their status: installed, from the family's package manager, with a version.
+          bin/helixforge status htop ripgrep | tee status.txt
+          grep -qE '^htop +Installed +(pacman|apt|dnf) [0-9]' status.txt
+          grep -qE '^Ripgrep +Installed +(pacman|apt|dnf) [0-9]' status.txt
       - name: WINE and gaming packages the catalog names exist here
         run: |
           bin/helixforge plan wine winetricks protontricks minigalaxy | tee gaming.txt

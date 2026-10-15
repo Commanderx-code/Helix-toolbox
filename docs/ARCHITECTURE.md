@@ -90,7 +90,20 @@ on the PATH. Before planning, `package_state()` asks the same probes about
 the entry's own packages, then about the packages it `conflicts` with, and
 only then whether its optional `binary` is on the PATH: `Installed`,
 `OnPath` (an install HelixForge did not make, such as Nix's) or `Absent`
-with the installed packages it would replace. Removal and verification use
+with the installed packages it would replace.
+
+`inventory::Inventory` is the same knowledge for showing it. `gather()` runs
+a few read-only queries once (`pacman -Q` and `-Qu`, `dpkg-query -W` and
+`apt list --upgradable`, `rpm -qa` and `dnf -C list --upgrades`, `flatpak
+list` and `flatpak remote-ls --updates --cached`), none of which needs root
+or the network, and answers probes from that snapshot. `status()` turns an
+entry into a `Status`: `Installed` and `Update` (source, version, newer
+version, and a Nix copy of the command found first on the PATH), `Managed`
+(the command resolves into the Nix store: Home Manager when the current
+generation's `home-path` has the same file, NixOS for
+`/run/current-system/sw`, else Nix, with the version from the store path),
+`Elsewhere` and `Absent`. The interface gathers it on a background thread
+when it opens and after each run; `helixforge status` prints it. Removal and verification use
 the same order. `Machine` carries the two questions so tests can answer
 them. A source whose tools are missing is skipped; an
 exit status of 128 or more ends the run. When the program succeeds,

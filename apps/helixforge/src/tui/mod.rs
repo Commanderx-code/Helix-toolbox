@@ -24,7 +24,9 @@ use std::{sync::atomic::Ordering, time::Duration};
 pub fn run(catalog: Catalog, platform: LinuxInfo, args: TuiArgs) -> Result<()> {
     let path = settings::path();
     let look = path.as_deref().map(settings::load).unwrap_or_default();
-    let app = App::new(catalog, platform, &args).remembering(look, path, &args);
+    let app = App::new(catalog, platform, &args)
+        .remembering(look, path, &args)
+        .with_status_checks();
     let mut terminal = ratatui::init();
     // After the terminal is set up and before the first key is read.
     let banner = banner::detect().and_then(|picker| banner::encode(&picker));

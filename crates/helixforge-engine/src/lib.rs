@@ -14,6 +14,7 @@
 //! checks that each package step left its package installed, or removed.
 
 pub mod history;
+pub mod inventory;
 pub mod pty;
 
 use helixforge_core::{

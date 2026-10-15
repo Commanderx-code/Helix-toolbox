@@ -10,8 +10,9 @@ use clap::{Parser, Subcommand};
 use helixforge_catalog::Catalog;
 use helixforge_core::{Action, Entry, Item, NativeAction};
 use helixforge_engine::{
-    InheritedRunner, Machine, PackageState, Plan, execute, history, package_state, plan,
-    plan_removal, run_native,
+    InheritedRunner, Machine, PackageState, Plan, execute, history,
+    inventory::{Inventory, which},
+    package_state, plan, plan_removal, run_native,
 };
 use helixforge_platform::LinuxInfo;
 use std::{
@@ -57,6 +58,13 @@ enum Command {
     },
     /// Show one entry.
     Info { id: String },
+    /// Show whether package entries are installed, where from, at which
+    /// version, and whether an update is waiting (from the repository
+    /// metadata already on this machine; nothing is downloaded).
+    Status {
+        /// The entries to show; every package entry on this machine when none.
+        ids: Vec<String>,
+    },
     /// Show what running entries would do, without running them.
     Plan { ids: Vec<String> },
     /// Run entries in this terminal, after confirmation.
@@ -210,6 +218,33 @@ fn main() -> Result<()> {
                 Action::Nix { action } => println!("Kind: nix, {action:?}"),
                 Action::Native { action } => println!("Kind: native, {}", action.id()),
                 Action::Profile { entries } => println!("Kind: profile, {}", entries.join(", ")),
+            }
+            Ok(())
+        }
+        Command::Status { ids } => {
+            let catalog = load(ids.is_empty())?;
+            let entries: Vec<&Entry> = if ids.is_empty() {
+                catalog
+                    .entries()
+                    .into_iter()
+                    .filter(|entry| matches!(entry.action, Action::Package { .. }))
+                    .collect()
+            } else {
+                ids.iter()
+                    .map(|id| find(&catalog, id))
+                    .collect::<Result<_>>()?
+            };
+            let inventory = Inventory::gather(&platform);
+            for entry in entries {
+                match inventory.status(entry, &platform, &which) {
+                    Some(status) => println!(
+                        "{:<34} {:<14} {}",
+                        entry.name,
+                        status.label(),
+                        status.detail()
+                    ),
+                    None => println!("{:<34} {:<14} not a package entry", entry.name, "-"),
+                }
             }
             Ok(())
         }

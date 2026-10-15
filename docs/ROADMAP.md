@@ -142,6 +142,19 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] The Install Plan screen keeps its plan for a few seconds and drops it
       after a run, since planning now asks the package manager
 
+## Smart status (done)
+
+- [x] Package entries show Installed (source and version), Update (from the
+      repository metadata already on the machine), Managed (Nix, Home
+      Manager, NixOS, with the store path's version) or Not installed, and a
+      Nix copy of a packaged command that comes first on the PATH; the menu
+      checks in the background on start and after every run, and
+      `helixforge status` prints the same
+- [ ] Next: an update action per entry (Flatpak, apt and dnf can update one
+      package; on Arch a single package means a partial upgrade, so the
+      system update entries are the way there), and status for script
+      entries, which would need to say what they install
+
 ## Logo and banner (done)
 
 - `assets/`: the banner (README and the menu's header), the transparent logo

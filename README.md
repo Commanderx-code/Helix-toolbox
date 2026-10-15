@@ -56,6 +56,18 @@ off for terminals without a Nerd Font. Both choices are remembered in
 `~/.config/helixforge/settings.toml`; `--theme` and `--plain` override them
 for one run.
 
+Package entries show how they stand on this machine, beside their flags:
+**Installed** with where from and the version (`pacman 15.2.0-1`, `apt`,
+`dnf`, `AUR`, `Flatpak 7.5`), **Update** when the repository metadata already
+on the machine has a newer version (`pacman 15.2.0-1 → 15.3.0-1`; nothing is
+downloaded to find out), **Managed** when the command comes from Nix (`Home
+Manager 1.4.7`, `Nix`, `NixOS`), or **Not installed**. When a package is
+installed but a Nix copy of its command comes first on the PATH, the status
+says so (`; Home Manager's 0.12.5 runs first`). The check runs in the
+background when the menu opens and after every run; `d` repeats it in the
+description. Script entries, whose installers decide what they install, show
+only their flags.
+
 In terminals that show pictures through Kitty's graphics (Ghostty, Kitty) or
 Sixel (foot, WezTerm, xterm with Sixel on), the header is the HelixForge
 banner. Elsewhere, including Konsole, tmux and the console, with icons off or
@@ -68,6 +80,7 @@ From the command line:
 helixforge system                     # the distribution and package manager it sees
 helixforge list                       # the catalog as tabs, groups and entries
 helixforge info git                   # one entry
+helixforge status                     # every package entry: installed, update, managed or not
 helixforge plan git system-report     # what running entries would do
 helixforge run git --dry-run          # the plan, nothing changed
 helixforge run git                    # runs after you type RUN, asked on the terminal even when piped

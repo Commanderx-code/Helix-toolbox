@@ -53,6 +53,8 @@ emulator and types keys. It checks:
   it once as not finished; killed after a run ended: its real result
 - the command line's confirmation asked on the terminal when standard input
   is a pipe, and a wrong word cancelling
+- `helixforge status` after real installs of htop and ripgrep: Installed,
+  from the family's package manager, with a version (Distributions)
 - package entries from `tests/fixtures/packages`, against stand-in `sudo`,
   package managers and `flatpak` on the PATH: the distribution's package
   failing over to Flathub, `Verified:` lines and `exit 0, verified` in the

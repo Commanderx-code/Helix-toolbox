@@ -64,6 +64,11 @@ impl Theme {
         self.pick(Color::Rgb(120, 230, 160), Color::Green)
     }
 
+    /// Something that wants attention without being wrong: an update.
+    pub fn warning(self) -> Color {
+        self.pick(Color::Rgb(250, 204, 102), Color::Yellow)
+    }
+
     pub fn failure(self) -> Color {
         self.pick(Color::Rgb(255, 120, 140), Color::Red)
     }
