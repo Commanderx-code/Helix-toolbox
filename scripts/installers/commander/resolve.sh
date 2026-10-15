@@ -28,7 +28,10 @@ printf '%s\n' 'Download and extract the Linux Free or Studio installer from:' \
 printf '%s' 'Full path to the extracted DaVinci_Resolve_*_Linux.run file (no quotes): '
 read -r installer
 installer=$(realpath -- "$installer")
-[ -f "$installer" ] && [ -r "$installer" ] || { printf '%s\n' 'Installer file not found.' >&2; exit 1; }
+if [ ! -f "$installer" ] || [ ! -r "$installer" ]; then
+    printf '%s\n' 'Installer file not found.' >&2
+    exit 1
+fi
 case "${installer##*/}" in DaVinci_Resolve_*_Linux.run) ;; *)
     printf '%s\n' 'Select the official extracted Linux .run installer, not the ZIP.' >&2; exit 1 ;;
 esac

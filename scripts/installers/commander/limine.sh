@@ -31,7 +31,10 @@ confirm "Install the $look_name boot menu look from dotfiles into $conf: its wal
 command_exists git || install_packages git
 fetch_source dotfiles
 look_dir="$source_dir/limine/themes/$look"
-[ -f "$look_dir/limine.conf" ] && [ -f "$look_dir/splash.png" ] || { printf '%s\n' 'The dotfiles source has no Limine settings for this look.' >&2; exit 1; }
+if [ ! -f "$look_dir/limine.conf" ] || [ ! -f "$look_dir/splash.png" ]; then
+    printf '%s\n' 'The dotfiles source has no Limine settings for this look.' >&2
+    exit 1
+fi
 work=$(mktemp -d)
 trap 'rm -rf "$work"' 0
 "$ESCALATION_TOOL" cp -- "$conf" "$work/current"

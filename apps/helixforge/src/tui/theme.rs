@@ -54,7 +54,7 @@ impl Theme {
     }
 
     pub fn muted(self) -> Color {
-        self.pick(Color::Rgb(90, 104, 128), Color::DarkGray)
+        self.pick(Color::Rgb(143, 160, 179), Color::Gray)
     }
 
     /// Text on a highlighted row.
