@@ -99,7 +99,7 @@ enum Focus {
 enum Popup {
     Text(TextPopup),
     Confirm(ConfirmPopup),
-    Running(RunningView),
+    Running(Box<RunningView>),
 }
 
 #[derive(Clone)]
@@ -1426,7 +1426,7 @@ impl App {
                         self.queue.clear();
                         self.clamp_main();
                     }
-                    Popup::Running(running)
+                    Popup::Running(Box::new(running))
                 }
                 Err(error) => Popup::Text(TextPopup::new("Cannot run", error, true)),
             },

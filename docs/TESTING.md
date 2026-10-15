@@ -45,6 +45,10 @@ emulator and types keys. It checks:
   terminal, `run --yes`, failure status and `history`
 - a run whose history cannot be written: the command line and the menu both
   say so
+- the menu or the command line killed during a run: the next history lists
+  it once as not finished; killed after a run ended: its real result
+- the command line's confirmation asked on the terminal when standard input
+  is a pipe, and a wrong word cancelling
 
 The fixture catalog's entries:
 

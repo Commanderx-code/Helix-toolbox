@@ -17,6 +17,8 @@ use tui_term::widget::PseudoTerminal;
 pub struct RunningView {
     session: Session,
     entries: Vec<(String, String)>,
+    /// The history's marker for this run, until the record is written.
+    pending: Option<history::Pending>,
     recorded: bool,
     log: Option<PathBuf>,
     /// Why the history record or the log could not be written, if so.
@@ -31,9 +33,13 @@ impl RunningView {
         tracing::info!(steps = ?plan.entries(), "run started");
         let session = Session::spawn(&shell_program(plan, lib_dir, this), lib_dir)
             .map_err(|error| error.to_string())?;
+        let pending = history::begin(&plan.entries())
+            .inspect_err(|error| tracing::warn!(%error, "the run start was not recorded"))
+            .ok();
         Ok(Self {
             session,
             entries: plan.entries(),
+            pending,
             recorded: false,
             log: None,
             problem: None,
@@ -51,6 +57,11 @@ impl RunningView {
     pub fn needs_redraw(&mut self) -> bool {
         if self.is_finished() && !self.finish_drawn {
             self.finish_drawn = true;
+            // The record waits for the window to close; until then the
+            // marker keeps the outcome in case HelixForge stops first.
+            if let (Some(pending), Some(outcome)) = (&mut self.pending, self.session.outcome()) {
+                let _ = pending.ended(outcome.succeeded(), &outcome.describe());
+            }
             return true;
         }
         false
@@ -73,12 +84,16 @@ impl RunningView {
         if left > 0 {
             result.push_str(&format!("; {left} process(es) left running"));
         }
-        if let Err(error) = history::record(
-            &self.entries,
-            outcome.succeeded(),
-            &result,
-            self.log.clone(),
-        ) {
+        let written = match self.pending.take() {
+            Some(pending) => pending.finish(outcome.succeeded(), &result, self.log.clone()),
+            None => history::record(
+                &self.entries,
+                outcome.succeeded(),
+                &result,
+                self.log.clone(),
+            ),
+        };
+        if let Err(error) = written {
             tracing::warn!(%error, "the run was not recorded");
             self.problem = Some(format!("The run was not recorded in the history: {error}"));
         }

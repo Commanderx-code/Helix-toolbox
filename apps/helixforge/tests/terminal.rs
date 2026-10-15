@@ -481,7 +481,19 @@ fn the_command_line_runs_fixtures_and_says_when_history_cannot_be_written() {
     assert!(text.contains("Dry run: nothing was changed."));
     assert!(!home.path().join("marker.txt").exists());
 
-    let refused = helixforge(&state, &["run", "marker"]);
+    // Without a terminal at all (setsid drops the controlling one), there is
+    // nowhere to ask, so the run is refused.
+    let refused = Command::new("setsid")
+        .arg("--wait")
+        .arg(PROGRAM)
+        .arg("--catalog-dir")
+        .arg(&catalog)
+        .args(["run", "marker"])
+        .env("XDG_STATE_HOME", &state)
+        .env("HELIXFORGE_TEST_OUT", home.path().join("marker.txt"))
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
     assert!(!refused.status.success());
     assert!(String::from_utf8_lossy(&refused.stderr).contains("confirmation needs a terminal"));
     assert!(!home.path().join("marker.txt").exists());
@@ -623,4 +635,164 @@ fn a_second_ctrl_c_kills_what_ignored_the_first() {
     assert_eq!(tui.wait_for_exit(), 0);
     let history = fs::read_to_string(home.path().join("state/helixforge/history.jsonl")).unwrap();
     assert!(history.contains("\"result\":\"interrupted\""), "{history}");
+}
+
+fn history_of(home: &Path) -> String {
+    let output = Command::new(PROGRAM)
+        .arg("--catalog-dir")
+        .arg(fixtures())
+        .arg("history")
+        .env("XDG_STATE_HOME", home.join("state"))
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+fn wait_for_file(path: &Path) -> String {
+    let start = Instant::now();
+    loop {
+        if let Ok(text) = fs::read_to_string(path)
+            && !text.trim().is_empty()
+        {
+            return text.trim().to_string();
+        }
+        assert!(
+            start.elapsed() < PATIENCE,
+            "{} never appeared",
+            path.display()
+        );
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn kill_hard(pid: u32) {
+    Command::new("kill")
+        .args(["-KILL", &pid.to_string()])
+        .status()
+        .unwrap();
+}
+
+fn fixture_menu(home: &Path) -> Terminal {
+    let catalog = fixtures();
+    let tui = Terminal::start(
+        &[
+            "--catalog-dir",
+            catalog.to_str().unwrap(),
+            "tui",
+            "--bypass-root",
+        ],
+        home,
+        40,
+        120,
+    );
+    tui.wait_for(&["SYSTEM READY"]);
+    tui
+}
+
+#[test]
+fn a_menu_killed_during_a_run_leaves_it_recorded_as_unfinished() {
+    let home = tempfile::tempdir().unwrap();
+    let mut tui = fixture_menu(home.path());
+    tui.search("sleep");
+    tui.keys("\r");
+    tui.wait_for(&["CONFIRM"]);
+    tui.keys("y");
+    tui.wait_for(&["sleeper started"]);
+    wait_for_file(&home.path().join("marker.txt.child"));
+    // Nothing is recorded yet: the run is in progress.
+    assert!(history_of(home.path()).contains("No runs recorded yet."));
+    kill_hard(tui.child.process_id().unwrap());
+    tui.wait_for_exit();
+    let history = history_of(home.path());
+    assert!(
+        history.contains("failed | Sleeper | did not finish: HelixForge stopped during the run"),
+        "{history}"
+    );
+    // Recorded once, and the marker is gone.
+    assert_eq!(history_of(home.path()).lines().count(), 1);
+    assert_eq!(
+        fs::read_dir(home.path().join("state/helixforge/running"))
+            .unwrap()
+            .count(),
+        0
+    );
+}
+
+#[test]
+fn a_menu_killed_before_closing_a_finished_run_records_its_real_outcome() {
+    let home = tempfile::tempdir().unwrap();
+    let mut tui = fixture_menu(home.path());
+    tui.search("mark");
+    tui.keys("\r");
+    tui.wait_for(&["CONFIRM"]);
+    tui.keys("y");
+    tui.wait_for(&["FINISHED"]);
+    kill_hard(tui.child.process_id().unwrap());
+    tui.wait_for_exit();
+    let history = history_of(home.path());
+    assert!(history.contains("ok     | Marker | exit 0"), "{history}");
+}
+
+#[test]
+fn the_command_line_killed_during_a_run_leaves_it_recorded_as_unfinished() {
+    let home = tempfile::tempdir().unwrap();
+    let mut run = Command::new(PROGRAM)
+        .arg("--catalog-dir")
+        .arg(fixtures())
+        .args(["run", "sleeper", "--yes"])
+        .env("XDG_STATE_HOME", home.path().join("state"))
+        .env("HELIXFORGE_TEST_OUT", home.path().join("marker.txt"))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let child = wait_for_file(&home.path().join("marker.txt.child"));
+    kill_hard(run.id());
+    run.wait().unwrap();
+    // Without a terminal, nothing else stops the sleeping child.
+    Command::new("kill")
+        .args(["-KILL", &child])
+        .status()
+        .unwrap();
+    let history = history_of(home.path());
+    assert!(
+        history.contains("failed | Sleeper | did not finish: HelixForge stopped during the run"),
+        "{history}"
+    );
+}
+
+#[test]
+fn the_command_line_asks_on_the_terminal_when_input_is_a_pipe() {
+    let home = tempfile::tempdir().unwrap();
+    let catalog = fixtures();
+    let mut command = CommandBuilder::new("sh");
+    command.args([
+        "-c",
+        "echo not-an-answer | \"$0\" --catalog-dir \"$1\" run marker",
+        PROGRAM,
+        catalog.to_str().unwrap(),
+    ]);
+    let mut cli = Terminal::spawn(command, home.path(), 40, 120);
+    cli.wait_for(&["1. Marker", "Type RUN to continue:"]);
+    assert!(!home.path().join("marker.txt").exists());
+    cli.keys("RUN\r");
+    assert_eq!(cli.wait_for_exit(), 0);
+    assert!(home.path().join("marker.txt").exists());
+
+    // A wrong word cancels.
+    fs::remove_file(home.path().join("marker.txt")).unwrap();
+    let mut command = CommandBuilder::new("sh");
+    command.args([
+        "-c",
+        "echo RUN | \"$0\" --catalog-dir \"$1\" run marker",
+        PROGRAM,
+        catalog.to_str().unwrap(),
+    ]);
+    let mut cli = Terminal::spawn(command, home.path(), 40, 120);
+    cli.wait_for(&["Type RUN to continue:"]);
+    cli.keys("no\r");
+    assert_ne!(cli.wait_for_exit(), 0);
+    assert!(!home.path().join("marker.txt").exists());
 }

@@ -684,22 +684,35 @@ pub fn execute_in(
 ) -> Result<Outcome, EngineError> {
     check_requirements(plan)?;
     info!(steps = ?plan.entries(), "run started");
-    let outcome = runner.run(&shell_program(plan, lib_dir, this), lib_dir);
-    info!(outcome = outcome.describe(), "run finished");
-    if let Some(directory) = history_dir
-        && let Err(error) = history::record_in(
-            directory,
-            &plan.entries(),
-            outcome.succeeded(),
-            &outcome.describe(),
-            None,
-        )
-    {
+    let not_recorded = |directory: &Path, error: std::io::Error| {
         warn!(%error, "the run was not recorded");
         eprintln!(
             "HelixForge could not record this run in {}: {error}",
             directory.display()
         );
+    };
+    // The marker records the run even if this process dies before it ends.
+    let pending = history_dir.and_then(|directory| {
+        history::begin_in(directory, &plan.entries())
+            .inspect_err(|error| warn!(%error, "the run start was not recorded"))
+            .ok()
+    });
+    let outcome = runner.run(&shell_program(plan, lib_dir, this), lib_dir);
+    info!(outcome = outcome.describe(), "run finished");
+    if let Some(directory) = history_dir {
+        let written = match pending {
+            Some(pending) => pending.finish(outcome.succeeded(), &outcome.describe(), None),
+            None => history::record_in(
+                directory,
+                &plan.entries(),
+                outcome.succeeded(),
+                &outcome.describe(),
+                None,
+            ),
+        };
+        if let Err(error) = written {
+            not_recorded(directory, error);
+        }
     }
     Ok(outcome)
 }

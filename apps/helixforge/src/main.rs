@@ -12,7 +12,7 @@ use helixforge_core::{Action, Entry, Item, NativeAction};
 use helixforge_engine::{InheritedRunner, Plan, execute, history, plan, plan_removal, run_native};
 use helixforge_platform::{LinuxInfo, binary_exists};
 use std::{
-    io::{self, IsTerminal, Write},
+    io::{self, BufRead, IsTerminal, Write},
     path::PathBuf,
 };
 use tui::theme::Theme;
@@ -259,17 +259,8 @@ fn confirm_and_run(
         println!("Dry run: nothing was changed.");
         return Ok(());
     }
-    if !yes {
-        if !io::stdin().is_terminal() {
-            bail!("confirmation needs a terminal; use --dry-run or --yes");
-        }
-        print!("Type {word} to continue: ");
-        io::stdout().flush()?;
-        let mut answer = String::new();
-        io::stdin().read_line(&mut answer)?;
-        if answer.trim() != word {
-            bail!("cancelled; nothing was changed");
-        }
+    if !yes && confirm(word)?.trim() != word {
+        bail!("cancelled; nothing was changed");
     }
     let this = std::env::current_exe().context("cannot find the HelixForge executable")?;
     let outcome = execute(planned, &catalog.lib_dir(), &this, &mut InheritedRunner)?;
@@ -277,6 +268,30 @@ fn confirm_and_run(
         bail!("the run stopped: {}", outcome.describe());
     }
     Ok(())
+}
+
+/// Ask for the confirmation word. When standard input is not a terminal, as
+/// with `curl … | sh -s -- run <entry>`, ask on the controlling terminal.
+fn confirm(word: &str) -> Result<String> {
+    let prompt = format!("Type {word} to continue: ");
+    let mut answer = String::new();
+    if io::stdin().is_terminal() {
+        print!("{prompt}");
+        io::stdout().flush()?;
+        io::stdin().read_line(&mut answer)?;
+        return Ok(answer);
+    }
+    let Ok(mut terminal) = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/tty")
+    else {
+        bail!("confirmation needs a terminal; use --dry-run or --yes");
+    };
+    terminal.write_all(prompt.as_bytes())?;
+    terminal.flush()?;
+    io::BufReader::new(terminal).read_line(&mut answer)?;
+    Ok(answer)
 }
 
 fn list_items(items: &[Item], depth: usize) {

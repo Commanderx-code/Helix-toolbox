@@ -52,7 +52,7 @@ helixforge list                       # the catalog as tabs, groups and entries
 helixforge info git                   # one entry
 helixforge plan git system-report     # what running entries would do
 helixforge run git --dry-run          # the plan, nothing changed
-helixforge run git                    # runs after you type RUN
+helixforge run git                    # runs after you type RUN, asked on the terminal even when piped
 helixforge remove ardour              # removes a package entry that offers it
 helixforge history                    # recent runs
 helixforge docgen docs/walkthrough.md # the catalog as Markdown
@@ -154,7 +154,9 @@ docs/                       architecture, roadmap, security, migration matrix, w
 
 History lives in `~/.local/state/helixforge/history.jsonl` with saved output
 and the tracing log under `logs/` beside it; `XDG_STATE_HOME` is honoured and
-`HELIXFORGE_LOG` sets the log level.
+`HELIXFORGE_LOG` sets the log level. A run in progress keeps a marker under
+`running/`; if HelixForge is closed or killed before the run is recorded, the
+next start lists it as not finished, or with its real result if it had ended.
 
 HelixForge replaces Commander Toolbox, now archived;
 [docs/MIGRATION.md](docs/MIGRATION.md) records where each of its entries went.

@@ -92,19 +92,20 @@ Defects found and fixed:
 
 Remaining before the next phase:
 
-- **Scheduled source sync never observed.** The Sync sources workflow has run
-  only on pushes; no scheduled (`17,47 * * * *`) run has appeared yet. Watch
-  that one does; until then sources are adopted on pushes to `main`.
-- **A run is lost when HelixForge itself dies mid-run** (terminal closed,
-  killed): history is written when the run ends. Writing a "started" record
-  first and marking unmatched ones "did not finish" changes the history
-  format, so it waits for a decision.
+- [x] **Scheduled source sync never observed.** GitHub fired the half-hourly
+  schedules on these repositories only every two to six hours. dotfiles and
+  Myfish now start the sync when their checks pass on `main`, once they hold
+  the `HELIXFORGE_DISPATCH_TOKEN` secret (see `docs/SOURCE-SYNC.md`).
+- [x] **A run was lost when HelixForge itself died mid-run.** Fixed: a run
+  keeps a marker beside the history while it is in progress, and the next
+  read records an orphaned one as not finished, or with its real result if
+  it had ended. `history.jsonl` keeps its format.
 - **No real-machine or virtual-machine runs.** Boot, login-screen and desktop
   entries, Flatpak installs, Nix entries and `sudo` prompts have no automated
   test; containers cannot cover them.
-- **The command line confirms through standard input,** so
-  `curl … | sh -s -- run <entry>` cannot be confirmed; the menu is
-  unaffected.
+- [x] **The command line confirmed through standard input,** so
+  `curl … | sh -s -- run <entry>` could not be confirmed. It asks on the
+  terminal now.
 
 ## Milestone 5: graphical interface
 

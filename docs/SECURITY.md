@@ -31,7 +31,10 @@
   root cannot be killed by the second `Ctrl-C`, and stays counted.
 - **Records.** Runs are appended to a private history file (mode 0600 in a
   0700 directory) with their outcome; interrupted runs are recorded as
-  interrupted, never as success. When the history cannot be written, the
+  interrupted, never as success. A run whose HelixForge died before it was
+  recorded is listed as not finished, never as success. Run markers live in
+  a private `running/` directory beside the history and name only the owning
+  process. When the history cannot be written, the
   run still happens and HelixForge says it was not recorded. Saved logs
   contain whatever the program printed, which can include file names; typed
   passwords are not echoed by the terminal and so are not in them. The
