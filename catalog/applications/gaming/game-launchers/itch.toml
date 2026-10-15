@@ -1,0 +1,10 @@
+name = "Itch"
+description = "The itch.io desktop app, for buying, downloading and playing indie games. From the AUR on Arch (itch-setup-bin), Flathub elsewhere."
+flags = "I"
+order = 103
+
+[package]
+binary = "itch"
+aur = "itch-setup-bin"
+flatpak = "io.itch.itch"
+removable = true

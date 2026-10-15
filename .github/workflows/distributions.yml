@@ -98,6 +98,35 @@ jobs:
           bin/helixforge plan developer-basics | tee plan.txt
           grep -q 'already installed (rg is on the PATH)' plan.txt
           bin/helixforge history --limit 1 | grep -q 'ok .*exit 0, verified'
+      - name: WINE and gaming packages the catalog names exist here
+        run: |
+          bin/helixforge plan wine winetricks protontricks minigalaxy | tee gaming.txt
+          grep -q '^[0-9]\. WINE$' gaming.txt
+          case "${{ matrix.image }}" in
+            archlinux:*)
+              pacman -Si wine wine-staging winetricks protontricks > /dev/null
+              # The CachyOS gaming lists name real Arch packages (some in multilib).
+              printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf
+              pacman -Sy
+              sed -n "s/^\(META\|APPLICATION\)_PACKAGES='\(.*\)'/\2/p" scripts/installers/commander/cachyos-gaming.sh |
+                xargs pacman -Si > /dev/null ;;
+            # Debian keeps winetricks and protontricks in contrib, off by default.
+            debian:*) apt-cache show wine minigalaxy > /dev/null ;;
+            ubuntu:*) apt-cache show wine winetricks protontricks minigalaxy > /dev/null ;;
+            fedora:*) dnf info -q wine winetricks protontricks minigalaxy > /dev/null ;;
+          esac
+          # The Arch-only entries show only on Arch; Garuda's meta-package
+          # nowhere here. A bare "! grep" never fails a step, so test it.
+          if [ "${{ matrix.family }}" = Arch ]; then
+            grep -q '^      proton-cachyos ' visible.txt
+          elif grep -q 'proton-cachyos' visible.txt; then
+            echo "an Arch-only entry shows on ${{ matrix.image }}" >&2
+            exit 1
+          fi
+          if grep -q 'wine-meta' visible.txt; then
+            echo "Garuda's WINE Meta shows on ${{ matrix.image }}" >&2
+            exit 1
+          fi
       - name: Converted package entries, removal and the AUR route
         run: |
           yes | bin/helixforge run lynx --yes

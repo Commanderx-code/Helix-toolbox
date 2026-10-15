@@ -1,0 +1,10 @@
+name = "Rare"
+description = "A light Epic Games launcher built on Legendary: sign in, then install, update and play your Epic library. Heroic covers Epic too, with GOG and Amazon. From Chaotic-AUR or the AUR on Arch, Flathub elsewhere."
+flags = "I"
+order = 107
+
+[package]
+binary = "rare"
+aur = "rare"
+flatpak = "io.github.dummerle.rare"
+removable = true

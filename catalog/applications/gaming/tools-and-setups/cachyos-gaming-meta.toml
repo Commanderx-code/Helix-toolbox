@@ -1,0 +1,12 @@
+name = "CachyOS Gaming Packages"
+description = "CachyOS's gaming dependencies: Proton CachyOS, umu-launcher, WINE, Winetricks, Protontricks, Vulkan tools and the 32-bit libraries games need. On CachyOS, its cachyos-gaming-meta package; on other Arch-based systems the same packages from Arch, multilib and Chaotic-AUR or the AUR, with Arch's wine in place of CachyOS's own WINE build. Needs multilib, and paru or yay off CachyOS."
+flags = "I"
+order = 105
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["pacman"]
+
+[script]
+id = "commander/cachyos-gaming-meta"

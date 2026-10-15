@@ -1,0 +1,14 @@
+name = "Boxtron"
+description = "A Steam compatibility tool that runs DOS games through the native DOSBox. Choose it under a game's Properties, Compatibility in Steam. Arch only, from the AUR."
+flags = "I"
+order = 101
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["pacman"]
+
+[package]
+binary = "install-gog-game"
+aur = "boxtron"
+removable = true

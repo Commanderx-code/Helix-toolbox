@@ -1,7 +1,7 @@
 name = "ProtonUp-Qt"
 description = "Manage ProtonUp-Qt installation with native packages first and Flatpak fallback."
 flags = "FI"
-order = 108
+order = 110
 
 [script]
 id = "gaming/protonup-qt"

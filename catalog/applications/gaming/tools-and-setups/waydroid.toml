@@ -1,7 +1,7 @@
 name = "Waydroid"
 description = "Waydroid is an emulator that allows you to run Android apps and games on Linux."
 flags = "I SS"
-order = 109
+order = 111
 
 [[preconditions]]
 matches = true

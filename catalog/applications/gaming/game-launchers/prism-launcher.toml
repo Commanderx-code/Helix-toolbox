@@ -1,0 +1,10 @@
+name = "Prism Launcher"
+description = "An open-source Minecraft launcher: separate instances, mod loaders and mod downloads, and Microsoft account sign-in. From Arch's repositories, Flathub elsewhere."
+flags = "I"
+order = 106
+
+[package]
+binary = "prismlauncher"
+arch = "prismlauncher"
+flatpak = "org.prismlauncher.PrismLauncher"
+removable = true

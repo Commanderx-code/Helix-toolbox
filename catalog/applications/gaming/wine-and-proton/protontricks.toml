@@ -1,0 +1,12 @@
+name = "Protontricks"
+description = "Winetricks for Steam's Proton games: install Windows components and change settings in a game's prefix. Debian has it only in contrib; Flathub is the fallback."
+flags = "I"
+order = 104
+
+[package]
+binary = "protontricks"
+arch = "protontricks"
+debian = "protontricks"
+fedora = "protontricks"
+flatpak = "com.github.Matoking.protontricks"
+removable = true

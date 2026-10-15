@@ -1,0 +1,11 @@
+name = "WINE"
+description = "Runs Windows programs on Linux. The distribution's own build; WINE Staging and WINE Meta are alternatives on Arch and Garuda."
+flags = "I"
+order = 105
+
+[package]
+binary = "wine"
+arch = "wine"
+debian = "wine"
+fedora = "wine"
+removable = true

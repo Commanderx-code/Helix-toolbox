@@ -2,7 +2,7 @@ name = "General GPU Drivers"
 description = "Auto-detects your GPU and installs a recommended driver stack for your distro, with NixOS guidance."
 flags = "I"
 multi_select = false
-order = 105
+order = 107
 
 [script]
 id = "system-setup/gpu-driver"

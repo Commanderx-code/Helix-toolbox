@@ -1,0 +1,10 @@
+name = "Faugus Launcher"
+description = "A simple launcher for Windows games and launchers (EA app, Ubisoft Connect, Battle.net, Rockstar and others) through umu-launcher and Proton. From Chaotic-AUR or the AUR on Arch, Flathub elsewhere."
+flags = "I"
+order = 101
+
+[package]
+binary = "faugus-launcher"
+aur = "faugus-launcher"
+flatpak = "io.github.Faugus.faugus-launcher"
+removable = true

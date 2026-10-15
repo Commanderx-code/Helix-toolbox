@@ -1,0 +1,12 @@
+name = "Minigalaxy"
+description = "A simple GOG client: sign in, then download, install and play your GOG games, with WINE for Windows ones."
+flags = "I"
+order = 105
+
+[package]
+binary = "minigalaxy"
+debian = "minigalaxy"
+fedora = "minigalaxy"
+aur = "minigalaxy"
+flatpak = "io.github.sharkwouter.Minigalaxy"
+removable = true

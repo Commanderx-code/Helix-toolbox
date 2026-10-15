@@ -149,8 +149,13 @@ https://github.com/ChrisTitusTech/neovim
 
 #### Game Launchers
 
+- **Faugus Launcher**: A simple launcher for Windows games and launchers (EA app, Ubisoft Connect, Battle.net, Rockstar and others) through umu-launcher and Proton. From Chaotic-AUR or the AUR on Arch, Flathub elsewhere.
 - **Heroic**: Manage Heroic launcher installation with Install, Uninstall, or Abort actions.
+- **Itch**: The itch.io desktop app, for buying, downloading and playing indie games. From the AUR on Arch (itch-setup-bin), Flathub elsewhere.
 - **Lutris**: Manage Lutris launcher installation with Install, Uninstall, or Abort actions.
+- **Minigalaxy**: A simple GOG client: sign in, then download, install and play your GOG games, with WINE for Windows ones.
+- **Prism Launcher**: An open-source Minecraft launcher: separate instances, mod loaders and mod downloads, and Microsoft account sign-in. From Arch's repositories, Flathub elsewhere.
+- **Rare**: A light Epic Games launcher built on Legendary: sign in, then install, update and play your Epic library. Heroic covers Epic too, with GOG and Amazon. From Chaotic-AUR or the AUR on Arch, Flathub elsewhere.
 - **RetroArch**: Manage RetroArch launcher installation with Install, Uninstall, or Abort actions.
 - **Steam**: Manage Steam launcher installation with Install, Uninstall, or Abort actions.
 
@@ -160,12 +165,35 @@ https://github.com/ChrisTitusTech/neovim
 https://github.com/AdnanHodzic/auto-cpufreq
 - **Auto Mount Drive**: This utility is designed to help with automating the process of mounting a drive on to your system.
 - **Bottles**: Bottles allows Windows software, like applications and games, to run on Linux. Bottles also provides tools to categorize, organize and optimize your applications.
+- **CachyOS Gaming Applications**: CachyOS's gaming applications: everything in CachyOS Gaming Packages, plus Steam, Lutris, Heroic, Faugus Launcher, Gamescope, MangoHud and GOverlay. On CachyOS, its cachyos-gaming-applications package; on other Arch-based systems the same packages from Arch, multilib and Chaotic-AUR or the AUR. Needs multilib, and paru or yay off CachyOS.
+- **CachyOS Gaming Packages**: CachyOS's gaming dependencies: Proton CachyOS, umu-launcher, WINE, Winetricks, Protontricks, Vulkan tools and the 32-bit libraries games need. On CachyOS, its cachyos-gaming-meta package; on other Arch-based systems the same packages from Arch, multilib and Chaotic-AUR or the AUR, with Arch's wine in place of CachyOS's own WINE build. Needs multilib, and paru or yay off CachyOS.
 - **Gaming Dependencies**: Installs gaming runtime dependencies across distributions. Steam and Lutris are managed separately from Game Launchers.
 - **General GPU Drivers**: Auto-detects your GPU and installs a recommended driver stack for your distro, with NixOS guidance.
 - **Nvidia Drivers & Hardware Acceleration**: Opens the Arch-specific NVIDIA installer (kept under System Setup / Arch).
 - **ProtonPlus**: Manage ProtonPlus installation with native packages first and Flatpak fallback.
 - **ProtonUp-Qt**: Manage ProtonUp-Qt installation with native packages first and Flatpak fallback.
 - **Waydroid**: Waydroid is an emulator that allows you to run Android apps and games on Linux.
+
+#### RuneScape
+
+Launchers for RuneScape and Old School RuneScape on Linux.
+
+- **Bolt Launcher**: A free, open-source third-party launcher for Jagex accounts: RuneScape 3, Old School RuneScape with RuneLite or HDOS, and plugins. From Chaotic-AUR or the AUR (bolt-launcher) on Arch, Flathub elsewhere.
+- **Jagex Launcher (Flatpak)**: The Windows Jagex Launcher in a community Flatpak with WINE built in, for RuneScape and Old School RuneScape, installed for your account from nmlynch94's repository with the 32-bit runtime pieces it needs (and the NVIDIA libraries matching your driver). Not affiliated with Jagex; needs Flatpak.
+- **Jagex Launcher (AppImage)**: Jagex's official Linux launcher, a beta AppImage that plays Old School RuneScape through RuneLite (RuneScape later), downloaded from Jagex to ~/.local/share/helixforge/appimages with a jagex-launcher command and a menu entry. Installs fuse3 first if AppImages cannot start. Run it again to update.
+
+#### WINE and Proton
+
+WINE for running Windows programs, and the Proton builds and compatibility tools Steam can run games with.
+
+- **Boxtron**: A Steam compatibility tool that runs DOS games through the native DOSBox. Choose it under a game's Properties, Compatibility in Steam. Arch only, from the AUR.
+- **Luxtorpeda**: A Steam compatibility tool that runs games with native Linux engines instead of their Windows builds. Choose it under a game's Properties, Compatibility in Steam. Arch only, from the AUR (luxtorpeda-bin).
+- **Proton CachyOS**: CachyOS's Proton build for Steam, with extra fixes and optimisations (the Steam Linux Runtime build). Choose it under a game's Properties, Compatibility in Steam. Arch only, from Chaotic-AUR or the AUR (proton-cachyos-slr).
+- **Protontricks**: Winetricks for Steam's Proton games: install Windows components and change settings in a game's prefix. Debian has it only in contrib; Flathub is the fallback.
+- **WINE**: Runs Windows programs on Linux. The distribution's own build; WINE Staging and WINE Meta are alternatives on Arch and Garuda.
+- **WINE Staging**: WINE with the staging patches, newer fixes that are not yet in WINE itself. It replaces WINE, so remove WINE first; while WINE is installed this shows as already installed. Arch only.
+- **WINE Meta**: Garuda's meta-package for WINE: WINE with Gecko, Mono, Winetricks, WineASIO and the libraries Windows games commonly need. Garuda only.
+- **Winetricks**: Installs Windows components (fonts, runtimes, DirectX pieces) and changes settings in WINE prefixes. Debian has it only in contrib.
 
 ## Configurations
 

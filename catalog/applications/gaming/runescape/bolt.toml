@@ -1,0 +1,10 @@
+name = "Bolt Launcher"
+description = "A free, open-source third-party launcher for Jagex accounts: RuneScape 3, Old School RuneScape with RuneLite or HDOS, and plugins. From Chaotic-AUR or the AUR (bolt-launcher) on Arch, Flathub elsewhere."
+flags = "I"
+order = 101
+
+[package]
+binary = "bolt"
+aur = "bolt-launcher"
+flatpak = "com.adamcake.Bolt"
+removable = true

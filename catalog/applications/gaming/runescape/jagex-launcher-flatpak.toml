@@ -1,0 +1,7 @@
+name = "Jagex Launcher (Flatpak)"
+description = "The Windows Jagex Launcher in a community Flatpak with WINE built in, for RuneScape and Old School RuneScape, installed for your account from nmlynch94's repository with the 32-bit runtime pieces it needs (and the NVIDIA libraries matching your driver). Not affiliated with Jagex; needs Flatpak."
+flags = "FI"
+order = 102
+
+[script]
+id = "commander/jagex-launcher-flatpak"

@@ -1,0 +1,12 @@
+name = "CachyOS Gaming Applications"
+description = "CachyOS's gaming applications: everything in CachyOS Gaming Packages, plus Steam, Lutris, Heroic, Faugus Launcher, Gamescope, MangoHud and GOverlay. On CachyOS, its cachyos-gaming-applications package; on other Arch-based systems the same packages from Arch, multilib and Chaotic-AUR or the AUR. Needs multilib, and paru or yay off CachyOS."
+flags = "I"
+order = 104
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["pacman"]
+
+[script]
+id = "commander/cachyos-gaming-applications"

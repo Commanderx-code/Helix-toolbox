@@ -1,0 +1,15 @@
+name = "Proton CachyOS"
+description = "CachyOS's Proton build for Steam, with extra fixes and optimisations (the Steam Linux Runtime build). Choose it under a game's Properties, Compatibility in Steam. Arch only, from Chaotic-AUR or the AUR (proton-cachyos-slr)."
+flags = "I"
+order = 103
+
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["pacman"]
+
+# A Steam compatibility tool adds no command; the package manager confirms it.
+[package]
+binary = "proton-cachyos-slr"
+aur = "proton-cachyos-slr"
+removable = true

@@ -1,0 +1,3 @@
+name = "WINE and Proton"
+description = "WINE for running Windows programs, and the Proton builds and compatibility tools Steam can run games with."
+order = 5

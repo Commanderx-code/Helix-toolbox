@@ -1,0 +1,11 @@
+name = "Winetricks"
+description = "Installs Windows components (fonts, runtimes, DirectX pieces) and changes settings in WINE prefixes. Debian has it only in contrib."
+flags = "I"
+order = 108
+
+[package]
+binary = "winetricks"
+arch = "winetricks"
+debian = "winetricks"
+fedora = "winetricks"
+removable = true

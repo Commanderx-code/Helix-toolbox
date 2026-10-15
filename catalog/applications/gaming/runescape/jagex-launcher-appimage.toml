@@ -1,0 +1,7 @@
+name = "Jagex Launcher (AppImage)"
+description = "Jagex's official Linux launcher, a beta AppImage that plays Old School RuneScape through RuneLite (RuneScape later), downloaded from Jagex to ~/.local/share/helixforge/appimages with a jagex-launcher command and a menu entry. Installs fuse3 first if AppImages cannot start. Run it again to update."
+flags = "FM"
+order = 103
+
+[script]
+id = "commander/jagex-launcher-appimage"
