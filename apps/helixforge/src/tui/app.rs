@@ -11,7 +11,7 @@ use crate::TuiArgs;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use helixforge_catalog::Catalog;
 use helixforge_core::{Action, Entry, Item};
-use helixforge_engine::{Planned, Step, plan};
+use helixforge_engine::{Plan, plan};
 use helixforge_platform::LinuxInfo;
 use ratatui::{
     Frame,
@@ -84,7 +84,7 @@ pub struct App {
     completion: Option<String>,
     multi_select: bool,
     picked: Vec<Entry>,
-    pending: Vec<Step>,
+    pending: Option<Plan>,
     popup: Option<Popup>,
     size_bypass: bool,
     skip_confirmation: bool,
@@ -116,7 +116,7 @@ impl App {
             completion: None,
             multi_select: false,
             picked: Vec::new(),
-            pending: Vec::new(),
+            pending: None,
             popup: None,
             size_bypass: args.size_bypass,
             skip_confirmation: args.skip_confirmation,
@@ -591,7 +591,7 @@ impl App {
                     }
                     Decision::Cancel => {
                         self.popup = None;
-                        self.pending.clear();
+                        self.pending = None;
                     }
                     Decision::Pending => {}
                 }
@@ -783,13 +783,14 @@ impl App {
             return;
         };
         let text = match &entry.action {
-            Action::Script { file } => std::fs::read_to_string(file)
+            Action::Script { file, .. } => std::fs::read_to_string(file)
                 .unwrap_or_else(|error| format!("The script cannot be read: {error}")),
             Action::Command { line } => line.clone(),
-            Action::Package { .. } => match plan(entry, &self.platform) {
-                Ok(Planned::Ready(step)) => step.display(),
-                Ok(Planned::AlreadyInstalled { binary }) => {
-                    format!("Already installed: {binary} is on the PATH.")
+            _ => match plan([entry], &self.platform, &|id| self.catalog.find(id)) {
+                Ok(planned) => {
+                    let mut lines = planned.notes.clone();
+                    lines.extend(planned.steps.iter().map(|step| step.display()));
+                    lines.join("\n")
                 }
                 Err(error) => error.to_string(),
             },
@@ -816,49 +817,63 @@ impl App {
     /// Plan the picked entries; ask before running what can run.
     fn confirm_picked(&mut self) {
         let picked = std::mem::take(&mut self.picked);
-        let mut steps = Vec::new();
-        let mut notes = Vec::new();
-        for entry in &picked {
-            match plan(entry, &self.platform) {
-                Ok(Planned::Ready(step)) => steps.push(step),
-                Ok(Planned::AlreadyInstalled { binary }) => notes.push(format!(
-                    "{}: already installed ({binary} is on the PATH).",
-                    entry.name
-                )),
-                Err(error) => notes.push(format!("{}: {error}.", entry.name)),
+        let planned = match plan(picked.iter(), &self.platform, &|id| self.catalog.find(id)) {
+            Ok(planned) => planned,
+            Err(error) => {
+                self.popup = Some(Popup::Text(TextPopup::new(
+                    "Cannot plan",
+                    error.to_string(),
+                    true,
+                )));
+                return;
             }
-        }
-        if steps.is_empty() {
-            let text = if notes.is_empty() {
+        };
+        if planned.is_empty() {
+            let text = if planned.notes.is_empty() {
                 "Nothing to run.".to_string()
             } else {
-                notes.join("\n")
+                planned.notes.join("\n")
             };
             self.popup = Some(Popup::Text(TextPopup::new("Nothing to run", text, true)));
             return;
         }
-        self.pending = steps;
+        let header = vec![format!(
+            "Risk: {}{}",
+            planned.risk.label(),
+            if planned.privileged {
+                " · asks for your password"
+            } else {
+                ""
+            }
+        )];
+        let mut lines: Vec<(String, String)> = planned
+            .steps
+            .iter()
+            .map(|step| (step.name().to_string(), step.display()))
+            .collect();
+        for note in &planned.notes {
+            lines.push((note.clone(), String::new()));
+        }
+        self.pending = Some(planned);
         if self.skip_confirmation {
             self.run_pending();
             return;
         }
-        let mut lines: Vec<(String, String)> = self
-            .pending
-            .iter()
-            .map(|step| (step.name().to_string(), step.display()))
-            .collect();
-        for note in notes {
-            lines.push((note, String::new()));
-        }
-        self.popup = Some(Popup::Confirm(ConfirmPopup::new(&lines)));
+        self.popup = Some(Popup::Confirm(ConfirmPopup::new(&header, &lines)));
     }
 
     fn run_pending(&mut self) {
-        let steps = std::mem::take(&mut self.pending);
-        self.popup = Some(match RunningView::start(&steps, &self.catalog.lib_dir()) {
-            Ok(running) => Popup::Running(running),
-            Err(error) => Popup::Text(TextPopup::new("Cannot run", error, true)),
-        });
+        let Some(planned) = self.pending.take() else {
+            return;
+        };
+        let this =
+            std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("helixforge"));
+        self.popup = Some(
+            match RunningView::start(&planned, &self.catalog.lib_dir(), &this) {
+                Ok(running) => Popup::Running(running),
+                Err(error) => Popup::Text(TextPopup::new("Cannot run", error, true)),
+            },
+        );
     }
 }
 
@@ -902,7 +917,8 @@ mod tests {
         let mut app = app();
         let text = screen(&mut app, 120, 40);
         assert!(text.contains("HELIXFORGE"));
-        assert!(text.contains("Applications Setup"));
+        assert!(text.contains("Applications"));
+        assert!(text.contains("Helix Doctor"));
         assert!(text.contains("FLAGS"));
         assert!(text.contains("[D]  Developer Tools"));
         assert!(text.contains("Quit"));
@@ -951,7 +967,7 @@ mod tests {
     fn running_an_entry_asks_first_and_quitting_works() {
         let mut app = app();
         press(&mut app, KeyCode::Char('/'));
-        for character in "System Report".chars() {
+        for character in "System Report (script)".chars() {
             press(&mut app, KeyCode::Char(character));
         }
         press(&mut app, KeyCode::Enter);
@@ -965,6 +981,7 @@ mod tests {
         press(&mut app, KeyCode::Enter);
         assert!(matches!(app.popup, Some(Popup::Confirm(_))));
         let text = screen(&mut app, 120, 40);
+        assert!(text.contains("Risk: low"), "{text}");
         assert!(text.contains("1. System Report"), "{text}");
         assert!(text.contains("system-report.sh"), "{text}");
         press(&mut app, KeyCode::Char('n'));

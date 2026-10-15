@@ -26,6 +26,7 @@ pub struct Session {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     status: Option<Option<ExitStatus>>,
+    killed: bool,
 }
 
 impl Session {
@@ -78,6 +79,27 @@ impl Session {
             master: pair.master,
             writer,
             status: None,
+            killed: false,
+        })
+    }
+
+    /// How the run ended, once it has.
+    pub fn outcome(&mut self) -> Option<crate::Outcome> {
+        if !self.is_finished() {
+            return None;
+        }
+        Some(match self.exit_status() {
+            _ if self.killed => crate::Outcome::Interrupted,
+            Some(status) if status.success() => crate::Outcome::Success,
+            Some(status) => {
+                let code = status.exit_code();
+                if code >= 128 {
+                    crate::Outcome::Interrupted
+                } else {
+                    crate::Outcome::Failed { exit_code: code }
+                }
+            }
+            None => crate::Outcome::CouldNotStart("the shell did not start".into()),
         })
     }
 
@@ -104,6 +126,7 @@ impl Session {
         if let Some(receiver) = self.killer.take()
             && let Ok(mut killer) = receiver.recv()
         {
+            self.killed = true;
             let _ = killer.kill();
         }
     }
@@ -180,5 +203,6 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert!(session.is_finished());
+        assert_eq!(session.outcome(), Some(crate::Outcome::Interrupted));
     }
 }

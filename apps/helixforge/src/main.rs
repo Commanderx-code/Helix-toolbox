@@ -2,13 +2,14 @@
 //! menu, or from the command line.
 
 mod docgen;
+mod logging;
 mod tui;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use helixforge_catalog::Catalog;
-use helixforge_core::{Action, Entry, Item};
-use helixforge_engine::{Planned, Step, history, plan, run_inherited};
+use helixforge_core::{Action, Entry, Item, NativeAction};
+use helixforge_engine::{InheritedRunner, Plan, execute, history, plan, run_native};
 use helixforge_platform::{LinuxInfo, binary_exists};
 use std::{
     io::{self, IsTerminal, Write},
@@ -60,6 +61,9 @@ enum Command {
     },
     /// Write the catalog walkthrough as Markdown.
     Docgen { file: PathBuf },
+    /// Run a native operation; the engine calls this from a run.
+    #[command(hide = true)]
+    Native { action: String },
 }
 
 #[derive(clap::Args, Clone, Debug, Default)]
@@ -83,6 +87,7 @@ pub struct TuiArgs {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    logging::init();
     let platform = LinuxInfo::detect().context("HelixForge needs Linux with /etc/os-release")?;
     match cli.command.unwrap_or(Command::Tui(TuiArgs::default())) {
         Command::Tui(args) => {
@@ -91,35 +96,7 @@ fn main() -> Result<()> {
             tui::run(catalog, platform, args)
         }
         Command::System => {
-            println!(
-                "Distribution:    {} ({})",
-                platform.pretty_name, platform.id
-            );
-            println!(
-                "Package manager: {}",
-                platform
-                    .manager
-                    .map(|manager| manager.label())
-                    .unwrap_or("none supported for package entries")
-            );
-            if let Some(manager) = platform.manager {
-                println!(
-                    "Manager command: {}",
-                    if binary_exists(manager.executable()) {
-                        "present"
-                    } else {
-                        "missing"
-                    }
-                );
-            }
-            println!(
-                "sudo:            {}",
-                if binary_exists("sudo") {
-                    "present"
-                } else {
-                    "missing"
-                }
-            );
+            print!("{}", run_native(NativeAction::SystemReport, &platform));
             Ok(())
         }
         Command::List { all } => {
@@ -160,22 +137,29 @@ fn main() -> Result<()> {
                         }
                     }
                 }
-                Action::Script { file } => println!("Kind: script, {}", file.display()),
+                Action::Script { file, interactive } => println!(
+                    "Kind: script, {}{}",
+                    file.display(),
+                    if *interactive { " (interactive)" } else { "" }
+                ),
                 Action::Command { line } => println!("Kind: command, {line}"),
+                Action::Nix { action } => println!("Kind: nix, {action:?}"),
+                Action::Native { action } => println!("Kind: native, {}", action.id()),
+                Action::Profile { entries } => println!("Kind: profile, {}", entries.join(", ")),
             }
             Ok(())
         }
         Command::Plan { ids } => {
             let catalog = Catalog::builtin(false)?;
-            let (steps, notes) = steps_for(&catalog, &platform, &ids)?;
-            print_plan(&steps, &notes);
+            let planned = plan_ids(&catalog, &platform, &ids)?;
+            print_plan(&planned);
             Ok(())
         }
         Command::Run { ids, dry_run, yes } => {
             let catalog = Catalog::builtin(false)?;
-            let (steps, notes) = steps_for(&catalog, &platform, &ids)?;
-            print_plan(&steps, &notes);
-            if steps.is_empty() {
+            let planned = plan_ids(&catalog, &platform, &ids)?;
+            print_plan(&planned);
+            if planned.is_empty() {
                 println!("Nothing to run.");
                 return Ok(());
             }
@@ -195,17 +179,10 @@ fn main() -> Result<()> {
                     bail!("cancelled; nothing was changed");
                 }
             }
-            let status = run_inherited(&steps, &catalog.lib_dir())?;
-            let names: Vec<(String, String)> = steps
-                .iter()
-                .map(|step| (step.id().to_string(), step.name().to_string()))
-                .collect();
-            let result = format!("exit {}", status.code().unwrap_or(-1));
-            if let Err(error) = history::record(&names, status.success(), &result, None) {
-                eprintln!("warning: the run was not recorded: {error}");
-            }
-            if !status.success() {
-                bail!("the run stopped with {result}");
+            let this = std::env::current_exe().context("cannot find the HelixForge executable")?;
+            let outcome = execute(&planned, &catalog.lib_dir(), &this, &mut InheritedRunner)?;
+            if !outcome.succeeded() {
+                bail!("the run stopped: {}", outcome.describe());
             }
             Ok(())
         }
@@ -233,6 +210,12 @@ fn main() -> Result<()> {
             let catalog = Catalog::builtin(false)?;
             std::fs::write(&file, docgen::walkthrough(&catalog.tabs))
                 .with_context(|| format!("cannot write {}", file.display()))?;
+            Ok(())
+        }
+        Command::Native { action } => {
+            let action = NativeAction::parse(&action)
+                .with_context(|| format!("unknown native action '{action}'"))?;
+            print!("{}", run_native(action, &platform));
             Ok(())
         }
     }
@@ -264,31 +247,30 @@ fn find<'a>(catalog: &'a Catalog, id: &str) -> Result<&'a Entry> {
         .with_context(|| format!("no entry named '{id}'; see helixforge list"))
 }
 
-fn steps_for(
-    catalog: &Catalog,
-    platform: &LinuxInfo,
-    ids: &[String],
-) -> Result<(Vec<Step>, Vec<String>)> {
-    let mut steps = Vec::new();
-    let mut notes = Vec::new();
+fn plan_ids(catalog: &Catalog, platform: &LinuxInfo, ids: &[String]) -> Result<Plan> {
+    let mut entries = Vec::new();
     for id in ids {
-        let entry = find(catalog, id)?;
-        match plan(entry, platform)? {
-            Planned::Ready(step) => steps.push(step),
-            Planned::AlreadyInstalled { binary } => notes.push(format!(
-                "{}: already installed ({binary} is on the PATH)",
-                entry.name
-            )),
-        }
+        entries.push(find(catalog, id)?);
     }
-    Ok((steps, notes))
+    Ok(plan(entries, platform, &|id| catalog.find(id))?)
 }
 
-fn print_plan(steps: &[Step], notes: &[String]) {
-    for note in notes {
+fn print_plan(planned: &Plan) {
+    for note in &planned.notes {
         println!("{note}");
     }
-    for (index, step) in steps.iter().enumerate() {
+    for (index, step) in planned.steps.iter().enumerate() {
         println!("{}. {}\n   {}", index + 1, step.name(), step.display());
+    }
+    if !planned.is_empty() {
+        println!(
+            "Risk: {}{}",
+            planned.risk.label(),
+            if planned.privileged {
+                "; asks for your password"
+            } else {
+                ""
+            }
+        );
     }
 }

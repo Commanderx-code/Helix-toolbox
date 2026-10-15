@@ -54,7 +54,8 @@ impl PackageNames {
     }
 }
 
-/// What an entry does when run.
+/// What an entry does when run: the operation model shared by every
+/// interface. The engine turns these into explicit plans.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action {
     /// Install one native package with the family's package manager.
@@ -63,10 +64,95 @@ pub enum Action {
         binary: String,
         packages: PackageNames,
     },
-    /// Run a script from its own directory in a terminal.
-    Script { file: PathBuf },
+    /// Run a script from its own directory. Interactive scripts need a
+    /// terminal for their prompts; the others could run unattended.
+    Script { file: PathBuf, interactive: bool },
     /// Run an inline shell command.
     Command { line: String },
+    /// A Nix operation.
+    Nix { action: NixAction },
+    /// An operation implemented in Rust by the engine itself.
+    Native { action: NativeAction },
+    /// A reviewable list of other entries, run in order.
+    Profile { entries: Vec<String> },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NixAction {
+    /// `nix profile install <installable>`.
+    ProfileInstall { installable: String },
+    /// `home-manager switch --flake <flake>`.
+    HomeManagerSwitch { flake: String },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeAction {
+    /// Print what HelixForge knows about the machine.
+    SystemReport,
+}
+
+impl NativeAction {
+    pub const fn id(self) -> &'static str {
+        match self {
+            NativeAction::SystemReport => "system-report",
+        }
+    }
+
+    pub fn parse(id: &str) -> Option<Self> {
+        match id {
+            "system-report" => Some(NativeAction::SystemReport),
+            _ => None,
+        }
+    }
+}
+
+/// How much an entry can affect the system, derived from its flags.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Risk {
+    /// Reads or user files only.
+    #[default]
+    Low,
+    /// Installs packages or changes system files with privileges.
+    Medium,
+    /// Disk, kernel or whole-system changes.
+    High,
+}
+
+impl Risk {
+    /// `D`, `K` and `SI` are high; anything privileged or installing is
+    /// medium; the rest is low.
+    pub fn from_flags(flags: &str) -> Self {
+        let mut risk = Risk::Low;
+        for flag in flags.split_whitespace() {
+            let level = match flag {
+                "D" | "K" | "SI" | "PD" | "PK" => Risk::High,
+                "I" | "SS" | "RP" | "MP" => Risk::Medium,
+                other if other.starts_with('P') => Risk::Medium,
+                _ => Risk::Low,
+            };
+            risk = risk.max(level);
+        }
+        risk
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Risk::Low => "low",
+            Risk::Medium => "medium",
+            Risk::High => "high",
+        }
+    }
+}
+
+/// Whether an entry needs elevated privileges, from its flags and kind.
+pub fn privileged(flags: &str, action: &Action) -> bool {
+    matches!(action, Action::Package { .. })
+        || flags
+            .split_whitespace()
+            .any(|flag| matches!(flag, "I" | "SS" | "D" | "K" | "SI") || flag.starts_with('P'))
 }
 
 /// A condition that hides an entry on machines it does not apply to.
@@ -217,6 +303,12 @@ mod tests {
                 line: "true".into(),
             },
         };
+        assert!(!privileged("FM", &entry.action));
+        assert!(privileged("I FM", &entry.action));
+        assert_eq!(Risk::from_flags("I FM"), Risk::Medium);
+        assert_eq!(Risk::from_flags("PFM"), Risk::Medium);
+        assert_eq!(Risk::from_flags("D"), Risk::High);
+        assert_eq!(Risk::from_flags(""), Risk::Low);
         let tab = Tab {
             id: "t".into(),
             name: "T".into(),

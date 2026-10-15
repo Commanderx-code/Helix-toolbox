@@ -1,0 +1,4 @@
+name = "Report"
+
+[native]
+action = "system-report"

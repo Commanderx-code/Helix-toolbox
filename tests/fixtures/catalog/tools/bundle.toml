@@ -1,0 +1,5 @@
+name = "Bundle"
+description = "The marker and the report, as one plan."
+
+[profile]
+entries = ["marker", "report"]

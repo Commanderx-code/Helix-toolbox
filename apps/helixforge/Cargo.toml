@@ -16,5 +16,10 @@ helixforge-engine = { path = "../../crates/helixforge-engine" }
 helixforge-platform = { path = "../../crates/helixforge-platform" }
 nix = { version = "0.31", features = ["user"] }
 ratatui.workspace = true
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 tui-term = "0.3"
 vt100 = "0.16"
+
+[dev-dependencies]
+tempfile = "3"

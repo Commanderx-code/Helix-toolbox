@@ -1,0 +1,6 @@
+name = "Failing"
+description = "Exits with status 9."
+flags = ""
+
+[command]
+line = "echo about to fail; exit 9"

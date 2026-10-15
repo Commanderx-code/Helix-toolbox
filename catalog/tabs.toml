@@ -1,2 +1,2 @@
 # The tabs, in the order they are shown. Each is a directory with a tab.toml.
-tabs = ["applications-setup", "utils"]
+tabs = ["applications", "configurations", "doctor", "maintenance", "security", "profiles"]

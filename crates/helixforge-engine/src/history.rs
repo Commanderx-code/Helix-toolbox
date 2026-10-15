@@ -6,7 +6,7 @@ use std::{
     env, fs,
     io::Write,
     os::unix::fs::{DirBuilderExt, OpenOptionsExt},
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -17,13 +17,14 @@ pub struct Record {
     pub entries: Vec<String>,
     pub names: Vec<String>,
     pub success: bool,
-    /// The exit status, or why the run could not start.
+    /// The exit status, "interrupted", or why the run could not start.
     pub result: String,
     #[serde(default)]
     pub log: Option<PathBuf>,
 }
 
-fn state_dir() -> Option<PathBuf> {
+/// The state directory: `$XDG_STATE_HOME/helixforge` or `~/.local/state/helixforge`.
+pub fn state_dir() -> Option<PathBuf> {
     if let Some(directory) = env::var_os("XDG_STATE_HOME") {
         let path = PathBuf::from(directory);
         if path.is_absolute() {
@@ -33,7 +34,11 @@ fn state_dir() -> Option<PathBuf> {
     env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state/helixforge"))
 }
 
-fn ensure_private(path: &PathBuf) -> std::io::Result<()> {
+fn default_dir() -> std::io::Result<PathBuf> {
+    state_dir().ok_or_else(|| std::io::Error::other("no HOME or XDG_STATE_HOME"))
+}
+
+fn ensure_private(path: &Path) -> std::io::Result<()> {
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
@@ -47,16 +52,25 @@ pub fn now() -> u64 {
         .as_secs()
 }
 
-/// Append one record. Returns the record as written.
+/// Append one record to the default history.
 pub fn record(
     entries: &[(String, String)],
     success: bool,
     result: &str,
     log: Option<PathBuf>,
 ) -> std::io::Result<Record> {
-    let directory =
-        state_dir().ok_or_else(|| std::io::Error::other("no HOME or XDG_STATE_HOME"))?;
-    ensure_private(&directory)?;
+    record_in(&default_dir()?, entries, success, result, log)
+}
+
+/// Append one record to the history in `directory`.
+pub fn record_in(
+    directory: &Path,
+    entries: &[(String, String)],
+    success: bool,
+    result: &str,
+    log: Option<PathBuf>,
+) -> std::io::Result<Record> {
+    ensure_private(directory)?;
     let record = Record {
         unix_timestamp: now(),
         entries: entries.iter().map(|(id, _)| id.clone()).collect(),
@@ -75,11 +89,16 @@ pub fn record(
     Ok(record)
 }
 
-/// The most recent records first.
+/// The most recent records first, from the default history.
 pub fn read(limit: usize) -> std::io::Result<Vec<Record>> {
-    let Some(directory) = state_dir() else {
-        return Ok(Vec::new());
-    };
+    match state_dir() {
+        Some(directory) => read_in(&directory, limit),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// The most recent records first, from the history in `directory`.
+pub fn read_in(directory: &Path, limit: usize) -> std::io::Result<Vec<Record>> {
     let path = directory.join("history.jsonl");
     if !path.exists() {
         return Ok(Vec::new());
@@ -94,13 +113,16 @@ pub fn read(limit: usize) -> std::io::Result<Vec<Record>> {
     Ok(records)
 }
 
-/// Save terminal output under `logs/` and return its path.
+/// Save terminal output under `logs/` in the default state directory.
 pub fn save_log(output: &[u8]) -> std::io::Result<PathBuf> {
-    let directory = state_dir()
-        .ok_or_else(|| std::io::Error::other("no HOME or XDG_STATE_HOME"))?
-        .join("logs");
-    ensure_private(&directory)?;
-    let path = directory.join(format!("{}-{}.log", now(), std::process::id()));
+    save_log_in(&default_dir()?, output)
+}
+
+/// Save terminal output under `logs/` in `directory` and return its path.
+pub fn save_log_in(directory: &Path, output: &[u8]) -> std::io::Result<PathBuf> {
+    let logs = directory.join("logs");
+    ensure_private(&logs)?;
+    let path = logs.join(format!("{}-{}.log", now(), std::process::id()));
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -113,27 +135,50 @@ pub fn save_log(output: &[u8]) -> std::io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn records_round_trip_newest_first() {
         let directory = tempfile::tempdir().unwrap();
-        // SAFETY: tests in this module are the only readers of this variable.
-        unsafe { env::set_var("XDG_STATE_HOME", directory.path()) };
-        record(&[("one".into(), "One".into())], true, "exit 0", None).unwrap();
-        let log = save_log(b"output").unwrap();
-        record(
+        record_in(
+            directory.path(),
+            &[("one".into(), "One".into())],
+            true,
+            "exit 0",
+            None,
+        )
+        .unwrap();
+        let log = save_log_in(directory.path(), b"output").unwrap();
+        record_in(
+            directory.path(),
             &[("two".into(), "Two".into())],
             false,
             "exit 1",
             Some(log.clone()),
         )
         .unwrap();
-        let records = read(10).unwrap();
+        let records = read_in(directory.path(), 10).unwrap();
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].entries, ["two"]);
         assert_eq!(records[0].log.as_deref(), Some(log.as_path()));
         assert!(!records[0].success);
-        assert_eq!(fs::read(log).unwrap(), b"output");
-        unsafe { env::remove_var("XDG_STATE_HOME") };
+        assert_eq!(fs::read(&log).unwrap(), b"output");
+        assert_eq!(
+            fs::metadata(&log).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            fs::metadata(directory.path().join("logs"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        assert!(
+            read_in(&directory.path().join("nothing"), 5)
+                .unwrap()
+                .is_empty()
+        );
     }
 }

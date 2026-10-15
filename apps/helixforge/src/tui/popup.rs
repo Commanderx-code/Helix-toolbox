@@ -73,14 +73,14 @@ impl TextPopup {
         let max_scroll = self.line_count.saturating_sub(self.visible_lines.max(1));
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
-                self.scroll.0 = (self.scroll.0 + 1).min(max_scroll)
+                self.scroll.0 = (self.scroll.0 + 1).min(max_scroll);
             }
             KeyCode::Char('k') | KeyCode::Up => self.scroll.0 = self.scroll.0.saturating_sub(1),
             KeyCode::PageDown => self.scroll.0 = (self.scroll.0 + 10).min(max_scroll),
             KeyCode::PageUp => self.scroll.0 = self.scroll.0.saturating_sub(10),
             KeyCode::Char('l') | KeyCode::Right if !self.wrap => self.scroll.1 += 4,
             KeyCode::Char('h') | KeyCode::Left if !self.wrap => {
-                self.scroll.1 = self.scroll.1.saturating_sub(4)
+                self.scroll.1 = self.scroll.1.saturating_sub(4);
             }
             KeyCode::Char('g') => self.scroll.0 = 0,
             KeyCode::Char('G') => self.scroll.0 = max_scroll,
@@ -112,22 +112,28 @@ pub enum Decision {
 
 pub struct ConfirmPopup {
     lines: Vec<String>,
+    header_lines: usize,
     scroll: usize,
     visible_lines: usize,
     pub decision: Decision,
 }
 
 impl ConfirmPopup {
-    /// `names` are the entries, each with the command it will run.
-    pub fn new(names: &[(String, String)]) -> Self {
+    /// `names` are the entries, each with the command it will run; `header`
+    /// lines come first, such as the risk and whether a password is needed.
+    pub fn new(header: &[String], names: &[(String, String)]) -> Self {
         let digits = names.len().to_string().len();
-        let mut lines = Vec::new();
+        let mut lines: Vec<String> = header.to_vec();
+        if !header.is_empty() {
+            lines.push(String::new());
+        }
         for (index, (name, command)) in names.iter().enumerate() {
             lines.push(format!("{:>digits$}. {name}", index + 1));
             lines.push(format!("{:>digits$}  {command}", ""));
         }
         Self {
             lines,
+            header_lines: header.len(),
             scroll: 0,
             visible_lines: 0,
             decision: Decision::Pending,
@@ -154,10 +160,12 @@ impl ConfirmPopup {
         let lines: Vec<Line> = self
             .lines
             .iter()
-            .skip(self.scroll)
             .enumerate()
+            .skip(self.scroll)
             .map(|(index, line)| {
-                if (index + self.scroll) % 2 == 1 {
+                if index < self.header_lines {
+                    Line::styled(line.as_str(), Style::default().fg(theme.title()))
+                } else if line.starts_with(' ') {
                     Line::styled(line.as_str(), Style::default().fg(theme.muted()))
                 } else {
                     Line::from(line.as_str())
@@ -182,7 +190,7 @@ impl ConfirmPopup {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => self.decision = Decision::Run,
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Char('q') | KeyCode::Esc => {
-                self.decision = Decision::Cancel
+                self.decision = Decision::Cancel;
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 if self.scroll + self.visible_lines < self.lines.len() {
@@ -215,7 +223,7 @@ mod tests {
 
     #[test]
     fn the_confirmation_needs_an_explicit_answer() {
-        let mut popup = ConfirmPopup::new(&[("Git".into(), "sudo pacman -S git".into())]);
+        let mut popup = ConfirmPopup::new(&[], &[("Git".into(), "sudo pacman -S git".into())]);
         popup.handle_key(&KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(popup.decision, Decision::Pending);
         popup.handle_key(&KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
@@ -227,16 +235,20 @@ mod tests {
     }
 
     #[test]
-    fn the_confirmation_shows_names_commands_and_choices() {
-        let mut popup = ConfirmPopup::new(&[("Git".into(), "sudo pacman -S --needed git".into())]);
-        let mut terminal = Terminal::new(TestBackend::new(40, 9)).unwrap();
+    fn the_confirmation_shows_the_header_names_commands_and_choices() {
+        let mut popup = ConfirmPopup::new(
+            &["Risk: medium".into()],
+            &[("Git".into(), "sudo pacman -S --needed git".into())],
+        );
+        let mut terminal = Terminal::new(TestBackend::new(40, 11)).unwrap();
         terminal
             .draw(|frame| popup.draw(frame, frame.area(), Theme::Default))
             .unwrap();
         let buffer = terminal.backend().buffer();
-        let text: String = (0..9)
+        let text: String = (0..11)
             .map(|y| (0..40).map(|x| buffer[(x, y)].symbol()).collect::<String>() + "\n")
             .collect();
+        assert!(text.contains("Risk: medium"));
         assert!(text.contains("1. Git"));
         assert!(text.contains("sudo pacman -S --needed git"));
         assert!(text.contains("[Y] Run"));

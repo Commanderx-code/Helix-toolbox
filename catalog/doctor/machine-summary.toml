@@ -1,0 +1,7 @@
+name = "Machine Summary"
+description = "Print what HelixForge knows about this machine, implemented in Rust by the engine itself, without changing anything."
+flags = ""
+order = 1
+
+[native]
+action = "system-report"

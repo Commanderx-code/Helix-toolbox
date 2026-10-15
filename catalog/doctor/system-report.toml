@@ -1,0 +1,7 @@
+name = "System Report (script)"
+description = "Print the distribution, kernel, package manager and shell helpers that HelixForge detects, through a shell script, without changing anything."
+flags = ""
+multi_select = false
+
+[script]
+id = "system-report"

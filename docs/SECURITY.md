@@ -5,17 +5,21 @@
   fetch sources at run time pin a revision and say so in their description.
 - **No free text in the shell.** The run is a shell program assembled from
   single-quoted literals: validated package names, script paths from the
-  unpacked catalog, and command lines written in the catalog. Nothing typed by
-  the user reaches it; keys typed into the running window go to the program's
-  own standard input through the pseudo-terminal.
+  unpacked catalog, Nix installables and command lines written in the catalog.
+  Nothing typed by the user reaches it; keys typed into the running window go
+  to the program's own standard input through the pseudo-terminal.
 - **Privileges.** The application starts unprivileged and warns when it is
   root. Package entries call `sudo` inside the run, where the prompt is
   visible. Scripts ask for `sudo` themselves through the shared helpers.
-- **Confirmation.** The interface shows the plan and asks `[Y]`; the command
-  line asks for the word `RUN` unless `--yes` is given deliberately.
+  Nothing stays elevated between runs.
+- **Review.** Every plan shows its steps, its risk level and whether it asks
+  for a password. The interface asks `[Y]`; the command line asks for the
+  word `RUN` unless `--yes` is given deliberately.
 - **Records.** Runs are appended to a private history file (mode 0600 in a
-  0700 directory). Saved logs contain whatever the program printed, which can
-  include file names; they never contain typed passwords, which the terminal
-  does not echo.
+  0700 directory) with their outcome; interrupted runs are recorded as
+  interrupted, never as success. Saved logs contain whatever the program
+  printed, which can include file names; typed passwords are not echoed by
+  the terminal and so are not in them. The tracing log records plans and
+  outcomes, not output.
 - **Not provided.** Rollback, package verification beyond the package
   manager's own, and isolation of what an entry's script does once it runs.

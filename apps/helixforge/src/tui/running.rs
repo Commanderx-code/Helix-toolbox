@@ -2,7 +2,7 @@
 
 use super::{hints::Hint, theme::Theme};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use helixforge_engine::{Step, history, pty::Session, shell_program};
+use helixforge_engine::{Outcome, Plan, history, pty::Session, shell_program};
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
@@ -24,16 +24,14 @@ pub struct RunningView {
 }
 
 impl RunningView {
-    pub fn start(steps: &[Step], lib_dir: &Path) -> Result<Self, String> {
-        helixforge_engine::check_requirements(steps).map_err(|error| error.to_string())?;
-        let session = Session::spawn(&shell_program(steps, lib_dir), lib_dir)
+    pub fn start(plan: &Plan, lib_dir: &Path, this: &Path) -> Result<Self, String> {
+        helixforge_engine::check_requirements(plan).map_err(|error| error.to_string())?;
+        tracing::info!(steps = ?plan.entries(), "run started");
+        let session = Session::spawn(&shell_program(plan, lib_dir, this), lib_dir)
             .map_err(|error| error.to_string())?;
         Ok(Self {
             session,
-            entries: steps
-                .iter()
-                .map(|step| (step.id().to_string(), step.name().to_string()))
-                .collect(),
+            entries: plan.entries(),
             recorded: false,
             log: None,
             scrollback: 0,
@@ -62,20 +60,26 @@ impl RunningView {
             return;
         }
         self.recorded = true;
-        let (success, result) = match self.session.exit_status() {
-            Some(status) if status.success() => (true, "exit 0".to_string()),
-            Some(status) => (false, format!("exit {}", status.exit_code())),
-            None => (false, "could not start".to_string()),
-        };
-        let _ = history::record(&self.entries, success, &result, self.log.clone());
+        let outcome = self
+            .session
+            .outcome()
+            .unwrap_or_else(|| Outcome::CouldNotStart("unknown".into()));
+        tracing::info!(outcome = outcome.describe(), "run finished");
+        let _ = history::record(
+            &self.entries,
+            outcome.succeeded(),
+            &outcome.describe(),
+            self.log.clone(),
+        );
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, theme: Theme) {
         let (title, colour) = if self.is_finished() {
-            match self.session.exit_status() {
-                Some(status) if status.success() => (" FINISHED ".to_string(), theme.success()),
-                Some(status) => (
-                    format!(" FAILED (exit {}) ", status.exit_code()),
+            match self.session.outcome() {
+                Some(Outcome::Success) => (" FINISHED ".to_string(), theme.success()),
+                Some(Outcome::Interrupted) => (" INTERRUPTED ".to_string(), theme.failure()),
+                Some(outcome) => (
+                    format!(" FAILED ({}) ", outcome.describe()),
                     theme.failure(),
                 ),
                 None => (" FAILED ".to_string(), theme.failure()),

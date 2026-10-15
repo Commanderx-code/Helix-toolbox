@@ -1,0 +1,6 @@
+name = "Developer Basics"
+description = "Git, ripgrep, fzf and Neovim, as one reviewable plan."
+flags = "I"
+
+[profile]
+entries = ["git", "ripgrep", "fzf", "neovim"]

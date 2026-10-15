@@ -1,55 +1,98 @@
 # Architecture
 
+## Stack
+
+| Component | Choice |
+| :--- | :--- |
+| Language | Rust (edition 2024) |
+| Terminal interface | Ratatui and Crossterm |
+| Graphical interface, later | Tauri 2 on the same crates |
+| Command line | Clap |
+| Interactive execution | portable-pty, rendered with tui-term and vt100 |
+| Configuration and catalog | Serde and TOML |
+| Errors | thiserror in the crates, anyhow in the application |
+| Logging | tracing, to `~/.local/state/helixforge/logs/helixforge.log` |
+| Tests | Cargo tests with fixtures; Linux VM runs for real installers, later |
+| Releases | GitHub Actions, later |
+
+An async runtime (Tokio) is not in the workspace yet. The engine reports a
+running command's output through a shared buffer and a flag, which the
+terminal interface polls. The graphical interface will want an event stream;
+that is the point to add Tokio, with the engine exposing a channel instead of
+a buffer.
+
 ## Principles
 
-1. The interface, terminal now and graphical later, never changes the system
-   itself. It asks the engine to plan and run entries.
+1. Every interface calls the same engine: plan, review, run, record. The
+   interface, terminal now and graphical later, never changes the system.
 2. Entries come from the catalog embedded in the binary. There is no remote
    catalog and no downloaded script.
 3. A run is one POSIX shell program built from quoted literals out of the
-   validated catalog. Package names, script paths and command lines never meet
-   user input.
-4. Every run is shown before it starts and confirmed, then recorded.
-5. Privileges come from `sudo` inside the run, visible in the terminal window,
-   never from a daemon.
+   validated catalog. Nothing typed by the user reaches it.
+4. Every run is shown as a plan, with its risk and whether it asks for a
+   password, and confirmed before it starts. Then it is recorded, including
+   runs that failed or were interrupted.
+5. Privileges come from `sudo` inside the run, where the prompt is visible;
+   there is no daemon and nothing stays elevated.
 
 ## Crates
 
 ```text
-helixforge-core      Tab, Group, Entry, Action, Precondition; validation of names and ids
-helixforge-catalog   reads catalog/ (embedded or from a directory), applies preconditions
+helixforge-core      Tab, Group, Entry, Action, Precondition, Risk; name validation
+helixforge-catalog   reads catalog/ and scripts/ (embedded or from a directory), applies preconditions
 helixforge-platform  /etc/os-release, package manager family, PATH lookups
-helixforge-engine    plan(entry) -> Step, shell_program(steps), pty::Session, history
-helixforge           clap command line, ratatui interface
+helixforge-engine    plan() -> Plan of Steps; shell_program(); Runner (inherited, pty, mock); history
+helixforge           clap command line, ratatui interface, tracing setup
 ```
+
+## The operation model
+
+An entry's `Action` is one of:
+
+| Action | Becomes |
+| :--- | :--- |
+| `Package` | `sudo <manager> install <package>`, or a note when its binary is already on the PATH |
+| `Script` | `cd <its directory> && <interpreter> <script>`; interactive by default |
+| `Command` | `sh -e -c '<line>'` |
+| `Nix` | `nix profile install <installable>` or `home-manager switch --flake <flake>` |
+| `Native` | `helixforge native <action>`: HelixForge re-invoked, the operation implemented in Rust |
+| `Profile` | the actions of the entries it names, in order |
+
+`plan()` turns entries into a `Plan`: ordered `Step`s, notes for entries that
+need nothing done, the executables the steps require, whether any step is
+privileged, and the highest risk among them (from the flags: `D`, `K` and
+`SI` are high; installs, services and anything privileged are medium).
 
 ## A run, end to end
 
 ```text
-entry ──plan──▶ Step ──shell_program──▶ sh program ──▶ pty::Session (interface)
-                                                   └─▶ run_inherited  (command line)
-                                                           │
-                                                   history::record
+entries ──plan──▶ Plan ──shell_program──▶ sh program ──▶ Runner
+                                                         ├─ pty::Session     (interface window)
+                                                         ├─ InheritedRunner  (command line)
+                                                         └─ MockRunner       (tests)
+                                                                 │
+                                                          Outcome: Success | Failed{code} | Interrupted | CouldNotStart
+                                                                 │
+                                                          history::record
 ```
 
-- A package entry becomes `sudo <manager> install <package>`; when the entry's
-  binary is already on the PATH it is reported instead of run.
-- A script entry runs `cd <its directory> && <interpreter> <script>`; the
-  interpreter comes from the shebang, `/bin/sh -e` without one, and an entry
-  whose interpreter is missing is hidden like one whose preconditions fail.
-- A command entry runs `sh -e -c '<line>'`.
-- Steps run in order and stop at the first failure.
+Steps run in order and stop at the first failure. An exit status of 128 or
+more, or a kill from the interface, is recorded as interrupted, never as
+success. Native steps re-enter HelixForge through its hidden `native`
+subcommand, so even Rust-implemented operations go through the same program
+and the same terminal, and will through the graphical interface's terminal
+panel too.
 
 ## Interface
 
 Tabs on the left with a system panel, the search bar and entry list on the
 right, key hints along the bottom. Popups over the list show text, the
-confirmation and the running terminal, which is a pseudo-terminal rendered
-with tui-term so prompts, colours and full-screen programs work.
+confirmation with the plan's risk line, and the running terminal. Milestone
+2 turns the sidebar into a menu of screens (dashboard, the catalog areas, the
+install plan, history, settings) following the HelixForge dashboard design.
 
 ## Graphical interface, later
 
-A Tauri crate would use the same `helixforge-engine`: plans for its forms, the
-pseudo-terminal session for an embedded terminal panel where entries are
-interactive, and the history for its log view. Nothing in the engine assumes a
-terminal.
+A Tauri crate uses the same engine: plans for its forms, the pseudo-terminal
+session for an embedded terminal panel where entries are interactive, and
+the history for its log view. Nothing in the engine assumes a terminal.

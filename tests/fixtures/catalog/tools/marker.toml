@@ -1,0 +1,6 @@
+name = "Marker"
+description = "Writes a marker file where HELIXFORGE_TEST_OUT points; a safe stand-in for an installer."
+flags = "FM"
+
+[script]
+id = "marker"
