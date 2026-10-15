@@ -81,9 +81,13 @@ an interrupted source, and removals that leave the package behind.
 ## Release checks
 
 Every push to `main` runs the Checks, Distributions and Sync sources
-workflows; the last publishes `helixforge-<12 characters of the commit>` with
-`helixforge-linux-x86_64` and `SHA256SUMS`. To check a published build by
-hand, without running any entry:
+workflows; the last publishes the next release, tagged `vMAJOR.MINOR.PATCH`,
+with `helixforge-linux-x86_64` and `SHA256SUMS`, and checks that
+`helixforge --version` reports that version. `scripts/release-version.py`
+picks it: the commit's own version when it already has one (a rebuild), else
+one patch above the newest tag, or the workspace version in `Cargo.toml` when
+that is higher. Releases before v0.1.0 were named `helixforge-<commit>`. To
+check a published build by hand, without running any entry:
 
 ```sh
 tag=$(gh release view --repo Commanderx-code/Helix-Forge --json tagName --jq .tagName)

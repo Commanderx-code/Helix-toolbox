@@ -19,8 +19,9 @@ catalog files (`catalog/configurations/dotfiles/`, `catalog/configurations/myfis
 and the terminal tools under `catalog/applications/terminal-tools/`), runs
 every check, builds HelixForge and regenerates the walkthrough. Only after
 those steps succeed does it commit and push the new pins and catalog. It then
-publishes a release named `helixforge-<commit>` with the Linux x86_64 build
-and its SHA-256 sum; `start.sh` and the dotfiles launcher fetch the latest.
+publishes the next release, tagged `vMAJOR.MINOR.PATCH`, with the Linux
+x86_64 build and its SHA-256 sum; `start.sh` and the dotfiles launcher fetch
+the latest.
 
 ## Notifications from the sources
 

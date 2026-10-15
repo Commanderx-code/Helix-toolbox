@@ -51,17 +51,21 @@ jobs:
           ROUTINE: ${{ github.event_name == 'schedule' || inputs.reason == 'source-updated' }}
           CHANGED: ${{ steps.sync.outputs.changed }}
         run: |
-          revision=$(git rev-parse HEAD)
-          if [ "$(gh release view "helixforge-${revision:0:12}" --json isDraft --jq .isDraft 2>/dev/null)" = false ]; then
-            exists=true
+          # The commit's own vX.Y.Z when it has one, else the next version; a
+          # source update adds a commit, which gets the next version.
+          if [ "$CHANGED" = true ]; then
+            python3 -B scripts/release-version.py --changed | tee "$RUNNER_TEMP/release.txt"
           else
-            exists=false
+            python3 -B scripts/release-version.py | tee "$RUNNER_TEMP/release.txt"
           fi
-          if [ "$CHANGED" = true ] || [ "$exists" = false ] || [ "$ROUTINE" != true ]; then
+          version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/release.txt")
+          released=$(sed -n 's/^released=//p' "$RUNNER_TEMP/release.txt")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$CHANGED" = true ] || [ "$released" = false ] || [ "$ROUTINE" != true ]; then
             echo 'build=true' >> "$GITHUB_OUTPUT"
           else
             echo 'build=false' >> "$GITHUB_OUTPUT"
-            echo "Nothing changed and helixforge-${revision:0:12} is published."
+            echo "Nothing changed and v$version is published."
           fi
       - name: Install validation tools
         if: steps.release.outputs.build == 'true'
@@ -72,6 +76,8 @@ jobs:
           components: rustfmt, clippy
       - name: Validate and build without installation
         if: steps.release.outputs.build == 'true'
+        env:
+          HELIXFORGE_VERSION: ${{ steps.release.outputs.version }}
         run: |
           cargo fmt --all -- --check
           cargo clippy --workspace --all-targets -- -D warnings
@@ -82,6 +88,7 @@ jobs:
           cargo build --release -p helixforge
           target/release/helixforge docgen docs/walkthrough.md
           target/release/helixforge --help >/dev/null
+          target/release/helixforge --version | grep -qx "helixforge $HELIXFORGE_VERSION"
       - name: Commit tested source updates
         if: steps.sync.outputs.changed == 'true'
         run: |
@@ -96,19 +103,24 @@ jobs:
         if: steps.release.outputs.build == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
           revision=$(git rev-parse HEAD)
-          tag="helixforge-${revision:0:12}"
+          tag="v$VERSION"
           mkdir -p /tmp/helixforge-release
           cp target/release/helixforge /tmp/helixforge-release/helixforge-linux-x86_64
           python3 -B scripts/sync-sources.py --render
           git diff --exit-code
           cd /tmp/helixforge-release
           sha256sum helixforge-linux-x86_64 > SHA256SUMS
-          printf 'Automatic build from HelixForge commit %s.\n\nLinux x86_64; built on Ubuntu 22.04 (glibc 2.35 or newer).\nUpdate HelixForge, then run the entry you want.\n' "$revision" > release-notes.md
+          printf 'HelixForge %s, built from commit %s.\n\nLinux x86_64; built on Ubuntu 22.04 (glibc 2.35 or newer).\nUpdate HelixForge, then run the entry you want.\n' "$tag" "$revision" > release-notes.md
+          # A draft left by a failed run may point at an older commit; start again.
+          if [ "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)" = true ]; then
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
+          fi
           # Draft first: a failed upload never exposes a partial release as the latest build.
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$revision" --draft --title "HelixForge ${revision:0:12}" --notes-file release-notes.md
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$revision" --draft --title "HelixForge $tag" --notes-file release-notes.md
           fi
           gh release upload "$tag" helixforge-linux-x86_64 SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
           gh release edit "$tag" --draft=false --latest --repo "$GITHUB_REPOSITORY"

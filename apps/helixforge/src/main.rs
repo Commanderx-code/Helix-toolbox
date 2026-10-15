@@ -17,10 +17,18 @@ use std::{
 };
 use tui::theme::Theme;
 
+/// The release version: what the release workflow builds with
+/// (HELIXFORGE_VERSION, from scripts/release-version.py), or the workspace
+/// version in a local build.
+const VERSION: &str = match option_env!("HELIXFORGE_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
 #[derive(Parser)]
 #[command(
     name = "helixforge",
-    version,
+    version = VERSION,
     about = "HelixForge: build, configure and optimise"
 )]
 struct Cli {

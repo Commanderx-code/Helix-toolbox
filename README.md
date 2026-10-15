@@ -199,6 +199,11 @@ Entries from the dotfiles and Myfish repositories follow those repositories
 automatically; [docs/SOURCE-SYNC.md](docs/SOURCE-SYNC.md) describes how, and
 how a release is published from every tested revision.
 
+Releases are numbered `vMAJOR.MINOR.PATCH`, starting at v0.1.0: each release
+adds one to the patch number, and `helixforge --version` reports it. To start
+a new series, set the version in `Cargo.toml` (`[workspace.package]`) to, say,
+`0.2.0` or `1.0.0`; the next release takes it.
+
 ## Checks
 
 ```sh
