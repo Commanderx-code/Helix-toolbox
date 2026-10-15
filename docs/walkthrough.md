@@ -286,7 +286,7 @@ https://github.com/ChrisTitusTech/dwm-titus
 - **Linux Neptune for SteamDeck**: Valve's fork of Linux Kernel for the SteamDeck
 - **Nvidia Drivers & Hardware Acceleration**: This script installs and configures nvidia drivers with Hardware Acceleration.
 - **Omarchy Rice by DHH**: Simplified Hyprland configuration by DHH the ruby on rails dude.
-- **Pacman Config**: Enables Color, ILoveCandy, ParallelDownloads, VerbosePkgLists, multilib in pacman.conf and sets MAKEFLAGS in makepkg.conf.
+- **Pacman Config**: Turns on Color, ILoveCandy (the Pac-Man progress bar), VerbosePkgLists, ParallelDownloads and multilib in pacman.conf, and sets MAKEFLAGS to every core in makepkg.conf. Each setting changes only when it is off, with a backup first, and the run lists what it found and changed; running it again changes nothing. The pacman settings show the next time pacman runs.
 - **Paru AUR Helper**: Paru is your standard pacman wrapping AUR helper with lots of features and minimal interaction. To know more about AUR helpers visit: https://wiki.archlinux.org/title/AUR_helpers
 - **Snapper Snapshots**: Sets up Snapper with hourly Btrfs snapshots, snap-pac hooks, and GRUB boot menu entries.
 - **System Maintenance**: Enables paccache.timer, removes orphan packages, and cleans system journals.

@@ -1,5 +1,5 @@
 name = "Pacman Config"
-description = "Enables Color, ILoveCandy, ParallelDownloads, VerbosePkgLists, multilib in pacman.conf and sets MAKEFLAGS in makepkg.conf."
+description = "Turns on Color, ILoveCandy (the Pac-Man progress bar), VerbosePkgLists, ParallelDownloads and multilib in pacman.conf, and sets MAKEFLAGS to every core in makepkg.conf. Each setting changes only when it is off, with a backup first, and the run lists what it found and changed; running it again changes nothing. The pacman settings show the next time pacman runs."
 flags = "PFM"
 order = 109
 
