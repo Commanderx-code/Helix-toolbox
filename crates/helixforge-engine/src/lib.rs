@@ -86,6 +86,25 @@ pub enum Step {
         name: String,
         action: NativeAction,
     },
+    /// Brings installed packages up to date through one source; on Arch, the
+    /// whole system for every target at once.
+    Update {
+        id: String,
+        name: String,
+        source: Source,
+        targets: Vec<UpdateTarget>,
+    },
+}
+
+/// A package an update step brings up to date.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpdateTarget {
+    /// The entry's name, for the checks.
+    pub name: String,
+    /// How to find the package, and its version, afterwards.
+    pub probe: Probe,
+    /// Its version before the update, when known.
+    pub from: Option<String>,
 }
 
 /// One way to install or remove a package.
@@ -223,7 +242,8 @@ impl Step {
             | Step::Script { id, .. }
             | Step::Command { id, .. }
             | Step::Nix { id, .. }
-            | Step::Native { id, .. } => id,
+            | Step::Native { id, .. }
+            | Step::Update { id, .. } => id,
         }
     }
 
@@ -233,7 +253,8 @@ impl Step {
             | Step::Script { name, .. }
             | Step::Command { name, .. }
             | Step::Nix { name, .. }
-            | Step::Native { name, .. } => name,
+            | Step::Native { name, .. }
+            | Step::Update { name, .. } => name,
         }
     }
 
@@ -276,6 +297,7 @@ impl Step {
             Step::Command { line, .. } => line.clone(),
             Step::Nix { action, .. } => nix_command(action).join(" "),
             Step::Native { action, .. } => format!("helixforge native {}", action.id()),
+            Step::Update { source, .. } => source.command_line(),
         }
     }
 
@@ -304,6 +326,7 @@ impl Step {
                 NixAction::HomeManagerSwitch { .. } => vec!["home-manager".to_string()],
             },
             Step::Script { program, .. } => vec![program.clone()],
+            Step::Update { source, .. } => source.requires.clone(),
             Step::Command { .. } | Step::Native { .. } => Vec::new(),
         }
     }
@@ -372,7 +395,7 @@ pub enum PackageState {
 
 /// The probes for an entry's own packages on this machine: the family's
 /// package, on Arch its AUR package, and its Flatpak.
-fn own_probes(
+pub(crate) fn own_probes(
     packages: &helixforge_core::PackageNames,
     aur: Option<&str>,
     flatpak: Option<&str>,
@@ -616,7 +639,7 @@ pub fn managed_path_in(home: &Path, writes: &[String]) -> Option<PathBuf> {
 
 const FLATHUB: &str = "https://dl.flathub.org/repo/flathub.flatpakrepo";
 
-fn words(base: Vec<&str>, extra: &[&str]) -> Vec<String> {
+pub(crate) fn words(base: Vec<&str>, extra: &[&str]) -> Vec<String> {
     base.into_iter()
         .chain(extra.iter().copied())
         .map(str::to_string)
@@ -893,6 +916,25 @@ pub fn shell_program(plan: &Plan, lib_dir: &Path, this: &Path) -> String {
                 "native".to_string(),
                 action.id().to_string(),
             ]),
+            Step::Update {
+                source, targets, ..
+            } => {
+                let mut body = source
+                    .commands
+                    .iter()
+                    .map(|command| quoted(command))
+                    .collect::<Vec<_>>()
+                    .join(" &&\n");
+                body.push_str("\nhf_rc=$?\n[ \"$hf_rc\" -eq 0 ] || exit \"$hf_rc\"\n");
+                for target in targets {
+                    body.push_str(&format!(
+                        "if ! {}; then\n  printf 'HelixForge: %s is not installed after the update\\n' {}\n  exit 1\nfi\n",
+                        target.probe.shell(),
+                        quote(&target.name)
+                    ));
+                }
+                body
+            }
         };
         text.push_str(&format!(
             "printf '\\n==> %s\\n' {}\n(\n{body}\n)\nrc=$?\n[ \"$rc\" -eq 0 ] || exit \"$rc\"\n",
@@ -1032,9 +1074,66 @@ pub struct Check {
     pub detail: String,
 }
 
-/// Check every package step of a finished plan against the system.
+/// Check every package and update step of a finished plan against the system.
 pub fn verify(plan: &Plan) -> Vec<Check> {
-    verify_with(plan, &Probe::holds, &binary_exists)
+    let mut checks = verify_with(plan, &Probe::holds, &binary_exists);
+    let manager = plan.steps.iter().find_map(|step| match step {
+        Step::Update { targets, .. } => targets.iter().find_map(|target| match &target.probe {
+            Probe::Package { manager, .. } => Some(*manager),
+            Probe::Flatpak(_) => None,
+        }),
+        _ => None,
+    });
+    if plan
+        .steps
+        .iter()
+        .any(|step| matches!(step, Step::Update { .. }))
+    {
+        let after = inventory::Inventory::gather_for(manager);
+        checks.extend(verify_updates_with(
+            plan,
+            &|probe| after.version(probe),
+            &|probe| after.holds(probe),
+        ));
+    }
+    checks
+}
+
+/// The checks of a plan's update steps: each package's version now against
+/// its version before. `version` and `holds` answer for the machine.
+pub fn verify_updates_with(
+    plan: &Plan,
+    version: &dyn Fn(&Probe) -> Option<String>,
+    holds: &dyn Fn(&Probe) -> bool,
+) -> Vec<Check> {
+    let mut checks = Vec::new();
+    for step in &plan.steps {
+        let Step::Update { targets, .. } = step else {
+            continue;
+        };
+        for target in targets {
+            let (passed, detail) = match (version(&target.probe), &target.from) {
+                (Some(now), Some(from)) if &now != from => {
+                    (true, format!("updated {from} → {now}"))
+                }
+                (Some(now), Some(_)) => (
+                    false,
+                    format!("still {now}: no newer version was installed"),
+                ),
+                (Some(now), None) => (true, format!("now {now}")),
+                (None, _) if holds(&target.probe) => {
+                    (true, "installed; no version to compare".to_string())
+                }
+                (None, _) => (false, "not installed after the update".to_string()),
+            };
+            checks.push(Check {
+                name: format!("Update {}", target.name),
+                passed,
+                detail,
+            });
+        }
+    }
+    checks
 }
 
 /// `verify` with the questions it asks supplied, for tests.

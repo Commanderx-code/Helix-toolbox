@@ -919,8 +919,21 @@ fn stand_in_tools(bin: &Path) -> String {
         ),
         (
             "flatpak",
-            "#!/bin/sh\ncase $1 in\n  install) case $3 in *Missing*) ;; *) mkdir -p \"$HOME/.local/share/flatpak/app/$3\" ;; esac ;;\n  uninstall) rm -r \"$HOME/.local/share/flatpak/app/$2\" ;;\nesac\n"
-                .to_string(),
+            // Installs into the user's directory; an app's version is in its
+            // version file, and a newer file there means an update waits.
+            r#"#!/bin/sh
+apps="$HOME/.local/share/flatpak/app"
+case $1 in
+  install) case $3 in *Missing*) ;; *) mkdir -p "$apps/$3" ;; esac ;;
+  uninstall) rm -r "$apps/$2" ;;
+  list) case " $* " in *" --user "*)
+    for app in "$apps"/*; do [ -d "$app" ] && printf '%s\t%s\n' "${app##*/}" "$(cat "$app/version" 2>/dev/null)"; done ;; esac ;;
+  remote-ls) case " $* " in *" --user "*)
+    for app in "$apps"/*; do [ -f "$app/newer" ] && printf '%s\n' "${app##*/}"; done ;; esac ;;
+  update) mv "$apps/$3/newer" "$apps/$3/version" ;;
+esac
+"#
+            .to_string(),
         ),
     ];
     for manager in [
@@ -950,6 +963,75 @@ fn stand_in_tools(bin: &Path) -> String {
         bin.display(),
         std::env::var("PATH").unwrap_or_default()
     )
+}
+
+#[test]
+fn an_update_is_found_run_and_verified_from_the_command_line() {
+    let home = tempfile::tempdir().unwrap();
+    let path = stand_in_tools(&home.path().join("bin"));
+    let helixforge = |args: &[&str]| {
+        let output = Command::new(PROGRAM)
+            .arg("--catalog-dir")
+            .arg(package_fixtures())
+            .args(args)
+            .env("PATH", &path)
+            .env("HOME", home.path())
+            .env("XDG_STATE_HOME", home.path().join("state"))
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        (
+            output.status.success(),
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
+    };
+    let (ok, out, err) = helixforge(&["run", "fallback-sample", "--yes"]);
+    assert!(ok, "{out}\n{err}");
+    let app = home
+        .path()
+        .join(".local/share/flatpak/app/org.helixforge.FallbackSample");
+    fs::write(app.join("version"), "1.0").unwrap();
+    let (_, out, _) = helixforge(&["update", "fallback-sample", "--dry-run"]);
+    assert!(
+        out.contains("Fallback Sample: up to date (Flatpak 1.0)"),
+        "{out}"
+    );
+
+    // Flathub has a newer version: status says so, and update with no
+    // names finds it, runs it and checks the version moved.
+    fs::write(app.join("newer"), "1.1").unwrap();
+    let (_, out, _) = helixforge(&["status", "fallback-sample"]);
+    assert!(
+        out.contains("Update") && out.contains("Flatpak 1.0"),
+        "{out}"
+    );
+    let (ok, out, err) = helixforge(&["update", "--yes"]);
+    assert!(ok, "{out}\n{err}");
+    assert!(
+        out.contains("flatpak update --user org.helixforge.FallbackSample"),
+        "{out}"
+    );
+    assert!(
+        out.contains("Verified: Update Fallback Sample: updated 1.0 → 1.1"),
+        "{out}"
+    );
+    let (_, out, _) = helixforge(&["status", "fallback-sample"]);
+    assert!(
+        out.contains("Installed") && out.contains("Flatpak 1.1"),
+        "{out}"
+    );
+    let (_, out, _) = helixforge(&["update"]);
+    assert!(out.contains("No package entry has an update"), "{out}");
+
+    // An update that installs nothing newer is not verified.
+    fs::write(app.join("newer"), "1.1").unwrap();
+    let (ok, out, _) = helixforge(&["update", "--yes"]);
+    assert!(!ok, "{out}");
+    assert!(
+        out.contains("Not verified: Update Fallback Sample: still 1.1"),
+        "{out}"
+    );
 }
 
 #[test]

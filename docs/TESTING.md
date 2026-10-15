@@ -54,7 +54,11 @@ emulator and types keys. It checks:
 - the command line's confirmation asked on the terminal when standard input
   is a pipe, and a wrong word cancelling
 - `helixforge status` after real installs of htop and ripgrep: Installed,
-  from the family's package manager, with a version (Distributions)
+  from the family's package manager, with a version, and `update htop
+  --dry-run` saying it is up to date (Distributions)
+- an update through a stand-in Flatpak: status shows it, `update` with no
+  names finds it, runs `flatpak update --user` and verifies 1.0 → 1.1, and
+  an update that installs nothing newer is not verified
 - package entries from `tests/fixtures/packages`, against stand-in `sudo`,
   package managers and `flatpak` on the PATH: the distribution's package
   failing over to Flathub, `Verified:` lines and `exit 0, verified` in the

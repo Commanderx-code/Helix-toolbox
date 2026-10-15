@@ -72,6 +72,7 @@ Areas (Applications and the other catalog screens)
   h                 parent group, or the sidebar Space       add to or remove from the install plan
   d                 description                  p           preview the script or command
   r                 remove an installed package (entries that offer it)
+  u                 update the entry             U           update every entry with an update
   g                 flags guide
 
 Install Plan
@@ -173,8 +174,10 @@ pub struct App {
     planned: Option<PlanCache>,
     /// How each package entry stands, by entry id, from the last check.
     statuses: HashMap<String, Status>,
+    /// The snapshot that check read, for planning updates.
+    inventory: Option<Inventory>,
     /// The check running in the background, if any; off in tests.
-    checking: Option<mpsc::Receiver<HashMap<String, Status>>>,
+    checking: Option<mpsc::Receiver<(Inventory, HashMap<String, Status>)>>,
     check_statuses: bool,
 }
 
@@ -220,6 +223,7 @@ impl App {
             banner: None,
             planned: None,
             statuses: HashMap::new(),
+            inventory: None,
             checking: None,
             check_statuses: false,
         };
@@ -280,7 +284,7 @@ impl App {
                         .map(|status| (entry.id.clone(), status))
                 })
                 .collect();
-            let _ = sender.send(statuses);
+            let _ = sender.send((inventory, statuses));
         });
         self.checking = Some(receiver);
     }
@@ -455,7 +459,8 @@ impl App {
     pub fn needs_redraw(&mut self) -> bool {
         if let Some(receiver) = &self.checking {
             match receiver.try_recv() {
-                Ok(statuses) => {
+                Ok((inventory, statuses)) => {
+                    self.inventory = Some(inventory);
                     self.statuses = statuses;
                     self.checking = None;
                     return true;
@@ -1462,6 +1467,9 @@ impl App {
                             if removable(entry) {
                                 list.push(Hint::new(&["r"], "Remove"));
                             }
+                            if let Some(Status::Update { .. }) = self.statuses.get(&entry.id) {
+                                list.push(Hint::new(&["u"], "Update"));
+                            }
                             list.push(Hint::new(&["Space"], "Plan"));
                             list.push(Hint::new(&["d"], "Describe"));
                             list.push(Hint::new(&["p"], "Preview"));
@@ -1635,6 +1643,31 @@ impl App {
                     {
                         let planned = plan_removal([&entry], &self.platform);
                         self.confirm_plan(planned);
+                    }
+                }
+                KeyCode::Char('u') => {
+                    if let Some(entry) = self.selected_entry().cloned() {
+                        self.update(vec![entry]);
+                    }
+                }
+                KeyCode::Char('U') => {
+                    let waiting: Vec<Entry> = self
+                        .catalog
+                        .entries()
+                        .into_iter()
+                        .filter(|entry| {
+                            matches!(self.statuses.get(&entry.id), Some(Status::Update { .. }))
+                        })
+                        .cloned()
+                        .collect();
+                    if waiting.is_empty() {
+                        self.popup = Some(Popup::Text(TextPopup::new(
+                            "Nothing to update",
+                            "No package entry has an update in the repository metadata on this machine.",
+                            true,
+                        )));
+                    } else {
+                        self.update(waiting);
                     }
                 }
                 _ => {}
@@ -1841,7 +1874,7 @@ impl App {
             }
             if let Status::Update { .. } = status {
                 text.push_str(
-                    "\nThe repository metadata on this machine has a newer version; your system update installs it.",
+                    "\nThe repository metadata on this machine has a newer version: u updates it (on Arch, with the whole system).",
                 );
             }
         }
@@ -1913,6 +1946,20 @@ impl App {
     }
 
     /// Show a plan's confirmation, or why there is nothing to run.
+    /// Plan updating entries from the last status check, and ask.
+    fn update(&mut self, entries: Vec<Entry>) {
+        let Some(inventory) = &self.inventory else {
+            self.popup = Some(Popup::Text(TextPopup::new(
+                "Still checking",
+                "HelixForge is still checking what is installed; try again in a moment.",
+                true,
+            )));
+            return;
+        };
+        let planned = inventory.plan_update(entries.iter(), &self.platform, &which);
+        self.confirm_plan(Ok(planned));
+    }
+
     fn confirm_plan(&mut self, planned: Result<Plan, EngineError>) {
         let planned = match planned {
             Ok(planned) => planned,
@@ -2281,6 +2328,47 @@ mod tests {
         assert!(
             screen(&mut app, 140, 40).contains("Status: Managed (Home Manager 0.74.4)"),
             "the description says it too"
+        );
+    }
+
+    #[test]
+    fn u_plans_an_update_and_waits_for_the_status_check() {
+        let mut app = app();
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "ripgrep");
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('u'));
+        assert!(screen(&mut app, 140, 40).contains("still checking what is installed"));
+        press(&mut app, KeyCode::Esc);
+        let inventory = Inventory::from_parts(
+            Some(helixforge_core::PackageManager::Arch),
+            Some([("ripgrep".to_string(), "15.2.0-1".to_string())].into()),
+            [("ripgrep".to_string(), "15.3.0-1".to_string())].into(),
+            HashMap::new(),
+            Default::default(),
+        );
+        let ripgrep = app.catalog.find("ripgrep").unwrap().clone();
+        let status = inventory
+            .status(&ripgrep, &app.platform, &|_| None)
+            .unwrap();
+        assert_eq!(status.label(), "Update");
+        app.statuses.insert("ripgrep".into(), status);
+        app.inventory = Some(inventory);
+        assert!(
+            screen(&mut app, 140, 40).contains("u Update"),
+            "the hint offers it"
+        );
+        press(&mut app, KeyCode::Char('u'));
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let shown = screen(&mut app, 140, 40);
+        assert!(shown.contains("sudo pacman -Syu"), "{shown}");
+        assert!(shown.contains("partial upgrade"));
+        press(&mut app, KeyCode::Esc);
+        app.popup = None;
+        press(&mut app, KeyCode::Char('U'));
+        assert!(
+            matches!(app.popup, Some(Popup::Confirm(_))),
+            "U finds it too"
         );
     }
 

@@ -103,7 +103,18 @@ version, and a Nix copy of the command found first on the PATH), `Managed`
 generation's `home-path` has the same file, NixOS for
 `/run/current-system/sw`, else Nix, with the version from the store path),
 `Elsewhere` and `Absent`. The interface gathers it on a background thread
-when it opens and after each run; `helixforge status` prints it. Removal and verification use
+when it opens and after each run; `helixforge status` prints it.
+
+`Inventory::plan_update()` turns entries with an update into `Step::Update`s:
+one per entry through its own source (`flatpak update`, for the system or
+the user installation that has it; `apt-get install --only-upgrade`, `dnf
+upgrade`, `zypper update`), and on Arch one `sudo pacman -Syu` for all of them
+with a note that pacman does not support updating one package alone (risk
+high). Each step carries `UpdateTarget`s: the entry, the probe that finds its
+package and its version before. The shell program fails if a target is gone
+afterwards; `verify()` gathers a fresh inventory and passes a target only when
+its version changed. Entries that are up to date, managed by Nix, installed
+elsewhere, absent or scripts become notes. Removal and verification use
 the same order. `Machine` carries the two questions so tests can answer
 them. A source whose tools are missing is skipped; an
 exit status of 128 or more ends the run. When the program succeeds,

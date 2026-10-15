@@ -11,7 +11,7 @@ use helixforge_catalog::Catalog;
 use helixforge_core::{Action, Entry, Item, NativeAction};
 use helixforge_engine::{
     InheritedRunner, Machine, PackageState, Plan, execute, history,
-    inventory::{Inventory, which},
+    inventory::{Inventory, Status, which},
     package_state, plan, plan_removal, run_native,
 };
 use helixforge_platform::LinuxInfo;
@@ -79,6 +79,18 @@ enum Command {
     },
     /// Remove package entries that offer removal, after confirmation.
     Remove {
+        ids: Vec<String>,
+        /// Show the plan and stop.
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip the confirmation phrase, for deliberate automation.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Update installed package entries, after confirmation: through their
+    /// package manager or Flatpak; on Arch, the whole system.
+    Update {
+        /// The entries to update; every package entry with an update when none.
         ids: Vec<String>,
         /// Show the plan and stop.
         #[arg(long)]
@@ -267,6 +279,34 @@ fn main() -> Result<()> {
             }
             let planned = plan_removal(entries, &platform)?;
             confirm_and_run(&catalog, &planned, dry_run, yes, "REMOVE")
+        }
+        Command::Update { ids, dry_run, yes } => {
+            let catalog = load(ids.is_empty())?;
+            let inventory = Inventory::gather(&platform);
+            let entries: Vec<&Entry> = if ids.is_empty() {
+                catalog
+                    .entries()
+                    .into_iter()
+                    .filter(|entry| {
+                        matches!(
+                            inventory.status(entry, &platform, &which),
+                            Some(Status::Update { .. })
+                        )
+                    })
+                    .collect()
+            } else {
+                ids.iter()
+                    .map(|id| find(&catalog, id))
+                    .collect::<Result<_>>()?
+            };
+            if entries.is_empty() {
+                println!(
+                    "No package entry has an update in the repository metadata on this machine."
+                );
+                return Ok(());
+            }
+            let planned = inventory.plan_update(entries, &platform, &which);
+            confirm_and_run(&catalog, &planned, dry_run, yes, "UPDATE")
         }
         Command::History { limit } => {
             let records = history::read(limit)?;

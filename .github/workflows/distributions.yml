@@ -103,6 +103,9 @@ jobs:
           bin/helixforge status htop ripgrep | tee status.txt
           grep -qE '^htop +Installed +(pacman|apt|dnf) [0-9]' status.txt
           grep -qE '^Ripgrep +Installed +(pacman|apt|dnf) [0-9]' status.txt
+          # Freshly installed, so nothing to update; on Arch it would be the whole system.
+          bin/helixforge update htop --dry-run | tee update.txt
+          grep -qE '^htop: up to date \((pacman|apt|dnf) [0-9]' update.txt
       - name: WINE and gaming packages the catalog names exist here
         run: |
           bin/helixforge plan wine winetricks protontricks minigalaxy | tee gaming.txt

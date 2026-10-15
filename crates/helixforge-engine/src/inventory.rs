@@ -3,8 +3,8 @@
 //! updates come from the repository metadata already on the machine), so a
 //! list of entries is answered by lookups.
 
-use crate::{PackageState, Probe};
-use helixforge_core::{Action, Entry, PackageManager};
+use crate::{PackageState, Plan, Probe, Source, Step, UpdateTarget};
+use helixforge_core::{Action, Entry, PackageManager, Risk};
 use helixforge_platform::LinuxInfo;
 use std::{
     collections::{HashMap, HashSet},
@@ -106,12 +106,17 @@ pub struct Inventory {
 impl Inventory {
     /// Read this machine.
     pub fn gather(platform: &LinuxInfo) -> Self {
+        Self::gather_for(platform.manager)
+    }
+
+    /// Read this machine, whose packages `manager` keeps.
+    pub fn gather_for(manager: Option<PackageManager>) -> Self {
         let mut inventory = Inventory {
-            manager: platform.manager,
+            manager,
             nix_places: nix_places(),
             ..Inventory::default()
         };
-        match platform.manager {
+        match manager {
             Some(PackageManager::Arch) => {
                 inventory.native = output(&["pacman", "-Q"]).map(|text| parse_pacman(&text));
                 inventory.native_updates = output(&["pacman", "-Qu"])
@@ -133,7 +138,7 @@ impl Inventory {
                 inventory.native =
                     output(&["rpm", "-qa", "--qf", "%{NAME} %{VERSION}-%{RELEASE}\n"])
                         .map(|text| parse_pacman(&text));
-                if platform.manager == Some(PackageManager::Fedora) {
+                if manager == Some(PackageManager::Fedora) {
                     // -C: the metadata already downloaded, no network.
                     inventory.native_updates = output(&["dnf", "-C", "-q", "list", "--upgrades"])
                         .map(|text| parse_dnf_upgrades(&text))
@@ -203,6 +208,166 @@ impl Inventory {
             Probe::Package { .. } => probe.holds(),
             Probe::Flatpak(id) => self.flatpaks.contains_key(id),
         }
+    }
+
+    /// A package's installed version, when the snapshot has it.
+    pub fn version(&self, probe: &Probe) -> Option<String> {
+        match probe {
+            Probe::Package { manager, name } if Some(*manager) == self.manager => {
+                self.native.as_ref()?.get(name).cloned()
+            }
+            Probe::Package { .. } => None,
+            Probe::Flatpak(id) => self
+                .flatpaks
+                .get(id)
+                .filter(|version| !version.is_empty())
+                .cloned(),
+        }
+    }
+
+    /// Plan updating entries: each package with a newer version through its
+    /// own package manager or Flatpak, and on Arch one update of the whole
+    /// system for all of them, since pacman does not support updating one
+    /// package alone. Entries with nothing to update become notes.
+    pub fn plan_update<'a>(
+        &self,
+        entries: impl IntoIterator<Item = &'a Entry>,
+        platform: &LinuxInfo,
+        on_path: &dyn Fn(&str) -> Option<PathBuf>,
+    ) -> Plan {
+        let mut plan = Plan::default();
+        let mut system = Vec::new();
+        for entry in entries {
+            let Action::Package {
+                packages,
+                aur,
+                flatpak,
+                ..
+            } = &entry.action
+            else {
+                plan.notes.push(format!(
+                    "{}: its installer decides what it installs; run it again to update",
+                    entry.name
+                ));
+                continue;
+            };
+            let Some(status) = self.status(entry, platform, on_path) else {
+                continue;
+            };
+            match &status {
+                Status::Update { .. } => {}
+                Status::Installed { .. } => {
+                    plan.notes
+                        .push(format!("{}: up to date ({})", entry.name, status.detail()));
+                    continue;
+                }
+                Status::Managed { by, .. } => {
+                    let how = match by.as_str() {
+                        "Home Manager" => "update its flake inputs and switch",
+                        "NixOS" => "nixos-rebuild switch --upgrade",
+                        _ => "nix profile upgrade",
+                    };
+                    plan.notes.push(format!(
+                        "{}: managed by {by}; update it there ({how})",
+                        entry.name
+                    ));
+                    continue;
+                }
+                Status::Elsewhere { path } => {
+                    plan.notes.push(format!(
+                        "{}: installed outside a package manager ({}); update it the way it was installed",
+                        entry.name,
+                        path.display()
+                    ));
+                    continue;
+                }
+                Status::Absent { .. } => {
+                    plan.notes.push(format!("{}: not installed", entry.name));
+                    continue;
+                }
+            }
+            let probes = crate::own_probes(
+                packages,
+                aur.as_deref(),
+                flatpak.as_deref(),
+                platform.manager,
+            );
+            let Some(probe) = probes.into_iter().find(|probe| self.holds(probe)) else {
+                continue;
+            };
+            let target = UpdateTarget {
+                name: entry.name.clone(),
+                from: self.version(&probe),
+                probe: probe.clone(),
+            };
+            let source = match &probe {
+                Probe::Package {
+                    manager: PackageManager::Arch,
+                    ..
+                } => {
+                    system.push(target);
+                    continue;
+                }
+                Probe::Package { manager, name } => Source {
+                    label: manager.executable().to_string(),
+                    commands: vec![crate::words(update_command(*manager), &[name])],
+                    requires: vec![manager.executable().to_string(), "sudo".to_string()],
+                    probe: Some(probe.clone()),
+                },
+                Probe::Flatpak(id) => {
+                    // The installation that has it: the system's, else the user's.
+                    let system_wide = Path::new("/var/lib/flatpak/app").join(id).is_dir();
+                    Source {
+                        label: "Flathub".to_string(),
+                        commands: vec![if system_wide {
+                            crate::words(vec!["sudo", "flatpak", "update"], &[id])
+                        } else {
+                            crate::words(vec!["flatpak", "update", "--user"], &[id])
+                        }],
+                        requires: if system_wide {
+                            vec!["flatpak".to_string(), "sudo".to_string()]
+                        } else {
+                            vec!["flatpak".to_string()]
+                        },
+                        probe: Some(probe.clone()),
+                    }
+                }
+            };
+            plan.privileged |= source.requires.iter().any(|tool| tool == "sudo");
+            plan.risk = plan.risk.max(Risk::Medium);
+            plan.requirements.extend(source.requires.iter().cloned());
+            plan.steps.push(Step::Update {
+                id: entry.id.clone(),
+                name: format!("Update {}", entry.name),
+                source,
+                targets: vec![target],
+            });
+        }
+        if !system.is_empty() {
+            let names: Vec<&str> = system.iter().map(|target| target.name.as_str()).collect();
+            plan.notes.push(format!(
+                "On Arch, updating {} alone would be a partial upgrade, which Arch does not support; this updates the whole system",
+                names.join(", ")
+            ));
+            plan.privileged = true;
+            plan.risk = Risk::High;
+            plan.requirements
+                .extend(["pacman".to_string(), "sudo".to_string()]);
+            plan.steps.push(Step::Update {
+                id: "system-update".to_string(),
+                name: format!("Update the system (for {})", names.join(", ")),
+                source: Source {
+                    label: "pacman".to_string(),
+                    commands: vec![crate::words(vec!["sudo", "pacman", "-Syu"], &[])],
+                    requires: vec!["pacman".to_string(), "sudo".to_string()],
+                    probe: None,
+                },
+                targets: system,
+            });
+        }
+        plan.requirements.sort();
+        plan.requirements.dedup();
+        plan
     }
 
     /// How a package entry stands; None for other entries.
@@ -319,6 +484,20 @@ impl Inventory {
             },
             None => Status::Elsewhere { path },
         }
+    }
+}
+
+/// The command that updates named packages of a family, without the names;
+/// Arch updates the whole system instead.
+fn update_command(manager: PackageManager) -> Vec<&'static str> {
+    match manager {
+        PackageManager::Arch => vec!["sudo", "pacman", "-Syu"],
+        PackageManager::Debian => vec!["sudo", "apt-get", "install", "--only-upgrade"],
+        PackageManager::Fedora => vec!["sudo", "dnf", "upgrade"],
+        PackageManager::Suse => vec!["sudo", "zypper", "update"],
+        PackageManager::Alpine => vec!["sudo", "apk", "upgrade"],
+        PackageManager::Void => vec!["sudo", "xbps-install", "-u"],
+        PackageManager::Solus => vec!["sudo", "eopkg", "upgrade"],
     }
 }
 
@@ -747,5 +926,162 @@ mod tests {
             ..package("s", None, None, None, None, &[])
         };
         assert_eq!(inventory.status(&script, &arch, &nowhere), None);
+    }
+
+    #[test]
+    fn updates_are_planned_per_family_and_arch_updates_the_system() {
+        let arch = platform(PackageManager::Arch);
+        let inventory = Inventory::from_parts(
+            Some(PackageManager::Arch),
+            Some(map(&[
+                ("ripgrep", "15.2.0-1"),
+                ("meld", "3.24.1-1"),
+                ("git", "2.56.0-1"),
+            ])),
+            map(&[("ripgrep", "15.3.0-1"), ("meld", "3.24.2-1")]),
+            map(&[("org.example.Old", "1.0")]),
+            ["org.example.Old".to_string()].into_iter().collect(),
+        );
+        let ripgrep = package("ripgrep", Some("rg"), Some("ripgrep"), None, None, &[]);
+        let meld = package("meld", Some("meld"), Some("meld"), None, None, &[]);
+        let git = package("git", Some("git"), Some("git"), None, None, &[]);
+        let old = package("old", None, None, None, Some("org.example.Old"), &[]);
+        let gone = package("blender", None, Some("blender"), None, None, &[]);
+        let script = Entry {
+            action: Action::Command {
+                line: "true".into(),
+            },
+            ..package("steam", None, None, None, None, &[])
+        };
+        let nowhere = |_: &str| None;
+        let planned = inventory.plan_update(
+            [&ripgrep, &meld, &git, &old, &gone, &script],
+            &arch,
+            &nowhere,
+        );
+        assert_eq!(planned.steps.len(), 2);
+        // The Flatpak on its own, for the installation that has it.
+        assert_eq!(
+            planned.steps[0].display(),
+            "flatpak update --user org.example.Old"
+        );
+        // Both Arch packages through one whole-system update.
+        let Step::Update { targets, .. } = &planned.steps[1] else {
+            panic!("expected an update step");
+        };
+        assert_eq!(planned.steps[1].display(), "sudo pacman -Syu");
+        assert_eq!(
+            planned.steps[1].name(),
+            "Update the system (for ripgrep, meld)"
+        );
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].from.as_deref(), Some("15.2.0-1"));
+        assert_eq!(planned.risk, Risk::High);
+        assert!(planned.privileged);
+        assert_eq!(planned.requirements, ["flatpak", "pacman", "sudo"]);
+        assert!(
+            planned
+                .notes
+                .iter()
+                .any(|note| note.starts_with("git: up to date (pacman 2.56.0-1)"))
+        );
+        assert!(
+            planned
+                .notes
+                .iter()
+                .any(|note| note == "blender: not installed")
+        );
+        assert!(
+            planned
+                .notes
+                .iter()
+                .any(|note| note.contains("partial upgrade"))
+        );
+        assert!(
+            planned
+                .notes
+                .iter()
+                .any(|note| note.starts_with("steam: its installer decides"))
+        );
+
+        let debian = platform(PackageManager::Debian);
+        let apt = Inventory::from_parts(
+            Some(PackageManager::Debian),
+            Some(map(&[("ripgrep", "14.1.0-1")])),
+            map(&[("ripgrep", "14.1.1-1")]),
+            HashMap::new(),
+            HashSet::new(),
+        );
+        let mut deb = ripgrep.clone();
+        if let Action::Package { packages, .. } = &mut deb.action {
+            packages.debian = Some("ripgrep".into());
+        }
+        let planned = apt.plan_update([&deb], &debian, &nowhere);
+        assert_eq!(
+            planned.steps[0].display(),
+            "sudo apt-get install --only-upgrade ripgrep"
+        );
+        assert_eq!(planned.risk, Risk::Medium);
+        // Managed by Nix: nothing to run, and where to update it.
+        let from_nix = |binary: &str| {
+            (binary == "btop").then(|| PathBuf::from("/nix/store/x-btop-1.4.7/bin/btop"))
+        };
+        let btop = package("btop", Some("btop"), Some("btop"), None, None, &[]);
+        let planned = inventory.plan_update([&btop], &arch, &from_nix);
+        assert!(planned.steps.is_empty());
+        assert_eq!(
+            planned.notes,
+            ["btop: managed by Nix; update it there (nix profile upgrade)"]
+        );
+    }
+
+    #[test]
+    fn updates_are_verified_by_their_versions() {
+        let probe = Probe::Package {
+            manager: PackageManager::Arch,
+            name: "ripgrep".into(),
+        };
+        let plan = Plan {
+            steps: vec![Step::Update {
+                id: "system-update".into(),
+                name: "Update the system".into(),
+                source: Source {
+                    label: "pacman".into(),
+                    commands: vec![vec!["sudo".into(), "pacman".into(), "-Syu".into()]],
+                    requires: Vec::new(),
+                    probe: None,
+                },
+                targets: vec![UpdateTarget {
+                    name: "Ripgrep".into(),
+                    probe: probe.clone(),
+                    from: Some("15.2.0-1".into()),
+                }],
+            }],
+            ..Plan::default()
+        };
+        let check = |now: Option<&str>, holds: bool| {
+            let now = now.map(String::from);
+            crate::verify_updates_with(&plan, &|_| now.clone(), &|_| holds).remove(0)
+        };
+        let updated = check(Some("15.3.0-1"), true);
+        assert!(updated.passed);
+        assert_eq!(updated.detail, "updated 15.2.0-1 → 15.3.0-1");
+        assert_eq!(updated.name, "Update Ripgrep");
+        let same = check(Some("15.2.0-1"), true);
+        assert!(!same.passed);
+        assert_eq!(
+            same.detail,
+            "still 15.2.0-1: no newer version was installed"
+        );
+        assert!(
+            check(None, true).passed,
+            "a family without versions: installed is enough"
+        );
+        assert!(!check(None, false).passed);
+        // The run itself also stops if the package is gone afterwards.
+        let program = crate::shell_program(&plan, Path::new("/lib"), Path::new("/hf"));
+        assert!(program.contains("'sudo' 'pacman' '-Syu'"), "{program}");
+        assert!(program.contains("'pacman' '-Q' 'ripgrep'"));
+        assert!(program.contains("is not installed after the update"));
     }
 }

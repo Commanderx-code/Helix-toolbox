@@ -65,7 +65,16 @@ Manager 1.4.7`, `Nix`, `NixOS`), or **Not installed**. When a package is
 installed but a Nix copy of its command comes first on the PATH, the status
 says so (`; Home Manager's 0.12.5 runs first`). The check runs in the
 background when the menu opens and after every run; `d` repeats it in the
-description. Script entries, whose installers decide what they install, show
+description.
+
+`u` updates the selected entry and `U` every entry with an update, after
+the same confirmation as a run: `flatpak update` for its installation, `apt-get
+install --only-upgrade`, `dnf upgrade` or `zypper update` for that package,
+and on Arch `pacman -Syu`, the whole system, since updating one package alone
+is a partial upgrade, which Arch does not support. Afterwards each package's
+version is compared with its version before; one that did not change is not
+verified. Entries managed by Nix say to update them there, and script entries
+to run them again. Script entries, whose installers decide what they install, show
 only their flags.
 
 In terminals that show pictures through Kitty's graphics (Ghostty, Kitty) or
@@ -81,6 +90,7 @@ helixforge system                     # the distribution and package manager it 
 helixforge list                       # the catalog as tabs, groups and entries
 helixforge info git                   # one entry
 helixforge status                     # every package entry: installed, update, managed or not
+helixforge update --dry-run           # what updating every entry with an update would run
 helixforge plan git system-report     # what running entries would do
 helixforge run git --dry-run          # the plan, nothing changed
 helixforge run git                    # runs after you type RUN, asked on the terminal even when piped

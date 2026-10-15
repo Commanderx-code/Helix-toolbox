@@ -150,10 +150,11 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       Nix copy of a packaged command that comes first on the PATH; the menu
       checks in the background on start and after every run, and
       `helixforge status` prints the same
-- [ ] Next: an update action per entry (Flatpak, apt and dnf can update one
-      package; on Arch a single package means a partial upgrade, so the
-      system update entries are the way there), and status for script
-      entries, which would need to say what they install
+- [x] Update action: `u` and `U` in the menu, `helixforge update`; one
+      package through Flatpak, apt, dnf or zypper, the whole system with
+      `pacman -Syu` on Arch; verified by the version changing
+- [ ] Next: status and updates for script entries, which would need to say
+      what they install
 
 ## Logo and banner (done)
 
