@@ -182,14 +182,17 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] The Install Plan screen keeps its plan for a few seconds and drops it
       after a run, since planning now asks the package manager
 
-## v0.5.0: workstation profiles, favourites and search
+## v0.5.0: workstation profiles, favourites and search (done)
 
 - [x] Workstation profiles 2.0 (item 4): save the Install Plan as a named
       profile of applications, shell settings, dotfiles and tweaks; profiles
       as TOML in the user's configuration, shown under Profiles beside the
       built-in ones; export, import (checked against the catalog), list and
       delete from the command line
-- [ ] Search and favourites (item 7)
+- [x] Search and favourites (item 7): ranked search with loose spellings
+      (`helixforge search` too), an installed and an updates filter, pinned
+      favourites and recently run entries on a Favourites screen and
+      Dashboard quick action, and the row kept when a search is cleared
 
 ## v0.4.0: backup and recovery, HELIX Doctor 2.0 (done)
 

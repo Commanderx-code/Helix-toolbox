@@ -210,6 +210,43 @@ fn running(pid: &str) -> bool {
 }
 
 #[test]
+fn pinned_entries_are_kept_and_listed_under_favourites() {
+    let home = tempfile::tempdir().unwrap();
+    let catalog = fixtures();
+    let args = [
+        "--catalog-dir",
+        catalog.to_str().unwrap(),
+        "tui",
+        "--bypass-root",
+    ];
+    let mut tui = Terminal::start(&args, home.path(), 40, 120);
+    tui.wait_for(&["SYSTEM READY", "Favourites"]);
+    tui.keys("/");
+    tui.keys("mark");
+    tui.wait_for(&["Marker"]);
+    tui.keys("\r");
+    tui.keys("*");
+    tui.wait_for(&["Marker ★"]);
+    let saved = home.path().join("config/helixforge/favourites.toml");
+    tui.wait_until("the favourites to be saved", |_| {
+        fs::read_to_string(&saved).is_ok_and(|text| text.contains("\"marker\""))
+    });
+    tui.keys("q");
+    tui.wait_for_exit();
+
+    // The next start lists it under Favourites, two places up the sidebar.
+    let mut tui = Terminal::start(&args, home.path(), 40, 120);
+    tui.wait_for(&["SYSTEM READY"]);
+    tui.keys("/");
+    tui.keys(ESC);
+    tui.keys(BACK_TAB);
+    tui.keys(BACK_TAB);
+    tui.wait_for(&["Entries pinned with *", "Marker ★"]);
+    tui.keys("q");
+    tui.wait_for_exit();
+}
+
+#[test]
 fn the_menu_runs_fixture_entries_from_the_keyboard() {
     let home = tempfile::tempdir().unwrap();
     let catalog = fixtures();

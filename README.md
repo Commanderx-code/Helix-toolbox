@@ -33,7 +33,7 @@ cargo run -p helixforge -- --help    # the command line
 ```
 
 In the interface the sidebar is a menu of screens. `Tab` or `j`/`k` in the
-sidebar move between Dashboard, Applications, Install Plan, and the other
+sidebar move between Dashboard, Applications, Favourites, Install Plan, and the other
 areas, History and Settings; `Enter` or `l` opens the selected screen and
 `h` returns to the sidebar. In an area, `j`/`k` or the arrows move in the
 list, `Enter` opens a group or runs an entry, `Space` adds it to the install
@@ -45,6 +45,16 @@ everything it started (if something ignores that, the window says so and a
 second `Ctrl-C` kills it), `l` saves its output, and History lists every run.
 `?` shows all keys and `q` quits. The menu needs a terminal; the commands
 below also work without one.
+
+Search ranks what it finds: names that match exactly or start with the
+text first, then names containing it, ids, loose spellings (`rpgrp` finds
+Ripgrep) and descriptions. `Escape` clears it and goes back to the row you
+were on. `i` cycles the list between all entries, installed ones (including
+those managed by Nix) and ones with an update, flattening the groups of the
+area. `*` pins the selected entry; **Favourites** lists pinned entries, then
+the ones run recently, from History, and is also a quick action on the
+Dashboard. Pins are kept in `~/.config/helixforge/favourites.toml`. Each area
+remembers its group and row when you move to another.
 
 The menu follows the HelixForge dashboard design: cards for the main screens
 and quick actions, with Nerd Font icons. `t` or Settings switches between
@@ -141,6 +151,7 @@ From the command line:
 ```sh
 helixforge system                     # the distribution and package manager it sees
 helixforge list                       # the catalog as tabs, groups and entries
+helixforge search rip grep            # entries by name, id or description, closest first
 helixforge info git                   # one entry
 helixforge status                     # every package entry: installed, update, managed or not
 helixforge update --dry-run           # what updating every entry with an update would run

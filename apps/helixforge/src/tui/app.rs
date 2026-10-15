@@ -73,7 +73,7 @@ Areas (Applications and the other catalog screens)
   d                 description                  p           preview the script or command
   r                 remove an installed package (entries that offer it)
   u                 update the entry             U           update every entry with an update
-  g                 flags guide
+  g                 flags guide     *   pin a favourite     i   show all, installed or updates
 
 Install Plan
   Enter             run the plan                 x / Delete  remove the selected entry
@@ -95,6 +95,8 @@ enum Screen {
     Dashboard,
     Area(usize),
     Plan,
+    /// Pinned entries, then the ones run recently.
+    Favourites,
     History,
     Backups,
     /// The health checks, with the Helix Doctor area's reports below them.
@@ -130,6 +132,49 @@ struct MenuItem {
     section: &'static str,
 }
 
+/// Which entries a list shows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Filter {
+    All,
+    /// Installed, needing an update, or managed by Nix.
+    Installed,
+    Updates,
+}
+
+impl Filter {
+    fn next(self) -> Self {
+        match self {
+            Filter::All => Filter::Installed,
+            Filter::Installed => Filter::Updates,
+            Filter::Updates => Filter::All,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Filter::All => "all",
+            Filter::Installed => "installed",
+            Filter::Updates => "updates",
+        }
+    }
+
+    fn allows(self, status: Option<&Status>) -> bool {
+        match self {
+            Filter::All => true,
+            Filter::Installed => matches!(
+                status,
+                Some(
+                    Status::Installed { .. }
+                        | Status::Update { .. }
+                        | Status::Managed { .. }
+                        | Status::Elsewhere { .. }
+                )
+            ),
+            Filter::Updates => matches!(status, Some(Status::Update { .. })),
+        }
+    }
+}
+
 /// Where the user was in one catalog area.
 #[derive(Clone, Default)]
 struct AreaState {
@@ -137,13 +182,20 @@ struct AreaState {
     selected: usize,
 }
 
-const QUICK_ICONS: [Icon; 4] = [Icon::Applications, Icon::Plan, Icon::Doctor, Icon::History];
+const QUICK_ICONS: [Icon; 5] = [
+    Icon::Applications,
+    Icon::Plan,
+    Icon::Doctor,
+    Icon::History,
+    Icon::Favourites,
+];
 
-const QUICK_ACTIONS: [(&str, &str); 4] = [
+const QUICK_ACTIONS: [(&str, &str); 5] = [
     ("Browse Applications", "Search and install tools"),
     ("Review the Install Plan", "See what is queued and run it"),
     ("Run System Doctor", "Health checks and reports"),
     ("View History", "Past runs and their logs"),
+    ("Favourites", "Pinned and recently run entries"),
 ];
 
 pub struct App {
@@ -182,6 +234,16 @@ pub struct App {
     diagnoses: Vec<doctor::Diagnosis>,
     /// Where profiles are saved; the user's configuration unless a test says.
     profiles_dir: Option<std::path::PathBuf>,
+    /// Pinned entry ids, in the order pinned.
+    favourites: Vec<String>,
+    /// Where they are saved; none in tests.
+    favourites_path: Option<std::path::PathBuf>,
+    /// Entry ids run recently, newest first.
+    recent: Vec<String>,
+    /// Which entries the lists show.
+    filter: Filter,
+    /// The row selected before a search started, to return to.
+    before_search: Option<usize>,
     /// A health check running in the background, if any.
     examining: Option<mpsc::Receiver<Vec<doctor::Diagnosis>>>,
     /// Whether this run of the interface checks the machine; off in tests.
@@ -251,6 +313,11 @@ impl App {
             backups: Vec::new(),
             diagnoses: Vec::new(),
             profiles_dir: None,
+            favourites: Vec::new(),
+            favourites_path: None,
+            recent: Vec::new(),
+            filter: Filter::All,
+            before_search: None,
             examining: None,
             examine_here: false,
             ran_from_plan: false,
@@ -284,6 +351,11 @@ impl App {
         self.theme = args.theme.unwrap_or(look.theme);
         self.icons = look.icons && !args.plain;
         self.keep_going = look.keep_going;
+        if let Some(path) = &path {
+            let favourites = settings::favourites_path(path);
+            self.favourites = settings::load_favourites(&favourites);
+            self.favourites_path = Some(favourites);
+        }
         self.snapshots = look.snapshots;
         self.snapshot_tool = backups::Snapshots::here();
         self.settings_path = path;
@@ -391,35 +463,76 @@ impl App {
     /// every entry matching the search across all areas.
     fn update_rows(&mut self) {
         let query = self.search.iter().collect::<String>().to_lowercase();
+        let filter = self.filter;
+        let wanted = |entry: &Entry| filter.allows(self.statuses.get(&entry.id));
         self.rows = if !query.is_empty() {
-            let mut found: Vec<Entry> = self
+            // Ranked: the best match first, then by name.
+            let mut found: Vec<(u32, Entry)> = self
                 .catalog
                 .entries()
                 .into_iter()
-                .filter(|entry| entry.name.to_lowercase().contains(&query))
-                .cloned()
+                .filter(|entry| wanted(entry))
+                .filter_map(|entry| {
+                    let score = helixforge_core::search::score(
+                        &query,
+                        &entry.name,
+                        &entry.id,
+                        &entry.description,
+                    )?;
+                    Some((score, entry.clone()))
+                })
                 .collect();
-            found.sort_by(|a, b| a.name.cmp(&b.name));
+            found.sort_by(|a, b| {
+                b.0.cmp(&a.0)
+                    .then_with(|| a.1.name.to_lowercase().cmp(&b.1.name.to_lowercase()))
+            });
             found
                 .into_iter()
-                .map(|entry| Row::Entry(Box::new(entry)))
+                .map(|(_, entry)| Row::Entry(Box::new(entry)))
+                .collect()
+        } else if self.screen == Screen::Favourites {
+            let mut ids: Vec<&String> = self.favourites.iter().collect();
+            ids.extend(
+                self.recent
+                    .iter()
+                    .filter(|id| !self.favourites.contains(id)),
+            );
+            ids.into_iter()
+                .filter_map(|id| self.catalog.find(id))
+                .filter(|entry| wanted(entry))
+                .map(|entry| Row::Entry(Box::new(entry.clone())))
                 .collect()
         } else if let Some(index) = self.current_area() {
-            let area = &self.areas[index];
-            let path: Vec<usize> = area.path.iter().map(|(group, _)| *group).collect();
-            let mut rows = Vec::new();
-            if !area.path.is_empty() {
-                rows.push(Row::Up);
+            if filter != Filter::All {
+                // Filtered: every matching entry of the area, groups flattened.
+                let mut found: Vec<Entry> = self.catalog.tabs[index]
+                    .entries()
+                    .into_iter()
+                    .filter(|entry| wanted(entry))
+                    .cloned()
+                    .collect();
+                found.sort_by_key(|entry| entry.name.to_lowercase());
+                found
+                    .into_iter()
+                    .map(|entry| Row::Entry(Box::new(entry)))
+                    .collect()
+            } else {
+                let area = &self.areas[index];
+                let path: Vec<usize> = area.path.iter().map(|(group, _)| *group).collect();
+                let mut rows = Vec::new();
+                if !area.path.is_empty() {
+                    rows.push(Row::Up);
+                }
+                let items = self.catalog.tabs[index].items_at(&path).unwrap_or(&[]);
+                rows.extend(items.iter().enumerate().map(|(index, item)| match item {
+                    Item::Group(group) => Row::Group {
+                        index,
+                        name: group.name.clone(),
+                    },
+                    Item::Entry(entry) => Row::Entry(Box::new(entry.clone())),
+                }));
+                rows
             }
-            let items = self.catalog.tabs[index].items_at(&path).unwrap_or(&[]);
-            rows.extend(items.iter().enumerate().map(|(index, item)| match item {
-                Item::Group(group) => Row::Group {
-                    index,
-                    name: group.name.clone(),
-                },
-                Item::Entry(entry) => Row::Entry(Box::new(entry.clone())),
-            }));
-            rows
         } else {
             Vec::new()
         };
@@ -441,7 +554,7 @@ impl App {
     fn main_len(&self) -> usize {
         match self.screen {
             Screen::Dashboard => QUICK_ACTIONS.len(),
-            Screen::Area(_) => self.rows.len(),
+            Screen::Area(_) | Screen::Favourites => self.rows.len(),
             Screen::Plan => self.queue.len(),
             Screen::History => self.records.len(),
             Screen::Backups => self.backups.len(),
@@ -492,6 +605,9 @@ impl App {
         }
         if screen == Screen::Backups {
             self.reload_backups();
+        }
+        if screen == Screen::Favourites {
+            self.reload_recent();
         }
         if screen == Screen::Doctor && self.diagnoses.is_empty() {
             self.examine();
@@ -556,6 +672,7 @@ impl App {
             Screen::Plan => Icon::Plan,
             Screen::History => Icon::History,
             Screen::Backups => Icon::Backups,
+            Screen::Favourites => Icon::Favourites,
             Screen::Doctor => Icon::Doctor,
             Screen::Settings => Icon::Settings,
             Screen::Area(index) => Icon::for_area(&self.catalog.tabs[index].id),
@@ -622,6 +739,7 @@ impl App {
         match self.screen {
             Screen::Dashboard => self.draw_dashboard(frame, main),
             Screen::Area(_) => self.draw_area(frame, main),
+            Screen::Favourites => self.draw_favourites(frame, main),
             Screen::Plan => self.draw_plan(frame, main),
             Screen::History => self.draw_history(frame, main),
             Screen::Backups => self.draw_backups(frame, main),
@@ -1149,16 +1267,19 @@ impl App {
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
         let focused = self.focus == Focus::Main;
-        let block = self
-            .card(if self.searching() {
-                "Results"
-            } else {
-                "Entries"
-            })
-            .title(
-                Line::styled(" STATUS · FLAGS ", Style::default().fg(self.theme.muted()))
-                    .right_aligned(),
-            );
+        let title = match (self.searching(), self.screen) {
+            (true, _) => "Results",
+            (false, Screen::Favourites) => "Favourites",
+            (false, _) => "Entries",
+        };
+        let title = match self.filter {
+            Filter::All => title.to_string(),
+            filter => format!("{title} · {}", filter.label()),
+        };
+        let block = self.card(&title).title(
+            Line::styled(" STATUS · FLAGS ", Style::default().fg(self.theme.muted()))
+                .right_aligned(),
+        );
         let marker = self.marker(focused);
         let content_width =
             (block.inner(area).width as usize).saturating_sub(marker.chars().count());
@@ -1186,8 +1307,15 @@ impl App {
                     } else {
                         self.glyph(Icon::Entry)
                     };
-                    // Without icons, a queued entry is marked after its name.
-                    let suffix = if queued && !self.icons { " *" } else { "" };
+                    // Without icons, a queued entry is marked after its name; a pinned one
+                    // always is.
+                    let pinned = if self.favourites.contains(&entry.id) {
+                        " ★"
+                    } else {
+                        ""
+                    };
+                    let suffix =
+                        format!("{}{pinned}", if queued && !self.icons { " *" } else { "" });
                     let left = format!("{icon}  {}{suffix}", entry.name);
                     let flags = format!("  {} ", entry.flags);
                     // The status word, then where from, dropped first when short of room.
@@ -1661,7 +1789,7 @@ impl App {
                     list.push(Hint::new(&["↑↓"], "Navigate"));
                     list.push(Hint::new(&["Enter"], "Select"));
                 }
-                Screen::Area(_) => {
+                Screen::Area(_) | Screen::Favourites => {
                     list.push(Hint::new(&["↑↓"], "Navigate"));
                     match self.selected_row() {
                         Some(Row::Up) => list.push(Hint::new(&["Enter", "h"], "Parent")),
@@ -1677,9 +1805,18 @@ impl App {
                             list.push(Hint::new(&["Space"], "Plan"));
                             list.push(Hint::new(&["d"], "Describe"));
                             list.push(Hint::new(&["p"], "Preview"));
+                            list.push(Hint::new(
+                                &["*"],
+                                if self.favourites.contains(&entry.id) {
+                                    "Unpin"
+                                } else {
+                                    "Pin"
+                                },
+                            ));
                         }
                         None => {}
                     }
+                    list.push(Hint::new(&["i"], self.filter_hint()));
                 }
                 Screen::Plan => {
                     list.push(Hint::new(&["Enter"], "Run plan"));
@@ -1820,6 +1957,10 @@ impl App {
                 if self.current_area().is_none() {
                     self.open_screen(Screen::Area(self.first_area()));
                 }
+                // Escape comes back to this row.
+                if self.search.is_empty() {
+                    self.before_search = self.main_state.selected();
+                }
                 self.focus = Focus::Search;
                 self.cursor = self.search.len();
             }
@@ -1882,6 +2023,7 @@ impl App {
                         0 => Screen::Area(self.first_area()),
                         1 => Screen::Plan,
                         2 => Screen::Doctor,
+                        4 => Screen::Favourites,
                         _ => Screen::History,
                     };
                     self.open_screen(screen);
@@ -1889,8 +2031,14 @@ impl App {
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
-            Screen::Area(_) => match key.code {
+            Screen::Area(_) | Screen::Favourites => match key.code {
                 KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.enter(),
+                KeyCode::Char('*') => self.toggle_favourite(),
+                KeyCode::Char('i') => {
+                    self.filter = self.filter.next();
+                    self.update_rows();
+                    self.main_state.select(Some(0));
+                }
                 KeyCode::Char('h') | KeyCode::Left => self.back(),
                 KeyCode::Char('p') | KeyCode::Char('P') => self.preview(),
                 KeyCode::Char('d') | KeyCode::Char('D') => self.describe(),
@@ -2010,7 +2158,9 @@ impl App {
                 self.cursor = 0;
                 self.focus = Focus::Main;
                 self.update_rows();
-                self.main_state.select(Some(0));
+                self.main_state
+                    .select(Some(self.before_search.take().unwrap_or(0)));
+                self.clamp_main();
             }
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.search.clear();
@@ -2082,10 +2232,17 @@ impl App {
             self.search.clear();
             self.cursor = 0;
             self.update_rows();
-            self.main_state.select(Some(0));
+            self.main_state
+                .select(Some(self.before_search.take().unwrap_or(0)));
+            self.clamp_main();
             return;
         }
-        let popped = self.area_mut().and_then(|area| area.path.pop());
+        // A filtered list is flat, so there is no group to leave.
+        let popped = if self.filter == Filter::All {
+            self.area_mut().and_then(|area| area.path.pop())
+        } else {
+            None
+        };
         match popped {
             Some((_, row)) => {
                 self.update_rows();
@@ -2093,6 +2250,81 @@ impl App {
             }
             None => self.focus = Focus::Sidebar,
         }
+    }
+
+    /// Pin the selected entry, or unpin it, and remember it.
+    fn toggle_favourite(&mut self) {
+        let Some(entry) = self.selected_entry().cloned() else {
+            return;
+        };
+        match self.favourites.iter().position(|id| *id == entry.id) {
+            Some(position) => {
+                self.favourites.remove(position);
+            }
+            None => self.favourites.push(entry.id.clone()),
+        }
+        if let Some(path) = &self.favourites_path
+            && let Err(error) = settings::save_favourites(path, &self.favourites)
+        {
+            tracing::warn!(%error, "the favourites were not saved");
+        }
+        if self.screen == Screen::Favourites {
+            self.update_rows();
+        }
+    }
+
+    /// The entries run recently, newest first, from the history.
+    fn reload_recent(&mut self) {
+        self.take_recent(history::read(50).unwrap_or_default());
+    }
+
+    fn take_recent(&mut self, records: Vec<history::Record>) {
+        let mut recent: Vec<String> = Vec::new();
+        for record in records {
+            for id in record.entries {
+                if !recent.contains(&id) && self.catalog.find(&id).is_some() {
+                    recent.push(id);
+                }
+            }
+            if recent.len() >= 10 {
+                break;
+            }
+        }
+        recent.truncate(10);
+        self.recent = recent;
+    }
+
+    fn filter_hint(&self) -> &'static str {
+        match self.filter {
+            Filter::All => "Show: all",
+            Filter::Installed => "Show: installed",
+            Filter::Updates => "Show: updates",
+        }
+    }
+
+    fn draw_favourites(&mut self, frame: &mut Frame, area: Rect) {
+        let content = self.page(
+            frame,
+            area,
+            "Favourites",
+            "Entries pinned with *, then the ones run recently.",
+        );
+        if self.rows.is_empty() {
+            self.fill(frame, content);
+            frame.render_widget(
+                Paragraph::new(if self.filter == Filter::All {
+                    "Nothing here yet. Press * on an entry anywhere to pin it here; entries you run appear here too."
+                } else {
+                    "Nothing here matches the filter; i changes it."
+                })
+                .block(self.card("Favourites"))
+                .style(Style::default().fg(self.theme.muted()))
+                .wrap(Wrap { trim: true }),
+                content,
+            );
+            return;
+        }
+        self.draw_list(frame, content);
     }
 
     fn toggle_queue(&mut self) {
@@ -2652,6 +2884,11 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
         });
     }
     menu.push(MenuItem {
+        label: "Favourites".into(),
+        screen: Screen::Favourites,
+        section: "MAIN MENU",
+    });
+    menu.push(MenuItem {
         label: "Install Plan".into(),
         screen: Screen::Plan,
         section: "MAIN MENU",
@@ -3171,9 +3408,19 @@ mod tests {
         assert!(matches!(app.screen, Screen::Area(_)));
         type_text(&mut app, "git");
         assert!(!app.rows.is_empty());
-        assert!(app.rows.iter().all(
-            |row| matches!(row, Row::Entry(entry) if entry.name.to_lowercase().contains("git"))
-        ));
+        // Names holding the text come before looser matches.
+        let names = entry_names(&app);
+        let holding = names
+            .iter()
+            .take_while(|name| name.to_lowercase().contains("git"))
+            .count();
+        assert!(holding > 0);
+        assert!(
+            names[holding..]
+                .iter()
+                .all(|name| !name.to_lowercase().contains("git")),
+            "{names:?}"
+        );
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.focus, Focus::Main);
         press(&mut app, KeyCode::Char('/'));
@@ -3261,6 +3508,117 @@ mod tests {
             app.popup.is_none(),
             "a non-package entry has nothing to remove"
         );
+    }
+
+    fn entry_names(app: &App) -> Vec<String> {
+        app.rows
+            .iter()
+            .filter_map(|row| match row {
+                Row::Entry(entry) => Some(entry.name.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn area_of(app: &App, id: &str) -> usize {
+        app.catalog
+            .tabs
+            .iter()
+            .position(|tab| tab.entries().iter().any(|entry| entry.id == id))
+            .unwrap()
+    }
+
+    #[test]
+    fn search_puts_the_closest_names_first() {
+        let mut app = app();
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "git");
+        let names = entry_names(&app);
+        assert_eq!(names.first().map(String::as_str), Some("Git"), "{names:?}");
+        // A loose spelling still finds it.
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "rpgrp");
+        assert!(entry_names(&app).contains(&"Ripgrep".to_string()));
+    }
+
+    #[test]
+    fn escaping_a_search_returns_to_the_row_it_left() {
+        let mut app = app();
+        app.open_screen(Screen::Area(area_of(&app, "ripgrep")));
+        app.focus = Focus::Main;
+        app.main_state.select(Some(2));
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "zzz");
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.main_state.selected(), Some(2));
+    }
+
+    #[test]
+    fn the_filter_shows_installed_entries_then_updates() {
+        let mut app = app();
+        app.statuses.insert(
+            "ripgrep".into(),
+            Status::Update {
+                source: "pacman".into(),
+                version: Some("15.2.0-1".into()),
+                latest: Some("15.3.0-1".into()),
+                shadowed: None,
+            },
+        );
+        app.statuses.insert(
+            "fzf".into(),
+            Status::Managed {
+                by: "Home Manager".into(),
+                version: None,
+            },
+        );
+        let index = area_of(&app, "ripgrep");
+        assert_eq!(index, area_of(&app, "fzf"), "both share an area");
+        app.open_screen(Screen::Area(index));
+        app.focus = Focus::Main;
+        press(&mut app, KeyCode::Char('i'));
+        assert_eq!(entry_names(&app), ["fzf", "Ripgrep"]);
+        assert!(screen(&mut app, 120, 40).contains("Entries · installed"));
+        press(&mut app, KeyCode::Char('i'));
+        assert_eq!(entry_names(&app), ["Ripgrep"]);
+        press(&mut app, KeyCode::Char('i'));
+        assert!(entry_names(&app).len() > 2, "back to everything");
+    }
+
+    #[test]
+    fn pinned_and_recent_entries_are_listed_as_favourites() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("favourites.toml");
+        let mut app = app();
+        app.favourites_path = Some(path.clone());
+        assert!(screen(&mut app, 120, 40).contains("Favourites"));
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "ripgrep");
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('*'));
+        assert_eq!(settings::load_favourites(&path), ["ripgrep"]);
+        assert!(screen(&mut app, 120, 40).contains("Ripgrep ★"));
+
+        app.search.clear();
+        app.screen = Screen::Favourites;
+        app.take_recent(vec![history::Record {
+            unix_timestamp: 1,
+            entries: vec!["fzf".into(), "ripgrep".into(), "gone".into()],
+            names: Vec::new(),
+            success: true,
+            result: "exit 0".into(),
+            log: None,
+        }]);
+        app.update_rows();
+        app.main_state.select(Some(0));
+        assert_eq!(entry_names(&app), ["Ripgrep", "fzf"], "pins come first");
+        press(&mut app, KeyCode::Char('*'));
+        assert!(settings::load_favourites(&path).is_empty());
+        assert_eq!(entry_names(&app), ["fzf", "Ripgrep"]);
+        app.recent.clear();
+        app.update_rows();
+        assert!(screen(&mut app, 120, 40).contains("Nothing here yet"));
     }
 
     #[test]

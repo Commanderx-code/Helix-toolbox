@@ -48,6 +48,43 @@ pub fn load(path: &Path) -> Look {
         .unwrap_or_default()
 }
 
+/// Pinned entries, kept beside the settings as `favourites.toml`.
+#[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+struct Favourites {
+    entries: Vec<String>,
+}
+
+/// Where the favourites are, beside `settings`.
+pub fn favourites_path(settings: &Path) -> PathBuf {
+    settings.with_file_name("favourites.toml")
+}
+
+/// The pinned entry ids, in the order pinned; none when there is no file.
+pub fn load_favourites(path: &Path) -> Vec<String> {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| toml::from_str::<Favourites>(&text).ok())
+        .map(|favourites| favourites.entries)
+        .unwrap_or_default()
+}
+
+pub fn save_favourites(path: &Path, entries: &[String]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let text = toml::to_string(&Favourites {
+        entries: entries.to_vec(),
+    })
+    .map_err(std::io::Error::other)?;
+    let staging = path.with_extension("toml.new");
+    fs::write(
+        &staging,
+        format!("# Entries pinned in HelixForge with *.\n{text}"),
+    )?;
+    fs::rename(&staging, path)
+}
+
 pub fn save(path: &Path, look: &Look) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;

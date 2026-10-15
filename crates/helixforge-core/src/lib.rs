@@ -1,6 +1,7 @@
 //! Shared data types: the catalog tree of tabs, groups and entries, and the
 //! actions an entry performs. Nothing here touches the system.
 
+pub mod search;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 

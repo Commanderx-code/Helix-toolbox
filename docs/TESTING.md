@@ -27,6 +27,8 @@ package installs happen only in the Distributions workflow's containers.
 emulator and types keys. It checks:
 
 - sidebar navigation, the help popup, search and clearing it
+- pinning an entry, `favourites.toml`, and the entry under Favourites after a
+  restart
 - adding to the install plan, declining the confirmation (nothing runs) and
   accepting it
 - typing an answer into an entry that asks a question

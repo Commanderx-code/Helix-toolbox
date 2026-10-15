@@ -56,6 +56,15 @@ enum Command {
         #[arg(short = 'u', long)]
         all: bool,
     },
+    /// Find entries by name, id or description, closest first; loose
+    /// spellings match too.
+    Search {
+        #[arg(required = true)]
+        words: Vec<String>,
+        /// Include entries hidden on this machine.
+        #[arg(short = 'u', long)]
+        all: bool,
+    },
     /// Show one entry.
     Info { id: String },
     /// Show whether package entries are installed, where from, at which
@@ -233,6 +242,40 @@ fn main() -> Result<()> {
             for tab in &catalog.tabs {
                 println!("{}", tab.name);
                 list_items(&tab.items, 1);
+            }
+            Ok(())
+        }
+        Command::Search { words, all } => {
+            let catalog = load(!all)?;
+            let query = words.join(" ").to_lowercase();
+            let mut found: Vec<(u32, &Entry)> = catalog
+                .entries()
+                .into_iter()
+                .filter_map(|entry| {
+                    helixforge_core::search::score(
+                        &query,
+                        &entry.name,
+                        &entry.id,
+                        &entry.description,
+                    )
+                    .map(|score| (score, entry))
+                })
+                .collect();
+            if found.is_empty() {
+                bail!("nothing matches \"{query}\"");
+            }
+            found.sort_by(|a, b| {
+                b.0.cmp(&a.0)
+                    .then_with(|| a.1.name.to_lowercase().cmp(&b.1.name.to_lowercase()))
+            });
+            let width = found
+                .iter()
+                .map(|(_, entry)| entry.id.len())
+                .max()
+                .unwrap_or(0);
+            for (_, entry) in found {
+                let summary = entry.description.lines().next().unwrap_or_default();
+                println!("{:width$}  {}  {summary}", entry.id, entry.name);
             }
             Ok(())
         }
