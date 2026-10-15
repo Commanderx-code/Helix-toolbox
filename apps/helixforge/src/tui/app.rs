@@ -106,7 +106,7 @@ enum Popup {
 enum Row {
     Up,
     Group { index: usize, name: String },
-    Entry(Entry),
+    Entry(Box<Entry>),
 }
 
 struct MenuItem {
@@ -232,7 +232,10 @@ impl App {
                 .cloned()
                 .collect();
             found.sort_by(|a, b| a.name.cmp(&b.name));
-            found.into_iter().map(Row::Entry).collect()
+            found
+                .into_iter()
+                .map(|entry| Row::Entry(Box::new(entry)))
+                .collect()
         } else if let Some(index) = self.current_area() {
             let area = &self.areas[index];
             let path: Vec<usize> = area.path.iter().map(|(group, _)| *group).collect();
@@ -246,7 +249,7 @@ impl App {
                     index,
                     name: group.name.clone(),
                 },
-                Item::Entry(entry) => Row::Entry(entry.clone()),
+                Item::Entry(entry) => Row::Entry(Box::new(entry.clone())),
             }));
             rows
         } else {
@@ -293,7 +296,7 @@ impl App {
 
     fn selected_entry(&self) -> Option<&Entry> {
         match self.selected_row() {
-            Some(Row::Entry(entry)) => Some(entry),
+            Some(Row::Entry(entry)) => Some(entry.as_ref()),
             _ => None,
         }
     }
@@ -1215,7 +1218,7 @@ impl App {
                 self.main_state.select(Some(0));
                 self.update_rows();
             }
-            Some(Row::Entry(entry)) => self.confirm(vec![entry]),
+            Some(Row::Entry(entry)) => self.confirm(vec![*entry]),
             None => {}
         }
     }

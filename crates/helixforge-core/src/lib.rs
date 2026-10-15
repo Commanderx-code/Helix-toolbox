@@ -115,6 +115,8 @@ impl PackageNames {
 
 /// What an entry does when run: the operation model shared by every
 /// interface. The engine turns these into explicit plans.
+// Catalog records, built once when the catalog loads; their size does not matter.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action {
     /// Install one package: the family's native package, else on Arch the
@@ -265,6 +267,8 @@ pub struct Group {
     pub items: Vec<Item>,
 }
 
+// Catalog records, built once when the catalog loads; their size does not matter.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Item {
     Group(Group),
