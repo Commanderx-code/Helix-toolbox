@@ -1,0 +1,15 @@
+id = "btop"
+name = "btop"
+category = "Monitoring"
+description = "Resource and process monitor."
+
+[detect]
+binary = "btop"
+
+[install]
+kind = "package"
+
+[install.packages]
+arch = "btop"
+debian = "btop"
+fedora = "btop"

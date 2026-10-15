@@ -1,0 +1,15 @@
+id = "htop"
+name = "htop"
+category = "Monitoring"
+description = "Interactive process viewer."
+
+[detect]
+binary = "htop"
+
+[install]
+kind = "package"
+
+[install.packages]
+arch = "htop"
+debian = "htop"
+fedora = "htop"

@@ -1,0 +1,16 @@
+[package]
+name = "helixforge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+crossterm.workspace = true
+ratatui.workspace = true
+helixforge-core = { path = "../../crates/helixforge-core" }
+helixforge-catalog = { path = "../../crates/helixforge-catalog" }
+helixforge-platform = { path = "../../crates/helixforge-platform" }
+helixforge-engine = { path = "../../crates/helixforge-engine" }

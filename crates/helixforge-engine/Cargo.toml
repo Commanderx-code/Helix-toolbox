@@ -1,0 +1,13 @@
+[package]
+name = "helixforge-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+helixforge-core = { path = "../helixforge-core" }
+helixforge-platform = { path = "../helixforge-platform" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

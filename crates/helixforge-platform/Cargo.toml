@@ -1,0 +1,10 @@
+[package]
+name = "helixforge-platform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+helixforge-core = { path = "../helixforge-core" }
+thiserror.workspace = true

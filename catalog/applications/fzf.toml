@@ -1,0 +1,15 @@
+id = "fzf"
+name = "fzf"
+category = "Terminal"
+description = "Interactive fuzzy finder."
+
+[detect]
+binary = "fzf"
+
+[install]
+kind = "package"
+
+[install.packages]
+arch = "fzf"
+debian = "fzf"
+fedora = "fzf"

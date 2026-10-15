@@ -1,0 +1,15 @@
+id = "git"
+name = "Git"
+category = "Development"
+description = "Distributed version control."
+
+[detect]
+binary = "git"
+
+[install]
+kind = "package"
+
+[install.packages]
+arch = "git"
+debian = "git"
+fedora = "git"
