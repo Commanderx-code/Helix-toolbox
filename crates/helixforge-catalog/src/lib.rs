@@ -126,6 +126,8 @@ struct EntryFile {
     #[serde(default)]
     preconditions: Vec<Precondition>,
     #[serde(default)]
+    writes: Vec<String>,
+    #[serde(default)]
     package: Option<PackageFile>,
     #[serde(default)]
     script: Option<ScriptFile>,
@@ -341,6 +343,7 @@ fn load_items(
                     description: entry.description,
                     flags: entry.flags,
                     multi_select: parent_multi_select && entry.multi_select,
+                    writes: entry.writes,
                     action,
                 }),
             ));

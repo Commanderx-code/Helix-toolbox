@@ -156,6 +156,8 @@ pub struct Plan {
     /// Whether any step asks for elevated privileges.
     pub privileged: bool,
     pub risk: Risk,
+    /// Entries left out because a path they write is managed by another tool.
+    pub blocked: Vec<String>,
 }
 
 impl Plan {
@@ -266,11 +268,44 @@ fn add_entry<'a>(
             return Ok(());
         }
     };
+    if let Some(path) = managed_path(&entry.writes) {
+        into.blocked.push(format!(
+            "{}: {} is managed by Home Manager (a symlink into the Nix store); change it there instead",
+            entry.name,
+            path.display()
+        ));
+        return Ok(());
+    }
     into.privileged |= helixforge_core::privileged(&entry.flags, &entry.action);
     into.risk = into.risk.max(Risk::from_flags(&entry.flags));
     into.requirements.extend(step.requirements());
     into.steps.push(step);
     Ok(())
+}
+
+/// The first of the entry's paths that is a Home Manager symlink, or a child
+/// of one, with `~` expanded. Dangling links count: the store path may be
+/// garbage-collected while the link stays.
+pub fn managed_path(writes: &[String]) -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").map(PathBuf::from)?;
+    for written in writes {
+        let path = match written.strip_prefix("~/") {
+            Some(rest) => home.join(rest),
+            None if written == "~" => home.clone(),
+            None => PathBuf::from(written),
+        };
+        for candidate in path.ancestors() {
+            if candidate == home {
+                break;
+            }
+            if let Ok(target) = std::fs::read_link(candidate)
+                && target.starts_with("/nix/store")
+            {
+                return Some(candidate.to_path_buf());
+            }
+        }
+    }
+    None
 }
 
 fn package_command(manager: PackageManager, package: &str) -> Vec<String> {
@@ -556,6 +591,7 @@ mod tests {
             description: String::new(),
             flags: flags.into(),
             multi_select: true,
+            writes: Vec::new(),
             action,
         }
     }
@@ -787,6 +823,36 @@ mod tests {
             Err(EngineError::MissingExecutable(_))
         ));
         assert!(runner.programs.is_empty());
+    }
+
+    #[test]
+    fn home_manager_managed_paths_block_an_entry() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join(".config")).unwrap();
+        std::os::unix::fs::symlink("/nix/store/abc-nvim", home.path().join(".config/nvim"))
+            .unwrap();
+        std::fs::create_dir_all(home.path().join(".config/ghostty")).unwrap();
+        // SAFETY: the test process is the only reader of HOME here.
+        unsafe { std::env::set_var("HOME", home.path()) };
+        assert_eq!(
+            managed_path(&["~/.config/nvim/init.lua".to_string()]),
+            Some(home.path().join(".config/nvim"))
+        );
+        assert_eq!(
+            managed_path(&["~/.config/ghostty/config".to_string()]),
+            None
+        );
+        let mut managed = entry(
+            "nvim",
+            "FM",
+            Action::Command {
+                line: "true".into(),
+            },
+        );
+        managed.writes = vec!["~/.config/nvim".into()];
+        let planned = plan([&managed], &platform(None), &none).unwrap();
+        assert!(planned.steps.is_empty());
+        assert!(planned.blocked[0].contains("Home Manager"));
     }
 
     #[test]

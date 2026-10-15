@@ -708,6 +708,12 @@ impl App {
                     lines.push(format!("Needs: {}", planned.requirements.join(", ")));
                 }
                 lines.extend(planned.notes.iter().cloned());
+                lines.extend(
+                    planned
+                        .blocked
+                        .iter()
+                        .map(|blocked| format!("Not run: {blocked}")),
+                );
                 lines
             }
             Err(error) => vec![format!("Cannot plan: {error}")],
@@ -1340,10 +1346,17 @@ impl App {
             }
         };
         if planned.is_empty() {
-            let text = if planned.notes.is_empty() {
+            let mut lines = planned.notes.clone();
+            lines.extend(
+                planned
+                    .blocked
+                    .iter()
+                    .map(|blocked| format!("Not run: {blocked}")),
+            );
+            let text = if lines.is_empty() {
                 "Nothing to run.".to_string()
             } else {
-                planned.notes.join("\n")
+                lines.join("\n")
             };
             self.popup = Some(Popup::Text(TextPopup::new("Nothing to run", text, true)));
             return;
@@ -1364,6 +1377,9 @@ impl App {
             .collect();
         for note in &planned.notes {
             lines.push((note.clone(), String::new()));
+        }
+        for blocked in &planned.blocked {
+            lines.push((format!("Not run: {blocked}"), String::new()));
         }
         self.pending = Some(planned);
         if self.skip_confirmation {

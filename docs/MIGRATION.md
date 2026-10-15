@@ -259,7 +259,7 @@ they are brought across (see `THIRD_PARTY_NOTICES.md` once that happens).
 | Profiles as reviewable plans | done |
 | Shared shell helpers (`common-script.sh`, `common-service-script.sh`) | done, under `scripts/shared/` |
 | Commander installer tests (Python) | done, under `tests/installers/`; the three menu-format tests were replaced by the catalog loader's own checks |
-| Dotfiles and Myfish source sync | planned |
-| Releases and the `start.sh` launcher | planned |
-| Dashboard, history and settings screens | planned (Milestone 2) |
+| Dotfiles and Myfish source sync | done: `scripts/sync-sources.py` renders catalog files and the workflow publishes releases |
+| Releases and the `start.sh` launcher | done, pending the first run on GitHub |
+| Dashboard, history and settings screens | done (Milestone 2) |
 | Graphical interface | planned (Milestone 5) |

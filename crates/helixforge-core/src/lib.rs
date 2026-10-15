@@ -186,6 +186,9 @@ pub struct Entry {
     pub flags: String,
     /// Whether the entry may be queued with others.
     pub multi_select: bool,
+    /// User paths the entry replaces, with `~` for the home directory, so the
+    /// engine can refuse to run over files another tool manages.
+    pub writes: Vec<String>,
     pub action: Action,
 }
 
@@ -299,6 +302,7 @@ mod tests {
             description: String::new(),
             flags: String::new(),
             multi_select: true,
+            writes: Vec::new(),
             action: Action::Command {
                 line: "true".into(),
             },

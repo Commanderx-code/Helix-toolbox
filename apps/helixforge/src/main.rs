@@ -259,6 +259,9 @@ fn print_plan(planned: &Plan) {
     for note in &planned.notes {
         println!("{note}");
     }
+    for blocked in &planned.blocked {
+        println!("Not run: {blocked}");
+    }
     for (index, step) in planned.steps.iter().enumerate() {
         println!("{}. {}\n   {}", index + 1, step.name(), step.display());
     }

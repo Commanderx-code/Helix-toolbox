@@ -3,6 +3,7 @@ description = "Install your Topgrade configuration adapted to this distro, with 
 flags = "I FM PFM MP"
 multi_select = false
 order = 1
+writes = ["~/.config/topgrade.toml"]
 
 [script]
 id = "commander/topgrade"

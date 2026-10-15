@@ -1,0 +1,94 @@
+name: Sync sources and release
+
+on:
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-sync-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository_owner == 'Commanderx-code'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Adopt sources with successful CI
+        id: sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B scripts/sync-sources.py
+      - name: Check whether the current revision has a build
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          revision=$(git rev-parse HEAD)
+          if [ "$(gh release view "helixforge-${revision:0:12}" --json isDraft --jq .isDraft 2>/dev/null)" = false ]; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install validation tools
+        if: steps.sync.outputs.changed == 'true' || steps.release.outputs.exists != 'true' || github.event_name != 'schedule'
+        run: sudo apt-get update && sudo apt-get install -y shellcheck fish
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.sync.outputs.changed == 'true' || steps.release.outputs.exists != 'true' || github.event_name != 'schedule'
+        with:
+          components: rustfmt, clippy
+      - name: Validate and build without installation
+        if: steps.sync.outputs.changed == 'true' || steps.release.outputs.exists != 'true' || github.event_name != 'schedule'
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+          python3 -B -m unittest discover -s tests/installers -v
+          shellcheck -x -P . scripts/shared/*.sh scripts/installers/commander/*.sh
+          cargo build --release -p helixforge
+          target/release/helixforge docgen docs/walkthrough.md
+          target/release/helixforge --help >/dev/null
+      - name: Commit tested source updates
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add catalog scripts/installers/commander/common.sh scripts/installers/commander/catalogs docs/walkthrough.md
+          git add -A scripts/installers/commander/generated
+          git commit -m 'Sync tested dotfiles and Myfish sources'
+          # A concurrent human push stops this run; never force or publish an unpushed build.
+          git push origin HEAD:main
+      - name: Publish the tested Linux x86_64 build
+        if: steps.sync.outputs.changed == 'true' || steps.release.outputs.exists != 'true' || github.event_name != 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          revision=$(git rev-parse HEAD)
+          tag="helixforge-${revision:0:12}"
+          mkdir -p /tmp/helixforge-release
+          cp target/release/helixforge /tmp/helixforge-release/helixforge-linux-x86_64
+          python3 -B scripts/sync-sources.py --render
+          git diff --exit-code
+          cd /tmp/helixforge-release
+          sha256sum helixforge-linux-x86_64 > SHA256SUMS
+          printf 'Automatic build from HelixForge commit %s.\n\nLinux x86_64; built on Ubuntu 22.04 (glibc 2.35 or newer).\nUpdate HelixForge, then run the entry you want.\n' "$revision" > release-notes.md
+          # Draft first: a failed upload never exposes a partial release as the latest build.
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$revision" --draft --title "HelixForge ${revision:0:12}" --notes-file release-notes.md
+          fi
+          gh release upload "$tag" helixforge-linux-x86_64 SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+          gh release edit "$tag" --draft=false --latest --repo "$GITHUB_REPOSITORY"

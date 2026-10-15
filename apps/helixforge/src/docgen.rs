@@ -45,6 +45,7 @@ mod tests {
                 description: description.into(),
                 flags: String::new(),
                 multi_select: true,
+                writes: Vec::new(),
                 action: Action::Command {
                     line: "true".into(),
                 },

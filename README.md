@@ -14,10 +14,19 @@ later.
 
 ## Run
 
-With a Rust toolchain (1.88 or newer):
+On Linux x86_64, run the latest release straight from GitHub, as your normal
+user:
 
 ```sh
-cargo run -p helixforge              # the terminal interface
+curl -fsSL https://raw.githubusercontent.com/Commanderx-code/Helix-Forge/main/start.sh | sh
+```
+
+`start.sh` downloads the published build, refuses it when it does not match
+the published SHA-256 sum, and installs nothing. With a Rust toolchain (1.88
+or newer) it runs from a checkout instead:
+
+```sh
+./start.sh                           # or: cargo run -p helixforge
 cargo run -p helixforge -- --help    # the command line
 ```
 
@@ -143,6 +152,9 @@ and the tracing log under `logs/` beside it; `XDG_STATE_HOME` is honoured and
 
 The previous toolbox stays the stable way to run the entries that have not
 come across yet; [docs/MIGRATION.md](docs/MIGRATION.md) tracks each one.
+Entries from the dotfiles and Myfish repositories follow those repositories
+automatically; [docs/SOURCE-SYNC.md](docs/SOURCE-SYNC.md) describes how, and
+how a release is published from every tested revision.
 
 ## Checks
 
