@@ -1,8 +1,12 @@
 //! Tracing to a log file in the state directory; `HELIXFORGE_LOG` sets the
-//! level (error, warn, info, debug or trace; the default is info).
+//! level (error, warn, info, debug or trace; the default is info). The file
+//! and its directory are private to the user, like the history beside them.
 
 use helixforge_engine::history::state_dir;
-use std::fs;
+use std::{
+    fs,
+    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
+};
 use tracing::Level;
 
 pub fn init() {
@@ -13,12 +17,18 @@ pub fn init() {
     let Some(directory) = state_dir().map(|state| state.join("logs")) else {
         return;
     };
-    if fs::create_dir_all(&directory).is_err() {
+    if fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&directory)
+        .is_err()
+    {
         return;
     }
     let Ok(file) = fs::OpenOptions::new()
         .append(true)
         .create(true)
+        .mode(0o600)
         .open(directory.join("helixforge.log"))
     else {
         return;
