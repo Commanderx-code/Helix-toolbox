@@ -8,25 +8,32 @@ pub fn walkthrough(tabs: &[Tab]) -> String {
     );
     for tab in tabs {
         text.push_str(&format!("\n## {}\n\n", tab.name));
-        items(&tab.items, &mut text);
+        items(&tab.items, 3, &mut text);
     }
     text
 }
 
-fn items(list: &[Item], text: &mut String) {
+/// A level's own entries first, then its groups as headings one level down,
+/// so no entry reads as part of the group above it.
+fn items(list: &[Item], level: usize, text: &mut String) {
     for item in list {
-        match item {
-            Item::Group(group) => {
-                text.push_str(&format!("\n### {}\n\n", group.name));
-                if !group.description.is_empty() {
-                    text.push_str(&format!("{}\n\n", group.description));
-                }
-                items(&group.items, text);
+        if let Item::Entry(entry) = item
+            && !entry.description.is_empty()
+        {
+            text.push_str(&format!("- **{}**: {}\n", entry.name, entry.description));
+        }
+    }
+    for item in list {
+        if let Item::Group(group) = item {
+            text.push_str(&format!(
+                "\n{} {}\n\n",
+                "#".repeat(level.min(6)),
+                group.name
+            ));
+            if !group.description.is_empty() {
+                text.push_str(&format!("{}\n\n", group.description));
             }
-            Item::Entry(entry) if !entry.description.is_empty() => {
-                text.push_str(&format!("- **{}**: {}\n", entry.name, entry.description));
-            }
-            Item::Entry(_) => {}
+            items(&group.items, level + 1, text);
         }
     }
 }
@@ -60,9 +67,19 @@ mod tests {
                     name: "Browsers".into(),
                     description: String::new(),
                     multi_select: true,
-                    items: vec![entry("Brave", "A browser.")],
+                    items: vec![
+                        entry("Brave", "A browser."),
+                        Item::Group(Group {
+                            id: "nightly".into(),
+                            name: "Nightly".into(),
+                            description: String::new(),
+                            multi_select: true,
+                            items: vec![entry("Firefox", "Another.")],
+                        }),
+                    ],
                 }),
                 entry("Quiet", ""),
+                entry("Loose", "Outside any group."),
             ],
         };
         let text = walkthrough(&[tab]);
@@ -70,5 +87,9 @@ mod tests {
         assert!(text.contains("### Browsers\n"));
         assert!(text.contains("- **Brave**: A browser.\n"));
         assert!(!text.contains("Quiet"));
+        assert!(text.contains("#### Nightly\n\n- **Firefox**: Another.\n"));
+        // An entry listed after a group still comes before its heading.
+        let loose = text.find("- **Loose**").unwrap();
+        assert!(loose < text.find("### Browsers").unwrap(), "{text}");
     }
 }

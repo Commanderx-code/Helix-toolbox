@@ -1,4 +1,5 @@
 name = "Ubuntu"
+order = 6
 
 [[preconditions]]
 matches = true

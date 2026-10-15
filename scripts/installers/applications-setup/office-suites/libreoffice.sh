@@ -23,7 +23,7 @@ installLibreOffice() {
                 ;;
             *)
                 checkFlatpak
-                "$ESCALATION_TOOL" flatpak --noninteractive org.libreoffice.LibreOffice
+                "$ESCALATION_TOOL" flatpak install --noninteractive flathub org.libreoffice.LibreOffice
                 ;;
         esac
     else

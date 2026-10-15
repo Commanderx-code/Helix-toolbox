@@ -20,7 +20,7 @@ installOkular() {
                 ;;
             *)
                 checkFlatpak
-                "$ESCALATION_TOOL" flatpak --noninteractive org.kde.okular
+                "$ESCALATION_TOOL" flatpak install --noninteractive flathub org.kde.okular
                 ::
         esac
     else

@@ -61,6 +61,29 @@ class GeneralCatalogTests(unittest.TestCase):
                     self.assertNotIn('script', data)
         self.assertGreaterEqual(packages, 44)
 
+    def test_flatpak_calls_name_a_subcommand(self):
+        # "flatpak --noninteractive <app>" once stood for an install and always failed.
+        call = re.compile(r'(?:^\s*|"\$ESCALATION_TOOL"\s+)flatpak((?:\s+--?[a-z-]+)*)\s+(\S+)', re.M)
+        known = {'install', 'uninstall', 'update', 'list', 'info', 'remotes', 'remote-add', 'remote-delete', 'run', 'override'}
+        for path in GENERAL + [ROOT / 'scripts/shared/common-script.sh']:
+            for match in call.finditer(path.read_text()):
+                with self.subTest(script=str(path.relative_to(ROOT)), call=match.group(0)):
+                    self.assertIn(match.group(2), known)
+
+    def test_groups_beside_entries_are_placed_on_purpose(self):
+        # Items sort by order, then name, so a group without an order sank
+        # below every entry (Communication Apps, Web Browsers and others did).
+        for directory in (ROOT / 'catalog').rglob('*'):
+            if not directory.is_dir():
+                continue
+            groups = [d for d in directory.iterdir() if (d / 'group.toml').is_file()]
+            entries = [f for f in directory.glob('*.toml') if f.name not in ('group.toml', 'tab.toml', 'tabs.toml')]
+            if not entries:
+                continue
+            for group in groups:
+                with self.subTest(group=str(group.relative_to(ROOT))):
+                    self.assertIn('order', tomllib.loads((group / 'group.toml').read_text()))
+
     def test_entry_ids_are_unique(self):
         stems = [path.stem for path in CATALOG.rglob('*.toml') if path.name not in ('tab.toml', 'group.toml', 'tabs.toml')]
         duplicates = sorted({stem for stem in stems if stems.count(stem) > 1})

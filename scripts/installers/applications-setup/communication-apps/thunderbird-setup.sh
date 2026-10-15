@@ -20,7 +20,7 @@ installThunderBird() {
                 ;;
             *)
                 checkFlatpak
-                "$ESCALATION_TOOL" flatpak --noninteractive org.mozilla.Thunderbird
+                "$ESCALATION_TOOL" flatpak install --noninteractive flathub org.mozilla.Thunderbird
         esac
     else
         printf "%b\n" "${GREEN}Thunderbird is already installed.${RC}"

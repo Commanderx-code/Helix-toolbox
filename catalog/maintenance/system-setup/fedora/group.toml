@@ -1,4 +1,5 @@
 name = "Fedora"
+order = 5
 
 [[preconditions]]
 matches = true

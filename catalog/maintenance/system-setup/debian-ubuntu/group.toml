@@ -1,4 +1,5 @@
 name = "Debian / Ubuntu"
+order = 3
 
 [[preconditions]]
 matches = true

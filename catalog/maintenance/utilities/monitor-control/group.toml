@@ -1,4 +1,5 @@
 name = "Monitor Control"
+order = 1
 multi_select = false
 
 [[preconditions]]

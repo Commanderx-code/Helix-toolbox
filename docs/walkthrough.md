@@ -3,6 +3,18 @@
 
 ## Applications
 
+- **Alacritty**: Alacritty is a modern terminal emulator that comes with sensible defaults, but allows for extensive configuration. By integrating with other applications, rather than reimplementing their functionality, it manages to provide a flexible set of features with high performance. The supported platforms currently consist of BSD, Linux, macOS and Windows. This command installs and configures alacritty terminal emulator.
+- **Android Debloater**: Universal Android Debloater (UAD) is a tool designed to help users remove bloatware and unnecessary pre-installed applications from Android devices, enhancing performance and user experience.
+- **Dank Shell**: DankMaterialShell is a complete desktop shell for niri, Hyprland, MangoWC, Sway, labwc, Scroll, Miracle WM, and other Wayland compositors. It replaces waybar, swaylock, swayidle, mako, fuzzel, polkit, and everything else you'd normally stitch together to make a desktop
+- **Docker**: Docker is an open platform that uses OS-level virtualization to deliver software in packages called containers.
+- **Flatpak / Flathub**: Flatpak is a universal application sandbox for Linux that uses isolated packages from Flathub to prevent conflicts and system alterations, while alleviating dependency concerns. This command installs Flatpak and adds the Flathub repository
+- **Ghostty**: Ghostty is a terminal emulator that has embedded web technologies, allowing for a highly customizable and visually appealing terminal experience.
+- **Kitty**: kitty is a free and open-source GPU-accelerated terminal emulator for Linux, macOS, and some BSD distributions, focused on performance and features. kitty is written in a mix of C and Python programming languages. This command installs and configures kitty.
+- **Noctalia Shell**: Noctalia is a native Wayland desktop shell for people who want a polished, configurable Linux desktop without stitching together a separate bar, launcher, notification daemon, lock screen, wallpaper tool, and settings UI.
+- **Podman**: Podman is a daemon-less open platform that uses OS-level virtualization to deliver software in packages called containers.
+- **Podman-compose**: Podman Compose is a tool for defining and running multi-container applications using Podman.
+- **Rofi**: Rofi is a window switcher, run dialog, ssh-launcher and dmenu replacement that started as a clone of simpleswitcher, written by Sean Pringle and later expanded by Dave Davenport. This command installs and configures rofi with configuration from CTT's DWM repo. https://github.com/ChrisTitusTech/dwm-titus
+- **Shelly**: Shelly is a modern, visual, and intuitive interface for your Arch Linux system. Not just a wrapper, but a native ground-up experience.
 
 ### Design Tools
 
@@ -59,81 +71,6 @@ https://github.com/ChrisTitusTech/neovim
 - **TFM Visual File Manager**: Install the pinned TFM beta through Nix on Linux x86_64, with preview and Wayland clipboard helpers. Use Ghostty for image previews.
 - **Cassette Spotify Player**: Install pinned Cassette and librespot through Nix on Linux x86_64. Requires Spotify Premium, your own Client ID and interactive browser login.
 
-### Gaming
-
-- **Arc Raiders Titus Mods**: Applies optimized game configuration files from ChrisTitusTech/arc-raiders. Sets Engine.ini to read-only to prevent the game from overwriting the settings, disables motion blur, and enables VRR optimizations.
-- **Diablo II Resurrected Loot Filter**: Installs a loot filter for Diablo II Resurrected from ChrisTitusTech/d2r-loot-filter. Highlights high runes and other valuable items. Works on Battle.net and single player. After install, add launch option: -mod lootfilter -txt
-- **EverQuest Legends MIDI Fix**: Configures native Lutris to start a stable FluidSynth MIDI device, maps Wine to it, and loads the SC-55 SoundCanvas bank for EverQuest Legends music. Downloads a verified 177 MiB SoundFont and preserves the original Lutris and Wine registry configuration.
-- **Fallout 76 INI and Mods**: Installs a custom Fallout76Custom.ini and mods from ChrisTitusTech/fallout76-configs via Steam. Improves performance and stability with quality of life tweaks.
-- **Starfield Titus INI and Mods**: Installs custom Starfield mods from ChrisTitusTech/starfield-config via steam.
-
-### Emulators
-
-
-### Multi-System Emulators
-
-- **RetroArch Game Emulator**: Frontend for emulators, game engines and media players. NO Games or Bios' are included
-
-### Nintendo Emulators
-
-- **bsnes**: Super Nintendo Emulator. NO Games are included
-- **Dolphin Emulator**: GameCube and Wii Emulator. NO Games are included
-- **Gopher 64**: N64 Emulator. NO Games are included
-- **MelonDS**: Nintendo DS and DSi Emulator. NO Games are included
-- **mGBA**: Nintendo Game Boy Advance Emulator. NO Games are included
-- **Mupen 64 Plus**: N64 Emulator. NO Games are included
-- **Ryujinx**: Nintendo Switch emulator. NO Games are included
-- **snes9x**: Super Nintendo Emulator. NO Games are included
-
-### PlayStation Emulators
-
-- **PCSX2**: A Playstation 2 emulator. NO Games or Bios' are included
-- **Play!**: An Experimental Playstation 2 emulator. NO Games or Bios' are included
-- **RPCS3**: A Playstation 3 emulator. NO Games or Bios' are included
-
-### Sega Emulators
-
-- **Blastem**: A Genesis emulator. NO Games are included
-- **Flycast**: A Dreamcast emulator. NO Games are included
-- **Kronos**: A Sega Saturn emulator. NO Games are included
-
-### Xbox Emulators
-
-- **XEMU**: An Original Xbox emulator. NO Games or Bios' are included
-- **Xenia**: An Experimental Xbox 360 emulator. NO Games or Bios' are included
-
-### Game Launchers
-
-- **Heroic**: Manage Heroic launcher installation with Install, Uninstall, or Abort actions.
-- **Lutris**: Manage Lutris launcher installation with Install, Uninstall, or Abort actions.
-- **RetroArch**: Manage RetroArch launcher installation with Install, Uninstall, or Abort actions.
-- **Steam**: Manage Steam launcher installation with Install, Uninstall, or Abort actions.
-
-### Tools and Setups
-
-- **Auto CPU Frequency**: Automatic CPU speed & power optimizer.
-https://github.com/AdnanHodzic/auto-cpufreq
-- **Auto Mount Drive**: This utility is designed to help with automating the process of mounting a drive on to your system.
-- **Bottles**: Bottles allows Windows software, like applications and games, to run on Linux. Bottles also provides tools to categorize, organize and optimize your applications.
-- **Gaming Dependencies**: Installs gaming runtime dependencies across distributions. Steam and Lutris are managed separately from Game Launchers.
-- **General GPU Drivers**: Auto-detects your GPU and installs a recommended driver stack for your distro, with NixOS guidance.
-- **Nvidia Drivers & Hardware Acceleration**: Opens the Arch-specific NVIDIA installer (kept under System Setup / Arch).
-- **ProtonPlus**: Manage ProtonPlus installation with native packages first and Flatpak fallback.
-- **ProtonUp-Qt**: Manage ProtonUp-Qt installation with native packages first and Flatpak fallback.
-- **Waydroid**: Waydroid is an emulator that allows you to run Android apps and games on Linux.
-- **Alacritty**: Alacritty is a modern terminal emulator that comes with sensible defaults, but allows for extensive configuration. By integrating with other applications, rather than reimplementing their functionality, it manages to provide a flexible set of features with high performance. The supported platforms currently consist of BSD, Linux, macOS and Windows. This command installs and configures alacritty terminal emulator.
-- **Android Debloater**: Universal Android Debloater (UAD) is a tool designed to help users remove bloatware and unnecessary pre-installed applications from Android devices, enhancing performance and user experience.
-- **Dank Shell**: DankMaterialShell is a complete desktop shell for niri, Hyprland, MangoWC, Sway, labwc, Scroll, Miracle WM, and other Wayland compositors. It replaces waybar, swaylock, swayidle, mako, fuzzel, polkit, and everything else you'd normally stitch together to make a desktop
-- **Docker**: Docker is an open platform that uses OS-level virtualization to deliver software in packages called containers.
-- **Flatpak / Flathub**: Flatpak is a universal application sandbox for Linux that uses isolated packages from Flathub to prevent conflicts and system alterations, while alleviating dependency concerns. This command installs Flatpak and adds the Flathub repository
-- **Ghostty**: Ghostty is a terminal emulator that has embedded web technologies, allowing for a highly customizable and visually appealing terminal experience.
-- **Kitty**: kitty is a free and open-source GPU-accelerated terminal emulator for Linux, macOS, and some BSD distributions, focused on performance and features. kitty is written in a mix of C and Python programming languages. This command installs and configures kitty.
-- **Noctalia Shell**: Noctalia is a native Wayland desktop shell for people who want a polished, configurable Linux desktop without stitching together a separate bar, launcher, notification daemon, lock screen, wallpaper tool, and settings UI.
-- **Podman**: Podman is a daemon-less open platform that uses OS-level virtualization to deliver software in packages called containers.
-- **Podman-compose**: Podman Compose is a tool for defining and running multi-container applications using Podman.
-- **Rofi**: Rofi is a window switcher, run dialog, ssh-launcher and dmenu replacement that started as a clone of simpleswitcher, written by Sean Pringle and later expanded by Dave Davenport. This command installs and configures rofi with configuration from CTT's DWM repo. https://github.com/ChrisTitusTech/dwm-titus
-- **Shelly**: Shelly is a modern, visual, and intuitive interface for your Arch Linux system. Not just a wrapper, but a native ground-up experience.
-
 ### Communication Apps
 
 - **Discord**: Discord is a versatile communication platform for gamers and communities, offering voice, video, and text chat features.
@@ -144,12 +81,6 @@ https://github.com/AdnanHodzic/auto-cpufreq
 - **Thunderbird**: Thunderbird is a free, open-source email client that offers powerful features like customizable email management, a built-in calendar, and extensive add-ons for enhanced functionality.
 - **ZapZap**: ZapZap is an open source whatsapp desktop client for Linux users developed by rafatosta.
 - **Zoom**: Zoom is a widely-used video conferencing platform that allows users to host virtual meetings, webinars, and online collaboration with features like screen sharing and recording.
-
-### Office Suites
-
-
-### PDF Suites
-
 
 ### Web Browsers
 
@@ -167,9 +98,79 @@ https://github.com/AdnanHodzic/auto-cpufreq
 - **Zen Browser**: Zen Browser is a privacy-focused web browser designed for enhanced security and a seamless browsing experience.
 - **Helium Browser**: Helium Browser is a free, privacy-focused and open-source chromium-based browser designed for enhanced security and a seamless browsing experience.
 
+### Office Suites
+
+
+### PDF Suites
+
+
+### Gaming
+
+- **Arc Raiders Titus Mods**: Applies optimized game configuration files from ChrisTitusTech/arc-raiders. Sets Engine.ini to read-only to prevent the game from overwriting the settings, disables motion blur, and enables VRR optimizations.
+- **Diablo II Resurrected Loot Filter**: Installs a loot filter for Diablo II Resurrected from ChrisTitusTech/d2r-loot-filter. Highlights high runes and other valuable items. Works on Battle.net and single player. After install, add launch option: -mod lootfilter -txt
+- **EverQuest Legends MIDI Fix**: Configures native Lutris to start a stable FluidSynth MIDI device, maps Wine to it, and loads the SC-55 SoundCanvas bank for EverQuest Legends music. Downloads a verified 177 MiB SoundFont and preserves the original Lutris and Wine registry configuration.
+- **Fallout 76 INI and Mods**: Installs a custom Fallout76Custom.ini and mods from ChrisTitusTech/fallout76-configs via Steam. Improves performance and stability with quality of life tweaks.
+- **Starfield Titus INI and Mods**: Installs custom Starfield mods from ChrisTitusTech/starfield-config via steam.
+
+#### Emulators
+
+
+##### Multi-System Emulators
+
+- **RetroArch Game Emulator**: Frontend for emulators, game engines and media players. NO Games or Bios' are included
+
+##### Nintendo Emulators
+
+- **bsnes**: Super Nintendo Emulator. NO Games are included
+- **Dolphin Emulator**: GameCube and Wii Emulator. NO Games are included
+- **Gopher 64**: N64 Emulator. NO Games are included
+- **MelonDS**: Nintendo DS and DSi Emulator. NO Games are included
+- **mGBA**: Nintendo Game Boy Advance Emulator. NO Games are included
+- **Mupen 64 Plus**: N64 Emulator. NO Games are included
+- **Ryujinx**: Nintendo Switch emulator. NO Games are included
+- **snes9x**: Super Nintendo Emulator. NO Games are included
+
+##### PlayStation Emulators
+
+- **PCSX2**: A Playstation 2 emulator. NO Games or Bios' are included
+- **Play!**: An Experimental Playstation 2 emulator. NO Games or Bios' are included
+- **RPCS3**: A Playstation 3 emulator. NO Games or Bios' are included
+
+##### Sega Emulators
+
+- **Blastem**: A Genesis emulator. NO Games are included
+- **Flycast**: A Dreamcast emulator. NO Games are included
+- **Kronos**: A Sega Saturn emulator. NO Games are included
+
+##### Xbox Emulators
+
+- **XEMU**: An Original Xbox emulator. NO Games or Bios' are included
+- **Xenia**: An Experimental Xbox 360 emulator. NO Games or Bios' are included
+
+#### Game Launchers
+
+- **Heroic**: Manage Heroic launcher installation with Install, Uninstall, or Abort actions.
+- **Lutris**: Manage Lutris launcher installation with Install, Uninstall, or Abort actions.
+- **RetroArch**: Manage RetroArch launcher installation with Install, Uninstall, or Abort actions.
+- **Steam**: Manage Steam launcher installation with Install, Uninstall, or Abort actions.
+
+#### Tools and Setups
+
+- **Auto CPU Frequency**: Automatic CPU speed & power optimizer.
+https://github.com/AdnanHodzic/auto-cpufreq
+- **Auto Mount Drive**: This utility is designed to help with automating the process of mounting a drive on to your system.
+- **Bottles**: Bottles allows Windows software, like applications and games, to run on Linux. Bottles also provides tools to categorize, organize and optimize your applications.
+- **Gaming Dependencies**: Installs gaming runtime dependencies across distributions. Steam and Lutris are managed separately from Game Launchers.
+- **General GPU Drivers**: Auto-detects your GPU and installs a recommended driver stack for your distro, with NixOS guidance.
+- **Nvidia Drivers & Hardware Acceleration**: Opens the Arch-specific NVIDIA installer (kept under System Setup / Arch).
+- **ProtonPlus**: Manage ProtonPlus installation with native packages first and Flatpak fallback.
+- **ProtonUp-Qt**: Manage ProtonUp-Qt installation with native packages first and Flatpak fallback.
+- **Waydroid**: Waydroid is an emulator that allows you to run Android apps and games on Linux.
+
 ## Configurations
 
 - **Workstation Setup**: Clone Commander dotfiles to ~/github/projects/dotfiles (or update a checkout there) and run its guided setup: Zed and Ghostty, optionally Nix and Home Manager with Fish, Starship, Fastfetch, Neovim and Restic backups, optional everyday apps, the SilentSDDM login screen, the GRUB or Limine boot menu with AppArmor, the boot splash and the UFW firewall. For Arch-based systems with pacman, such as Garuda or CachyOS. The setup shows its plan and waits for APPLY before changing anything.
+- **SDDM Theme**: Install SilentSDDM with the Kratos login preset and the other presets, backgrounds and settings from dotfiles, plus Qt6 dependencies and fonts. Requires SDDM 0.21+ and a successful graphical preview before activation; when another display manager runs the login screen, offers to switch it to SDDM at the next reboot.
 
 ### Myfish Shell Setup
 
@@ -177,7 +178,6 @@ https://github.com/AdnanHodzic/auto-cpufreq
 - **Myfish Bash (Native)**: Install Myfish with Bash using your native package manager. The installer confirms configuration changes.
 - **Myfish Zsh (Native)**: Install Myfish with Zsh using your native package manager. The installer confirms configuration changes.
 - **Myfish Guided Setup**: Choose native packages or Home Manager, then your shell and greeting. Use native packages on Fedora to preserve SELinux.
-- **SDDM Theme**: Install SilentSDDM with the Kratos login preset and the other presets, backgrounds and settings from dotfiles, plus Qt6 dependencies and fonts. Requires SDDM 0.21+ and a successful graphical preview before activation; when another display manager runs the login screen, offers to switch it to SDDM at the next reboot.
 
 ### Dotfiles
 
@@ -224,6 +224,8 @@ https://github.com/AdnanHodzic/auto-cpufreq
 
 ## Maintenance
 
+- **Topgrade Updates**: Install your Topgrade configuration adapted to this distro, with backups and update confirmations. Optionally run updates afterward.
+- **Restore Configuration Backups**: Browse Commander user-configuration backups and restore one, backing up the current configuration first. Symlink-managed configurations and system boot files are excluded.
 
 ### System Setup
 
@@ -237,11 +239,11 @@ https://github.com/AdnanHodzic/auto-cpufreq
 - **TTY Fonts**: This Script will set the default TTY font to Terminus size 32 Bold
 - **Zram Swap**: Configures compressed RAM swap via zram-generator with zstd algorithm.
 
-### Alpine
+#### Alpine
 
 - **Alpine Update**: Upgrades Alpine Linux to either latest stable or edge repositories
 
-### Arch
+#### Arch
 
 - **Arch Server Setup**: This command installs a minimal arch server setup under 5 minutes.
 - **DWM-Titus**: DWM is a dynamic window manager for X.
@@ -263,17 +265,17 @@ https://github.com/ChrisTitusTech/dwm-titus
 - **Virtualization**: QEMU, Libvirt, Virt-Manager installation and configuration.
 - **Yay AUR Helper**: Yet Another Yogurt - An AUR Helper Written in Go. To know more about AUR helpers visit: https://wiki.archlinux.org/title/AUR_helpers
 
-### Debian / Ubuntu
+#### Debian / Ubuntu
 
 - **Nala Package Manager**: Install Nala on Debian, Ubuntu and derivatives such as Zorin from enabled distribution repositories and configure apt as an interactive alias for nala in Bash, Zsh or Fish, with a backup. Use sudo nala for elevated commands; system APT remains available.
 - **Hyprland JaKooLit**: Install JaKooLit's Hyprland configuration
 
-### Desktop Environment Setup
+#### Desktop Environment Setup
 
 - **Install Desktop Environment**: This script allows you to install various desktop environments (GNOME, KDE, XFCE, Cinnamon, MATE, Budgie, LXQt, LXDE) and window managers (i3, Sway, DWM, Awesome, BSPWM, Openbox, Fluxbox) using your distro's package manager. The script provides an interactive menu to select your preferred desktop environment or window manager, and handles the installation process automatically.
 - **Uninstall Desktop Environment**: This script allows you to uninstall desktop environments and window managers that were previously installed. It provides an interactive menu to select which desktop environment or window manager to remove, and handles the uninstallation process automatically.
 
-### Fedora
+#### Fedora
 
 - **Btrfs Assistant, Snapper Config, grub-btrfs**: Installs Btrfs Assistant, Snapper, dnf snapper plugin and takes the first root(/) and /home snapshots. Enables snapper-timeline and snapper-cleanup services. Installs Grub-Btrfs. Notice: To perform a system recovery via grub-btrfs, perform a restore operation with Btrfs Assistant GUI after booting into the snapshot. Notice: If you used the default Fedora disk partitioning during OS installation, the /boot configured as an separate EXT4 partition. Therefore, it cannot be included in root snapshots. Backup separately.
 - **Configure DNF**: Optimizes DNF for parallel downloads
@@ -284,11 +286,9 @@ https://github.com/ChrisTitusTech/dwm-titus
 - **Upgrade to a New Fedora Release**: Upgrades system to the next Fedora release
 - **Virtualization**: Enables Virtualization through dnf
 
-### Ubuntu
+#### Ubuntu
 
 - **Hyprland JaKooLit**: Install JaKooLit's Hyprland configuration
-- **Topgrade Updates**: Install your Topgrade configuration adapted to this distro, with backups and update confirmations. Optionally run updates afterward.
-- **Restore Configuration Backups**: Browse Commander user-configuration backups and restore one, backing up the current configuration first. Symlink-managed configurations and system boot files are excluded.
 
 ### Utilities
 
@@ -301,7 +301,7 @@ https://github.com/ChrisTitusTech/dwm-titus
 - **US Locale Setup**: This fixes US UTF-8 Locale and Folder listings
 - **WiFi Manager**: This utility is designed to manage wifi in your system
 
-### Monitor Control
+#### Monitor Control
 
 - **Auto Detect Displays**: This script is designed to detect and apply recommended configuration for monitors connected with your system
 - **Change Orientation**: This script is designed to change the orientation of monitors in your system
@@ -316,7 +316,7 @@ https://github.com/ChrisTitusTech/dwm-titus
 - **Set Primary Monitor**: This script is designed to set a Primary monitor in your system
 - **Set Resolution**: This script is designed to change the resolution of monitors connected to your system
 
-### User Account Manager
+#### User Account Manager
 
 
 ### Printers

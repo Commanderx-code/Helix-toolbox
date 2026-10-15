@@ -20,7 +20,7 @@ installEvince() {
                 ;;
             *)
                 checkFlatpak
-                "$ESCALATION_TOOL" flatpak --noninteractive org.gnome.Evince
+                "$ESCALATION_TOOL" flatpak install --noninteractive flathub org.gnome.Evince
                 ;;
         esac
     else

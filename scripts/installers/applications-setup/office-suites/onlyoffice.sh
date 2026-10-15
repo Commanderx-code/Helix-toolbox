@@ -16,7 +16,7 @@ installOnlyOffice() {
       ;;
     *)
       checkFlatpak
-      "$ESCALATION_TOOL" flatpak --noninteractive org.onlyoffice.desktopeditors
+      "$ESCALATION_TOOL" flatpak install --noninteractive flathub org.onlyoffice.desktopeditors
       ;;
     esac
   else
