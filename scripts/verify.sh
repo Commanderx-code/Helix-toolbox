@@ -2,6 +2,13 @@
 # Every check the GitHub workflows run before a build is published.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+if command -v actionlint >/dev/null; then
+    actionlint .github/workflows/*.yml
+elif command -v nix >/dev/null; then
+    nix run nixpkgs#actionlint -- .github/workflows/*.yml
+else
+    echo "actionlint is not installed; the Checks workflow lints the workflows." >&2
+fi
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace

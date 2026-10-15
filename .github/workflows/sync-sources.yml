@@ -1,9 +1,18 @@
 name: Sync sources and release
 
 on:
+  # dotfiles and Myfish start this run when their checks pass on main (see
+  # docs/SOURCE-SYNC.md). GitHub fires schedules only every few hours on these
+  # repositories, so the schedule is a backstop, not the trigger.
   schedule:
     - cron: '17,47 * * * *'
   workflow_dispatch:
+    inputs:
+      reason:
+        description: "manual rebuilds and publishes; source-updated builds only when something changed"
+        default: manual
+        type: choice
+        options: [manual, source-updated]
   push:
     branches: [main]
 
@@ -33,26 +42,36 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 -B scripts/sync-sources.py
-      - name: Check whether the current revision has a build
+      - name: Decide whether to build
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
+          # Schedules and source notifications only act on a change or a
+          # missing build; pushes and manual runs always build.
+          ROUTINE: ${{ github.event_name == 'schedule' || inputs.reason == 'source-updated' }}
+          CHANGED: ${{ steps.sync.outputs.changed }}
         run: |
           revision=$(git rev-parse HEAD)
           if [ "$(gh release view "helixforge-${revision:0:12}" --json isDraft --jq .isDraft 2>/dev/null)" = false ]; then
-            echo 'exists=true' >> "$GITHUB_OUTPUT"
+            exists=true
           else
-            echo 'exists=false' >> "$GITHUB_OUTPUT"
+            exists=false
+          fi
+          if [ "$CHANGED" = true ] || [ "$exists" = false ] || [ "$ROUTINE" != true ]; then
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'build=false' >> "$GITHUB_OUTPUT"
+            echo "Nothing changed and helixforge-${revision:0:12} is published."
           fi
       - name: Install validation tools
-        if: steps.sync.outputs.changed == 'true' || steps.release.outputs.exists != 'true' || github.event_name != 'schedule'
+        if: steps.release.outputs.build == 'true'
         run: sudo apt-get update && sudo apt-get install -y shellcheck fish
       - uses: dtolnay/rust-toolchain@stable
-        if: steps.sync.outputs.changed == 'true' || steps.release.outputs.exists != 'true' || github.event_name != 'schedule'
+        if: steps.release.outputs.build == 'true'
         with:
           components: rustfmt, clippy
       - name: Validate and build without installation
-        if: steps.sync.outputs.changed == 'true' || steps.release.outputs.exists != 'true' || github.event_name != 'schedule'
+        if: steps.release.outputs.build == 'true'
         run: |
           cargo fmt --all -- --check
           cargo clippy --workspace --all-targets -- -D warnings
@@ -74,7 +93,7 @@ jobs:
           # A concurrent human push stops this run; never force or publish an unpushed build.
           git push origin HEAD:main
       - name: Publish the tested Linux x86_64 build
-        if: steps.sync.outputs.changed == 'true' || steps.release.outputs.exists != 'true' || github.event_name != 'schedule'
+        if: steps.release.outputs.build == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

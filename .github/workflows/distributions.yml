@@ -106,12 +106,19 @@ jobs:
             bin/helixforge remove ${{ matrix.removable }} --dry-run | tee removal.txt
             grep -q '^1. Remove ' removal.txt
             yes | bin/helixforge remove ${{ matrix.removable }} --yes
-            ! command -v ${{ matrix.program }}
+            # A bare "! command" never fails a step under set -e; test it explicitly.
+            if command -v ${{ matrix.program }}; then
+              echo "${{ matrix.program }} is still installed after removal" >&2
+              exit 1
+            fi
             bin/helixforge remove ${{ matrix.removable }} --dry-run | grep -q 'not installed'
           else
             # Arch takes these from the AUR; without paru or yay the run stops before it starts.
             bin/helixforge plan tenacity | grep -q -- '-S --needed tenacity'
-            ! bin/helixforge run tenacity --yes
+            if bin/helixforge run tenacity --yes; then
+              echo "the AUR route ran without paru or yay" >&2
+              exit 1
+            fi
             bin/helixforge remove tenacity --dry-run | grep -q 'not installed'
           fi
       - name: Script and native entries

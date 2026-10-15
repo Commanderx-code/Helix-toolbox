@@ -16,6 +16,7 @@ package installs happen only in the Distributions workflow's containers.
 | Program in a terminal | `apps/helixforge/tests/terminal.rs` | the built `helixforge` driven through a pseudo-terminal, below |
 | Installer tests | `tests/installers/` | the Commander installers against stand-in commands and temporary homes |
 | Shellcheck | `scripts/verify.sh` | every shared helper and installer, with errors gated for the general catalog |
+| Workflow lint | `scripts/verify.sh` | actionlint over every workflow, including the shell in each step |
 | Source render | `scripts/verify.sh` | rendering the dotfiles and Myfish exports again changes no catalog file |
 | Distributions | `.github/workflows/distributions.yml` | Arch, Debian, Ubuntu and Fedora containers with real package installs and removals |
 
