@@ -284,14 +284,19 @@ fn add_entry<'a>(
 }
 
 /// The first of the entry's paths that is a Home Manager symlink, or a child
-/// of one, with `~` expanded. Dangling links count: the store path may be
-/// garbage-collected while the link stays.
+/// of one, with `~` expanded to the user's home.
 pub fn managed_path(writes: &[String]) -> Option<PathBuf> {
     let home = std::env::var_os("HOME").map(PathBuf::from)?;
+    managed_path_in(&home, writes)
+}
+
+/// `managed_path` with an explicit home directory. Dangling links count: the
+/// store path may be garbage-collected while the link stays.
+pub fn managed_path_in(home: &Path, writes: &[String]) -> Option<PathBuf> {
     for written in writes {
         let path = match written.strip_prefix("~/") {
             Some(rest) => home.join(rest),
-            None if written == "~" => home.clone(),
+            None if written == "~" => home.to_path_buf(),
             None => PathBuf::from(written),
         };
         for candidate in path.ancestors() {
@@ -832,16 +837,31 @@ mod tests {
         std::os::unix::fs::symlink("/nix/store/abc-nvim", home.path().join(".config/nvim"))
             .unwrap();
         std::fs::create_dir_all(home.path().join(".config/ghostty")).unwrap();
-        // SAFETY: the test process is the only reader of HOME here.
-        unsafe { std::env::set_var("HOME", home.path()) };
         assert_eq!(
-            managed_path(&["~/.config/nvim/init.lua".to_string()]),
+            managed_path_in(home.path(), &["~/.config/nvim/init.lua".to_string()]),
             Some(home.path().join(".config/nvim"))
         );
         assert_eq!(
-            managed_path(&["~/.config/ghostty/config".to_string()]),
+            managed_path_in(home.path(), &["~/.config/ghostty/config".to_string()]),
             None
         );
+        // Planning reads HOME; an unmanaged absolute path outside it is fine.
+        let mut free = entry(
+            "free",
+            "FM",
+            Action::Command {
+                line: "true".into(),
+            },
+        );
+        free.writes = vec![
+            home.path()
+                .join(".config/ghostty")
+                .to_string_lossy()
+                .into_owned(),
+        ];
+        let planned = plan([&free], &platform(None), &none).unwrap();
+        assert_eq!(planned.steps.len(), 1);
+        assert!(planned.blocked.is_empty());
         let mut managed = entry(
             "nvim",
             "FM",
@@ -849,7 +869,12 @@ mod tests {
                 line: "true".into(),
             },
         );
-        managed.writes = vec!["~/.config/nvim".into()];
+        managed.writes = vec![
+            home.path()
+                .join(".config/nvim")
+                .to_string_lossy()
+                .into_owned(),
+        ];
         let planned = plan([&managed], &platform(None), &none).unwrap();
         assert!(planned.steps.is_empty());
         assert!(planned.blocked[0].contains("Home Manager"));
