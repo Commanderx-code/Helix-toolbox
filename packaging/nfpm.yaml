@@ -71,6 +71,10 @@ contents:
     dst: /usr/share/doc/helixforge/JSON.md
   - src: docs/INSTALL.md
     dst: /usr/share/doc/helixforge/INSTALL.md
+  - src: docs/GUIDE.md
+    dst: /usr/share/doc/helixforge/GUIDE.md
+  - src: CHANGELOG.md
+    dst: /usr/share/doc/helixforge/CHANGELOG.md
   - src: LICENSE
     dst: /usr/share/doc/helixforge/copyright
     packager: deb

@@ -10,9 +10,12 @@ inside the application after a confirmation, with a record of every run. It is
 written in Rust and built so a graphical interface can share the same engine
 later.
 
-> Milestones 1 to 4 are complete: HelixForge carries every entry of Commander
-> Toolbox, which it replaces, and is tested on Arch, Debian, Ubuntu and
-> Fedora. See `docs/ROADMAP.md` for what comes next.
+> HelixForge is in beta (v0.7): it carries every entry of Commander Toolbox,
+> which it replaces, and is tested on Arch, Debian, Ubuntu and Fedora. The
+> [user guide](docs/GUIDE.md) walks through it, the
+> [beta testing guide](docs/BETA.md) says how to help before v1.0, and the
+> [changelog](CHANGELOG.md) lists what each release brought. See
+> `docs/ROADMAP.md` for what comes next.
 
 ## Run
 
@@ -191,6 +194,7 @@ helixforge restore <backup>           # put one back, keeping the current file
 helixforge history                    # recent runs
 helixforge docgen docs/walkthrough.md # the catalog as Markdown
 helixforge status --json              # any reading command, or a --dry-run plan, as JSON
+helixforge report                     # what a bug report needs, to paste into an issue
 ```
 
 `--json` prints one JSON document for other programs instead of text; it

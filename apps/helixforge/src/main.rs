@@ -4,6 +4,7 @@
 mod docgen;
 mod json;
 mod logging;
+mod report;
 mod tui;
 
 use anyhow::{Context, Result, bail};
@@ -182,6 +183,14 @@ enum Command {
         #[arg(long, default_value_t = 20)]
         limit: usize,
     },
+    /// Print what a bug report needs, to paste into an issue: version, how
+    /// it was installed, the system, terminal, settings, recent runs and the
+    /// health checks. It only reads, and shows the home directory as ~.
+    Report {
+        /// Leave out the health checks, which take a few seconds.
+        #[arg(long)]
+        no_checks: bool,
+    },
     /// Write the catalog walkthrough as Markdown.
     Docgen { file: PathBuf },
     /// Print shell completions: helixforge completions fish >
@@ -277,7 +286,7 @@ fn main() -> Result<()> {
             if as_json =>
         {
             bail!(
-                "--json is for system, list, search, info, status, plan, history, updates, doctor, backups and profile list, and for --dry-run plans"
+                "--json is for system, list, search, info, status, plan, history, updates, doctor, backups, report and profile list, and for --dry-run plans"
             )
         }
         Command::Tui(args) => {
@@ -821,6 +830,15 @@ fn main() -> Result<()> {
                         .map(|log| format!(" | log {}", log.display()))
                         .unwrap_or_default()
                 );
+            }
+            Ok(())
+        }
+        Command::Report { no_checks } => {
+            let found = report::gather(&platform, !no_checks);
+            if as_json {
+                json::print("report", found);
+            } else {
+                print!("{}", report::markdown(&found));
             }
             Ok(())
         }

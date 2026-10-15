@@ -395,7 +395,7 @@ fn lock_age(system: &dyn System, lock: &Path, now: u64) -> Option<String> {
 }
 
 /// A UTC date, YYYY-MM-DD.
-fn date(seconds: u64) -> String {
+pub fn date(seconds: u64) -> String {
     // Days to a civil date (Howard Hinnant's algorithm).
     let days = (seconds / 86_400) as i64 + 719_468;
     let era = days.div_euclid(146_097);

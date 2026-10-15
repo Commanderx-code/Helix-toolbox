@@ -30,6 +30,8 @@ emulator and types keys. It checks:
 - pinning an entry, `favourites.toml`, and the entry under Favourites after a
   restart
 - the Updates screen between the catalog areas and History
+- completions for bash, zsh and fish, and the manual pages, naming the
+  commands and leaving out hidden ones
 - `--json` from list, search, info, plan, a dry run, history, profile list
   and system parsing as JSON with schema 1, and a real run or `docgen`
   refused with it

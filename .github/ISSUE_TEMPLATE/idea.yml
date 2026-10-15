@@ -1,0 +1,21 @@
+name: An idea or a missing entry
+description: Something HelixForge could install, configure, check or do better.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What you would like HelixForge to do, and what it would help with.
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: For a new entry, the package names on each distribution, its Flatpak id, or the official install instructions.
+  - type: input
+    id: distribution
+    attributes:
+      label: Your distribution
+      placeholder: Garuda Linux, Ubuntu 24.04, Fedora 43…

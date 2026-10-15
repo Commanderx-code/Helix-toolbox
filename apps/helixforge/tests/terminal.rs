@@ -652,6 +652,9 @@ fn the_command_line_prints_json_for_other_programs() {
         serde_json::json!([])
     );
     assert!(document(&["system"])["data"]["distribution"]["id"].is_string());
+    let report = document(&["report", "--no-checks"]);
+    assert_eq!(report["data"]["installed_from"], "source build");
+    assert_eq!(report["data"]["health_checks"], serde_json::Value::Null);
 
     // Changing anything is refused, before anything runs.
     let refused = helixforge(&["run", "marker", "--yes"]);

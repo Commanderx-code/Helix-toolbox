@@ -7,9 +7,9 @@
 | v0.2.0 | Smart application detection, ownership and installed-state accuracy | status, updates, package identity (done) |
 | v0.3.0 | Dependency and conflict handling, more robust installation planning | 2 (dependencies and conflicts), 8 (installation queue) (done) |
 | v0.4.0 | Unified backup and recovery, enhanced HELIX Doctor | 3 (backup and recovery center), 5 (HELIX Doctor 2.0) (done) |
-| v0.5.0 | Workstation profiles, favourites and search | 4 (profiles 2.0), 7 (search and favourites) |
-| v0.6.0 | Unified update overview and JSON command line | 6 (update manager), 9 (JSON output) |
-| v0.7.0 | Packaging, usability, documentation and beta testing | 10 (native packaging) |
+| v0.5.0 | Workstation profiles, favourites and search | 4 (profiles 2.0), 7 (search and favourites) (done) |
+| v0.6.0 | Unified update overview and JSON command line | 6 (update manager), 9 (JSON output) (done) |
+| v0.7.0 | Packaging, usability, documentation and beta testing | 10 (native packaging) (done) |
 | v1.0.0 | Stable, validated public TUI release | |
 
 The items:
@@ -182,7 +182,7 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] The Install Plan screen keeps its plan for a few seconds and drops it
       after a run, since planning now asks the package manager
 
-## v0.7.0: packaging, usability, documentation and beta testing
+## v0.7.0: packaging, usability, documentation and beta testing (done)
 
 - [x] Native packaging (item 10): an Arch package, a Debian package and an
       RPM from each tested release build, made with nfpm by
@@ -191,8 +191,14 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       Arch, Debian, Ubuntu and Fedora containers; SHA-256 sums and signed
       build provenance attestations for every published file, with
       verification instructions in docs/INSTALL.md
-- [ ] ARM64 builds
-- [ ] Usability, documentation and beta testing
+- [x] `helixforge report`: version, how it was installed, the system,
+      tools, terminal, settings, recent runs and health checks, for an
+      issue, with the home folder shown as `~`; `--json` too
+- [x] Issue forms for problems and ideas, asking for the report
+- [x] A user guide (docs/GUIDE.md), a beta testing guide (docs/BETA.md) and
+      a changelog
+- [ ] ARM64 builds: moved to after v1.0, when there is a tester with an
+      ARM64 machine
 
 ## v0.6.0: unified update overview and JSON command line (done)
 

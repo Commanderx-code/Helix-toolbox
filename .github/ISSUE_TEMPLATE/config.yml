@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Beta testing guide
+    url: https://github.com/Commanderx-code/Helix-Forge/blob/main/docs/BETA.md
+    about: What to test, how to test it safely, and what a useful report has.

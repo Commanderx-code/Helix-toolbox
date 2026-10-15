@@ -248,6 +248,8 @@ jobs:
           helixforge --version | grep -qE '^helixforge [0-9]+\.[0-9]+\.[0-9]+$'
           helixforge list --json | python3 -c 'import json, sys; assert json.load(sys.stdin)["schema"] == 1'
           helixforge system | grep -q "(${{ matrix.family }} family)"
+          helixforge report --no-checks | tee report.txt
+          grep -q '^- Installed from: package$' report.txt
           # The images leave out manual pages and documentation, so these are
           # checked in the package's own file list.
           for file in /usr/bin/helixforge /usr/share/man/man1/helixforge.1.gz \
