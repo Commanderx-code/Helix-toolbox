@@ -8,9 +8,9 @@ inside the application after a confirmation, with a record of every run. It is
 written in Rust and built so a graphical interface can share the same engine
 later.
 
-> Milestones 1 to 3 are complete and the whole catalog of the previous
-> toolbox has come across: 230 entries. See `docs/ROADMAP.md` for what is
-> left before the previous toolbox is retired.
+> Milestones 1 to 4 are complete: HelixForge carries every entry of Commander
+> Toolbox, which it replaces, and is tested on Arch, Debian, Ubuntu and
+> Fedora. See `docs/ROADMAP.md` for what comes next.
 
 ## Run
 
@@ -153,8 +153,8 @@ History lives in `~/.local/state/helixforge/history.jsonl` with saved output
 and the tracing log under `logs/` beside it; `XDG_STATE_HOME` is honoured and
 `HELIXFORGE_LOG` sets the log level.
 
-The previous toolbox stays the stable way to run the entries that have not
-come across yet; [docs/MIGRATION.md](docs/MIGRATION.md) tracks each one.
+HelixForge replaces Commander Toolbox, now archived;
+[docs/MIGRATION.md](docs/MIGRATION.md) records where each of its entries went.
 Entries from the dotfiles and Myfish repositories follow those repositories
 automatically; [docs/SOURCE-SYNC.md](docs/SOURCE-SYNC.md) describes how, and
 how a release is published from every tested revision.

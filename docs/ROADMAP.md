@@ -39,15 +39,20 @@
 - [x] Release workflow (Linux x86_64 build with a checksum) and `start.sh`
 - [x] First release published from the workflow
 
-## Milestone 4: feature parity
+## Milestone 4: feature parity (done)
 
 - [x] Bring the general catalog across: 177 entries, scripts unchanged
 - [x] Every carried-over script parses, every entry names an existing script,
       and the catalog gates shellcheck errors
 - [x] The migration matrix is all "done" (two entries dropped on purpose)
-- [ ] Distribution checks in disposable VMs (Debian, Ubuntu, Fedora, Arch)
-- [ ] Turn plain package installs into data-only package entries
-- [ ] Retire the Commander Toolbox as the stable version
+- [x] Distribution checks: the Distributions workflow runs HelixForge in Arch,
+      Debian, Ubuntu and Fedora containers on every push and weekly, with real
+      package installs and removals (containers stand in for virtual machines;
+      boot, login-screen and desktop entries still need a real machine)
+- [x] Turn plain package installs into data-only package entries: 38 of them,
+      with AUR and Flatpak routes and removal
+- [x] Retire Commander Toolbox: the dotfiles `toolbox` command opens
+      HelixForge, and the old repository is archived
 
 ## Milestone 5: graphical interface
 
