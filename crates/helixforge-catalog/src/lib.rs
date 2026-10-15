@@ -71,7 +71,10 @@ fn validate(tool: &Tool) -> Result<(), CatalogError> {
         tool.install.packages.fedora.as_deref(),
     ];
     if entries.iter().all(Option::is_none)
-        || entries.into_iter().flatten().any(|name| !valid_package_name(name))
+        || entries
+            .into_iter()
+            .flatten()
+            .any(|name| !valid_package_name(name))
     {
         return Err(CatalogError::Invalid(format!(
             "invalid package mapping: {}",

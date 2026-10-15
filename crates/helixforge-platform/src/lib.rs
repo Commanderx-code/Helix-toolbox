@@ -40,7 +40,12 @@ impl LinuxInfo {
                 match key.trim() {
                     "ID" => id = val.to_ascii_lowercase(),
                     "PRETTY_NAME" => pretty_name = val.to_owned(),
-                    "ID_LIKE" => id_like = val.split_whitespace().map(str::to_ascii_lowercase).collect(),
+                    "ID_LIKE" => {
+                        id_like = val
+                            .split_whitespace()
+                            .map(str::to_ascii_lowercase)
+                            .collect()
+                    }
                     _ => {}
                 }
             }
@@ -63,7 +68,12 @@ impl LinuxInfo {
         } else {
             None
         };
-        Ok(Self { id, pretty_name, id_like, manager })
+        Ok(Self {
+            id,
+            pretty_name,
+            id_like,
+            manager,
+        })
     }
 }
 
@@ -97,7 +107,9 @@ mod tests {
 
     #[test]
     fn garuda_maps_to_arch() {
-        let info = LinuxInfo::from_os_release("ID=garuda\nID_LIKE=arch\nPRETTY_NAME=\"Garuda Linux\"\n").unwrap();
+        let info =
+            LinuxInfo::from_os_release("ID=garuda\nID_LIKE=arch\nPRETTY_NAME=\"Garuda Linux\"\n")
+                .unwrap();
         assert_eq!(info.manager, Some(PackageManager::Arch));
         assert_eq!(info.pretty_name, "Garuda Linux");
     }

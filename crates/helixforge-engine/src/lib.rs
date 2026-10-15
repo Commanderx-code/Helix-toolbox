@@ -95,7 +95,10 @@ pub fn plan_install(tool: &Tool, platform: &LinuxInfo) -> Result<PlanResult, Eng
         tool_name: tool.name.clone(),
         package: package.into(),
         manager,
-        command: CommandSpec { program: "sudo".into(), args },
+        command: CommandSpec {
+            program: "sudo".into(),
+            args,
+        },
     }))
 }
 
@@ -107,9 +110,7 @@ pub struct ProcessRunner;
 
 impl Runner for ProcessRunner {
     fn run(&self, command: &CommandSpec) -> Result<ExitStatus, std::io::Error> {
-        Command::new(&command.program)
-            .args(&command.args)
-            .status() // Inherits terminal stdin/stdout/stderr for sudo and package prompts.
+        Command::new(&command.program).args(&command.args).status() // Inherits terminal stdin/stdout/stderr for sudo and package prompts.
     }
 }
 
@@ -135,7 +136,10 @@ pub fn execute_with<R: Runner>(plan: &Plan, runner: &R) -> Result<(), EngineErro
     }
     let status = result?;
     if !status.success() {
-        return Err(EngineError::NonZeroExit(plan.command.program.clone(), status));
+        return Err(EngineError::NonZeroExit(
+            plan.command.program.clone(),
+            status,
+        ));
     }
     Ok(())
 }
@@ -211,7 +215,9 @@ mod tests {
             name: "Sample".into(),
             description: "Test".into(),
             category: "Test".into(),
-            detect: Detect { binary: "helixforge-nonexistent-binary-12345".into() },
+            detect: Detect {
+                binary: "helixforge-nonexistent-binary-12345".into(),
+            },
             install: Install {
                 kind: "package".into(),
                 packages: PackageNames {
@@ -224,13 +230,20 @@ mod tests {
     }
 
     fn platform(manager: PackageManager) -> LinuxInfo {
-        LinuxInfo { id: "test".into(), pretty_name: "Test Linux".into(), id_like: vec![], manager: Some(manager) }
+        LinuxInfo {
+            id: "test".into(),
+            pretty_name: "Test Linux".into(),
+            id_like: vec![],
+            manager: Some(manager),
+        }
     }
 
     #[test]
     fn arch_plan_is_structured() {
         let plan = plan_install(&sample_tool(), &platform(PackageManager::Arch)).unwrap();
-        let PlanResult::Ready(plan) = plan else { panic!("expected ready"); };
+        let PlanResult::Ready(plan) = plan else {
+            panic!("expected ready");
+        };
         assert_eq!(plan.command.program, "sudo");
         assert_eq!(plan.command.args, ["pacman", "-S", "--needed", "sample"]);
     }
@@ -238,10 +251,14 @@ mod tests {
     #[test]
     fn apt_and_dnf_use_native_managers() {
         for (manager, expected) in [
-            (PackageManager::Debian, vec!["apt-get", "install", "sample-deb"]),
+            (
+                PackageManager::Debian,
+                vec!["apt-get", "install", "sample-deb"],
+            ),
             (PackageManager::Fedora, vec!["dnf", "install", "sample-rpm"]),
         ] {
-            let PlanResult::Ready(plan) = plan_install(&sample_tool(), &platform(manager)).unwrap() else {
+            let PlanResult::Ready(plan) = plan_install(&sample_tool(), &platform(manager)).unwrap()
+            else {
                 panic!("expected ready");
             };
             assert_eq!(plan.command.args, expected);
@@ -252,13 +269,19 @@ mod tests {
     fn untrusted_package_flags_are_rejected() {
         let mut tool = sample_tool();
         tool.install.packages.arch = Some("--overwrite".into());
-        assert!(matches!(plan_install(&tool, &platform(PackageManager::Arch)), Err(EngineError::InvalidPackage(_))));
+        assert!(matches!(
+            plan_install(&tool, &platform(PackageManager::Arch)),
+            Err(EngineError::InvalidPackage(_))
+        ));
     }
 
     #[test]
     fn unsupported_os_cannot_plan_install() {
         let mut info = platform(PackageManager::Arch);
         info.manager = None;
-        assert!(matches!(plan_install(&sample_tool(), &info), Err(EngineError::UnsupportedPlatform)));
+        assert!(matches!(
+            plan_install(&sample_tool(), &info),
+            Err(EngineError::UnsupportedPlatform)
+        ));
     }
 }
