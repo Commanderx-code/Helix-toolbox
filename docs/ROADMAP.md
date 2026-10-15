@@ -132,3 +132,4 @@ Verification asks the package manager as well, so it is not misled; the
 
 - Tauri 2 frontend on the same crates, with an embedded terminal panel for
   interactive entries and an event stream from the engine
+- Window and launcher icons made from `assets/icon.png`

@@ -1,6 +1,10 @@
-# ⬡ HELIXFORGE
+<p align="center">
+  <img src="assets/logo.png" width="220" alt="HelixForge logo">
+</p>
 
-**BUILD • CONFIGURE • OPTIMIZE**
+<h1 align="center">HELIXFORGE</h1>
+
+<p align="center"><strong>BUILD • CONFIGURE • OPTIMIZE</strong></p>
 
 HelixForge is a Linux setup menu for the terminal: a catalog of installers,
 configurations and maintenance entries organised in tabs and groups, each run
@@ -174,6 +178,7 @@ scripts/installers/         the scripts by id: commander/ from the previous tool
 tests/installers/           the installers' Python tests, run against fixtures
 tests/fixtures/             a small catalog for the end-to-end tests
 docs/                       architecture, roadmap, security, migration matrix, walkthrough
+assets/                     the logo (logo.png, transparent) and the app icon (icon.png)
 ```
 
 History lives in `~/.local/state/helixforge/history.jsonl` with saved output
