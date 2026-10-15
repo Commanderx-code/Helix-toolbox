@@ -51,7 +51,7 @@ An entry's `Action` is one of:
 
 | Action | Becomes |
 | :--- | :--- |
-| `Package` | `sudo <manager> install <package>`, or a note when its binary is already on the PATH |
+| `Package` | its sources in order: `sudo <manager> install <package>`, the AUR helper on Arch, Flathub; or a note when it is already installed |
 | `Script` | `cd <its directory> && <interpreter> <script>`; interactive by default |
 | `Command` | `sh -e -c '<line>'` |
 | `Nix` | `nix profile install <installable>` or `home-manager switch --flake <flake>` |
@@ -73,12 +73,24 @@ entries ──plan──▶ Plan ──shell_program──▶ sh program ──�
                                                                  │
                                                           Outcome: Success | Failed{code} | Interrupted | CouldNotStart
                                                                  │
+                                                          verify() on success ──▶ Finished { outcome, checks }
+                                                                 │
                                                           history::record
 ```
 
 Steps run in order and stop at the first failure. An exit status of 128 or
 more, or a kill from the interface, is recorded as interrupted, never as
-success. Native steps re-enter HelixForge through its hidden `native`
+success.
+
+Inside a package step the program tries each `Source` until one exits 0 and
+leaves the package installed: the program on the PATH, or the source's
+`Probe` (`pacman -Q`, `dpkg-query`, `rpm -q`, `apk info -e`, `xbps-query`, or
+the Flatpak's directory). A source whose tools are missing is skipped; an
+exit status of 128 or more ends the run. When the program succeeds,
+`verify()` asks the same questions from Rust, and the `Finished` result,
+outcome plus checks, is what the history records. A package step whose first
+source cannot run does not stop the run from starting when another source
+can. Native steps re-enter HelixForge through its hidden `native`
 subcommand, so even Rust-implemented operations go through the same program
 and the same terminal, and will through the graphical interface's terminal
 panel too.

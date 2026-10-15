@@ -107,6 +107,27 @@ Remaining before the next phase:
   `curl … | sh -s -- run <entry>` could not be confirmed. It asks on the
   terminal now.
 
+## Install verification and fallback sources (done)
+
+- [x] After a run, every package install and removal is checked: the program
+      on the PATH, the package manager's list (`pacman -Q`, `dpkg-query`,
+      `rpm -q`, `apk info -e`, `xbps-query`) or the Flatpak's directory. The
+      running window, the command line and the history say `verified`; a run
+      that succeeded without its package is recorded as failed
+- [x] Package entries fall back to the next source, the AUR on Arch and then
+      Flathub, when one fails or leaves nothing installed; a source whose tool
+      is missing is skipped, and an interrupted command stops the run
+- [x] Tests: generated programs against harmless commands, the menu and the
+      command line against stand-in package managers, and the Distributions
+      workflow with each real package manager failing over to a stand-in
+      Flathub
+
+Found while doing it: seven package entries (Meld, Slack, Zoom, ZapZap, WPS
+Office, Waterfox, Zen Browser) give their Flatpak ID as `binary`, so a
+native or AUR install of them is not seen as installed before a run.
+Verification asks the package manager as well, so it is not misled; the
+`binary` values themselves are still to be corrected.
+
 ## Milestone 5: graphical interface
 
 - Tauri 2 frontend on the same crates, with an embedded terminal panel for

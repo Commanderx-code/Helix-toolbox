@@ -18,7 +18,7 @@ package installs happen only in the Distributions workflow's containers.
 | Shellcheck | `scripts/verify.sh` | every shared helper and installer, with errors gated for the general catalog |
 | Workflow lint | `scripts/verify.sh` | actionlint over every workflow, including the shell in each step |
 | Source render | `scripts/verify.sh` | rendering the dotfiles and Myfish exports again changes no catalog file |
-| Distributions | `.github/workflows/distributions.yml` | Arch, Debian, Ubuntu and Fedora containers with real package installs and removals |
+| Distributions | `.github/workflows/distributions.yml` | Arch, Debian, Ubuntu and Fedora containers with real package installs and removals, each verified, and the real package manager failing over to a stand-in Flathub |
 
 ## The program in a terminal
 
@@ -49,6 +49,11 @@ emulator and types keys. It checks:
   it once as not finished; killed after a run ended: its real result
 - the command line's confirmation asked on the terminal when standard input
   is a pipe, and a wrong word cancelling
+- package entries from `tests/fixtures/packages`, against stand-in `sudo`,
+  package managers and `flatpak` on the PATH: the distribution's package
+  failing over to Flathub, `Verified:` lines and `exit 0, verified` in the
+  history, removal verified, a source that installs nothing not being
+  trusted, and the running window's `FINISHED · VERIFIED`
 
 The fixture catalog's entries:
 
@@ -61,6 +66,13 @@ The fixture catalog's entries:
 | greeter | asks for a name and greets it |
 | sleeper | records a child's process id and sleeps |
 | stubborn | the same, ignoring the hangup |
+
+`tests/fixtures/packages` holds two package entries whose distribution
+package does not exist: **fallback-sample**, which the stand-in `flatpak`
+installs, and **missing-sample**, which it only pretends to install. The
+engine's unit tests also run generated package programs against harmless
+commands: falling back, skipping a source whose tool is missing, stopping on
+an interrupted source, and removals that leave the package behind.
 
 ## Release checks
 
@@ -84,6 +96,7 @@ chmod +x helixforge-linux-x86_64
 
 - Boot, login-screen and desktop entries (GRUB, Limine, Plymouth, SDDM)
   need a real machine or a virtual machine; containers cannot boot them.
-- Flatpak installs, Nix entries and `sudo` password prompts are not run by
-  any automated test.
+- Real Flatpak installs, Nix entries and `sudo` password prompts are not
+  run by any automated test; Flathub fallback runs against a stand-in
+  `flatpak`.
 - The release is built for Linux x86_64 with glibc 2.34 or later only.

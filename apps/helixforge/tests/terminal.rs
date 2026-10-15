@@ -1,8 +1,9 @@
 //! Drive the real `helixforge` program in a pseudo-terminal against the
 //! fixture catalog: keyboard navigation, search, the install plan, the
 //! confirmation, typing into a running entry, stopping one with Ctrl-C, the
-//! history screen and terminal resizing. Nothing outside temporary
-//! directories is touched.
+//! history screen and terminal resizing; and package entries falling back and
+//! being verified, against stand-in package managers. Nothing outside
+//! temporary directories is touched.
 
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use std::{
@@ -827,6 +828,164 @@ fn the_theme_and_icon_choices_are_remembered() {
     tui.keys(BACK_TAB);
     tui.wait_for(&["solid", "plain"]);
     assert!(!tui.contents().contains("\u{f0e4}"));
+    tui.keys("q");
+    assert_eq!(tui.wait_for_exit(), 0);
+}
+
+fn package_fixtures() -> PathBuf {
+    fixtures().join("packages")
+}
+
+/// Stand-ins for sudo, every package manager and flatpak, written to `bin`;
+/// returns a PATH that finds them first. The stand-in sudo runs only the
+/// stand-ins beside it, so nothing real is reached. Package managers find no
+/// package; flatpak installs into `$HOME/.local/share/flatpak`, except for
+/// the Missing sample, which it only pretends to install.
+fn stand_in_tools(bin: &Path) -> String {
+    fs::create_dir_all(bin).unwrap();
+    let mut tools = vec![
+        (
+            "sudo",
+            "#!/bin/sh\ntool=$1\nshift\nexec \"$(dirname \"$0\")/$tool\" \"$@\"\n".to_string(),
+        ),
+        (
+            "flatpak",
+            "#!/bin/sh\ncase $1 in\n  install) case $3 in *Missing*) ;; *) mkdir -p \"$HOME/.local/share/flatpak/app/$3\" ;; esac ;;\n  uninstall) rm -r \"$HOME/.local/share/flatpak/app/$2\" ;;\nesac\n"
+                .to_string(),
+        ),
+    ];
+    for manager in [
+        "pacman",
+        "apt-get",
+        "dnf",
+        "zypper",
+        "apk",
+        "xbps-install",
+        "xbps-query",
+        "eopkg",
+        "rpm",
+        "dpkg-query",
+    ] {
+        tools.push((
+            manager,
+            "#!/bin/sh\necho \"stand-in: no such package\" >&2\nexit 1\n".to_string(),
+        ));
+    }
+    for (name, text) in tools {
+        let path = bin.join(name);
+        fs::write(&path, text).unwrap();
+        fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    }
+    format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    )
+}
+
+#[test]
+fn package_entries_fall_back_and_are_verified_from_the_command_line() {
+    let home = tempfile::tempdir().unwrap();
+    let path = stand_in_tools(&home.path().join("bin"));
+    let helixforge = |args: &[&str]| {
+        let output = Command::new(PROGRAM)
+            .arg("--catalog-dir")
+            .arg(package_fixtures())
+            .args(args)
+            .env("PATH", &path)
+            .env("HOME", home.path())
+            .env("XDG_STATE_HOME", home.path().join("state"))
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        (
+            output.status.success(),
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
+    };
+
+    // The distribution's package fails, so Flathub is tried and checked.
+    let (ok, out, err) = helixforge(&["run", "fallback-sample", "--yes"]);
+    assert!(ok, "{out}\n{err}");
+    assert!(out.contains("failed (exit 1)"), "{out}");
+    assert!(out.contains("HelixForge: trying Flathub"), "{out}");
+    assert!(
+        out.contains(
+            "Verified: Fallback Sample: org.helixforge.FallbackSample is installed from Flathub"
+        ),
+        "{out}"
+    );
+    let (_, out, _) = helixforge(&["plan", "fallback-sample"]);
+    assert!(out.contains("already installed"), "{out}");
+
+    // Removal goes the way it was installed and checks it is gone.
+    let (ok, out, err) = helixforge(&["remove", "fallback-sample", "--yes"]);
+    assert!(ok, "{out}\n{err}");
+    assert!(
+        out.contains("Verified: Remove Fallback Sample: removed"),
+        "{out}"
+    );
+    let (_, out, _) = helixforge(&["remove", "fallback-sample", "--dry-run"]);
+    assert!(out.contains("not installed"), "{out}");
+
+    // A source that says it worked without installing anything is not trusted.
+    let (ok, out, err) = helixforge(&["run", "missing-sample", "--yes"]);
+    assert!(!ok);
+    assert!(
+        out.contains("HelixForge: Flathub finished, but Missing Sample is not installed"),
+        "{out}"
+    );
+    assert!(err.contains("exit 1"), "{err}");
+
+    let (_, history, _) = helixforge(&["history"]);
+    assert!(
+        history.contains("ok     | Fallback Sample | exit 0, verified"),
+        "{history}"
+    );
+    assert!(
+        history.contains("ok     | Remove Fallback Sample | exit 0, verified"),
+        "{history}"
+    );
+    assert!(
+        history.contains("failed | Missing Sample | exit 1"),
+        "{history}"
+    );
+}
+
+#[test]
+fn the_running_window_says_whether_a_package_was_verified() {
+    let home = tempfile::tempdir().unwrap();
+    let path = stand_in_tools(&home.path().join("bin"));
+    let mut command = CommandBuilder::new(PROGRAM);
+    command.args([
+        "--catalog-dir",
+        package_fixtures().to_str().unwrap(),
+        "tui",
+        "--bypass-root",
+    ]);
+    command.env("PATH", &path);
+    let mut tui = Terminal::spawn(command, home.path(), 40, 120);
+    tui.wait_for(&["SYSTEM READY"]);
+
+    tui.search("fallback");
+    tui.wait_for(&["Fallback Sample"]);
+    tui.keys(" ");
+    tui.keys(BACK_TAB);
+    tui.wait_for(&["Review planned changes", "Fallback Sample"]);
+    tui.keys("\r");
+    tui.wait_for(&["CONFIRM", "Fallback Sample"]);
+    tui.keys("y");
+    tui.wait_for(&["FINISHED · VERIFIED", "HelixForge: trying Flathub"]);
+    tui.keys("\r");
+    tui.wait_until("the running window to close", |screen| {
+        !screen.contains("FINISHED")
+    });
+    let history = fs::read_to_string(home.path().join("state/helixforge/history.jsonl")).unwrap();
+    assert!(
+        history.contains("\"result\":\"exit 0, verified\""),
+        "{history}"
+    );
     tui.keys("q");
     assert_eq!(tui.wait_for_exit(), 0);
 }

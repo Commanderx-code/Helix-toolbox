@@ -1,0 +1,10 @@
+name = "Missing Sample"
+description = "A package whose every source reports success without installing it. The tests run it against stand-in package managers."
+flags = "I"
+
+[package]
+binary = "helixforge-missing-sample"
+arch = "helixforge-no-such-package"
+debian = "helixforge-no-such-package"
+fedora = "helixforge-no-such-package"
+flatpak = "org.helixforge.MissingSample"

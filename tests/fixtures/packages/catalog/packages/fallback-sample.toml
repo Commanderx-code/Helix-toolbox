@@ -1,0 +1,11 @@
+name = "Fallback Sample"
+description = "A package no distribution has, with a Flathub fallback. The tests run it against stand-in package managers."
+flags = "I"
+
+[package]
+binary = "helixforge-fallback-sample"
+arch = "helixforge-no-such-package"
+debian = "helixforge-no-such-package"
+fedora = "helixforge-no-such-package"
+flatpak = "org.helixforge.FallbackSample"
+removable = true

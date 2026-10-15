@@ -2,7 +2,7 @@
 
 use super::{hints::Hint, theme::Theme};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use helixforge_engine::{Outcome, Plan, history, pty::Session, shell_program};
+use helixforge_engine::{Finished, Outcome, Plan, history, pty::Session, shell_program};
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
@@ -16,6 +16,9 @@ use tui_term::widget::PseudoTerminal;
 
 pub struct RunningView {
     session: Session,
+    plan: Plan,
+    /// The outcome with the checks of its package steps, once it ends.
+    finished: Option<Finished>,
     entries: Vec<(String, String)>,
     /// The history's marker for this run, until the record is written.
     pending: Option<history::Pending>,
@@ -38,6 +41,8 @@ impl RunningView {
             .ok();
         Ok(Self {
             session,
+            plan: plan.clone(),
+            finished: None,
             entries: plan.entries(),
             pending,
             recorded: false,
@@ -52,6 +57,18 @@ impl RunningView {
         self.session.is_finished()
     }
 
+    /// The finished run, checked once when the program ends.
+    fn finished(&mut self) -> Option<&Finished> {
+        if self.finished.is_none() && self.is_finished() {
+            let outcome = self
+                .session
+                .outcome()
+                .unwrap_or_else(|| Outcome::CouldNotStart("unknown".into()));
+            self.finished = Some(Finished::new(&self.plan, outcome));
+        }
+        self.finished.as_ref()
+    }
+
     /// True once after the program finishes, so the screen shows it even
     /// when no further output or key arrives.
     pub fn needs_redraw(&mut self) -> bool {
@@ -59,8 +76,10 @@ impl RunningView {
             self.finish_drawn = true;
             // The record waits for the window to close; until then the
             // marker keeps the outcome in case HelixForge stops first.
-            if let (Some(pending), Some(outcome)) = (&mut self.pending, self.session.outcome()) {
-                let _ = pending.ended(outcome.succeeded(), &outcome.describe());
+            if let Some(finished) = self.finished().cloned()
+                && let Some(pending) = &mut self.pending
+            {
+                let _ = pending.ended(finished.succeeded(), &finished.describe());
             }
             return true;
         }
@@ -74,21 +93,20 @@ impl RunningView {
             return;
         }
         self.recorded = true;
-        let outcome = self
-            .session
-            .outcome()
-            .unwrap_or_else(|| Outcome::CouldNotStart("unknown".into()));
-        tracing::info!(outcome = outcome.describe(), "run finished");
-        let mut result = outcome.describe();
+        let Some(finished) = self.finished().cloned() else {
+            return;
+        };
+        tracing::info!(outcome = finished.describe(), "run finished");
+        let mut result = finished.describe();
         let left = self.session.survivors();
         if left > 0 {
             result.push_str(&format!("; {left} process(es) left running"));
         }
         let written = match self.pending.take() {
-            Some(pending) => pending.finish(outcome.succeeded(), &result, self.log.clone()),
+            Some(pending) => pending.finish(finished.succeeded(), &result, self.log.clone()),
             None => history::record(
                 &self.entries,
-                outcome.succeeded(),
+                finished.succeeded(),
                 &result,
                 self.log.clone(),
             ),
@@ -105,19 +123,37 @@ impl RunningView {
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, theme: Theme) {
-        let (title, colour) = if self.is_finished() {
-            match self.session.outcome() {
-                Some(Outcome::Success) => (" FINISHED ".to_string(), theme.success()),
-                Some(Outcome::Interrupted) => (" INTERRUPTED ".to_string(), theme.failure()),
-                Some(outcome) => (
-                    format!(" FAILED ({}) ", outcome.describe()),
-                    theme.failure(),
-                ),
-                None => (" FAILED ".to_string(), theme.failure()),
+        let finished = self.finished().cloned();
+        let (title, colour) = match &finished {
+            Some(finished) if finished.verified() => {
+                (" FINISHED · VERIFIED ".to_string(), theme.success())
             }
-        } else {
-            (" RUNNING ".to_string(), theme.focused())
+            Some(finished) if finished.succeeded() => (" FINISHED ".to_string(), theme.success()),
+            Some(Finished {
+                outcome: Outcome::Success,
+                ..
+            }) => (" FINISHED · NOT VERIFIED ".to_string(), theme.failure()),
+            Some(Finished {
+                outcome: Outcome::Interrupted,
+                ..
+            }) => (" INTERRUPTED ".to_string(), theme.failure()),
+            Some(finished) => (
+                format!(" FAILED ({}) ", finished.outcome.describe()),
+                theme.failure(),
+            ),
+            None => (" RUNNING ".to_string(), theme.focused()),
         };
+        // What the checks found: the failures if any, else every pass.
+        let checks: Vec<&helixforge_engine::Check> = finished
+            .iter()
+            .flat_map(|finished| &finished.checks)
+            .collect();
+        let failed = checks.iter().any(|check| !check.passed);
+        let found: Vec<String> = checks
+            .iter()
+            .filter(|check| !failed || !check.passed)
+            .map(|check| format!("{}: {}", check.name, check.detail))
+            .collect();
         let left = if self.is_finished() && self.session.stop_requested() {
             self.session.survivors()
         } else {
@@ -128,7 +164,11 @@ impl RunningView {
         } else if self.is_finished() {
             match (&self.log, &self.problem) {
                 (_, Some(problem)) => format!(" {problem} "),
+                (None, None) if failed => format!(" {} ", found.join("; ")),
                 (Some(path), None) => format!(" Log saved to {} ", path.display()),
+                (None, None) if !found.is_empty() => {
+                    format!(" {} · Enter closes, l saves the log ", found.join("; "))
+                }
                 (None, None) => " Enter closes, l saves the log ".to_string(),
             }
         } else {

@@ -79,7 +79,7 @@ name = "Ardour"
 description = "A digital audio workstation."
 flags = "I"                      # what it does; g in the interface explains the codes
 
-[package]                        # one package per family, then the AUR, then Flathub
+[package]                        # tried in order: the family's package, the AUR, Flathub
 binary = "ardour"                # installed when this is on the PATH (or its Flatpak is)
 debian = "ardour"                # also arch, fedora, suse, alpine, void, solus
 fedora = "ardour"
@@ -144,6 +144,21 @@ whether any asks for your password, and the risk from the flags. The
 interface shows it in the confirmation; `helixforge plan` and `helixforge run
 --dry-run` print it. Every run is recorded with its outcome, including runs
 that failed or were interrupted.
+
+A package entry lists every source it has on this machine, in order: the
+distribution's package, the AUR on Arch, then Flathub. The plan shows the
+first with the others after it (`sudo pacman -S --needed meld  (else
+Flathub)`). When a source fails, or finishes without the package being
+installed, the run says so and tries the next one; a source whose tool is
+missing is skipped. A command stopped with `Ctrl-C` stops the run instead.
+
+After a run, HelixForge checks each package step: an install passes when the
+entry's program is on the PATH, its package manager lists the package, or
+its Flatpak is installed; a removal passes when the package is gone. The
+running window's title says `FINISHED · VERIFIED`, the command line prints a
+`Verified:` line for each package, and the history records `exit 0,
+verified`. A run whose program succeeded but whose package cannot be found
+is recorded as failed, with what was missing.
 
 ## Layout
 

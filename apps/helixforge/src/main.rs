@@ -268,9 +268,24 @@ fn confirm_and_run(
         bail!("cancelled; nothing was changed");
     }
     let this = std::env::current_exe().context("cannot find the HelixForge executable")?;
-    let outcome = execute(planned, &catalog.lib_dir(), &this, &mut InheritedRunner)?;
-    if !outcome.succeeded() {
-        bail!("the run stopped: {}", outcome.describe());
+    let finished = execute(planned, &catalog.lib_dir(), &this, &mut InheritedRunner)?;
+    if !finished.outcome.succeeded() {
+        bail!("the run stopped: {}", finished.outcome.describe());
+    }
+    for check in &finished.checks {
+        println!(
+            "{} {}: {}",
+            if check.passed {
+                "Verified:"
+            } else {
+                "Not verified:"
+            },
+            check.name,
+            check.detail
+        );
+    }
+    if !finished.succeeded() {
+        bail!("the run finished, but not everything it did could be verified");
     }
     Ok(())
 }
@@ -342,6 +357,9 @@ fn print_plan(planned: &Plan) {
     }
     for (index, step) in planned.steps.iter().enumerate() {
         println!("{}. {}\n   {}", index + 1, step.name(), step.display());
+        for fallback in step.fallbacks() {
+            println!("   {fallback}");
+        }
     }
     if !planned.is_empty() {
         println!(

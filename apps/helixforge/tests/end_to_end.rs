@@ -34,7 +34,7 @@ fn a_profile_plans_into_its_members_and_is_reviewed_through_a_mock() {
         Some(state.path()),
     )
     .unwrap();
-    assert_eq!(outcome, Outcome::Success);
+    assert_eq!(outcome.outcome, Outcome::Success);
     assert!(runner.programs[0].contains("marker.sh"));
     assert!(runner.programs[0].contains("'/opt/helixforge' 'native' 'system-report'"));
     let records = history::read_in(state.path(), 5).unwrap();
@@ -59,7 +59,7 @@ fn a_script_entry_runs_in_a_real_shell_with_the_helpers() {
         Some(out.path()),
     )
     .unwrap();
-    assert_eq!(outcome, Outcome::Success);
+    assert_eq!(outcome.outcome, Outcome::Success);
     let text = std::fs::read_to_string(&marker_file).unwrap();
     assert!(text.starts_with("marker from "));
     assert!(text.contains("scripts/installers"));
@@ -81,7 +81,7 @@ fn a_failing_entry_is_recorded_as_failed_with_its_status() {
         Some(state.path()),
     )
     .unwrap();
-    assert_eq!(outcome, Outcome::Failed { exit_code: 9 });
+    assert_eq!(outcome.outcome, Outcome::Failed { exit_code: 9 });
     let records = history::read_in(state.path(), 5).unwrap();
     assert!(!records[0].success);
     assert_eq!(records[0].result, "exit 9");

@@ -1622,7 +1622,10 @@ impl App {
             _ => match plan([entry], &self.platform, &|id| self.catalog.find(id)) {
                 Ok(planned) => {
                     let mut lines = planned.notes.clone();
-                    lines.extend(planned.steps.iter().map(|step| step.display()));
+                    for step in &planned.steps {
+                        lines.push(step.display());
+                        lines.extend(step.fallbacks());
+                    }
                     lines.join("\n")
                 }
                 Err(error) => error.to_string(),

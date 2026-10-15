@@ -20,6 +20,11 @@
   root. Package entries call `sudo` inside the run, where the prompt is
   visible. Scripts ask for `sudo` themselves through the shared helpers.
   Nothing stays elevated between runs.
+- **Fallback sources.** A package entry may be installed from a later
+  source (the AUR, then Flathub) when an earlier one fails. Every source is
+  in the plan before the confirmation, built from the same validated names,
+  and each one's own `sudo` prompt is visible; a wrong password lets the next
+  source ask again, and `Ctrl-C` stops the run rather than moving on.
 - **Review.** Every plan shows its steps, its risk level and whether it asks
   for a password. The interface asks `[Y]`; the command line asks for the
   word `RUN` unless `--yes` is given deliberately.
@@ -39,5 +44,10 @@
   contain whatever the program printed, which can include file names; typed
   passwords are not echoed by the terminal and so are not in them. The
   tracing log records plans and outcomes, not output.
-- **Not provided.** Rollback, package verification beyond the package
-  manager's own, and isolation of what an entry's script does once it runs.
+- **Verification.** After a run, package installs and removals are checked
+  against the PATH, the package manager's own list and Flatpak's directories.
+  The check reads; it changes nothing. It shows a package is present or gone,
+  not that the package is genuine or works.
+- **Not provided.** Rollback, verification of scripts, commands and Nix
+  entries beyond their exit status, and isolation of what an entry's script
+  does once it runs.

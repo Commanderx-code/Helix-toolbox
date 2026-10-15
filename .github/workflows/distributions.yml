@@ -90,12 +90,14 @@ jobs:
       - name: Real package installs through the engine
         run: |
           bin/helixforge plan htop
-          yes | bin/helixforge run htop ripgrep --yes
+          yes | bin/helixforge run htop ripgrep --yes | tee run.txt
           command -v htop
           command -v rg
+          grep -q '^Verified: htop: htop is on the PATH' run.txt
+          grep -q '^Verified: Ripgrep: rg is on the PATH' run.txt
           bin/helixforge plan developer-basics | tee plan.txt
           grep -q 'already installed (rg is on the PATH)' plan.txt
-          bin/helixforge history --limit 1 | grep -q 'ok'
+          bin/helixforge history --limit 1 | grep -q 'ok .*exit 0, verified'
       - name: Converted package entries, removal and the AUR route
         run: |
           yes | bin/helixforge run lynx --yes
@@ -105,7 +107,8 @@ jobs:
             command -v ${{ matrix.program }}
             bin/helixforge remove ${{ matrix.removable }} --dry-run | tee removal.txt
             grep -q '^1. Remove ' removal.txt
-            yes | bin/helixforge remove ${{ matrix.removable }} --yes
+            yes | bin/helixforge remove ${{ matrix.removable }} --yes | tee removed.txt
+            grep -q '^Verified: Remove .*: removed' removed.txt
             # A bare "! command" never fails a step under set -e; test it explicitly.
             # Forget the path bash remembered from the install check above, or
             # command -v reports the removed file.
@@ -116,7 +119,8 @@ jobs:
             fi
             bin/helixforge remove ${{ matrix.removable }} --dry-run | grep -q 'not installed'
           else
-            # Arch takes these from the AUR; without paru or yay the run stops before it starts.
+            # Arch takes these from the AUR, then Flathub; without paru, yay
+            # or flatpak the run stops before it starts.
             bin/helixforge plan tenacity | grep -q -- '-S --needed tenacity'
             if bin/helixforge run tenacity --yes; then
               echo "the AUR route ran without paru or yay" >&2
@@ -124,6 +128,36 @@ jobs:
             fi
             bin/helixforge remove tenacity --dry-run | grep -q 'not installed'
           fi
+      - name: Falling back to the next source, and verification
+        run: |
+          # The distribution's own package manager is real and finds no
+          # package for the fixture entries; flatpak is a stand-in, put
+          # where sudo's secure path finds it.
+          test ! -e /usr/bin/flatpak
+          cat > /usr/bin/flatpak <<'STANDIN'
+          #!/bin/sh
+          case $1 in
+            install) case $3 in *Missing*) ;; *) mkdir -p "/var/lib/flatpak/app/$3" ;; esac ;;
+            uninstall) rm -r "/var/lib/flatpak/app/$2" ;;
+          esac
+          STANDIN
+          chmod +x /usr/bin/flatpak
+          hf() { bin/helixforge --catalog-dir tests/fixtures/packages "$@"; }
+          yes | hf run fallback-sample --yes | tee fallback.txt
+          grep -q '^HelixForge: .* failed (exit [0-9]*)' fallback.txt
+          grep -q '^HelixForge: trying Flathub' fallback.txt
+          grep -q '^Verified: Fallback Sample: org.helixforge.FallbackSample is installed from Flathub' fallback.txt
+          hf plan fallback-sample | grep -q 'already installed'
+          yes | hf remove fallback-sample --yes | tee removal.txt
+          grep -q '^Verified: Remove Fallback Sample: removed' removal.txt
+          test ! -e /var/lib/flatpak/app/org.helixforge.FallbackSample
+          if yes | hf run missing-sample --yes > missing.txt; then
+            echo "an install that left nothing behind was trusted" >&2
+            exit 1
+          fi
+          grep -q '^HelixForge: Flathub finished, but Missing Sample is not installed' missing.txt
+          hf history --limit 1 | grep -q 'failed | Missing Sample | exit 1'
+          rm /usr/bin/flatpak
       - name: Script and native entries
         run: |
           bin/helixforge run system-report machine-summary --yes | tee report.txt
