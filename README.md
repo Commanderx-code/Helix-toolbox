@@ -128,9 +128,10 @@ action = "system-report"
 entries = ["git", "ripgrep", "fzf", "neovim"]
 ```
 
-Entries and groups can carry `order` to sort before their name, `multi_select
-= false` to keep them out of the queue, and `preconditions` that hide them on
-machines they do not apply to:
+Groups are listed before entries at every level. Entries and groups can carry
+`order` to sort before their name among their own kind, `multi_select = false`
+to keep them out of the queue, and `preconditions` that hide them on machines
+they do not apply to:
 
 ```toml
 [[preconditions]]

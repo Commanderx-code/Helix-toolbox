@@ -71,8 +71,8 @@ class GeneralCatalogTests(unittest.TestCase):
                     self.assertIn(match.group(2), known)
 
     def test_groups_beside_entries_are_placed_on_purpose(self):
-        # Items sort by order, then name, so a group without an order sank
-        # below every entry (Communication Apps, Web Browsers and others did).
+        # Groups come before entries, then sort by order and name; an order
+        # keeps the groups beside entries in a chosen sequence, not by name.
         for directory in (ROOT / 'catalog').rglob('*'):
             if not directory.is_dir():
                 continue

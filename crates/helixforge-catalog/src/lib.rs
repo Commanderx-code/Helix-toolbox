@@ -372,7 +372,8 @@ fn load_items(
     parent_multi_select: bool,
     ids: &mut HashSet<String>,
 ) -> Result<Vec<Item>, CatalogError> {
-    let mut found: Vec<(i64, String, Item)> = Vec::new();
+    // (0 for a group or 1 for an entry, order, name, item)
+    let mut found: Vec<(u8, i64, String, Item)> = Vec::new();
     let listing = fs::read_dir(directory)
         .map_err(|error| CatalogError::Io(directory.to_path_buf(), error))?;
     for child in listing {
@@ -400,6 +401,7 @@ fn load_items(
                 continue;
             }
             found.push((
+                0,
                 group.order.unwrap_or(i64::MAX),
                 group.name.clone(),
                 Item::Group(Group {
@@ -431,6 +433,7 @@ fn load_items(
                 return Err(CatalogError::Invalid(format!("duplicate entry id: {stem}")));
             }
             found.push((
+                1,
                 entry.order.unwrap_or(i64::MAX),
                 entry.name.clone(),
                 Item::Entry(Entry {
@@ -445,8 +448,9 @@ fn load_items(
             ));
         }
     }
-    found.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
-    Ok(found.into_iter().map(|(_, _, item)| item).collect())
+    // Groups first, then entries; each by order, then name.
+    found.sort_by(|a, b| (a.0, a.1, &a.2).cmp(&(b.0, b.1, &b.2)));
+    Ok(found.into_iter().map(|(_, _, _, item)| item).collect())
 }
 
 /// The entry's action; `None` when what it needs (a script's interpreter,
@@ -763,6 +767,16 @@ mod tests {
         );
         write(
             root,
+            "catalog/apps/extras/group.toml",
+            "name = \"Extras\"\norder = 9\n",
+        );
+        write(
+            root,
+            "catalog/apps/extras/later.toml",
+            "name = \"Later\"\n\n[command]\nline = \"echo later\"\n",
+        );
+        write(
+            root,
             "catalog/apps/zed.toml",
             "name = \"Zed\"\norder = 5\n\n[command]\nline = \"echo zed\"\n",
         );
@@ -790,7 +804,11 @@ mod tests {
         let catalog = Catalog::from_directory(directory.path(), true).unwrap();
         let tab = &catalog.tabs[0];
         let names: Vec<&str> = tab.items.iter().map(Item::name).collect();
-        assert_eq!(names, ["Tools", "Zed", "Report", "Basics", "Only here"]);
+        assert_eq!(
+            names,
+            ["Tools", "Extras", "Zed", "Report", "Basics", "Only here"],
+            "groups before entries, whatever their order"
+        );
         let Item::Group(tools) = &tab.items[0] else {
             panic!("expected a group");
         };
@@ -816,7 +834,7 @@ mod tests {
             catalog.find("hello").map(|entry| entry.name.as_str()),
             Some("Hello")
         );
-        assert_eq!(catalog.entries().len(), 7);
+        assert_eq!(catalog.entries().len(), 8);
         assert!(matches!(
             catalog.find("report").unwrap().action,
             Action::Native {
@@ -834,7 +852,7 @@ mod tests {
     fn unvalidated_loading_keeps_everything() {
         let directory = sample();
         let catalog = Catalog::from_directory(directory.path(), false).unwrap();
-        assert_eq!(catalog.entries().len(), 9);
+        assert_eq!(catalog.entries().len(), 10);
     }
 
     #[test]
