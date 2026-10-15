@@ -1,0 +1,103 @@
+name: Distributions
+
+# HelixForge in real distribution containers: detection, the visible catalog,
+# real package installs through the engine, script and native entries, and the
+# installer tests under each distribution's own /bin/sh.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --locked --release -p helixforge
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helixforge
+          path: target/release/helixforge
+
+  distribution:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: archlinux:latest
+            family: Arch
+            group: Arch
+          - image: debian:stable
+            family: Debian
+            group: Debian / Ubuntu
+          - image: ubuntu:24.04
+            family: Debian
+            group: Ubuntu
+          - image: fedora:latest
+            family: Fedora
+            group: Fedora
+    container: ${{ matrix.image }}
+    name: ${{ matrix.image }}
+    steps:
+      - name: Base tools
+        run: |
+          case "${{ matrix.family }}" in
+            Arch) pacman -Syu --noconfirm --needed sudo git python which ;;
+            Debian) apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y sudo git python3 curl ca-certificates ;;
+            Fedora) dnf install -y sudo git python3 which findutils ;;
+          esac
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: helixforge
+          path: bin
+      - name: Detection
+        run: |
+          chmod +x bin/helixforge
+          bin/helixforge system | tee system.txt
+          grep -q "Package manager: .*(${{ matrix.family }} family)" system.txt
+      - name: The catalog on this distribution
+        run: |
+          bin/helixforge list > visible.txt
+          bin/helixforge list --all > all.txt
+          visible=$(grep -vE '/$' visible.txt | grep -cE '^\s')
+          total=$(grep -vE '/$' all.txt | grep -cE '^\s')
+          echo "Visible entries: $visible of $total"
+          test "$total" -ge 230
+          test "$visible" -ge 100
+          grep -q "^    ${{ matrix.group }}/$" visible.txt
+      - name: Real package installs through the engine
+        run: |
+          bin/helixforge plan htop
+          yes | bin/helixforge run htop ripgrep --yes
+          command -v htop
+          command -v rg
+          bin/helixforge plan developer-basics | tee plan.txt
+          grep -q 'already installed (rg is on the PATH)' plan.txt
+          bin/helixforge history --limit 1 | grep -q 'ok'
+      - name: Script and native entries
+        run: |
+          bin/helixforge run system-report machine-summary --yes | tee report.txt
+          grep -q '^==> System Report (script)' report.txt
+          grep -q '^Distribution:' report.txt
+      - name: A failing run is recorded as failed
+        run: |
+          printf 'name = "Fail"\n\n[command]\nline = "exit 7"\n' > /dev/null
+          ! bin/helixforge run definitely-not-an-entry --yes
+      - name: Installer tests under this distribution's shell
+        run: |
+          ls -l /bin/sh
+          python3 -B -m unittest discover -s tests/installers -t tests/installers
