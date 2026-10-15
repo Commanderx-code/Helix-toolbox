@@ -14,8 +14,10 @@ helixforge-catalog = { path = "../../crates/helixforge-catalog" }
 helixforge-core = { path = "../../crates/helixforge-core" }
 helixforge-engine = { path = "../../crates/helixforge-engine" }
 helixforge-platform = { path = "../../crates/helixforge-platform" }
-nix = { version = "0.31", features = ["user"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+nix = { version = "0.31", features = ["poll", "user"] }
 ratatui.workspace = true
+ratatui-image = { version = "11.1.0", default-features = false, features = ["crossterm"] }
 serde.workspace = true
 toml.workspace = true
 tracing = "0.1"

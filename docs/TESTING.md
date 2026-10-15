@@ -41,6 +41,10 @@ emulator and types keys. It checks:
   clean exit removing its own
 - refusing to open the menu without a terminal, and opening it when standard
   input is a pipe, as with `curl … | sh`
+- the banner drawn when the terminal answers the graphics query as Kitty's
+  graphics do, the text header when it does not, and the first key read in
+  both cases (`tui/banner.rs` has unit tests for the answers of Kitty, Sixel,
+  Konsole, WezTerm and plain terminals)
 - the command line's `list`, `run --dry-run`, refusal to confirm without a
   terminal, `run --yes`, failure status and `history`
 - a run whose history cannot be written: the command line and the menu both
@@ -100,3 +104,7 @@ chmod +x helixforge-linux-x86_64
   run by any automated test; Flathub fallback runs against a stand-in
   `flatpak`.
 - The release is built for Linux x86_64 with glibc 2.34 or later only.
+- The banner picture is checked against a test terminal that answers like
+  Ghostty and one that answers like a Sixel terminal, with the image the
+  program sends painted into the screenshot; how real terminals draw it is
+  checked by eye.

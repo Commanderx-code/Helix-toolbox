@@ -128,6 +128,15 @@ native or AUR install of them is not seen as installed before a run.
 Verification asks the package manager as well, so it is not misled; the
 `binary` values themselves are still to be corrected.
 
+## Logo and banner (done)
+
+- `assets/`: the banner (README and the menu's header), the transparent logo
+  and the app icon
+- The menu's header shows the banner in terminals with Kitty's graphics or
+  Sixel, found by one query at start with a 0.4 second limit; Konsole, tmux,
+  screen, the console, plain icons and the compatible theme keep the text
+  header
+
 ## Milestone 5: graphical interface
 
 - Tauri 2 frontend on the same crates, with an embedded terminal panel for

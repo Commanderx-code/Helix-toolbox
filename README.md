@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="assets/logo.png" width="220" alt="HelixForge logo">
+  <img src="assets/banner.png" width="640" alt="HelixForge: Linux setup, utilities, tooling">
 </p>
-
-<h1 align="center">HELIXFORGE</h1>
 
 <p align="center"><strong>BUILD • CONFIGURE • OPTIMIZE</strong></p>
 
@@ -56,6 +54,12 @@ panels; **compatible** keeps to sixteen colours. Settings also turns the icons
 off for terminals without a Nerd Font. Both choices are remembered in
 `~/.config/helixforge/settings.toml`; `--theme` and `--plain` override them
 for one run.
+
+In terminals that show pictures through Kitty's graphics (Ghostty, Kitty) or
+Sixel (foot, WezTerm, xterm with Sixel on), the header is the HelixForge
+banner. Elsewhere, including Konsole, tmux and the console, with icons off or
+in the compatible theme, it is the text header. HelixForge asks the terminal
+once at start and waits at most 0.4 seconds for the answer.
 
 From the command line:
 
@@ -178,7 +182,7 @@ scripts/installers/         the scripts by id: commander/ from the previous tool
 tests/installers/           the installers' Python tests, run against fixtures
 tests/fixtures/             a small catalog for the end-to-end tests
 docs/                       architecture, roadmap, security, migration matrix, walkthrough
-assets/                     the logo (logo.png, transparent) and the app icon (icon.png)
+assets/                     the banner, the logo (transparent) and the app icon
 ```
 
 History lives in `~/.local/state/helixforge/history.jsonl` with saved output

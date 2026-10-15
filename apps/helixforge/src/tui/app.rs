@@ -2,6 +2,7 @@
 //! after the HelixForge dashboard design.
 
 use super::{
+    banner,
     hints::Hint,
     icons::Icon,
     popup::{ConfirmPopup, Decision, TextPopup, centered},
@@ -24,11 +25,14 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, List, ListState, Padding, Paragraph, Wrap},
 };
+use ratatui_image::{Image, protocol::Protocol};
 
 const MIN_WIDTH: u16 = 100;
 const MIN_HEIGHT: u16 = 25;
 const SIDEBAR_WIDTH: u16 = 30;
 const HEADER_HEIGHT: u16 = 4;
+/// Room kept beside the banner for the status on the right.
+const STATUS_WIDTH: u16 = 18;
 const HIGHLIGHT: &str = "> ";
 const ROOT_WARNING: &str = "You are running HelixForge as root.\n\nEvery entry then has full access to the system. The entries expect to run as your normal user and ask for your password when they need it.";
 const FLAGS_GUIDE: &str = "The flags column names what an entry does:
@@ -157,6 +161,8 @@ pub struct App {
     icons: bool,
     /// Where theme and icon choices are saved; none in tests.
     settings_path: Option<std::path::PathBuf>,
+    /// The banner picture, when the terminal can show one.
+    banner: Option<Protocol>,
 }
 
 impl App {
@@ -188,6 +194,7 @@ impl App {
             show_hidden: args.override_validation,
             icons: !args.plain,
             settings_path: None,
+            banner: None,
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -212,6 +219,22 @@ impl App {
         self.icons = look.icons && !args.plain;
         self.settings_path = path;
         self
+    }
+
+    /// Draw this picture as the header where it fits.
+    pub fn with_banner(mut self, banner: Option<Protocol>) -> Self {
+        self.banner = banner;
+        self
+    }
+
+    /// The banner, unless icons are off, the sixteen-colour theme is in use,
+    /// or the terminal is too narrow for it and the status beside it.
+    fn banner(&self, width: u16) -> Option<&Protocol> {
+        self.banner.as_ref().filter(|banner| {
+            self.icons
+                && self.theme != Theme::Compatible
+                && banner.size().width + 2 + STATUS_WIDTH <= width
+        })
     }
 
     /// Save the theme and icon choice, when there is somewhere to save it.
@@ -437,8 +460,13 @@ impl App {
             frame.render_widget(warning, rows[1]);
             return;
         }
+        let header = if self.banner(area.width).is_some() {
+            banner::ROWS + 1
+        } else {
+            HEADER_HEIGHT
+        };
         let rows = Layout::vertical([
-            Constraint::Length(HEADER_HEIGHT),
+            Constraint::Length(header),
             Constraint::Min(1),
             Constraint::Length(2),
         ])
@@ -474,6 +502,27 @@ impl App {
             }
             _ => ("● SYSTEM READY", self.theme.success()),
         };
+        if let Some(banner) = self.banner(area.width) {
+            let size = banner.size();
+            frame.render_widget(
+                Image::new(banner),
+                Rect::new(area.x + 2, area.y, size.width, size.height).intersection(area),
+            );
+            let middle = Rect::new(
+                area.x,
+                area.y + size.height.saturating_sub(1) / 2,
+                area.width.saturating_sub(2),
+                1,
+            )
+            .intersection(area);
+            frame.render_widget(
+                Paragraph::new(Line::styled(status, Style::default().fg(colour).bold()))
+                    .alignment(Alignment::Right),
+                middle,
+            );
+            self.rule(frame, area.x, area.bottom().saturating_sub(1), area.width);
+            return;
+        }
         // The logo tile, then the wordmark and the tagline beside it.
         let tile = Rect::new(area.x + 2, area.y, 5, 3).intersection(area);
         let inside = self.framed(
@@ -1958,6 +2007,43 @@ mod tests {
         assert!(text.contains("Quick Actions"));
         assert!(text.contains("Browse Applications"));
         assert!(text.contains("Navigate"));
+    }
+
+    fn with_banner(mut app: App) -> App {
+        #[allow(deprecated)]
+        let mut picker = ratatui_image::picker::Picker::from_fontsize((9, 19).into());
+        picker.set_protocol_type(ratatui_image::picker::ProtocolType::Kitty);
+        app.icons = true;
+        app.with_banner(banner::encode(&picker))
+    }
+
+    #[test]
+    fn the_banner_replaces_the_text_header_where_it_can_be_drawn() {
+        let mut app = with_banner(app());
+        let text = screen(&mut app, 120, 40);
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines[0].contains('\u{10EEEE}'), "{}", lines[0]);
+        assert!(lines[3].contains('\u{10EEEE}'));
+        assert!(lines[1].contains("SYSTEM READY"));
+        assert!(!text.contains("BUILD • CONFIGURE"));
+        // Four rows of picture, then the rule and the sidebar below it.
+        assert!(lines[4].contains('─'));
+        assert!(lines[6].contains("MAIN MENU"));
+    }
+
+    #[test]
+    fn the_text_header_returns_without_icons_in_sixteen_colours_or_when_narrow() {
+        let mut app = with_banner(app());
+        app.icons = false;
+        assert!(screen(&mut app, 120, 40).contains("BUILD • CONFIGURE"));
+        app.icons = true;
+        app.theme = Theme::Compatible;
+        assert!(screen(&mut app, 120, 40).contains("BUILD • CONFIGURE"));
+        app.theme = Theme::Default;
+        app.size_bypass = true;
+        let narrow = screen(&mut app, 40, 30);
+        assert!(!narrow.contains('\u{10EEEE}'));
+        assert!(narrow.contains("HELIXFORGE"));
     }
 
     #[test]

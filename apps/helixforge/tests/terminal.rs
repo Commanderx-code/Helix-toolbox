@@ -26,7 +26,7 @@ fn fixtures() -> PathBuf {
 /// A running `helixforge` in a pseudo-terminal, with a parsed screen.
 struct Terminal {
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
     child: Box<dyn Child + Send + Sync>,
     screen: Arc<Mutex<vt100::Parser>>,
     state: PathBuf,
@@ -39,7 +39,19 @@ impl Terminal {
         Self::spawn(command, state, rows, cols)
     }
 
-    fn spawn(mut command: CommandBuilder, state: &Path, rows: u16, cols: u16) -> Self {
+    fn spawn(command: CommandBuilder, state: &Path, rows: u16, cols: u16) -> Self {
+        Self::spawn_with(command, state, rows, cols, false)
+    }
+
+    /// Start a program; with `graphics`, answer its graphics query as a
+    /// terminal with Kitty's graphics does, cells 9 by 19 pixels.
+    fn spawn_with(
+        mut command: CommandBuilder,
+        state: &Path,
+        rows: u16,
+        cols: u16,
+        graphics: bool,
+    ) -> Self {
         let pty = native_pty_system()
             .openpty(PtySize {
                 rows,
@@ -60,17 +72,26 @@ impl Terminal {
         drop(pty.slave);
         let screen = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, 0)));
         let mut reader = pty.master.try_clone_reader().unwrap();
+        let writer = Arc::new(Mutex::new(pty.master.take_writer().unwrap()));
         let parser = Arc::clone(&screen);
+        let answers = Arc::clone(&writer);
         thread::spawn(move || {
             let mut buffer = [0u8; 8192];
             while let Ok(count) = reader.read(&mut buffer) {
                 if count == 0 {
                     break;
                 }
-                parser.lock().unwrap().process(&buffer[..count]);
+                let output = &buffer[..count];
+                if graphics && output.windows(8).any(|part| part == b"\x1b_Gi=31,") {
+                    let mut answers = answers.lock().unwrap();
+                    answers
+                        .write_all(b"\x1b_Gi=31;OK\x1b\\\x1b[6;19;9t\x1b[?62;22c")
+                        .unwrap();
+                    answers.flush().unwrap();
+                }
+                parser.lock().unwrap().process(output);
             }
         });
-        let writer = pty.master.take_writer().unwrap();
         Self {
             master: pty.master,
             writer,
@@ -107,8 +128,10 @@ impl Terminal {
 
     /// Send keys and give the program time to read them as separate events.
     fn keys(&mut self, bytes: &str) {
-        self.writer.write_all(bytes.as_bytes()).unwrap();
-        self.writer.flush().unwrap();
+        let mut writer = self.writer.lock().unwrap();
+        writer.write_all(bytes.as_bytes()).unwrap();
+        writer.flush().unwrap();
+        drop(writer);
         thread::sleep(Duration::from_millis(120));
     }
 
@@ -439,6 +462,52 @@ fn the_menu_starts_when_standard_input_is_a_pipe_as_with_curl_into_sh() {
 }
 
 #[test]
+fn the_banner_is_drawn_where_the_terminal_shows_pictures() {
+    let home = tempfile::tempdir().unwrap();
+    let mut command = CommandBuilder::new(PROGRAM);
+    command.args([
+        "--catalog-dir",
+        fixtures().to_str().unwrap(),
+        "tui",
+        "--bypass-root",
+    ]);
+    let mut tui = Terminal::spawn_with(command, home.path(), 40, 120, true);
+    tui.wait_for(&["SYSTEM READY", "MAIN MENU"]);
+    let screen = tui.contents();
+    assert!(screen.contains('\u{10EEEE}'), "{screen}");
+    assert!(!screen.contains("BUILD • CONFIGURE"));
+    // The answers were all read, so the first key reaches the menu.
+    tui.keys("?");
+    tui.wait_for(&[" Keys "]);
+    tui.keys(ESC);
+    tui.keys("q");
+    assert_eq!(tui.wait_for_exit(), 0);
+}
+
+#[test]
+fn a_terminal_without_pictures_keeps_the_text_header() {
+    let home = tempfile::tempdir().unwrap();
+    let mut tui = Terminal::start(
+        &[
+            "--catalog-dir",
+            fixtures().to_str().unwrap(),
+            "tui",
+            "--bypass-root",
+        ],
+        home.path(),
+        40,
+        120,
+    );
+    tui.wait_for(&["HELIXFORGE", "BUILD • CONFIGURE • OPTIMIZE"]);
+    assert!(!tui.contents().contains('\u{10EEEE}'));
+    tui.keys("?");
+    tui.wait_for(&[" Keys "]);
+    tui.keys(ESC);
+    tui.keys("q");
+    assert_eq!(tui.wait_for_exit(), 0);
+}
+
+#[test]
 fn the_menu_refuses_to_start_without_a_terminal() {
     // setsid leaves the program without a controlling terminal, as under cron.
     let output = Command::new("setsid")
@@ -546,8 +615,8 @@ fn a_key_pressed_right_after_a_resize_is_read_at_once() {
         tui.resize(if round % 2 == 0 { 30 } else { 40 }, 120);
         // No pause: the key and the resize reach the program together. Nothing
         // follows the key, so a key left unread would never show.
-        tui.writer.write_all(b"?").unwrap();
-        tui.writer.flush().unwrap();
+        tui.writer.lock().unwrap().write_all(b"?").unwrap();
+        tui.writer.lock().unwrap().flush().unwrap();
         tui.wait_for(&[" Keys "]);
         tui.keys(ESC);
         tui.wait_until("the help to close", |screen| !screen.contains(" Keys "));

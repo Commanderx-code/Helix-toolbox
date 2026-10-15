@@ -97,7 +97,10 @@ panel too.
 
 ## Interface
 
-A header with the name, tagline and a status badge; a sidebar menu of
+A header with the name, tagline and a status badge (the banner picture
+instead of the name and tagline where the terminal shows pictures:
+`tui/banner.rs` asks it once at start and encodes the built-in copy for
+Kitty's graphics or Sixel); a sidebar menu of
 screens in two sections; the current screen; a hint line. The screens are
 the Dashboard (system overview and quick actions), one screen per catalog
 area (search bar and entry list with the flags column, groups opened in
