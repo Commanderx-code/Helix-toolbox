@@ -1,5 +1,6 @@
 #!/bin/sh -e
 # A read-only report, and the first script entry that runs inside HelixForge.
+# shellcheck source=scripts/shared/common-script.sh
 . "$HELIXFORGE_LIB/common-script.sh"
 checkDistro
 printf 'Distribution: %s\n' "$DTYPE"
