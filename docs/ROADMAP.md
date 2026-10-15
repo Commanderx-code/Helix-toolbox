@@ -5,7 +5,7 @@
 | Version | Main objective | Roadmap items |
 | :--- | :--- | :--- |
 | v0.2.0 | Smart application detection, ownership and installed-state accuracy | status, updates, package identity (done) |
-| v0.3.0 | Dependency and conflict handling, more robust installation planning | 2 (dependencies and conflicts), 8 (installation queue) |
+| v0.3.0 | Dependency and conflict handling, more robust installation planning | 2 (dependencies and conflicts), 8 (installation queue) (done) |
 | v0.4.0 | Unified backup and recovery, enhanced HELIX Doctor | 3 (backup and recovery center), 5 (HELIX Doctor 2.0) |
 | v0.5.0 | Workstation profiles, favourites and search | 4 (profiles 2.0), 7 (search and favourites) |
 | v0.6.0 | Unified update overview and JSON command line | 6 (update manager), 9 (JSON output) |
@@ -182,16 +182,20 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] The Install Plan screen keeps its plan for a few seconds and drops it
       after a run, since planning now asks the package manager
 
-## v0.3.0: dependencies, conflicts and the installation queue
+## v0.3.0: dependencies, conflicts and the installation queue (done)
 
 - [x] Checks before a run (item 2): missing tools, entries that replace
       each other, packages that would be replaced, Arch repositories,
       graphics hardware and free space, as blockers and warnings in the
       plan, the confirmation and the command line; `[needs]` in the catalog
       (Nvidia drivers, Steam and the CachyOS sets, DaVinci Resolve)
-- [ ] The installation queue (item 8): dependency ordering, continue or stop
-      after a failure, per-step status and recovery instructions, package
-      managers kept serial
+- [x] The installation queue (item 8): steps ordered after the steps that
+      install what they need or that they name in `needs.after`; stop or
+      continue after a failure (Settings, `--keep-going`), skipping only what
+      depends on the failed step; each step's result in the window, the
+      command line and the history; unfinished entries stay in the Install
+      Plan and the command line prints the retry; one HelixForge run at a
+      time
 
 ## Smart status (done)
 

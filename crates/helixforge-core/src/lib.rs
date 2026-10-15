@@ -278,6 +278,8 @@ pub struct Needs {
     pub repositories: Vec<String>,
     /// Free space it needs on the root file system beyond its packages, in MiB.
     pub space_mb: Option<u64>,
+    /// Entries that run before it when both are queued.
+    pub after: Vec<String>,
 }
 
 /// The graphics vendors `Needs::gpu` may name.

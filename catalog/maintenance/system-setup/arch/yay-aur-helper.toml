@@ -5,3 +5,8 @@ order = 114
 
 [script]
 id = "system-setup/arch/yay-setup"
+
+# What the script installs, so its status can be shown and AUR entries run after it.
+[detect]
+binary = "yay"
+aur = "yay"

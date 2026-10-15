@@ -5,3 +5,10 @@ order = 117
 
 [script]
 id = "applications-setup/setup-flatpak"
+
+# What the script installs, so its status can be shown and Flatpak entries run after it.
+[detect]
+binary = "flatpak"
+arch = "flatpak"
+debian = "flatpak"
+fedora = "flatpak"

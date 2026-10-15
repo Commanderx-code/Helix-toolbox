@@ -14,3 +14,5 @@ id = "commander/cachyos-gaming-applications"
 # Checked before a run.
 [needs]
 repositories = ["multilib"]
+# Its script needs paru or yay.
+after = ["paru-aur-helper", "yay-aur-helper"]

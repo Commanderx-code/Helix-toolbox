@@ -165,6 +165,11 @@ pub struct App {
     show_hidden: bool,
     /// Nerd Font icons, or plain text.
     icons: bool,
+    /// After a failed step, continue with the steps that do not need it.
+    keep_going: bool,
+    /// Whether the run in the window started from the Install Plan, whose
+    /// unfinished entries then stay queued.
+    ran_from_plan: bool,
     /// Where theme and icon choices are saved; none in tests.
     settings_path: Option<std::path::PathBuf>,
     /// The banner picture, when the terminal can show one.
@@ -221,6 +226,8 @@ impl App {
             skip_confirmation: args.skip_confirmation,
             show_hidden: args.override_validation,
             icons: !args.plain,
+            keep_going: false,
+            ran_from_plan: false,
             settings_path: None,
             banner: None,
             planned: None,
@@ -250,6 +257,7 @@ impl App {
     ) -> Self {
         self.theme = args.theme.unwrap_or(look.theme);
         self.icons = look.icons && !args.plain;
+        self.keep_going = look.keep_going;
         self.settings_path = path;
         self
     }
@@ -315,6 +323,7 @@ impl App {
         let look = Look {
             theme: self.theme,
             icons: self.icons,
+            keep_going: self.keep_going,
         };
         if let Err(error) = settings::save(path, &look) {
             tracing::warn!(%error, "the settings were not saved");
@@ -1378,6 +1387,14 @@ impl App {
                 },
             ),
             (
+                "After a failed step".to_string(),
+                if self.keep_going {
+                    "continue".to_string()
+                } else {
+                    "stop".to_string()
+                },
+            ),
+            (
                 "Log level (HELIXFORGE_LOG)".to_string(),
                 std::env::var("HELIXFORGE_LOG").unwrap_or_else(|_| "info".to_string()),
             ),
@@ -1542,9 +1559,32 @@ impl App {
                 if popup.handle_key(key) {
                     // What is installed may have changed.
                     self.planned = None;
+                    let unfinished = popup.unfinished();
+                    let summary = popup.summary();
                     self.popup = popup
                         .take_problem()
                         .map(|problem| Popup::Text(TextPopup::new("Not recorded", problem, true)));
+                    if std::mem::take(&mut self.ran_from_plan) {
+                        let mut kept: Vec<Entry> = Vec::new();
+                        for id in &unfinished {
+                            if let Some(entry) = self.catalog.find(id)
+                                && !kept.iter().any(|kept| kept.id == entry.id)
+                            {
+                                kept.push(entry.clone());
+                            }
+                        }
+                        self.queue = kept;
+                        self.clamp_main();
+                        if !self.queue.is_empty() && self.popup.is_none() {
+                            self.popup = Some(Popup::Text(TextPopup::new(
+                                "Not everything finished",
+                                format!(
+                                    "{summary}\n\nWhat did not finish stays in the Install Plan; Enter there runs it again."
+                                ),
+                                true,
+                            )));
+                        }
+                    }
                     self.refresh_statuses();
                     if self.screen == Screen::History {
                         self.reload_history();
@@ -1944,6 +1984,10 @@ impl App {
                     }
                 }
             }
+            4 => {
+                self.keep_going = !self.keep_going;
+                self.save_look();
+            }
             _ => {}
         }
     }
@@ -1972,6 +2016,7 @@ impl App {
                     gpus: &Vec::new,
                     repositories: &|| None,
                     sizes: &|_, _| None,
+                    active_runs: &Vec::new,
                     ..preflight::Facts::real()
                 },
             );
@@ -2046,6 +2091,18 @@ impl App {
             }
         )];
         header.extend(findings.iter().map(preflight::Finding::line));
+        let mut planned = planned;
+        planned.keep_going = self.keep_going;
+        if planned.steps.len() > 1 {
+            header.push(format!(
+                "After a failed step: {} (Settings changes it)",
+                if self.keep_going {
+                    "continue with what does not need it"
+                } else {
+                    "stop"
+                }
+            ));
+        }
         let mut lines: Vec<(String, String)> = planned
             .steps
             .iter()
@@ -2074,11 +2131,9 @@ impl App {
         self.popup = Some(
             match RunningView::start(&planned, &self.catalog.lib_dir(), &this) {
                 Ok(running) => {
-                    // What ran from the plan screen leaves the queue.
-                    if self.screen == Screen::Plan {
-                        self.queue.clear();
-                        self.clamp_main();
-                    }
+                    // What ran from the plan screen leaves the queue when it
+                    // finishes; what does not finish stays.
+                    self.ran_from_plan = self.screen == Screen::Plan;
                     Popup::Running(Box::new(running))
                 }
                 Err(error) => Popup::Text(TextPopup::new("Cannot run", error, true)),

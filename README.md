@@ -227,6 +227,22 @@ confirmation:
   sizes (`pacman -Si`, `apt-cache show`, `dnf repoquery`) plus what scripts
   say they need (blocker), or would be left with less than 1 GiB (warning)
 
+- another HelixForge run is still going (blocker): one run at a time, so
+  package managers are never driven twice at once; their own locks guard
+  against other tools
+
+Steps run one at a time, in an order that puts each after what it depends
+on: an entry that installs a command another step needs (Flatpak / Flathub
+before a Flatpak, an AUR helper before an AUR package), or one it names in
+`needs.after`; otherwise in the order queued. A tool an earlier step installs
+is not reported as missing. When a step fails the run stops, or with **After a
+failed step: continue** in Settings (`--keep-going` on the command line)
+goes on with the steps that do not depend on it, skipping those that do; a
+`Ctrl-C` always stops. Each step's result is shown afterwards (done, failed
+with its exit status, skipped, not run), the history records "1 of 3 steps
+done", what did not finish stays in the Install Plan to run again, and the
+command line prints the `helixforge run …` that retries it.
+
 Entries say what they need from the machine in an optional `[needs]` table:
 
 ```toml
@@ -234,6 +250,7 @@ Entries say what they need from the machine in an optional `[needs]` table:
 gpu = ["nvidia"]              # nvidia, amd or intel; any one will do
 repositories = ["multilib"]   # Arch repositories that must be enabled
 space_mb = 6000               # free space beyond its packages, for downloads
+after = ["paru-aur-helper"]   # entries that run first when both are queued
 ```
 
 A package entry lists every source it has on this machine, in order: the

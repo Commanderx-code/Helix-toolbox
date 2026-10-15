@@ -68,6 +68,8 @@ pub struct Facts<'a> {
     /// The installed size in bytes of packages not yet installed, when the
     /// package manager can say.
     pub sizes: &'a dyn Fn(PackageManager, &[String]) -> Option<u64>,
+    /// Other HelixForge runs still going, by their entries' names.
+    pub active_runs: &'a dyn Fn() -> Vec<String>,
 }
 
 impl Facts<'static> {
@@ -80,6 +82,7 @@ impl Facts<'static> {
             gpus: &gpus,
             repositories: &|| pacman_repositories(Path::new("/etc/pacman.conf")),
             sizes: &installed_size,
+            active_runs: &crate::history::active,
         }
     }
 }
@@ -95,6 +98,14 @@ pub fn check<'a>(
     facts: &Facts,
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
+    // One run at a time, so package managers are never driven twice at once.
+    if !plan.steps.is_empty() {
+        for names in (facts.active_runs)() {
+            findings.push(Finding::blocker(format!(
+                "another HelixForge run is still going ({names}); wait for it to finish"
+            )));
+        }
+    }
     for missing in missing_requirements(plan, facts.present) {
         findings.push(Finding::blocker(format!(
             "{missing} is needed and is not installed"
@@ -443,6 +454,7 @@ mod tests {
             gpus,
             repositories,
             sizes,
+            active_runs: &Vec::new,
         }
     }
 
@@ -543,6 +555,21 @@ mod tests {
         let roomy = |_: &Path| Some(50 * GIB);
         let facts = facts_of(&Vec::new, &|| None, &sized, &|_| true, &roomy);
         assert!(run(&[&big], &facts).is_empty());
+    }
+
+    #[test]
+    fn another_run_still_going_blocks() {
+        let meld = package("meld", "meld", &[], Needs::default());
+        let plenty = |_: &Path| Some(100 * GIB);
+        let busy = || vec!["Steam, Lutris".to_string()];
+        let facts = Facts {
+            active_runs: &busy,
+            ..facts_of(&Vec::new, &|| None, &|_, _| None, &|_| true, &plenty)
+        };
+        assert_eq!(
+            run(&[&meld], &facts)[0].line(),
+            "Blocked: another HelixForge run is still going (Steam, Lutris); wait for it to finish"
+        );
     }
 
     fn found_severity(found: &[Finding]) -> Option<Severity> {

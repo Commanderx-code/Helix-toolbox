@@ -179,6 +179,37 @@ impl Pending {
     }
 }
 
+/// The runs of other HelixForge processes that are still going, in the
+/// default history: each as its entries' names.
+pub fn active() -> Vec<String> {
+    default_dir()
+        .map(|directory| active_in(&directory))
+        .unwrap_or_default()
+}
+
+/// `active` in the history in `directory`.
+pub fn active_in(directory: &Path) -> Vec<String> {
+    let Ok(listing) = fs::read_dir(directory.join("running")) else {
+        return Vec::new();
+    };
+    listing
+        .flatten()
+        .filter(|item| {
+            item.path()
+                .extension()
+                .is_some_and(|extension| extension == "json")
+        })
+        .filter_map(|item| {
+            let bytes = fs::read(item.path()).ok()?;
+            serde_json::from_slice::<Marker>(&bytes).ok()
+        })
+        .filter(|marker| {
+            marker.pid != std::process::id() && marker.outcome.is_none() && alive(marker)
+        })
+        .map(|marker| marker.record.names.join(", "))
+        .collect()
+}
+
 /// Turn the markers of runs whose HelixForge has gone into records. Each
 /// marker is claimed by renaming it first, so two HelixForge processes never
 /// record the same run. Returns how many runs were recorded.
@@ -395,6 +426,36 @@ mod tests {
         let records = read_in(directory.path(), 5).unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].result, "exit 0");
+    }
+
+    #[test]
+    fn other_runs_still_going_are_found() {
+        let directory = tempfile::tempdir().unwrap();
+        let pending = begin_in(directory.path(), &entries()).unwrap();
+        // Its own run is not "another".
+        assert!(active_in(directory.path()).is_empty());
+        // Another process that is alive and has not ended its run.
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let mut marker: Marker = serde_json::from_slice(&fs::read(&pending.path).unwrap()).unwrap();
+        marker.pid = child.id();
+        marker.process_start = process_start(child.id());
+        fs::write(&pending.path, serde_json::to_vec(&marker).unwrap()).unwrap();
+        assert_eq!(active_in(directory.path()).len(), 1);
+        // Once its program has ended, it no longer counts.
+        marker.outcome = Some((true, "exit 0".into()));
+        fs::write(&pending.path, serde_json::to_vec(&marker).unwrap()).unwrap();
+        assert!(active_in(directory.path()).is_empty());
+        child.kill().unwrap();
+        child.wait().unwrap();
+        // Nor does a process that has gone.
+        orphan(&pending);
+        let mut marker: Marker = serde_json::from_slice(&fs::read(&pending.path).unwrap()).unwrap();
+        marker.outcome = None;
+        fs::write(&pending.path, serde_json::to_vec(&marker).unwrap()).unwrap();
+        assert!(active_in(directory.path()).is_empty());
     }
 
     #[test]

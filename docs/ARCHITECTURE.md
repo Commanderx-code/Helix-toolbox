@@ -117,6 +117,20 @@ them. The command line prints the findings with the plan and refuses a
 blocked run; the interface shows them in the Install Plan's summary and the
 confirmation, and a blocked plan opens "Cannot run yet" instead.
 
+After planning, `arrange()` orders the steps: each comes after a step whose
+entry installs a command it needs (`identity().binary`) or that its entry
+names in `needs.after`, the queue's order deciding the rest (Kahn's algorithm
+taking the earliest ready step; a cycle keeps the queue's order). `Plan.depends`
+keeps those links and `Plan.provided` the commands the plan installs, which
+`missing_requirements()` then excuses. `shell_program_with()` writes each
+step's outcome to a status file (`index state exit`); with `Plan.keep_going`
+a failed step no longer ends the program, steps that depend on it are skipped,
+and an exit status of 128 or more still stops everything. `Finished::from_run`
+reads the file into `StepResult`s (done, failed, interrupted, skipped, not
+run), verifies the package steps that finished, and `describe()` adds "1 of 3
+steps done" to the history. `history::active()` finds other HelixForge runs
+still going from their markers, a preflight blocker.
+
 `Entry::identity()` gives what an entry installs, from its package action or,
 for script and command entries, its `detect` table, so detection, status and
 updates treat both alike; scripts still run when chosen. A command on the

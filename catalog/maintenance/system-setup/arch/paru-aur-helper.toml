@@ -5,3 +5,8 @@ order = 110
 
 [script]
 id = "system-setup/arch/paru-setup"
+
+# What the script installs, so its status can be shown and AUR entries run after it.
+[detect]
+binary = "paru"
+aur = "paru"

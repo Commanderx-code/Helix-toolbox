@@ -2,7 +2,9 @@
 
 use super::{hints::Hint, theme::Theme};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use helixforge_engine::{Finished, Outcome, Plan, history, pty::Session, shell_program};
+use helixforge_engine::{
+    Finished, Outcome, Plan, StepState, history, pty::Session, shell_program_with, status_file,
+};
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
@@ -28,14 +30,20 @@ pub struct RunningView {
     problem: Option<String>,
     scrollback: usize,
     finish_drawn: bool,
+    /// Where the run's program writes each step's outcome.
+    status: Option<PathBuf>,
 }
 
 impl RunningView {
     pub fn start(plan: &Plan, lib_dir: &Path, this: &Path) -> Result<Self, String> {
         helixforge_engine::check_requirements(plan).map_err(|error| error.to_string())?;
         tracing::info!(steps = ?plan.entries(), "run started");
-        let session = Session::spawn(&shell_program(plan, lib_dir, this), lib_dir)
-            .map_err(|error| error.to_string())?;
+        let status = status_file();
+        let session = Session::spawn(
+            &shell_program_with(plan, lib_dir, this, status.as_deref()),
+            lib_dir,
+        )
+        .map_err(|error| error.to_string())?;
         let pending = history::begin(&plan.entries())
             .inspect_err(|error| tracing::warn!(%error, "the run start was not recorded"))
             .ok();
@@ -50,6 +58,7 @@ impl RunningView {
             problem: None,
             scrollback: 0,
             finish_drawn: false,
+            status,
         })
     }
 
@@ -64,7 +73,11 @@ impl RunningView {
                 .session
                 .outcome()
                 .unwrap_or_else(|| Outcome::CouldNotStart("unknown".into()));
-            self.finished = Some(Finished::new(&self.plan, outcome));
+            self.finished = Some(Finished::from_run(
+                &self.plan,
+                outcome,
+                self.status.as_deref(),
+            ));
         }
         self.finished.as_ref()
     }
@@ -117,6 +130,33 @@ impl RunningView {
         }
     }
 
+    /// The ids of the steps that did not finish, once the run has ended.
+    pub fn unfinished(&mut self) -> Vec<String> {
+        self.finished()
+            .map(|finished| {
+                finished
+                    .unfinished()
+                    .iter()
+                    .map(|step| step.id.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Each step and how it ended, one per line.
+    pub fn summary(&mut self) -> String {
+        self.finished()
+            .map(|finished| {
+                finished
+                    .steps
+                    .iter()
+                    .map(|step| format!("{}: {}", step.name, step.state.describe()))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default()
+    }
+
     /// Why the run could not be recorded, once the window has closed.
     pub fn take_problem(&mut self) -> Option<String> {
         self.problem.take()
@@ -137,10 +177,22 @@ impl RunningView {
                 outcome: Outcome::Interrupted,
                 ..
             }) => (" INTERRUPTED ".to_string(), theme.failure()),
-            Some(finished) => (
-                format!(" FAILED ({}) ", finished.outcome.describe()),
-                theme.failure(),
-            ),
+            Some(finished) => {
+                let done = finished
+                    .steps
+                    .iter()
+                    .filter(|step| step.state == StepState::Done)
+                    .count();
+                let steps = if finished.steps.len() > 1 {
+                    format!(" · {done} of {} steps done", finished.steps.len())
+                } else {
+                    String::new()
+                };
+                (
+                    format!(" FAILED ({}){steps} ", finished.outcome.describe()),
+                    theme.failure(),
+                )
+            }
             None => (" RUNNING ".to_string(), theme.focused()),
         };
         // What the checks found: the failures if any, else every pass.
@@ -271,5 +323,8 @@ impl RunningView {
 impl Drop for RunningView {
     fn drop(&mut self) {
         self.record();
+        if let Some(status) = &self.status {
+            let _ = std::fs::remove_file(status);
+        }
     }
 }

@@ -966,6 +966,85 @@ esac
 }
 
 #[test]
+fn unfinished_entries_stay_in_the_install_plan_after_a_run() {
+    let home = tempfile::tempdir().unwrap();
+    let mut tui = fixture_menu(home.path());
+    for name in ["Failing", "Marker"] {
+        tui.search(&name.to_lowercase()[..4]);
+        tui.wait_for(&[name]);
+        tui.keys(" ");
+    }
+    tui.keys(BACK_TAB);
+    tui.wait_for(&["Review planned changes", "Failing", "Marker"]);
+    tui.keys("\r");
+    tui.wait_for(&["CONFIRM", "After a failed step: stop"]);
+    tui.keys("y");
+    tui.wait_for(&["FAILED", "0 of 2 steps done"]);
+    tui.keys("\r");
+    tui.wait_for(&[
+        "Not everything finished",
+        "Failing: failed (exit 9)",
+        "Marker: not run",
+    ]);
+    tui.keys(ESC);
+    tui.wait_until("both entries to stay queued", |screen| {
+        !screen.contains("Not everything finished")
+            && screen.contains("Review planned changes")
+            && screen.contains("Failing")
+            && screen.contains("Marker")
+    });
+    assert!(!home.path().join("marker.txt").exists());
+    tui.keys("q");
+    assert_eq!(tui.wait_for_exit(), 0);
+}
+
+#[test]
+fn a_failed_step_stops_the_run_or_is_stepped_over_with_keep_going() {
+    let home = tempfile::tempdir().unwrap();
+    let catalog = fixtures();
+    let run = |extra: &[&str]| {
+        let output = Command::new(PROGRAM)
+            .arg("--catalog-dir")
+            .arg(&catalog)
+            .args(["run", "failing", "marker", "--yes"])
+            .args(extra)
+            .env("HOME", home.path())
+            .env("XDG_STATE_HOME", home.path().join("state"))
+            .env("HELIXFORGE_TEST_OUT", home.path().join("marker.txt"))
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        (
+            output.status.success(),
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
+    };
+    // Stop at the failure: the marker never runs.
+    let (ok, out, err) = run(&[]);
+    assert!(!ok);
+    assert!(out.contains("Failing: failed (exit 9)"), "{out}");
+    assert!(
+        out.contains("Marker: not run: the run stopped first"),
+        "{out}"
+    );
+    assert!(
+        out.contains("To try the unfinished ones again: helixforge run failing marker"),
+        "{out}"
+    );
+    assert!(err.contains("exit 9, 0 of 2 steps done"), "{err}");
+    assert!(!home.path().join("marker.txt").exists());
+    // Keep going: the marker does not depend on it, so it runs.
+    let (ok, out, err) = run(&["--keep-going"]);
+    assert!(!ok, "a failed step still fails the run");
+    assert!(out.contains("Marker: done"), "{out}");
+    assert!(out.contains("helixforge run failing\n"), "{out}");
+    assert!(err.contains("1 of 2 steps done"), "{err}");
+    assert!(home.path().join("marker.txt").exists());
+    assert!(history_of(home.path()).contains("1 of 2 steps done"));
+}
+
+#[test]
 fn entries_that_replace_each_other_are_blocked_before_anything_runs() {
     let home = tempfile::tempdir().unwrap();
     let path = stand_in_tools(&home.path().join("bin"));

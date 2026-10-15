@@ -236,6 +236,8 @@ struct NeedsFile {
     repositories: Vec<String>,
     #[serde(default)]
     space_mb: Option<u64>,
+    #[serde(default)]
+    after: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -514,7 +516,8 @@ fn needs_of(entry: &EntryFile, path: &Path) -> Result<Needs, CatalogError> {
         && needs
             .repositories
             .iter()
-            .all(|name| valid_package_name(name));
+            .all(|name| valid_package_name(name))
+        && needs.after.iter().all(|id| valid_id(id));
     if !valid {
         return Err(CatalogError::Invalid(format!(
             "{} has an invalid needs section",
@@ -525,6 +528,7 @@ fn needs_of(entry: &EntryFile, path: &Path) -> Result<Needs, CatalogError> {
         gpu: needs.gpu.clone(),
         repositories: needs.repositories.clone(),
         space_mb: needs.space_mb,
+        after: needs.after.clone(),
     })
 }
 

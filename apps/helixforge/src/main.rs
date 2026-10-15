@@ -76,6 +76,9 @@ enum Command {
         /// Skip the confirmation phrase, for deliberate automation.
         #[arg(long)]
         yes: bool,
+        /// After a failed step, go on with the steps that do not need it.
+        #[arg(long)]
+        keep_going: bool,
     },
     /// Remove package entries that offer removal, after confirmation.
     Remove {
@@ -98,6 +101,9 @@ enum Command {
         /// Skip the confirmation phrase, for deliberate automation.
         #[arg(long)]
         yes: bool,
+        /// After a failed step, go on with the steps that do not need it.
+        #[arg(long)]
+        keep_going: bool,
     },
     /// Show recent runs.
     History {
@@ -266,9 +272,15 @@ fn main() -> Result<()> {
             print_plan(&catalog, &platform, &planned);
             Ok(())
         }
-        Command::Run { ids, dry_run, yes } => {
+        Command::Run {
+            ids,
+            dry_run,
+            yes,
+            keep_going,
+        } => {
             let catalog = load(false)?;
-            let planned = plan_ids(&catalog, &platform, &ids)?;
+            let mut planned = plan_ids(&catalog, &platform, &ids)?;
+            planned.keep_going = keep_going;
             confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "RUN")
         }
         Command::Remove { ids, dry_run, yes } => {
@@ -280,7 +292,12 @@ fn main() -> Result<()> {
             let planned = plan_removal(entries, &platform)?;
             confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "REMOVE")
         }
-        Command::Update { ids, dry_run, yes } => {
+        Command::Update {
+            ids,
+            dry_run,
+            yes,
+            keep_going,
+        } => {
             let catalog = load(ids.is_empty())?;
             let inventory = Inventory::gather(&platform);
             let entries: Vec<&Entry> = if ids.is_empty() {
@@ -305,7 +322,8 @@ fn main() -> Result<()> {
                 );
                 return Ok(());
             }
-            let planned = inventory.plan_update(entries, &platform, &which);
+            let mut planned = inventory.plan_update(entries, &platform, &which);
+            planned.keep_going = keep_going;
             confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "UPDATE")
         }
         Command::History { limit } => {
@@ -369,9 +387,6 @@ fn confirm_and_run(
     }
     let this = std::env::current_exe().context("cannot find the HelixForge executable")?;
     let finished = execute(planned, &catalog.lib_dir(), &this, &mut InheritedRunner)?;
-    if !finished.outcome.succeeded() {
-        bail!("the run stopped: {}", finished.outcome.describe());
-    }
     for check in &finished.checks {
         println!(
             "{} {}: {}",
@@ -383,6 +398,28 @@ fn confirm_and_run(
             check.name,
             check.detail
         );
+    }
+    let unfinished = finished.unfinished();
+    if !unfinished.is_empty() {
+        println!();
+        for step in &finished.steps {
+            println!("{}: {}", step.name, step.state.describe());
+        }
+        // What to run again: the entries whose steps did not finish.
+        let retry: Vec<&str> = unfinished
+            .iter()
+            .map(|step| step.id.as_str())
+            .filter(|id| catalog.find(id).is_some())
+            .collect();
+        if !retry.is_empty() {
+            println!(
+                "To try the unfinished ones again: helixforge run {}",
+                retry.join(" ")
+            );
+        }
+    }
+    if !finished.outcome.succeeded() {
+        bail!("the run stopped: {}", finished.describe());
     }
     if !finished.succeeded() {
         bail!("the run finished, but not everything it did could be verified");

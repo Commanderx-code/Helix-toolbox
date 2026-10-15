@@ -314,6 +314,17 @@ impl Step {
         }
     }
 
+    /// Everything any of the step's sources needs.
+    fn all_requirements(&self) -> Vec<String> {
+        match self {
+            Step::Package { sources, .. } => sources
+                .iter()
+                .flat_map(|source| source.requires.iter().cloned())
+                .collect(),
+            _ => self.requirements(),
+        }
+    }
+
     /// The executables a step needs before it can start; for a package, what
     /// its first source needs.
     fn requirements(&self) -> Vec<String> {
@@ -347,6 +358,14 @@ pub struct Plan {
     pub risk: Risk,
     /// Entries left out because a path they write is managed by another tool.
     pub blocked: Vec<String>,
+    /// For each step, the earlier steps it depends on: one installs a tool it
+    /// needs, or its entry runs `after` theirs. A failed step skips these.
+    pub depends: Vec<Vec<usize>>,
+    /// Commands the plan's own steps install, so needing them is no blocker.
+    pub provided: Vec<String>,
+    /// After a failed step, continue with the steps that do not depend on it
+    /// instead of stopping.
+    pub keep_going: bool,
 }
 
 impl Plan {
@@ -486,6 +505,7 @@ pub fn plan_with<'a>(
     }
     result.requirements.sort();
     result.requirements.dedup();
+    arrange(&mut result, lookup);
     info!(
         steps = result.steps.len(),
         risk = result.risk.label(),
@@ -599,6 +619,72 @@ fn add_entry<'a>(
     into.requirements.extend(step.requirements());
     into.steps.push(step);
     Ok(())
+}
+
+/// Order a plan's steps so each comes after the steps it depends on (one
+/// that installs a tool it needs, or an entry it names in `needs.after`),
+/// keeping the queue's order otherwise, and record those dependencies.
+fn arrange<'a>(plan: &mut Plan, lookup: &dyn Fn(&str) -> Option<&'a Entry>) {
+    let count = plan.steps.len();
+    let entries: Vec<Option<&Entry>> = plan.steps.iter().map(|step| lookup(step.id())).collect();
+    let provides: Vec<Option<&str>> = entries
+        .iter()
+        .map(|entry| entry.and_then(|entry| entry.identity()?.binary))
+        .collect();
+    let mut depends: Vec<Vec<usize>> = vec![Vec::new(); count];
+    for (later, step) in plan.steps.iter().enumerate() {
+        let needs = step.all_requirements();
+        let after = entries[later]
+            .map(|entry| entry.needs.after.as_slice())
+            .unwrap_or(&[]);
+        for (earlier, other) in plan.steps.iter().enumerate() {
+            if earlier == later {
+                continue;
+            }
+            let tool = provides[earlier].is_some_and(|tool| needs.iter().any(|need| need == tool));
+            if tool || after.iter().any(|id| id == other.id()) {
+                depends[later].push(earlier);
+            }
+        }
+    }
+    // Kahn's algorithm, always taking the earliest ready step, so the queue's
+    // order stays where nothing forces another; a cycle keeps the rest as is.
+    let mut placed: Vec<usize> = Vec::with_capacity(count);
+    let mut done = vec![false; count];
+    while placed.len() < count {
+        let next = (0..count)
+            .find(|&index| {
+                !done[index] && depends[index].iter().all(|&dependency| done[dependency])
+            })
+            .or_else(|| (0..count).find(|&index| !done[index]));
+        let Some(next) = next else { break };
+        done[next] = true;
+        placed.push(next);
+    }
+    let mut position = vec![0; count];
+    for (new, &old) in placed.iter().enumerate() {
+        position[old] = new;
+    }
+    let mut steps: Vec<Option<Step>> = std::mem::take(&mut plan.steps)
+        .into_iter()
+        .map(Some)
+        .collect();
+    plan.steps = placed.iter().filter_map(|&old| steps[old].take()).collect();
+    plan.depends = placed
+        .iter()
+        .map(|&old| {
+            let mut list: Vec<usize> = depends[old]
+                .iter()
+                .map(|&dependency| position[dependency])
+                .filter(|&dependency| dependency < position[old])
+                .collect();
+            list.sort_unstable();
+            list
+        })
+        .collect();
+    plan.provided = provides.into_iter().flatten().map(String::from).collect();
+    plan.provided.sort();
+    plan.provided.dedup();
 }
 
 /// The first of the entry's paths that is a Home Manager symlink, or a child
@@ -874,11 +960,28 @@ pub fn quote(value: &str) -> String {
 /// failure. `lib_dir` is exported as `HELIXFORGE_LIB` for scripts; `this` is
 /// the HelixForge executable that native steps re-invoke.
 pub fn shell_program(plan: &Plan, lib_dir: &Path, this: &Path) -> String {
+    shell_program_with(plan, lib_dir, this, None)
+}
+
+/// `shell_program` that also writes each step's outcome to `status`, one
+/// `index state exit` line per step (done, failed, interrupted, skipped).
+pub fn shell_program_with(
+    plan: &Plan,
+    lib_dir: &Path,
+    this: &Path,
+    status: Option<&Path>,
+) -> String {
     let mut text = format!(
-        "{LIB_VARIABLE}={}\nexport {LIB_VARIABLE}\n",
-        quote(&lib_dir.to_string_lossy())
+        "{LIB_VARIABLE}={}\nexport {LIB_VARIABLE}\nhf_steps={}\nhf_last=0\n\
+         hf_status() {{ [ -z \"$hf_steps\" ] || printf '%s %s %s\\n' \"$1\" \"$2\" \"$3\" >> \"$hf_steps\"; }}\n",
+        quote(&lib_dir.to_string_lossy()),
+        quote(
+            &status
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        )
     );
-    for step in &plan.steps {
+    for (index, step) in plan.steps.iter().enumerate() {
         let body = match step {
             Step::Package {
                 name,
@@ -930,11 +1033,44 @@ pub fn shell_program(plan: &Plan, lib_dir: &Path, this: &Path) -> String {
                 body
             }
         };
-        text.push_str(&format!(
-            "printf '\\n==> %s\\n' {}\n(\n{body}\n)\nrc=$?\n[ \"$rc\" -eq 0 ] || exit \"$rc\"\n",
-            quote(step.name())
-        ));
+        let run = format!(
+            "printf '\\n==> %s\\n' {name}\n(\n{body}\n)\nrc=$?\n\
+             if [ \"$rc\" -eq 0 ]; then\n  hf_status {index} done 0\n\
+             else\n  hf_failed_{index}=1\n  hf_last=$rc\n\
+             \x20 if [ \"$rc\" -ge 128 ]; then hf_status {index} interrupted \"$rc\"; exit \"$rc\"; fi\n\
+             \x20 hf_status {index} failed \"$rc\"\n{stop}fi\n",
+            name = quote(step.name()),
+            stop = if plan.keep_going {
+                ""
+            } else {
+                "  exit \"$rc\"\n"
+            },
+        );
+        // A step whose dependency did not finish is skipped, and counts as
+        // not finished for the steps after it.
+        let depends = plan.depends.get(index).map(Vec::as_slice).unwrap_or(&[]);
+        if depends.is_empty() {
+            text.push_str(&run);
+        } else {
+            let failed: String = depends
+                .iter()
+                .map(|other| format!("${{hf_failed_{other}}}"))
+                .collect();
+            let names: Vec<&str> = depends
+                .iter()
+                .filter_map(|&other| plan.steps.get(other))
+                .map(Step::name)
+                .collect();
+            text.push_str(&format!(
+                "if [ -n \"{failed}\" ]; then\n\
+                 \x20 printf '\\n==> %s skipped: %s did not finish\\n' {} {}\n\
+                 \x20 hf_failed_{index}=1\n  hf_status {index} skipped 0\nelse\n{run}fi\n",
+                quote(step.name()),
+                quote(&names.join(", "))
+            ));
+        }
     }
+    text.push_str("exit \"$hf_last\"\n");
     text
 }
 
@@ -1051,7 +1187,8 @@ pub fn requirement_present(requirement: &str) -> bool {
 pub fn missing_requirements(plan: &Plan, present: &dyn Fn(&str) -> bool) -> Vec<String> {
     let mut missing = Vec::new();
     for requirement in &plan.requirements {
-        if present(requirement) {
+        // A tool an earlier step installs is there by the time it is needed.
+        if present(requirement) || plan.provided.contains(requirement) {
             continue;
         }
         let needing: Vec<&Step> = plan
@@ -1268,23 +1405,127 @@ impl Outcome {
     }
 }
 
-/// A finished run: how the program ended and, when it succeeded, what the
-/// checks of its package steps found.
+/// How one step of a run ended.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StepState {
+    Done,
+    Failed(u32),
+    Interrupted,
+    /// A step it depends on did not finish.
+    Skipped,
+    /// The run stopped before it.
+    NotRun,
+}
+
+impl StepState {
+    pub fn describe(&self) -> String {
+        match self {
+            StepState::Done => "done".to_string(),
+            StepState::Failed(code) => format!("failed (exit {code})"),
+            StepState::Interrupted => "interrupted".to_string(),
+            StepState::Skipped => "skipped: a step it needs did not finish".to_string(),
+            StepState::NotRun => "not run: the run stopped first".to_string(),
+        }
+    }
+}
+
+/// One step of a finished run.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StepResult {
+    pub id: String,
+    pub name: String,
+    pub state: StepState,
+}
+
+/// Read the step outcomes a run's program wrote to `status`; a step with no
+/// line did not run, unless the whole program succeeded without a file.
+pub fn step_results(plan: &Plan, outcome: &Outcome, status: Option<&Path>) -> Vec<StepResult> {
+    let text = status.and_then(|path| std::fs::read_to_string(path).ok());
+    let mut states: Vec<Option<StepState>> = vec![None; plan.steps.len()];
+    for line in text.as_deref().unwrap_or_default().lines() {
+        let mut words = line.split_whitespace();
+        let (Some(index), Some(state), Some(code)) = (words.next(), words.next(), words.next())
+        else {
+            continue;
+        };
+        let (Ok(index), Ok(code)) = (index.parse::<usize>(), code.parse::<u32>()) else {
+            continue;
+        };
+        let state = match state {
+            "done" => StepState::Done,
+            "failed" => StepState::Failed(code),
+            "interrupted" => StepState::Interrupted,
+            "skipped" => StepState::Skipped,
+            _ => continue,
+        };
+        if let Some(slot) = states.get_mut(index) {
+            *slot = Some(state);
+        }
+    }
+    let unknown = if text.is_none() && outcome.succeeded() {
+        StepState::Done
+    } else {
+        StepState::NotRun
+    };
+    plan.steps
+        .iter()
+        .zip(states)
+        .map(|(step, state)| StepResult {
+            id: step.id().to_string(),
+            name: step.name().to_string(),
+            state: state.unwrap_or_else(|| unknown.clone()),
+        })
+        .collect()
+}
+
+/// A finished run: how the program ended, how each step ended, and what the
+/// checks of the package steps that finished found.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Finished {
     pub outcome: Outcome,
     pub checks: Vec<Check>,
+    pub steps: Vec<StepResult>,
 }
 
 impl Finished {
     /// Check a run's package steps if the program succeeded.
     pub fn new(plan: &Plan, outcome: Outcome) -> Self {
-        let checks = if outcome.succeeded() {
-            verify(plan)
-        } else {
-            Vec::new()
+        Self::from_run(plan, outcome, None)
+    }
+
+    /// A run whose program wrote its step outcomes to `status`: the steps
+    /// that finished are checked even when another failed.
+    pub fn from_run(plan: &Plan, outcome: Outcome, status: Option<&Path>) -> Self {
+        let steps = step_results(plan, &outcome, status);
+        let finished = Plan {
+            steps: plan
+                .steps
+                .iter()
+                .zip(&steps)
+                .filter(|(_, result)| result.state == StepState::Done)
+                .map(|(step, _)| step.clone())
+                .collect(),
+            ..Plan::default()
         };
-        Self { outcome, checks }
+        let checks =
+            if outcome == Outcome::Interrupted || matches!(outcome, Outcome::CouldNotStart(_)) {
+                Vec::new()
+            } else {
+                verify(&finished)
+            };
+        Self {
+            outcome,
+            checks,
+            steps,
+        }
+    }
+
+    /// The steps that did not finish, to try again.
+    pub fn unfinished(&self) -> Vec<&StepResult> {
+        self.steps
+            .iter()
+            .filter(|step| step.state != StepState::Done)
+            .collect()
     }
 
     /// The program succeeded and every check passed.
@@ -1300,6 +1541,14 @@ impl Finished {
     /// "exit 0, not verified: Meld (…)", or the outcome alone.
     pub fn describe(&self) -> String {
         let mut text = self.outcome.describe();
+        let unfinished = self.unfinished();
+        if !unfinished.is_empty() && self.steps.len() > 1 {
+            text.push_str(&format!(
+                ", {} of {} steps done",
+                self.steps.len() - unfinished.len(),
+                self.steps.len()
+            ));
+        }
         if self.checks.is_empty() {
             return text;
         }
@@ -1316,6 +1565,32 @@ impl Finished {
         }
         text
     }
+}
+
+/// A fresh, empty file for a run's step outcomes, only this user can write.
+pub fn status_file() -> Option<PathBuf> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let directory = std::env::temp_dir();
+    for attempt in 0..16u32 {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.subsec_nanos())
+            .unwrap_or_default();
+        let path = directory.join(format!(
+            "helixforge-steps-{}-{nanos}-{attempt}",
+            std::process::id()
+        ));
+        if std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .is_ok()
+        {
+            return Some(path);
+        }
+    }
+    None
 }
 
 /// Something that can run a shell program: the caller's terminal, a
@@ -1389,8 +1664,15 @@ pub fn execute_in(
             .inspect_err(|error| warn!(%error, "the run start was not recorded"))
             .ok()
     });
-    let outcome = runner.run(&shell_program(plan, lib_dir, this), lib_dir);
-    let finished = Finished::new(plan, outcome);
+    let status = status_file();
+    let outcome = runner.run(
+        &shell_program_with(plan, lib_dir, this, status.as_deref()),
+        lib_dir,
+    );
+    let finished = Finished::from_run(plan, outcome, status.as_deref());
+    if let Some(status) = &status {
+        let _ = std::fs::remove_file(status);
+    }
     info!(outcome = finished.describe(), "run finished");
     if let Some(directory) = history_dir {
         let written = match pending {
@@ -1618,6 +1900,7 @@ mod tests {
             gpus: &Vec::new,
             repositories: &|| None,
             sizes: &|_, _| None,
+            active_runs: &Vec::new,
         };
         let lookup = |id: &str| (id == "wine-staging").then_some(&staging);
         assert_eq!(
@@ -1871,6 +2154,157 @@ mod tests {
         assert!(text.contains(&directory.path().to_string_lossy().to_string()));
         assert!(text.contains("before"));
         assert!(!text.contains("never"));
+    }
+
+    fn command(id: &str, line: &str) -> Step {
+        Step::Command {
+            id: id.into(),
+            name: id.to_uppercase(),
+            line: line.into(),
+        }
+    }
+
+    /// Run a plan's program with a status file; its exit code, output and results.
+    fn run_tracked(plan: &Plan) -> (Option<i32>, String, Vec<StepResult>) {
+        let status = status_file().unwrap();
+        let program =
+            shell_program_with(plan, Path::new("/lib"), Path::new("/bin/hf"), Some(&status));
+        let output = Command::new("sh").arg("-c").arg(&program).output().unwrap();
+        let outcome = Outcome::from_status(&output.status);
+        let results = step_results(plan, &outcome, Some(&status));
+        std::fs::remove_file(&status).unwrap();
+        (
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            results,
+        )
+    }
+
+    #[test]
+    fn steps_run_after_what_they_need_and_their_tools_count_as_coming() {
+        let app = entry(
+            "flatpak-app",
+            "I",
+            Action::Package {
+                binary: None,
+                packages: PackageNames::default(),
+                aur: None,
+                flatpak: Some("org.example.App".into()),
+                conflicts: Vec::new(),
+                removable: true,
+            },
+        );
+        let mut setup = entry(
+            "flatpak-flathub",
+            "I",
+            Action::Command {
+                line: "true".into(),
+            },
+        );
+        setup.detect = Some(helixforge_core::Detect {
+            binary: Some("flatpak".into()),
+            ..Default::default()
+        });
+        let mut last = entry(
+            "last",
+            "",
+            Action::Command {
+                line: "true".into(),
+            },
+        );
+        last.needs.after = vec!["report".into()];
+        let report = entry(
+            "report",
+            "",
+            Action::Command {
+                line: "true".into(),
+            },
+        );
+        let all = [&app, &setup, &last, &report];
+        let lookup = |id: &str| all.iter().copied().find(|entry| entry.id == id);
+        let nothing = Machine {
+            holds: &|_| false,
+            on_path: &|_| false,
+        };
+        let planned = plan_with(
+            all,
+            &platform(Some(PackageManager::Fedora)),
+            &lookup,
+            nothing,
+        )
+        .unwrap();
+        let order: Vec<&str> = planned.steps.iter().map(Step::id).collect();
+        assert_eq!(order, ["flatpak-flathub", "flatpak-app", "report", "last"]);
+        assert_eq!(planned.depends, [vec![], vec![0], vec![], vec![2]]);
+        assert_eq!(planned.provided, ["flatpak"]);
+        // flatpak is missing now, but the first step installs it.
+        assert!(
+            missing_requirements(&planned, &|_| false)
+                .iter()
+                .all(|missing| missing != "flatpak")
+        );
+    }
+
+    #[test]
+    fn a_failure_stops_the_run_or_skips_only_what_depends_on_it() {
+        let mut plan = Plan {
+            steps: vec![
+                command("a", "echo a-ran; exit 3"),
+                command("b", "echo b-ran"),
+                command("c", "echo c-ran"),
+            ],
+            depends: vec![vec![], vec![], vec![0]],
+            ..Default::default()
+        };
+        // Stop: B and C never start.
+        let (code, out, results) = run_tracked(&plan);
+        assert_eq!(code, Some(3));
+        assert!(out.contains("a-ran") && !out.contains("b-ran"));
+        let states: Vec<&StepState> = results.iter().map(|step| &step.state).collect();
+        assert_eq!(
+            states,
+            [
+                &StepState::Failed(3),
+                &StepState::NotRun,
+                &StepState::NotRun
+            ]
+        );
+        // Keep going: B runs, C depends on A and is skipped; the run still fails.
+        plan.keep_going = true;
+        let (code, out, results) = run_tracked(&plan);
+        assert_eq!(code, Some(3));
+        assert!(out.contains("b-ran") && !out.contains("c-ran"));
+        assert!(out.contains("==> C skipped: A did not finish"), "{out}");
+        let states: Vec<&StepState> = results.iter().map(|step| &step.state).collect();
+        assert_eq!(
+            states,
+            [&StepState::Failed(3), &StepState::Done, &StepState::Skipped]
+        );
+        let finished = Finished::from_run(&plan, Outcome::Failed { exit_code: 3 }, None);
+        assert!(finished.describe().starts_with("exit 3"));
+        let finished = Finished {
+            outcome: Outcome::Failed { exit_code: 3 },
+            checks: Vec::new(),
+            steps: results,
+        };
+        assert_eq!(finished.describe(), "exit 3, 1 of 3 steps done");
+        let unfinished: Vec<&str> = finished
+            .unfinished()
+            .iter()
+            .map(|step| step.id.as_str())
+            .collect();
+        assert_eq!(unfinished, ["a", "c"]);
+        // An interruption always stops.
+        plan.steps[0] = command("a", "exit 130");
+        let (code, _, results) = run_tracked(&plan);
+        assert_eq!(code, Some(130));
+        assert_eq!(results[0].state, StepState::Interrupted);
+        assert_eq!(results[1].state, StepState::NotRun);
+        // Everything done.
+        plan.steps[0] = command("a", "true");
+        let (code, _, results) = run_tracked(&plan);
+        assert_eq!(code, Some(0));
+        assert!(results.iter().all(|step| step.state == StepState::Done));
     }
 
     #[test]
@@ -2242,6 +2676,7 @@ mod tests {
         let finished = Finished {
             outcome: Outcome::Success,
             checks,
+            steps: Vec::new(),
         };
         assert!(!finished.succeeded());
         assert_eq!(
@@ -2264,12 +2699,14 @@ mod tests {
         let passed = Finished {
             outcome: Outcome::Success,
             checks: gone,
+            steps: Vec::new(),
         };
         assert!(passed.verified());
         assert_eq!(passed.describe(), "exit 0, verified");
         let plain = Finished {
             outcome: Outcome::Failed { exit_code: 2 },
             checks: Vec::new(),
+            steps: Vec::new(),
         };
         assert!(!plain.verified());
         assert_eq!(plain.describe(), "exit 2");

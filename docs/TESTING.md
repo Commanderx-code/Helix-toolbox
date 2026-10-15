@@ -56,6 +56,10 @@ emulator and types keys. It checks:
 - `helixforge status` after real installs of htop and ripgrep: Installed,
   from the family's package manager, with a version, and `update htop
   --dry-run` saying it is up to date (Distributions)
+- a failing fixture and a marker run together: stopped, the marker is not
+  run and the retry command names both; with `--keep-going` the marker
+  runs, and the history says "1 of 2 steps done"; in the menu, both stay in
+  the Install Plan after "Not everything finished"
 - two fixture entries that replace each other, queued together: the
   command line prints the blocker, exits without starting a step or
   recording a run, and the menu shows "Cannot run yet" instead of asking
