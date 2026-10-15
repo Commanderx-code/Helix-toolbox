@@ -6,7 +6,7 @@
 | :--- | :--- | :--- |
 | v0.2.0 | Smart application detection, ownership and installed-state accuracy | status, updates, package identity (done) |
 | v0.3.0 | Dependency and conflict handling, more robust installation planning | 2 (dependencies and conflicts), 8 (installation queue) (done) |
-| v0.4.0 | Unified backup and recovery, enhanced HELIX Doctor | 3 (backup and recovery center), 5 (HELIX Doctor 2.0) |
+| v0.4.0 | Unified backup and recovery, enhanced HELIX Doctor | 3 (backup and recovery center), 5 (HELIX Doctor 2.0) (done) |
 | v0.5.0 | Workstation profiles, favourites and search | 4 (profiles 2.0), 7 (search and favourites) |
 | v0.6.0 | Unified update overview and JSON command line | 6 (update manager), 9 (JSON output) |
 | v0.7.0 | Packaging, usability, documentation and beta testing | 10 (native packaging) |
@@ -182,7 +182,7 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] The Install Plan screen keeps its plan for a few seconds and drops it
       after a run, since planning now asks the package manager
 
-## v0.4.0: backup and recovery, HELIX Doctor 2.0
+## v0.4.0: backup and recovery, HELIX Doctor 2.0 (done)
 
 - [x] Backup and recovery center (item 3): one Backups screen and
       `helixforge backups` for user and system configuration backups, with
@@ -190,7 +190,11 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       replaced file as a backup; a Snapper or Timeshift snapshot first before
       system changes where the machine supports it, without promising
       package rollback
-- [ ] HELIX Doctor 2.0 (item 5)
+- [x] HELIX Doctor 2.0 (item 5): read-only checks of network, DNS,
+      services, graphics drivers, the package database, home permissions,
+      boot images, the GRUB menu, the EFI partition and disk space, each
+      with its evidence, advice and a separately confirmed repair or entry
+      where one is supported; Helix Doctor opens them, its reports below
 
 ## v0.3.0: dependencies, conflicts and the installation queue (done)
 

@@ -48,8 +48,12 @@ impl Status {
         }
     }
 
-    /// Where it came from and at which version, as one phrase.
+    /// Where it came from and at which version, as one phrase, printable.
     pub fn detail(&self) -> String {
+        helixforge_core::printable(&self.raw_detail())
+    }
+
+    fn raw_detail(&self) -> String {
         let with = |source: &str, version: &Option<String>| match version {
             Some(version) => format!("{source} {version}"),
             None => source.to_string(),

@@ -131,6 +131,15 @@ run), verifies the package steps that finished, and `describe()` adds "1 of 3
 steps done" to the history. `history::active()` finds other HelixForge runs
 still going from their markers, a preflight blocker.
 
+`doctor::examine()` runs the health checks through a `System` (reading
+files, listing folders, links, a few read-only commands, a name lookup with a
+time limit, free space, owners, running processes); `Here` is this machine
+and `Fake` a made-up one for tests. Each check returns a `Diagnosis`: an id,
+`Health` (good, notice, problem), a summary, the evidence, advice, and either
+a `Repair` (commands of quoted words, run as a one-step plan with its own
+confirmation) or a catalog entry that addresses it. The interface runs the
+checks on a background thread when Helix Doctor opens and with `r`.
+
 `backups` finds configuration backups by name (`parse_name`: the original
 and the time stamp) under `Roots`: the user's configuration and data
 folders to any depth (skipping caches, repositories and links) and the home

@@ -8,9 +8,9 @@ mod tui;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use helixforge_catalog::Catalog;
-use helixforge_core::{Action, Entry, Item, NativeAction};
+use helixforge_core::{Action, Entry, Item, NativeAction, printable};
 use helixforge_engine::{
-    InheritedRunner, Machine, PackageState, Plan, backups, execute, history,
+    InheritedRunner, Machine, PackageState, Plan, backups, doctor, execute, history,
     inventory::{Inventory, Status, which},
     package_state, plan, plan_removal, preflight, run_native,
 };
@@ -120,6 +120,20 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
         /// Skip the confirmation phrase, for deliberate automation.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Check the machine's health: network, DNS, services, graphics drivers,
+    /// package database, home folder permissions, boot images, disk space.
+    /// Read-only; a repair runs only with --repair, after confirmation.
+    Doctor {
+        /// Run the repair offered for this check (its id, as listed).
+        #[arg(long, value_name = "ID")]
+        repair: Option<String>,
+        /// With --repair: show the plan and stop.
+        #[arg(long)]
+        dry_run: bool,
+        /// With --repair: skip the confirmation phrase.
         #[arg(long)]
         yes: bool,
     },
@@ -348,6 +362,59 @@ fn main() -> Result<()> {
             planned.keep_going = keep_going;
             confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "UPDATE")
         }
+        Command::Doctor {
+            repair,
+            dry_run,
+            yes,
+        } => {
+            let found = doctor::examine(&doctor::Here, platform.manager);
+            let Some(id) = repair else {
+                for diagnosis in &found {
+                    println!(
+                        "{:<8} {}: {}  [{}]",
+                        diagnosis.health.label(),
+                        diagnosis.title,
+                        diagnosis.summary,
+                        diagnosis.id
+                    );
+                    if diagnosis.health != doctor::Health::Good {
+                        for line in &diagnosis.evidence {
+                            println!("           {line}");
+                        }
+                        if let Some(advice) = &diagnosis.advice {
+                            println!("           What to do: {advice}");
+                        }
+                        if let Some(fix) = &diagnosis.repair {
+                            println!(
+                                "           Repair: {} (helixforge doctor --repair {})",
+                                fix.label, diagnosis.id
+                            );
+                        }
+                        if let Some(entry) = &diagnosis.entry {
+                            println!("           Entry: helixforge run {entry}");
+                        }
+                    }
+                }
+                return Ok(());
+            };
+            let diagnosis = found
+                .iter()
+                .find(|diagnosis| diagnosis.id == id)
+                .with_context(|| format!("no check named '{id}'; see helixforge doctor"))?;
+            let fix = diagnosis
+                .repair
+                .as_ref()
+                .with_context(|| format!("{} has no repair HelixForge can run", diagnosis.title))?;
+            let catalog = load(false)?;
+            confirm_and_run(
+                &catalog,
+                &platform,
+                &fix.plan(&diagnosis.id),
+                dry_run,
+                yes,
+                "REPAIR",
+            )
+        }
         Command::Backups => {
             match backups::Snapshots::here() {
                 Some(tool) => println!(
@@ -368,8 +435,8 @@ fn main() -> Result<()> {
                     "{}  {:<6}  {}\n    {}",
                     backup.taken.as_deref().unwrap_or("unknown time       "),
                     if backup.system { "system" } else { "user" },
-                    backup.original.display(),
-                    backup.backup.display()
+                    printable(&backup.original.display().to_string()),
+                    printable(&backup.backup.display().to_string())
                 );
             }
             Ok(())

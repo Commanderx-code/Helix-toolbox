@@ -14,6 +14,7 @@
 //! checks that each package step left its package installed, or removed.
 
 pub mod backups;
+pub mod doctor;
 pub mod history;
 pub mod inventory;
 pub mod preflight;

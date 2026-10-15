@@ -16,7 +16,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use helixforge_catalog::Catalog;
 use helixforge_core::{Action, Entry, Item};
 use helixforge_engine::{
-    EngineError, Plan, backups, history,
+    EngineError, Plan, backups, doctor, history,
     inventory::{Inventory, Status, which},
     plan, plan_removal, preflight,
 };
@@ -79,8 +79,8 @@ Install Plan
   Enter             run the plan                 x / Delete  remove the selected entry
   c                 clear the plan
 
-History and Backups
-  Enter             show the log / restore it    r           reload; d shows a backup
+History, Backups, Helix Doctor
+  Enter             log / restore / evidence     r           reload or check again; d backup; f repair
 
 Settings
   Enter / Space     change the selected setting
@@ -97,6 +97,8 @@ enum Screen {
     Plan,
     History,
     Backups,
+    /// The health checks, with the Helix Doctor area's reports below them.
+    Doctor,
     Settings,
 }
 
@@ -138,7 +140,7 @@ const QUICK_ICONS: [Icon; 4] = [Icon::Applications, Icon::Plan, Icon::Doctor, Ic
 const QUICK_ACTIONS: [(&str, &str); 4] = [
     ("Browse Applications", "Search and install tools"),
     ("Review the Install Plan", "See what is queued and run it"),
-    ("Run System Doctor", "Reports about this machine"),
+    ("Run System Doctor", "Health checks and reports"),
     ("View History", "Past runs and their logs"),
 ];
 
@@ -174,6 +176,12 @@ pub struct App {
     snapshot_tool: Option<backups::Snapshots>,
     /// The backups the Backups screen lists, newest first.
     backups: Vec<backups::Backup>,
+    /// What the last health check found.
+    diagnoses: Vec<doctor::Diagnosis>,
+    /// A health check running in the background, if any.
+    examining: Option<mpsc::Receiver<Vec<doctor::Diagnosis>>>,
+    /// Whether this run of the interface checks the machine; off in tests.
+    examine_here: bool,
     /// Whether the run in the window started from the Install Plan, whose
     /// unfinished entries then stay queued.
     ran_from_plan: bool,
@@ -237,6 +245,9 @@ impl App {
             snapshots: true,
             snapshot_tool: None,
             backups: Vec::new(),
+            diagnoses: Vec::new(),
+            examining: None,
+            examine_here: false,
             ran_from_plan: false,
             settings_path: None,
             banner: None,
@@ -278,6 +289,7 @@ impl App {
     /// every run.
     pub fn with_status_checks(mut self) -> Self {
         self.check_statuses = true;
+        self.examine_here = true;
         self.refresh_statuses();
         self
     }
@@ -428,6 +440,7 @@ impl App {
             Screen::Plan => self.queue.len(),
             Screen::History => self.records.len(),
             Screen::Backups => self.backups.len(),
+            Screen::Doctor => self.diagnoses.len() + self.doctor_entries().len(),
             Screen::Settings => self.settings().len(),
         }
     }
@@ -475,6 +488,9 @@ impl App {
         if screen == Screen::Backups {
             self.reload_backups();
         }
+        if screen == Screen::Doctor && self.diagnoses.is_empty() {
+            self.examine();
+        }
         self.update_rows();
     }
 
@@ -485,6 +501,18 @@ impl App {
 
     /// Whether something changed without a key press: a finished command.
     pub fn needs_redraw(&mut self) -> bool {
+        if let Some(receiver) = &self.examining {
+            match receiver.try_recv() {
+                Ok(diagnoses) => {
+                    self.diagnoses = diagnoses;
+                    self.examining = None;
+                    self.clamp_main();
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.examining = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
         if let Some(receiver) = &self.checking {
             match receiver.try_recv() {
                 Ok((inventory, statuses)) => {
@@ -523,6 +551,7 @@ impl App {
             Screen::Plan => Icon::Plan,
             Screen::History => Icon::History,
             Screen::Backups => Icon::Backups,
+            Screen::Doctor => Icon::Doctor,
             Screen::Settings => Icon::Settings,
             Screen::Area(index) => Icon::for_area(&self.catalog.tabs[index].id),
         }
@@ -591,6 +620,7 @@ impl App {
             Screen::Plan => self.draw_plan(frame, main),
             Screen::History => self.draw_history(frame, main),
             Screen::Backups => self.draw_backups(frame, main),
+            Screen::Doctor => self.draw_doctor(frame, main),
             Screen::Settings => self.draw_settings(frame, main),
         }
         match &mut self.popup {
@@ -1396,7 +1426,7 @@ impl App {
         }
         let home = std::env::var("HOME").unwrap_or_default();
         let shown = |path: &std::path::Path| {
-            let text = path.display().to_string();
+            let text = helixforge_core::printable(&path.display().to_string());
             match text.strip_prefix(&home) {
                 Some(rest) if !home.is_empty() => format!("~{rest}"),
                 _ => text,
@@ -1650,6 +1680,21 @@ impl App {
                     list.push(Hint::new(&["Enter"], "Show log"));
                     list.push(Hint::new(&["r"], "Reload"));
                 }
+                Screen::Doctor => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    match self.selected_diagnosis() {
+                        Some(diagnosis) => {
+                            list.push(Hint::new(&["Enter"], "Details"));
+                            if diagnosis.repair.is_some() {
+                                list.push(Hint::new(&["f"], "Repair"));
+                            } else if diagnosis.entry.is_some() {
+                                list.push(Hint::new(&["f"], "Run the entry"));
+                            }
+                        }
+                        None => list.push(Hint::new(&["Enter"], "Run")),
+                    }
+                    list.push(Hint::new(&["r"], "Check again"));
+                }
                 Screen::Backups => {
                     list.push(Hint::new(&["↑↓"], "Navigate"));
                     if !self.backups.is_empty() {
@@ -1812,13 +1857,7 @@ impl App {
                     let screen = match self.main_state.selected().unwrap_or(0) {
                         0 => Screen::Area(self.first_area()),
                         1 => Screen::Plan,
-                        2 => self
-                            .catalog
-                            .tabs
-                            .iter()
-                            .position(|tab| tab.id == "doctor")
-                            .map(Screen::Area)
-                            .unwrap_or(Screen::Dashboard),
+                        2 => Screen::Doctor,
                         _ => Screen::History,
                     };
                     self.open_screen(screen);
@@ -1887,6 +1926,25 @@ impl App {
             Screen::History => match key.code {
                 KeyCode::Enter => self.show_log(),
                 KeyCode::Char('r') => self.reload_history(),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::Doctor => match key.code {
+                KeyCode::Enter => match self.selected_diagnosis() {
+                    Some(_) => self.describe_diagnosis(),
+                    None => {
+                        let index = self
+                            .main_state
+                            .selected()
+                            .unwrap_or(0)
+                            .saturating_sub(self.diagnoses.len());
+                        if let Some(entry) = self.doctor_entries().get(index).cloned() {
+                            self.confirm(vec![entry]);
+                        }
+                    }
+                },
+                KeyCode::Char('f') => self.repair_selected(),
+                KeyCode::Char('r') => self.examine(),
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
@@ -2087,6 +2145,164 @@ impl App {
         self.popup = Some(Popup::Text(TextPopup::new(entry.name.clone(), text, true)));
     }
 
+    /// Run the health checks in the background.
+    fn examine(&mut self) {
+        if !self.examine_here {
+            return;
+        }
+        let manager = self.platform.manager;
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(doctor::examine(&doctor::Here, manager));
+        });
+        self.examining = Some(receiver);
+    }
+
+    /// The Helix Doctor area's entries, shown below the checks.
+    fn doctor_entries(&self) -> Vec<Entry> {
+        self.catalog
+            .tabs
+            .iter()
+            .find(|tab| tab.id == "doctor")
+            .map(|tab| tab.entries().into_iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn selected_diagnosis(&self) -> Option<&doctor::Diagnosis> {
+        self.main_state
+            .selected()
+            .and_then(|index| self.diagnoses.get(index))
+    }
+
+    fn describe_diagnosis(&mut self) {
+        let Some(diagnosis) = self.selected_diagnosis() else {
+            return;
+        };
+        let mut text = format!("{}: {}\n", diagnosis.health.label(), diagnosis.summary);
+        if !diagnosis.evidence.is_empty() {
+            text.push_str("\nWhat was found:\n");
+            for line in &diagnosis.evidence {
+                text.push_str(&format!("  {line}\n"));
+            }
+        }
+        if let Some(advice) = &diagnosis.advice {
+            text.push_str(&format!("\nWhat to do: {advice}\n"));
+        }
+        if let Some(repair) = &diagnosis.repair {
+            text.push_str(&format!(
+                "\nRepair: {}. f runs it after its own confirmation.\n",
+                repair.label
+            ));
+        } else if let Some(entry) = diagnosis
+            .entry
+            .as_deref()
+            .and_then(|id| self.catalog.find(id))
+        {
+            text.push_str(&format!(
+                "\nThe {} entry addresses it; f runs it.\n",
+                entry.name
+            ));
+        }
+        self.popup = Some(Popup::Text(TextPopup::new(
+            diagnosis.title.clone(),
+            text,
+            true,
+        )));
+    }
+
+    /// Run the selected check's repair, or the entry that addresses it.
+    fn repair_selected(&mut self) {
+        let Some(diagnosis) = self.selected_diagnosis().cloned() else {
+            return;
+        };
+        if let Some(repair) = &diagnosis.repair {
+            self.confirm_plan(Ok(repair.plan(&diagnosis.id)));
+        } else if let Some(entry) = diagnosis
+            .entry
+            .as_deref()
+            .and_then(|id| self.catalog.find(id))
+            .cloned()
+        {
+            self.confirm(vec![entry]);
+        }
+    }
+
+    fn draw_doctor(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Helix Doctor",
+            "The checks only read the system; a repair runs after its own confirmation.",
+        );
+        let focused = self.focus == Focus::Main;
+        let mut items: Vec<Line> = Vec::new();
+        if self.diagnoses.is_empty() {
+            items.push(Line::styled(
+                if self.examining.is_some() {
+                    "Checking…"
+                } else {
+                    "Press r to check this machine."
+                },
+                Style::default().fg(self.theme.muted()),
+            ));
+        }
+        // The title column fits the longest title.
+        let title_width = self
+            .diagnoses
+            .iter()
+            .map(|diagnosis| diagnosis.title.chars().count())
+            .max()
+            .unwrap_or(0)
+            + 2;
+        for diagnosis in &self.diagnoses {
+            let colour = match diagnosis.health {
+                doctor::Health::Good => self.theme.success(),
+                doctor::Health::Notice => self.theme.warning(),
+                doctor::Health::Problem => self.theme.failure(),
+            };
+            let offer = if diagnosis.repair.is_some() {
+                "  · f repairs"
+            } else if diagnosis.entry.is_some() {
+                "  · f runs the entry"
+            } else {
+                ""
+            };
+            items.push(Line::from(vec![
+                Span::styled(
+                    format!("{:<8}", diagnosis.health.label()),
+                    Style::default().fg(colour).bold(),
+                ),
+                Span::styled(
+                    format!("{:<title_width$}", diagnosis.title),
+                    Style::default().fg(self.theme.entry()),
+                ),
+                Span::styled(
+                    diagnosis.summary.clone(),
+                    Style::default().fg(self.theme.muted()),
+                ),
+                Span::styled(offer, Style::default().fg(self.theme.focused())),
+            ]));
+        }
+        for entry in self.doctor_entries() {
+            items.push(Line::from(vec![
+                Span::styled("Report  ", Style::default().fg(self.theme.group())),
+                Span::styled(entry.name.clone(), Style::default().fg(self.theme.entry())),
+            ]));
+        }
+        self.fill(frame, inner);
+        let list = List::new(items)
+            .block(
+                self.card(if self.examining.is_some() && !self.diagnoses.is_empty() {
+                    "Checks (checking again…)"
+                } else {
+                    "Checks"
+                }),
+            )
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused));
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
+    }
+
     fn reload_backups(&mut self) {
         self.backups = backups::discover(&backups::Roots::here());
         self.clamp_main();
@@ -2104,9 +2320,9 @@ impl App {
         };
         let text = format!(
             "Backup of: {}\nTaken: {}\nCopy: {}\nKind: {}, {}\n\nEnter restores it. The current {} is moved aside as its own backup first, so the restore can be undone the same way.",
-            backup.original.display(),
+            helixforge_core::printable(&backup.original.display().to_string()),
             backup.taken.as_deref().unwrap_or("unknown"),
-            backup.backup.display(),
+            helixforge_core::printable(&backup.backup.display().to_string()),
             if backup.directory {
                 "a folder"
             } else {
@@ -2377,7 +2593,12 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
         if tab.id != "applications" {
             menu.push(MenuItem {
                 label: tab.name.clone(),
-                screen: Screen::Area(index),
+                // Helix Doctor opens the health checks, its reports below them.
+                screen: if tab.id == "doctor" {
+                    Screen::Doctor
+                } else {
+                    Screen::Area(index)
+                },
                 section: "MORE TOOLS",
             });
         }
@@ -2589,10 +2810,80 @@ mod tests {
         press(&mut app, KeyCode::Char('j'));
         press(&mut app, KeyCode::Char('j'));
         press(&mut app, KeyCode::Enter);
-        assert!(
-            matches!(app.screen, Screen::Area(index) if app.catalog.tabs[index].id == "doctor")
-        );
+        assert_eq!(app.screen, Screen::Doctor);
         assert!(screen(&mut app, 120, 40).contains("Machine Summary"));
+    }
+
+    #[test]
+    fn the_doctor_shows_evidence_and_repairs_with_their_own_confirmation() {
+        let mut app = app();
+        app.diagnoses = vec![
+            doctor::Diagnosis {
+                id: "network".into(),
+                title: "Network".into(),
+                health: doctor::Health::Good,
+                summary: "Connected through wlan0".into(),
+                evidence: vec!["default routes: wlan0".into()],
+                advice: None,
+                repair: None,
+                entry: None,
+            },
+            doctor::Diagnosis {
+                id: "permissions".into(),
+                title: "Home folder permissions".into(),
+                health: doctor::Health::Problem,
+                summary: "1 item(s) in your home folder belong to root".into(),
+                evidence: vec!["owned by root: /home/me/.local/share/Shelly".into()],
+                advice: Some("This usually comes from running a program with sudo.".into()),
+                repair: Some(doctor::Repair {
+                    label: "give them back to you".into(),
+                    commands: vec![vec![
+                        "sudo".into(),
+                        "chown".into(),
+                        "-R".into(),
+                        "1000:1000".into(),
+                        "--".into(),
+                        "/home/me/.local/share/Shelly".into(),
+                    ]],
+                }),
+                entry: None,
+            },
+        ];
+        app.open_screen(Screen::Doctor);
+        app.focus = Focus::Main;
+        let shown = screen(&mut app, 160, 40);
+        assert!(shown.contains("OK      Network"), "{shown}");
+        assert!(shown.contains("Problem Home folder permissions"));
+        assert!(shown.contains("f repairs"));
+        assert!(
+            shown.contains("Report  Machine Summary"),
+            "the reports stay below"
+        );
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Enter);
+        let shown = screen(&mut app, 160, 40);
+        assert!(
+            shown.contains("owned by root: /home/me/.local/share/Shelly"),
+            "{shown}"
+        );
+        assert!(shown.contains("What to do: This usually comes from"));
+        press(&mut app, KeyCode::Esc);
+        app.popup = None;
+        press(&mut app, KeyCode::Char('f'));
+        assert!(
+            matches!(app.popup, Some(Popup::Confirm(_))),
+            "its own confirmation"
+        );
+        assert!(
+            screen(&mut app, 160, 40)
+                .contains("sudo chown -R 1000:1000 -- /home/me/.local/share/Shelly")
+        );
+        app.popup = None;
+        app.pending = None;
+        // A report below the checks runs like any entry.
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
     }
 
     #[test]

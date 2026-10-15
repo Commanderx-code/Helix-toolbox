@@ -56,6 +56,13 @@ emulator and types keys. It checks:
 - `helixforge status` after real installs of htop and ripgrep: Installed,
   from the family's package manager, with a version, and `update htop
   --dry-run` saying it is up to date (Distributions)
+- the health checks against made-up machines: healthy, offline, DNS failing
+  (restarting NetworkManager), failed system and user services, graphics
+  with no driver or nouveau, a stale or busy pacman lock, unfinished dpkg,
+  root-owned settings (paths quoted), missing initramfs and GRUB menu, a full
+  EFI partition and disk; the Helix Doctor screen's evidence, repair
+  confirmation and reports; `helixforge doctor` on each distribution
+  (Distributions)
 - backups in a scratch home: `helixforge backups` lists one, `restore` puts
   it back and keeps the replaced file as a backup, and a path that is not a
   backup is refused; in the menu, the Backups screen lists, describes and

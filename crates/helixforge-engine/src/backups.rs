@@ -7,7 +7,7 @@
 //! snapshots or packages back itself.
 
 use crate::{Plan, Step, quote};
-use helixforge_core::Risk;
+use helixforge_core::{Risk, printable};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -184,13 +184,14 @@ pub fn restore_step(backup: &Backup) -> Step {
     );
     Step::Shell {
         id: "restore".to_string(),
-        name: format!("Restore {}", backup.original.display()),
+        name: printable(&format!("Restore {}", backup.original.display())),
         program,
-        display: format!(
+        // Names on disk are shown made printable; the program quotes them as they are.
+        display: printable(&format!(
             "{sudo}cp -a {} {}  (the current one is kept as a backup first)",
             backup.backup.display(),
             backup.original.display()
-        ),
+        )),
         requires: if backup.system {
             vec!["sudo".to_string()]
         } else {
@@ -503,6 +504,27 @@ mod tests {
         assert!(system.privileged);
         assert_eq!(system.requirements, ["sudo"]);
         assert!(system.steps[0].display().starts_with("sudo cp -a "));
+    }
+
+    #[test]
+    fn a_strange_name_is_shown_safely_and_restored_as_it_is() {
+        let backup = Backup {
+            backup: PathBuf::from("/home/me/.config/a\u{1b}[2Jb.commander-backup-20261001000000-1"),
+            original: PathBuf::from("/home/me/.config/a\u{1b}[2Jb"),
+            taken: None,
+            system: false,
+            directory: false,
+        };
+        let step = restore_step(&backup);
+        assert!(!step.display().contains('\u{1b}'));
+        assert!(!step.name().contains('\u{1b}'));
+        let Step::Shell { program, .. } = &step else {
+            panic!("expected a shell step");
+        };
+        assert!(
+            program.contains("'/home/me/.config/a\u{1b}[2Jb'"),
+            "the real name, quoted"
+        );
     }
 
     #[test]

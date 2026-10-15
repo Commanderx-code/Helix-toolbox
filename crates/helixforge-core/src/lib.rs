@@ -282,6 +282,19 @@ pub struct Needs {
     pub after: Vec<String>,
 }
 
+/// Text from outside HelixForge (journal lines, file and unit names, error
+/// messages) made safe to show in a terminal: control characters, which could
+/// start escape sequences, become `?`; tabs become spaces.
+pub fn printable(text: &str) -> String {
+    text.chars()
+        .map(|character| match character {
+            '\t' => ' ',
+            character if character.is_control() => '?',
+            character => character,
+        })
+        .collect()
+}
+
 /// The graphics vendors `Needs::gpu` may name.
 pub const GPU_VENDORS: [&str; 3] = ["nvidia", "amd", "intel"];
 
@@ -458,6 +471,17 @@ pub fn valid_id(id: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn printable_text_carries_no_control_characters() {
+        assert_eq!(printable("plain text"), "plain text");
+        assert_eq!(
+            printable("\u{1b}[31mred\u{1b}[0m\tend\r\u{7}"),
+            "?[31mred?[0m end??"
+        );
+        assert_eq!(printable("ünïcode ✓"), "ünïcode ✓");
+    }
+
     use super::*;
 
     #[test]

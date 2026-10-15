@@ -103,6 +103,14 @@ jobs:
           bin/helixforge status htop ripgrep | tee status.txt
           grep -qE '^htop +Installed +(pacman|apt|dnf) [0-9]' status.txt
           grep -qE '^Ripgrep +Installed +(pacman|apt|dnf) [0-9]' status.txt
+          # The health checks run read-only on each distribution.
+          bin/helixforge doctor | tee doctor.txt
+          grep -qE '^(OK|Notice|Problem) +Disk space: ' doctor.txt
+          grep -qE '^(OK|Notice|Problem) +Network: ' doctor.txt
+          if bin/helixforge doctor --repair no-such-check --yes; then
+            echo "an unknown repair ran" >&2
+            exit 1
+          fi
           # Freshly installed, so nothing to update; on Arch it would be the whole system.
           bin/helixforge update htop --dry-run | tee update.txt
           grep -qE '^htop: up to date \((pacman|apt|dnf) [0-9]' update.txt

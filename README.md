@@ -89,6 +89,20 @@ banner. Elsewhere, including Konsole, tmux and the console, with icons off or
 in the compatible theme, it is the text header. HelixForge asks the terminal
 once at start and waits at most 0.4 seconds for the answer.
 
+**Helix Doctor** checks the machine, read-only, and shows what it found:
+network and DNS (a name lookup of github.com), failed system and user
+services with their last journal lines, whether each graphics card has a
+driver in use (or nouveau where NVIDIA's is wanted), a stale pacman lock or
+unfinished dpkg configuration, files in your home that belong to root,
+kernels without an initramfs, a GRUB configuration without its menu, the EFI
+partition's room and free disk space. `Enter` shows a check's evidence and
+what to do; where a safe repair exists (restart the resolver or a service,
+remove a stale lock, `dpkg --configure -a`, give files back to you, rebuild
+the initramfs or GRUB's menu, clear package caches) `f` runs it after its own
+confirmation, or runs the entry that addresses it (the graphics drivers).
+The Helix Doctor reports are listed below the checks. `helixforge doctor`
+prints the checks and `helixforge doctor --repair <id>` runs one repair.
+
 The **Backups** screen (and `helixforge backups`) lists the configuration
 backups HelixForge's entries leave beside a file before changing it
 (`<file>.commander-backup-<time>`, `<file>.helixforge-backup-<time>`), newest
@@ -118,6 +132,8 @@ helixforge plan git system-report     # what running entries would do
 helixforge run git --dry-run          # the plan, nothing changed
 helixforge run git                    # runs after you type RUN, asked on the terminal even when piped
 helixforge remove ardour              # removes a package entry that offers it
+helixforge doctor                     # health checks, read-only
+helixforge doctor --repair permissions  # one repair, after confirmation
 helixforge backups                    # configuration backups, newest first
 helixforge restore <backup>           # put one back, keeping the current file
 helixforge history                    # recent runs
