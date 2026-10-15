@@ -175,7 +175,19 @@ high). Each step carries `UpdateTarget`s: the entry, the probe that finds its
 package and its version before. The shell program fails if a target is gone
 afterwards; `verify()` gathers a fresh inventory and passes a target only when
 its version changed. Entries that are up to date, managed by Nix, installed
-elsewhere, absent or scripts become notes. Removal and verification use
+elsewhere, absent or scripts become notes.
+
+`updates::overview()` looks past the catalog, at every tool that keeps the
+machine: a `Channel` each for the distribution's package manager, the AUR
+helper, Flatpak's system and user installations, Home Manager with a flake,
+NixOS and a Nix profile, with the `Pending` packages its tool reports (None
+where it cannot say before updating, as with Nix, whose note gives the
+locked nixpkgs date instead), how it was asked, the commands that update it
+and a caveat. It asks through `doctor::System`, so tests use `doctor::Fake`;
+offline it reads cached metadata only, and `online` adds read-only network
+queries (`checkupdates`, `paru -Qua`, `flatpak remote-ls` without
+`--cached`). `updates::plan()` makes one `Step::Update` per chosen channel,
+with no targets to verify, the AUR depending on the repositories. Removal and verification use
 the same order. `Machine` carries the two questions so tests can answer
 them. A source whose tools are missing is skipped; an
 exit status of 128 or more ends the run. When the program succeeds,
@@ -198,7 +210,8 @@ the Dashboard (system overview and quick actions), one screen per catalog
 area (search bar and entry list with the flags column, groups opened in
 place, an installed or updates filter), Favourites (pinned entries from
 `favourites.toml` beside the settings, then recent ones from the history),
-the Install Plan (the queue, planned live), History (the records,
+the Install Plan (the queue, planned live), Updates (the channels, gathered
+on a background thread), History (the records,
 with saved logs) and Settings. Popups over the current screen show text, the
 confirmation with the plan's risk line, and the running terminal. All of it
 is one `App` in `apps/helixforge/src/tui/app.rs` driven by key events; screen

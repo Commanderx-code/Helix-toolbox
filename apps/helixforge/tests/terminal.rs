@@ -373,7 +373,10 @@ fn the_menu_runs_fixture_entries_from_the_keyboard() {
     tui.keys("\r");
     tui.keys(ESC);
 
-    // The history screen lists the four runs, newest first.
+    // Updates comes next, then the history screen, which lists the four
+    // runs, newest first.
+    tui.keys("\t");
+    tui.wait_for(&["What each tool has waiting"]);
     tui.keys("\t");
     tui.wait_for(&["Past runs, newest first"]);
     tui.wait_until("the history screen", |screen| {

@@ -18,7 +18,7 @@ use helixforge_core::{Action, Entry, Item};
 use helixforge_engine::{
     EngineError, Plan, backups, doctor, history,
     inventory::{Inventory, Status, which},
-    plan, plan_removal, preflight, profiles,
+    plan, plan_removal, preflight, profiles, updates,
 };
 use helixforge_platform::LinuxInfo;
 use ratatui::{
@@ -79,8 +79,8 @@ Install Plan
   Enter             run the plan                 x / Delete  remove the selected entry
   c                 clear the plan               s           save it as a profile
 
-History, Backups, Helix Doctor
-  Enter             log / restore / evidence     r           reload or check again; d backup; f repair
+History, Backups, Helix Doctor, Updates
+  Enter             log / restore / details      r   reload or check again; f repair; u / U update
 
 Settings
   Enter / Space     change the selected setting
@@ -101,6 +101,8 @@ enum Screen {
     Backups,
     /// The health checks, with the Helix Doctor area's reports below them.
     Doctor,
+    /// Pending updates of each tool that keeps the machine.
+    Updates,
     Settings,
 }
 
@@ -246,6 +248,12 @@ pub struct App {
     before_search: Option<usize>,
     /// A health check running in the background, if any.
     examining: Option<mpsc::Receiver<Vec<doctor::Diagnosis>>>,
+    /// The update channels, from the last look.
+    channels: Vec<updates::Channel>,
+    /// Whether that look asked the network.
+    channels_online: bool,
+    /// A look at the update channels running in the background, if any.
+    gathering: Option<mpsc::Receiver<(Vec<updates::Channel>, bool)>>,
     /// Whether this run of the interface checks the machine; off in tests.
     examine_here: bool,
     /// Whether the run in the window started from the Install Plan, whose
@@ -320,6 +328,9 @@ impl App {
             before_search: None,
             examining: None,
             examine_here: false,
+            channels: Vec::new(),
+            channels_online: false,
+            gathering: None,
             ran_from_plan: false,
             settings_path: None,
             banner: None,
@@ -558,6 +569,7 @@ impl App {
             Screen::Plan => self.queue.len(),
             Screen::History => self.records.len(),
             Screen::Backups => self.backups.len(),
+            Screen::Updates => self.channels.len(),
             Screen::Doctor => self.diagnoses.len() + self.doctor_entries().len(),
             Screen::Settings => self.settings().len(),
         }
@@ -612,6 +624,9 @@ impl App {
         if screen == Screen::Doctor && self.diagnoses.is_empty() {
             self.examine();
         }
+        if screen == Screen::Updates && self.channels.is_empty() {
+            self.gather_updates(false);
+        }
         self.update_rows();
     }
 
@@ -631,6 +646,21 @@ impl App {
                     return true;
                 }
                 Err(mpsc::TryRecvError::Disconnected) => self.examining = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(receiver) = &self.gathering {
+            match receiver.try_recv() {
+                Ok((channels, online)) => {
+                    self.channels = channels;
+                    self.channels_online = online;
+                    self.gathering = None;
+                    if self.screen == Screen::Updates {
+                        self.clamp_main();
+                    }
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.gathering = None,
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }
@@ -672,6 +702,7 @@ impl App {
             Screen::Plan => Icon::Plan,
             Screen::History => Icon::History,
             Screen::Backups => Icon::Backups,
+            Screen::Updates => Icon::Updates,
             Screen::Favourites => Icon::Favourites,
             Screen::Doctor => Icon::Doctor,
             Screen::Settings => Icon::Settings,
@@ -743,6 +774,7 @@ impl App {
             Screen::Plan => self.draw_plan(frame, main),
             Screen::History => self.draw_history(frame, main),
             Screen::Backups => self.draw_backups(frame, main),
+            Screen::Updates => self.draw_updates(frame, main),
             Screen::Doctor => self.draw_doctor(frame, main),
             Screen::Settings => self.draw_settings(frame, main),
         }
@@ -1845,6 +1877,15 @@ impl App {
                     }
                     list.push(Hint::new(&["r"], "Check again"));
                 }
+                Screen::Updates => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    if !self.channels.is_empty() {
+                        list.push(Hint::new(&["Enter"], "Details"));
+                        list.push(Hint::new(&["u"], "Update"));
+                        list.push(Hint::new(&["U"], "Update all"));
+                    }
+                    list.push(Hint::new(&["r"], "Check online"));
+                }
                 Screen::Backups => {
                     list.push(Hint::new(&["↑↓"], "Navigate"));
                     if !self.backups.is_empty() {
@@ -1935,6 +1976,9 @@ impl App {
                         }
                     }
                     self.refresh_statuses();
+                    if self.screen == Screen::Updates {
+                        self.gather_updates(false);
+                    }
                     if self.screen == Screen::History {
                         self.reload_history();
                     }
@@ -2123,6 +2167,18 @@ impl App {
                 },
                 KeyCode::Char('f') => self.repair_selected(),
                 KeyCode::Char('r') => self.examine(),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::Updates => match key.code {
+                KeyCode::Enter | KeyCode::Char('d') => self.describe_channel(),
+                KeyCode::Char('u') => {
+                    if let Some(channel) = self.selected_channel().cloned() {
+                        self.confirm_plan(Ok(updates::plan(&[&channel])));
+                    }
+                }
+                KeyCode::Char('U') => self.update_every_channel(),
+                KeyCode::Char('r') => self.gather_updates(true),
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
@@ -2599,6 +2655,141 @@ impl App {
         frame.render_stateful_widget(list, inner, &mut self.main_state);
     }
 
+    /// Look at the update channels in the background; `online` also asks the
+    /// network, through read-only commands.
+    fn gather_updates(&mut self, online: bool) {
+        if !self.examine_here {
+            return;
+        }
+        let platform = self.platform.clone();
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let channels =
+                updates::overview(&doctor::Here, &platform, &updates::Places::here(), online);
+            let _ = sender.send((channels, online));
+        });
+        self.gathering = Some(receiver);
+    }
+
+    fn selected_channel(&self) -> Option<&updates::Channel> {
+        self.main_state
+            .selected()
+            .and_then(|index| self.channels.get(index))
+    }
+
+    fn describe_channel(&mut self) {
+        let Some(channel) = self.selected_channel() else {
+            return;
+        };
+        let mut text = format!(
+            "{}: {}\n{}\n",
+            channel.name,
+            channel.summary(),
+            channel.note
+        );
+        if let Some(pending) = &channel.pending
+            && !pending.is_empty()
+        {
+            text.push('\n');
+            for item in pending {
+                let versions = match (&item.from, &item.to) {
+                    (Some(from), Some(to)) => format!("{from} → {to}"),
+                    (None, Some(to)) => to.clone(),
+                    _ => String::new(),
+                };
+                text.push_str(&format!(
+                    "  {}  {}\n",
+                    helixforge_core::printable(&item.name),
+                    helixforge_core::printable(&versions)
+                ));
+            }
+        }
+        text.push_str(&format!("\nu runs: {}\n", channel.command_line()));
+        if let Some(caveat) = &channel.caveat {
+            text.push_str(&format!("Note: {caveat}\n"));
+        }
+        self.popup = Some(Popup::Text(TextPopup::new("Updates", text, true)));
+    }
+
+    /// Update every channel with updates known to wait, one after another.
+    fn update_every_channel(&mut self) {
+        let chosen: Vec<&updates::Channel> = self
+            .channels
+            .iter()
+            .filter(|channel| channel.count().is_some_and(|count| count > 0))
+            .collect();
+        if chosen.is_empty() {
+            self.popup = Some(Popup::Text(TextPopup::new(
+                "Nothing to update",
+                "No channel is known to have updates waiting. r checks online; u updates the selected channel anyway, which is how Nix channels are updated, since they count nothing beforehand.",
+                true,
+            )));
+            return;
+        }
+        let planned = updates::plan(&chosen);
+        self.confirm_plan(Ok(planned));
+    }
+
+    fn draw_updates(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Updates",
+            "What each tool has waiting; updating runs that tool, after confirmation.",
+        );
+        let focused = self.focus == Focus::Main;
+        let mut items: Vec<Line> = Vec::new();
+        if self.channels.is_empty() {
+            items.push(Line::styled(
+                if self.gathering.is_some() {
+                    "Looking…"
+                } else {
+                    "No package manager, Flatpak or Nix setup HelixForge knows was found. r looks again, online."
+                },
+                Style::default().fg(self.theme.muted()),
+            ));
+        }
+        let name_width = self
+            .channels
+            .iter()
+            .map(|channel| channel.name.chars().count())
+            .max()
+            .unwrap_or(0)
+            + 2;
+        for channel in &self.channels {
+            let colour = match channel.count() {
+                Some(0) => self.theme.success(),
+                Some(_) => self.theme.warning(),
+                None => self.theme.muted(),
+            };
+            items.push(Line::from(vec![
+                Span::styled(
+                    format!("{:<name_width$}", channel.name),
+                    Style::default().fg(self.theme.entry()),
+                ),
+                Span::styled(
+                    format!("{:<14}", channel.summary()),
+                    Style::default().fg(colour).bold(),
+                ),
+                Span::styled(
+                    channel.note.clone(),
+                    Style::default().fg(self.theme.muted()),
+                ),
+            ]));
+        }
+        let title = match (self.gathering.is_some(), self.channels_online) {
+            (true, _) if !self.channels.is_empty() => "Channels (looking again…)",
+            (_, true) => "Channels · checked online",
+            _ => "Channels",
+        };
+        self.fill(frame, inner);
+        let list = List::new(items)
+            .block(self.card(title))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused));
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
+    }
+
     fn reload_backups(&mut self) {
         self.backups = backups::discover(&backups::Roots::here());
         self.clamp_main();
@@ -2907,6 +3098,11 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
             });
         }
     }
+    menu.push(MenuItem {
+        label: "Updates".into(),
+        screen: Screen::Updates,
+        section: "MORE TOOLS",
+    });
     menu.push(MenuItem {
         label: "History".into(),
         screen: Screen::History,
@@ -3619,6 +3815,65 @@ mod tests {
         app.recent.clear();
         app.update_rows();
         assert!(screen(&mut app, 120, 40).contains("Nothing here yet"));
+    }
+
+    fn channel(id: &str, name: &str, pending: Option<Vec<updates::Pending>>) -> updates::Channel {
+        updates::Channel {
+            id: id.into(),
+            name: name.into(),
+            pending,
+            note: "from the cache".into(),
+            commands: vec![vec!["sudo".into(), "pacman".into(), "-Syu".into()]],
+            requires: vec!["pacman".into(), "sudo".into()],
+            caveat: Some("updates the whole system".into()),
+        }
+    }
+
+    #[test]
+    fn the_updates_screen_lists_channels_and_updates_through_them() {
+        let mut app = app();
+        app.channels = vec![
+            channel(
+                "pacman",
+                "Arch packages",
+                Some(vec![updates::Pending {
+                    name: "mesa".into(),
+                    from: Some("1-1".into()),
+                    to: Some("2-1".into()),
+                }]),
+            ),
+            channel("home-manager", "Home Manager", None),
+        ];
+        app.open_screen(Screen::Updates);
+        app.focus = Focus::Main;
+        let text = screen(&mut app, 120, 40);
+        assert!(text.contains("Arch packages"), "{text}");
+        assert!(text.contains("1 update"));
+        assert!(text.contains("not counted"));
+        press(&mut app, KeyCode::Enter);
+        let text = screen(&mut app, 120, 40);
+        assert!(text.contains("mesa  1-1 → 2-1"), "{text}");
+        assert!(text.contains("u runs: sudo pacman -Syu"));
+        press(&mut app, KeyCode::Esc);
+        app.popup = None;
+        press(&mut app, KeyCode::Char('U'));
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let text = screen(&mut app, 120, 40);
+        assert!(text.contains("Update Arch packages"), "{text}");
+        assert!(
+            !text.contains("Update Home Manager"),
+            "uncounted channels wait for u"
+        );
+        press(&mut app, KeyCode::Char('n'));
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Char('u'));
+        assert!(screen(&mut app, 120, 40).contains("Update Home Manager"));
+        press(&mut app, KeyCode::Char('n'));
+        app.channels.truncate(1);
+        app.channels[0].pending = Some(Vec::new());
+        app.clamp_main();
+        press(&mut app, KeyCode::Char('U'));
+        assert!(screen(&mut app, 120, 40).contains("Nothing to update"));
     }
 
     #[test]

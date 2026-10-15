@@ -20,6 +20,7 @@ pub mod inventory;
 pub mod preflight;
 pub mod profiles;
 pub mod pty;
+pub mod updates;
 
 use helixforge_core::{
     Action, Entry, NativeAction, NixAction, PackageManager, Risk, valid_package_name,
@@ -136,12 +137,17 @@ pub struct Source {
 }
 
 impl Source {
+    /// The commands as plans show them, safe to print: package names and
+    /// paths may come from outside HelixForge.
     pub fn command_line(&self) -> String {
-        self.commands
-            .iter()
-            .map(|command| command.join(" "))
-            .collect::<Vec<_>>()
-            .join(" && ")
+        helixforge_core::printable(
+            &self
+                .commands
+                .iter()
+                .map(|command| command.join(" "))
+                .collect::<Vec<_>>()
+                .join(" && "),
+        )
     }
 }
 

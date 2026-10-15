@@ -85,6 +85,21 @@ is a partial upgrade, which Arch does not support. Afterwards each package's
 version is compared with its version before; one that did not change is not
 verified. Entries managed by Nix say to update them there.
 
+**Updates** shows the whole machine, not only catalog entries: for each tool
+that keeps it (pacman or apt, dnf, zypper; the AUR helper; Flatpak's system
+and user installations; Home Manager with a flake, NixOS, a Nix profile) what
+is waiting, from what that tool already knows. `r` checks online through
+read-only commands (`checkupdates`, which leaves pacman's database alone,
+`paru -Qua` or `yay -Qua`, `flatpak remote-ls`); nothing else asks the
+network. Nix channels show how old their locked nixpkgs is, since Nix counts
+nothing before it updates. `Enter` lists the packages, `u` updates the
+selected channel and `U` every channel with updates waiting, one after
+another and the AUR after the repositories, through the tools themselves
+(`sudo pacman -Syu`, `paru -Sua`, `flatpak update`, `nix flake update` then
+`home-manager switch`), after the usual confirmation. The Home Manager update
+changes the flake's `flake.lock`, in your dotfiles checkout when the
+configuration is a link to one.
+
 Script entries such as Steam, VS Code or Firefox show the same status when
 they say what they install (most application scripts do), and `u` updates
 that package; a script entry without it shows only its flags and is updated
@@ -155,6 +170,8 @@ helixforge search rip grep            # entries by name, id or description, clos
 helixforge info git                   # one entry
 helixforge status                     # every package entry: installed, update, managed or not
 helixforge update --dry-run           # what updating every entry with an update would run
+helixforge updates --online           # what each package tool has waiting
+helixforge updates --apply --dry-run  # what updating those channels would run
 helixforge plan git system-report     # what running entries would do
 helixforge run git --dry-run          # the plan, nothing changed
 helixforge run git                    # runs after you type RUN, asked on the terminal even when piped

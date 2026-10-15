@@ -12,7 +12,7 @@ use helixforge_core::{Action, Entry, Item, NativeAction, printable};
 use helixforge_engine::{
     InheritedRunner, Machine, PackageState, Plan, backups, doctor, execute, history,
     inventory::{Inventory, Status, which},
-    package_state, plan, plan_removal, preflight, profiles, run_native,
+    package_state, plan, plan_removal, preflight, profiles, run_native, updates,
 };
 use helixforge_platform::LinuxInfo;
 use std::{
@@ -117,6 +117,27 @@ enum Command {
         /// After a failed step, go on with the steps that do not need it.
         #[arg(long)]
         keep_going: bool,
+    },
+    /// Show pending updates across the package manager, the AUR helper,
+    /// Flatpak and Nix, from what each tool already knows; with --apply,
+    /// update them through those tools, after confirmation.
+    Updates {
+        /// The channels to update with --apply (pacman, aur, flatpak-system,
+        /// home-manager, …); every channel with updates waiting when none.
+        channels: Vec<String>,
+        /// Also ask the network, through read-only commands (checkupdates,
+        /// the AUR helper, Flatpak's remotes).
+        #[arg(long)]
+        online: bool,
+        /// Update the channels.
+        #[arg(long)]
+        apply: bool,
+        /// With --apply, show the plan and stop.
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip the confirmation phrase, for deliberate automation.
+        #[arg(long)]
+        yes: bool,
     },
     /// List configuration backups HelixForge's entries have left, newest
     /// first, and whether snapshots are taken before system changes.
@@ -432,6 +453,87 @@ fn main() -> Result<()> {
             let mut planned = inventory.plan_update(entries, &platform, &which);
             planned.keep_going = keep_going;
             confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "UPDATE")
+        }
+        Command::Updates {
+            channels: wanted,
+            online,
+            apply,
+            dry_run,
+            yes,
+        } => {
+            let found =
+                updates::overview(&doctor::Here, &platform, &updates::Places::here(), online);
+            if !apply {
+                if !wanted.is_empty() {
+                    bail!("name channels only with --apply");
+                }
+                if found.is_empty() {
+                    println!(
+                        "No package manager, Flatpak or Nix setup HelixForge knows was found."
+                    );
+                }
+                for channel in &found {
+                    println!(
+                        "{} [{}]: {}",
+                        printable(&channel.name),
+                        channel.id,
+                        channel.summary()
+                    );
+                    println!("  {}", printable(&channel.note));
+                    for pending in channel.pending.iter().flatten() {
+                        let versions = match (&pending.from, &pending.to) {
+                            (Some(from), Some(to)) => format!("{from} -> {to}"),
+                            (None, Some(to)) => to.clone(),
+                            _ => String::new(),
+                        };
+                        println!("    {} {}", printable(&pending.name), printable(&versions));
+                    }
+                    println!("  Update: {}", channel.command_line());
+                    if let Some(caveat) = &channel.caveat {
+                        println!("  Note: {}", printable(caveat));
+                    }
+                }
+                return Ok(());
+            }
+            let chosen: Vec<&updates::Channel> = if wanted.is_empty() {
+                found
+                    .iter()
+                    .filter(|channel| channel.count().is_some_and(|count| count > 0))
+                    .collect()
+            } else {
+                wanted
+                    .iter()
+                    .map(|id| {
+                        found
+                            .iter()
+                            .find(|channel| channel.id == *id)
+                            .ok_or_else(|| {
+                                let known: Vec<&str> =
+                                    found.iter().map(|channel| channel.id.as_str()).collect();
+                                anyhow::anyhow!(
+                                    "no update channel \"{}\" here; there are: {}",
+                                    printable(id),
+                                    known.join(", ")
+                                )
+                            })
+                    })
+                    .collect::<Result<_>>()?
+            };
+            if chosen.is_empty() {
+                println!(
+                    "Nothing is known to wait. Name a channel to update it anyway (Nix counts nothing before it updates), or check with --online."
+                );
+                return Ok(());
+            }
+            let catalog = load(false)?;
+            confirm_and_run(
+                &catalog,
+                &platform,
+                &updates::plan(&chosen),
+                dry_run,
+                yes,
+                "UPDATE",
+            )
         }
         Command::Doctor {
             repair,

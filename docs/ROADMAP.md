@@ -182,6 +182,16 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] The Install Plan screen keeps its plan for a few seconds and drops it
       after a run, since planning now asks the package manager
 
+## v0.6.0: unified update overview and JSON command line
+
+- [x] Unified update overview (item 6): an Updates screen and `helixforge
+      updates` with what pacman, apt, dnf or zypper, the AUR helper,
+      Flatpak's installations, Home Manager, NixOS and a Nix profile have
+      waiting, offline from what they know or online through read-only
+      commands; updates delegated to those tools, one after another, after
+      confirmation
+- [ ] JSON output (item 9)
+
 ## v0.5.0: workstation profiles, favourites and search (done)
 
 - [x] Workstation profiles 2.0 (item 4): save the Install Plan as a named
