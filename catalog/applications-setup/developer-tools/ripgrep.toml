@@ -1,15 +1,9 @@
-id = "ripgrep"
 name = "Ripgrep"
-category = "Development"
 description = "Fast recursive text search (rg)."
+flags = "I"
 
-[detect]
+[package]
 binary = "rg"
-
-[install]
-kind = "package"
-
-[install.packages]
 arch = "ripgrep"
 debian = "ripgrep"
 fedora = "ripgrep"

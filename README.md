@@ -2,87 +2,112 @@
 
 **BUILD • CONFIGURE • OPTIMIZE**
 
-A from-scratch Linux utility platform in Rust, starting with a Ratatui terminal interface and designed for a future GUI. No Linutil code or shell-script framework is used.
+HelixForge is a Linux setup menu for the terminal: a catalog of installers,
+configurations and maintenance entries organised in tabs and groups, each run
+inside the application after a confirmation, with a record of every run. It is
+written in Rust and built so a graphical interface can share the same engine
+later.
 
-> **v0.1 development scaffold, not a production installer.** Application catalog and basic CLI installation are implemented. The TUI is read-only: browse, search and preview. Test inside a VM before using package installation on an important computer.
-
-## Requirements
-
-- Linux, including Garuda/Arch, Fedora, Debian or Ubuntu
-- Rust stable toolchain (Rust 1.88 or newer)
-- Cargo, and a terminal for the TUI
-- `sudo` plus the native package manager only when actually installing something
-
-For Garuda / Arch:
-
-```sh
-sudo pacman -S --needed rustup base-devel
-rustup default stable
-```
-
-If Rust is already installed, skip those commands. Ensure the active toolchain is Rust 1.88+.
+> Early development. The engine, catalog and interface are in place; the catalog
+> itself is still small while the entries of the previous toolbox are brought
+> across.
 
 ## Run
 
-```sh
-cargo run -p helixforge
-```
-
-TUI shortcuts: `↑↓` or `j/k` to navigate, `/` to search, `Enter` or `p` to preview, `d` for read-only diagnostics, `Esc` to return, `q` to exit.
-
-### CLI examples
+With a Rust toolchain (1.88 or newer):
 
 ```sh
-cargo run -p helixforge -- system
-cargo run -p helixforge -- list
-cargo run -p helixforge -- info git
-cargo run -p helixforge -- plan ripgrep
-cargo run -p helixforge -- install ripgrep --dry-run
-cargo run -p helixforge -- history
+cargo run -p helixforge              # the terminal interface
+cargo run -p helixforge -- --help    # the command line
 ```
 
-`install <id>` executes a native package-manager command **only after** the user types `INSTALL` to confirm. `--yes` bypasses the confirmation for deliberate automation. Neither `plan` nor `--dry-run` modifies the system. Package installation may request sudo authentication and package-manager confirmations. Install only tools you trust.
+In the interface: `Tab` moves between tabs, `j`/`k` or the arrows move in the
+list, `Enter` opens a group or runs an entry, `d` shows the description, `p`
+the script or command, `/` searches every tab, `v` queues several entries,
+`g` explains the flags column, `t` switches the theme and `q` quits. Each run
+asks `[Y]` first and then runs in a terminal inside the window; `Ctrl-C` stops
+it, `l` saves its output.
+
+From the command line:
 
 ```sh
-# Only run after reviewing the dry run:
-cargo run -p helixforge -- install ripgrep
+helixforge system                     # the distribution and package manager it sees
+helixforge list                       # the catalog as tabs, groups and entries
+helixforge info git                   # one entry
+helixforge plan git system-report     # what running entries would do
+helixforge run git --dry-run          # the plan, nothing changed
+helixforge run git                    # runs after you type RUN
+helixforge history                    # recent runs
+helixforge docgen docs/walkthrough.md # the catalog as Markdown
 ```
 
-### Build and test
+## The catalog
 
-```sh
-cargo fmt --all --check
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-cargo build --release -p helixforge
-./target/release/helixforge
+`catalog/tabs.toml` names the tabs. Each tab is a directory with a `tab.toml`;
+inside it, entries are `<id>.toml` files and groups are directories with a
+`group.toml`. An entry is one of three kinds:
+
+```toml
+name = "Git"
+description = "Distributed version control."
+flags = "I"                      # what it does; g in the interface explains the codes
+
+[package]                        # one native package per family
+binary = "git"                   # installed when this is on the PATH
+arch = "git"
+debian = "git"
+fedora = "git"
 ```
 
-When initially downloading the source, Cargo generates `Cargo.lock`. Commit the resulting lockfile before distributing reproducible builds or setting up CI using `--locked`.
+```toml
+[script]                         # a script beside the TOML file, run from its directory
+path = "system-report.sh"
+```
 
-## Architecture
+```toml
+[command]                        # an inline shell command
+line = "echo hello"
+```
+
+Entries and groups can carry `order` to sort before their name, `multi_select
+= false` to keep them out of the queue, and `preconditions` that hide them on
+machines they do not apply to:
+
+```toml
+[[preconditions]]
+matches = true
+check = "command_exists"         # or "file_exists", { containing_file = "..." }, { environment = "..." }
+values = ["sddm"]
+```
+
+Scripts source the shared helpers with `. "$HELIXFORGE_LIB/common-script.sh"`.
+The catalog is embedded into the binary at build time and unpacked to a
+temporary directory when it starts, so scripts run as real files.
+
+## Layout
 
 ```text
-apps/helixforge/            CLI and Ratatui TUI binary
-crates/helixforge-core/     Shared domain models
-crates/helixforge-catalog/  TOML tool catalog and validation
-crates/helixforge-platform/ Linux/distro detection
-crates/helixforge-engine/   Read-only plans and guarded execution
-catalog/applications/      Auditable bundled TOML entries
+apps/helixforge/            the command line and the terminal interface
+crates/helixforge-core/     the data model: tabs, groups, entries, actions
+crates/helixforge-catalog/  loading and validating the catalog tree
+crates/helixforge-platform/ distribution and package manager detection
+crates/helixforge-engine/   plans, the shell program, the pseudo-terminal, history
+catalog/                    the entries, their scripts and the shared helpers
+docs/                       architecture, roadmap, security notes, walkthrough
 ```
 
-The GUI will be a separate frontend calling these shared crates; it must not duplicate installers. Read [Architecture](docs/ARCHITECTURE.md), [Roadmap](docs/ROADMAP.md) and [Security](docs/SECURITY.md).
+History lives in `~/.local/state/helixforge/history.jsonl` with saved output
+under `logs/` beside it; `XDG_STATE_HOME` is honoured.
 
-## Design limits
+## Checks
 
-- Installation supports six built-in tools: Git, Ripgrep, fzf, Neovim, htop and btop.
-- Executable detection uses PATH; it is **not** yet an authoritative package database check.
-- Installing uses the system package manager; packages may not exist on every distro release.
-- The TUI does not yet execute installs; use the CLI after reviewing a plan.
-- Execution history records subprocess outcomes, not guaranteed application verification.
-- No plugin system, external script execution, automatic rollback, bootloader editing, or system tuning is implemented.
-- This scaffold has not yet been compiled in the generation environment. Run the checks above on a machine with Rust installed.
+```sh
+scripts/verify.sh
+```
+
+runs the formatter, clippy, the tests, a release build and regenerates the
+walkthrough. The GitHub workflow runs the same.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).

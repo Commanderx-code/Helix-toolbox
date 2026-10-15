@@ -1,59 +1,55 @@
-# HELIXFORGE Architecture — v0.1
+# Architecture
 
-## Design principles
+## Principles
 
-1. Frontends (TUI now, GUI later) orchestrate use cases; they never own platform mutations.
-2. The catalog uses trusted, validated, built-in TOML metadata. Arbitrary downloaded scripts are not supported.
-3. Core models, OS detection, planning and execution are separate crates.
-4. Every install has a user-visible plan and opt-in execution.
-5. Privileged commands use argument arrays through `std::process::Command`, never `sh -c`.
-6. Commands inherit the terminal for sudo and package-manager prompts. No invisible elevation.
-7. We will add configuration backups only after we implement validation, testing and restoration semantics.
+1. The interface, terminal now and graphical later, never changes the system
+   itself. It asks the engine to plan and run entries.
+2. Entries come from the catalog embedded in the binary. There is no remote
+   catalog and no downloaded script.
+3. A run is one POSIX shell program built from quoted literals out of the
+   validated catalog. Package names, script paths and command lines never meet
+   user input.
+4. Every run is shown before it starts and confirmed, then recorded.
+5. Privileges come from `sudo` inside the run, visible in the terminal window,
+   never from a daemon.
 
-## Flow
+## Crates
 
 ```text
-                         +--------------------+
-+-------------+          |   helixforge-core  |
-| Ratatui TUI | -------->| domain API & types |
-+-------------+          +--------------------+
-        |                    ^         ^
-        | (preview only)     |         |
-+-------------+     +--------+---+   +-+-----------------+
-| CLI         |---->| catalog    |   | platform          |
-+-------------+     | definitions|   | distro detection  |
-        |           +------------+   +-------------------+
-        v
-+------------------+
-| engine           |
-| plan -> confirm  |
-| -> execute       |
-| -> record        |
-+------------------+
-        |
-        v
-Native package managers, never a shell interpreter
+helixforge-core      Tab, Group, Entry, Action, Precondition; validation of names and ids
+helixforge-catalog   reads catalog/ (embedded or from a directory), applies preconditions
+helixforge-platform  /etc/os-release, package manager family, PATH lookups
+helixforge-engine    plan(entry) -> Step, shell_program(steps), pty::Session, history
+helixforge           clap command line, ratatui interface
 ```
 
-## Platform matrix
+## A run, end to end
 
-- Arch-family: `pacman -S --needed <package>`
-- Debian-family: `apt-get install <package>`
-- Fedora-family: `dnf install <package>`
+```text
+entry ──plan──▶ Step ──shell_program──▶ sh program ──▶ pty::Session (interface)
+                                                   └─▶ run_inherited  (command line)
+                                                           │
+                                                   history::record
+```
 
-`sudo` runs the command in the CLI after user consent; the package manager may request more confirmation. Unsupported distros can use read-only TUI/CLI functionality.
+- A package entry becomes `sudo <manager> install <package>`; when the entry's
+  binary is already on the PATH it is reported instead of run.
+- A script entry runs `cd <its directory> && <interpreter> <script>`; the
+  interpreter comes from the shebang, `/bin/sh -e` without one, and an entry
+  whose interpreter is missing is hidden like one whose preconditions fail.
+- A command entry runs `sh -e -c '<line>'`.
+- Steps run in order and stop at the first failure.
 
-## Planned extension interfaces
+## Interface
 
-- `Action` containing validated, typed operation parameters
-- `Plan` containing ordered steps and impact preview
-- `Runner` abstraction for actual and test executors
-- `ExecutionEvent` stream to report progress to TUI or GUI
-- `PlatformCapabilities` for distro feature discovery
-- `ConfigBackend` for backup, diff, apply and restoration
+Tabs on the left with a system panel, the search bar and entry list on the
+right, key hints along the bottom. Popups over the list show text, the
+confirmation and the running terminal, which is a pseudo-terminal rendered
+with tui-term so prompts, colours and full-screen programs work.
 
-Only `Runner` and basic `Plan` exist in v0.1. The remaining interfaces are deliberately not invented as unusable stubs.
+## Graphical interface, later
 
-## GUI plan
-
-Tauri 2 frontend can invoke a thin command layer in `apps/helixforge-gui` while reusing the same crates. Introduce async execution/progress streams then, preserving the command planner and permissions model. Do not ship a permanently privileged daemon.
+A Tauri crate would use the same `helixforge-engine`: plans for its forms, the
+pseudo-terminal session for an embedded terminal panel where entries are
+interactive, and the history for its log view. Nothing in the engine assumes a
+terminal.

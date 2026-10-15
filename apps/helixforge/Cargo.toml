@@ -4,13 +4,17 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+description = "HelixForge: build, configure and optimise a Linux machine from a terminal menu."
 
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
 crossterm.workspace = true
-ratatui.workspace = true
-helixforge-core = { path = "../../crates/helixforge-core" }
 helixforge-catalog = { path = "../../crates/helixforge-catalog" }
-helixforge-platform = { path = "../../crates/helixforge-platform" }
+helixforge-core = { path = "../../crates/helixforge-core" }
 helixforge-engine = { path = "../../crates/helixforge-engine" }
+helixforge-platform = { path = "../../crates/helixforge-platform" }
+nix = { version = "0.31", features = ["user"] }
+ratatui.workspace = true
+tui-term = "0.3"
+vt100 = "0.16"

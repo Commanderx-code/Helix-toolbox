@@ -1,15 +1,9 @@
-id = "neovim"
 name = "Neovim"
-category = "Editors"
 description = "Extensible terminal-based text editor."
+flags = "I"
 
-[detect]
+[package]
 binary = "nvim"
-
-[install]
-kind = "package"
-
-[install.packages]
 arch = "neovim"
 debian = "neovim"
 fedora = "neovim"

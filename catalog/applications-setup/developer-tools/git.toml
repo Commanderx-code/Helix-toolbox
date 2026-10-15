@@ -1,15 +1,9 @@
-id = "git"
 name = "Git"
-category = "Development"
 description = "Distributed version control."
+flags = "I"
 
-[detect]
+[package]
 binary = "git"
-
-[install]
-kind = "package"
-
-[install.packages]
 arch = "git"
 debian = "git"
 fedora = "git"

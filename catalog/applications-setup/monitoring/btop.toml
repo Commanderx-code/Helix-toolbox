@@ -1,0 +1,9 @@
+name = "btop"
+description = "Resource monitor with a terminal interface."
+flags = "I"
+
+[package]
+binary = "btop"
+arch = "btop"
+debian = "btop"
+fedora = "btop"

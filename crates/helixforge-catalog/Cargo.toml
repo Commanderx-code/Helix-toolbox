@@ -7,6 +7,9 @@ license.workspace = true
 
 [dependencies]
 helixforge-core = { path = "../helixforge-core" }
+helixforge-platform = { path = "../helixforge-platform" }
+include_dir = "0.7"
 serde.workspace = true
-toml.workspace = true
+tempfile = "3"
 thiserror.workspace = true
+toml.workspace = true

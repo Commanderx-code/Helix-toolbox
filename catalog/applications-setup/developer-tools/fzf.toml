@@ -1,0 +1,9 @@
+name = "fzf"
+description = "Command-line fuzzy finder."
+flags = "I"
+
+[package]
+binary = "fzf"
+arch = "fzf"
+debian = "fzf"
+fedora = "fzf"

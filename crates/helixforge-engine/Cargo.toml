@@ -6,8 +6,13 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+helixforge-catalog = { path = "../helixforge-catalog" }
 helixforge-core = { path = "../helixforge-core" }
 helixforge-platform = { path = "../helixforge-platform" }
+portable-pty = "0.9"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
