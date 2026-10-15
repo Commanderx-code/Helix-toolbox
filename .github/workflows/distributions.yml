@@ -39,18 +39,22 @@ jobs:
             family: Arch
             group: Arch
             removable: ''
+            program: ''
           - image: debian:stable
             family: Debian
             group: Debian / Ubuntu
             removable: mypaint
+            program: mypaint
           - image: ubuntu:24.04
             family: Debian
             group: Ubuntu
             removable: mypaint
+            program: mypaint
           - image: fedora:latest
             family: Fedora
             group: Fedora
-            removable: mupen64plus
+            removable: mupen-64-plus
+            program: mupen64plus
     container: ${{ matrix.image }}
     name: ${{ matrix.image }}
     steps:
@@ -98,11 +102,11 @@ jobs:
           command -v lynx
           if [ -n "${{ matrix.removable }}" ]; then
             yes | bin/helixforge run ${{ matrix.removable }} --yes
-            command -v ${{ matrix.removable }}
+            command -v ${{ matrix.program }}
             bin/helixforge remove ${{ matrix.removable }} --dry-run | tee removal.txt
             grep -q '^1. Remove ' removal.txt
             yes | bin/helixforge remove ${{ matrix.removable }} --yes
-            ! command -v ${{ matrix.removable }}
+            ! command -v ${{ matrix.program }}
             bin/helixforge remove ${{ matrix.removable }} --dry-run | grep -q 'not installed'
           else
             # Arch takes these from the AUR; without paru or yay the run stops before it starts.
