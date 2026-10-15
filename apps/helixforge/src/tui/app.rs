@@ -785,7 +785,7 @@ impl App {
                 Line::from(vec![
                     Span::styled(format!("{:<7}", status), Style::default().fg(colour).bold()),
                     Span::styled(
-                        format!("{:<20}", timestamp(record.unix_timestamp)),
+                        format!("{:<22}", timestamp(record.unix_timestamp)),
                         Style::default().fg(self.theme.muted()),
                     ),
                     Span::styled(
