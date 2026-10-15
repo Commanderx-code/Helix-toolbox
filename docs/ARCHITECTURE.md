@@ -45,6 +45,11 @@ helixforge-engine    plan() -> Plan of Steps; shell_program(); Runner (inherited
 helixforge           clap command line, ratatui interface, tracing setup
 ```
 
+`--json` output is built in `apps/helixforge/src/json.rs`, field by field
+from the engine's types rather than derived from them, so the engine can
+change without changing what other programs read; the shapes and their
+`schema` version are in [JSON.md](JSON.md).
+
 ## The operation model
 
 An entry's `Action` is one of:

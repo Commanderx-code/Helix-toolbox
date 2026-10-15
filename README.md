@@ -183,7 +183,13 @@ helixforge backups                    # configuration backups, newest first
 helixforge restore <backup>           # put one back, keeping the current file
 helixforge history                    # recent runs
 helixforge docgen docs/walkthrough.md # the catalog as Markdown
+helixforge status --json              # any reading command, or a --dry-run plan, as JSON
 ```
+
+`--json` prints one JSON document for other programs instead of text; it
+works with the commands that read and with `--dry-run` plans, and refuses
+anything that would change the machine. The shapes are in
+[docs/JSON.md](docs/JSON.md).
 
 ## The catalog
 

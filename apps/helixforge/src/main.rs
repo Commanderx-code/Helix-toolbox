@@ -2,6 +2,7 @@
 //! menu, or from the command line.
 
 mod docgen;
+mod json;
 mod logging;
 mod tui;
 
@@ -42,6 +43,11 @@ struct Cli {
     /// built into the program; for tests with a fixture catalog.
     #[arg(long, global = true, hide = true, value_name = "DIR")]
     catalog_dir: Option<PathBuf>,
+    /// Print the result as JSON, for other programs (see docs/JSON.md): for
+    /// system, list, search, info, status, plan, history, updates, doctor,
+    /// backups and profile list, and for --dry-run plans.
+    #[arg(long, global = true)]
+    json: bool,
 }
 
 #[derive(Subcommand)]
@@ -227,8 +233,21 @@ pub struct TuiArgs {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     logging::init();
+    if !matches!(cli.command, None | Some(Command::Tui(_))) {
+        // Output piped into head or similar ends quietly when the reader
+        // stops, as other command-line tools do, instead of with an error.
+        // SAFETY: the default action, set before any thread starts.
+        let _ = unsafe {
+            nix::sys::signal::signal(
+                nix::sys::signal::Signal::SIGPIPE,
+                nix::sys::signal::SigHandler::SigDfl,
+            )
+        };
+    }
     let platform = LinuxInfo::detect().context("HelixForge needs Linux with /etc/os-release")?;
     let source = cli.catalog_dir;
+    let as_json = cli.json;
+    JSON.store(as_json, std::sync::atomic::Ordering::Relaxed);
     let load = |validate: bool| -> Result<Catalog> {
         let mut catalog = match &source {
             Some(directory) => Catalog::from_directory(directory, validate)
@@ -244,6 +263,11 @@ fn main() -> Result<()> {
         Ok(catalog)
     };
     match cli.command.unwrap_or(Command::Tui(TuiArgs::default())) {
+        Command::Tui(_) | Command::Docgen { .. } | Command::Native { .. } if as_json => {
+            bail!(
+                "--json is for system, list, search, info, status, plan, history, updates, doctor, backups and profile list, and for --dry-run plans"
+            )
+        }
         Command::Tui(args) => {
             // Keys are read from the controlling terminal, not standard
             // input, so `curl … | sh` still works.
@@ -254,12 +278,20 @@ fn main() -> Result<()> {
             }
             tui::run(load(!args.override_validation)?, platform, args)
         }
+        Command::System if as_json => {
+            json::print("system", json::system(&platform));
+            Ok(())
+        }
         Command::System => {
             print!("{}", run_native(NativeAction::SystemReport, &platform));
             Ok(())
         }
         Command::List { all } => {
             let catalog = load(!all)?;
+            if as_json {
+                json::print("list", json::list(&catalog));
+                return Ok(());
+            }
             for tab in &catalog.tabs {
                 println!("{}", tab.name);
                 list_items(&tab.items, 1);
@@ -282,13 +314,17 @@ fn main() -> Result<()> {
                     .map(|score| (score, entry))
                 })
                 .collect();
-            if found.is_empty() {
-                bail!("nothing matches \"{query}\"");
-            }
             found.sort_by(|a, b| {
                 b.0.cmp(&a.0)
                     .then_with(|| a.1.name.to_lowercase().cmp(&b.1.name.to_lowercase()))
             });
+            if as_json {
+                json::print("search", json::search(&query, &found));
+                return Ok(());
+            }
+            if found.is_empty() {
+                bail!("nothing matches \"{query}\"");
+            }
             let width = found
                 .iter()
                 .map(|(_, entry)| entry.id.len())
@@ -303,6 +339,13 @@ fn main() -> Result<()> {
         Command::Info { id } => {
             let catalog = load(false)?;
             let entry = find(&catalog, &id)?;
+            if as_json {
+                let status = entry
+                    .identity()
+                    .and_then(|_| Inventory::gather(&platform).status(entry, &platform, &which));
+                json::print("info", json::info(entry, status.as_ref()));
+                return Ok(());
+            }
             println!("{} ({})", entry.name, entry.id);
             if !entry.description.is_empty() {
                 println!("{}", entry.description);
@@ -377,6 +420,14 @@ fn main() -> Result<()> {
                     .collect::<Result<_>>()?
             };
             let inventory = Inventory::gather(&platform);
+            if as_json {
+                let found: Vec<(&Entry, Option<Status>)> = entries
+                    .into_iter()
+                    .map(|entry| (entry, inventory.status(entry, &platform, &which)))
+                    .collect();
+                json::print("status", json::statuses(&found));
+                return Ok(());
+            }
             for entry in entries {
                 match inventory.status(entry, &platform, &which) {
                     Some(status) => println!(
@@ -393,7 +444,11 @@ fn main() -> Result<()> {
         Command::Plan { ids } => {
             let catalog = load(false)?;
             let planned = plan_ids(&catalog, &platform, &ids)?;
-            print_plan(&catalog, &platform, &planned);
+            if as_json {
+                print_plan_json(&catalog, &platform, &planned);
+            } else {
+                print_plan(&catalog, &platform, &planned);
+            }
             Ok(())
         }
         Command::Run {
@@ -445,6 +500,16 @@ fn main() -> Result<()> {
                     .collect::<Result<_>>()?
             };
             if entries.is_empty() {
+                if as_json {
+                    return confirm_and_run(
+                        &catalog,
+                        &platform,
+                        &Plan::default(),
+                        dry_run,
+                        yes,
+                        "UPDATE",
+                    );
+                }
                 println!(
                     "No package entry has an update in the repository metadata on this machine."
                 );
@@ -466,6 +531,10 @@ fn main() -> Result<()> {
             if !apply {
                 if !wanted.is_empty() {
                     bail!("name channels only with --apply");
+                }
+                if as_json {
+                    json::print("updates", json::updates(&found, online));
+                    return Ok(());
                 }
                 if found.is_empty() {
                     println!(
@@ -519,6 +588,13 @@ fn main() -> Result<()> {
                     })
                     .collect::<Result<_>>()?
             };
+            if chosen.is_empty() && as_json {
+                if !dry_run {
+                    bail!("--json shows plans only: add --dry-run");
+                }
+                json::print("plan", json::plan(&Plan::default(), &[]));
+                return Ok(());
+            }
             if chosen.is_empty() {
                 println!(
                     "Nothing is known to wait. Name a channel to update it anyway (Nix counts nothing before it updates), or check with --online."
@@ -541,6 +617,10 @@ fn main() -> Result<()> {
             yes,
         } => {
             let found = doctor::examine(&doctor::Here, platform.manager);
+            if as_json && repair.is_none() {
+                json::print("doctor", json::doctor(&found));
+                return Ok(());
+            }
             let Some(id) = repair else {
                 for diagnosis in &found {
                     println!(
@@ -587,6 +667,16 @@ fn main() -> Result<()> {
                 yes,
                 "REPAIR",
             )
+        }
+        Command::Backups if as_json => {
+            json::print(
+                "backups",
+                json::backups(
+                    backups::Snapshots::here(),
+                    &backups::discover(&backups::Roots::here()),
+                ),
+            );
+            Ok(())
         }
         Command::Backups => {
             match backups::Snapshots::here() {
@@ -649,6 +739,8 @@ fn main() -> Result<()> {
                     })
             };
             match command {
+                ProfileCommand::List if as_json => json::print("profiles", json::profiles(&found)),
+                _ if as_json => bail!("--json lists profiles only: helixforge profile list --json"),
                 ProfileCommand::List => {
                     if found.is_empty() {
                         println!(
@@ -698,6 +790,10 @@ fn main() -> Result<()> {
         }
         Command::History { limit } => {
             let records = history::read(limit)?;
+            if as_json {
+                json::print("history", json::history(&records));
+                return Ok(());
+            }
             if records.is_empty() {
                 println!("No runs recorded yet.");
             }
@@ -736,12 +832,16 @@ fn main() -> Result<()> {
 fn add_snapshot(catalog: &Catalog, planned: &mut Plan) {
     let flags = |id: &str| catalog.find(id).map(|entry| entry.flags.clone());
     if !backups::worth_a_snapshot(planned, &flags) {
-        println!("No snapshot: this run does not change system files, the kernel or disks.");
+        planned.notes.push(
+            "No snapshot: this run does not change system files, the kernel or disks.".into(),
+        );
         return;
     }
     match backups::Snapshots::here() {
         Some(tool) => backups::with_snapshot(planned, tool),
-        None => println!("No snapshot: neither Snapper nor Timeshift is set up here."),
+        None => planned
+            .notes
+            .push("No snapshot: neither Snapper nor Timeshift is set up here.".into()),
     }
 }
 
@@ -754,6 +854,13 @@ fn confirm_and_run(
     yes: bool,
     word: &str,
 ) -> Result<()> {
+    if JSON.load(std::sync::atomic::Ordering::Relaxed) {
+        if !dry_run {
+            bail!("--json shows plans only: add --dry-run; nothing was changed");
+        }
+        print_plan_json(catalog, platform, planned);
+        return Ok(());
+    }
     let findings = print_plan(catalog, platform, planned);
     if planned.is_empty() {
         println!("Nothing to run.");
@@ -867,6 +974,20 @@ fn plan_ids(catalog: &Catalog, platform: &LinuxInfo, ids: &[String]) -> Result<P
         entries.push(find(catalog, id)?);
     }
     Ok(plan(entries, platform, &|id| catalog.find(id))?)
+}
+
+/// Whether --json was given, for the commands that confirm and run plans.
+static JSON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A plan and what the checks before a run found, as JSON.
+fn print_plan_json(catalog: &Catalog, platform: &LinuxInfo, planned: &Plan) {
+    let findings = preflight::check(
+        planned,
+        platform,
+        &|id| catalog.find(id),
+        &preflight::Facts::real(),
+    );
+    json::print("plan", json::plan(planned, &findings));
 }
 
 /// Print a plan and what the checks before a run found; returns the findings.

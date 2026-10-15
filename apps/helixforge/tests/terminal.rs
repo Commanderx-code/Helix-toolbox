@@ -564,6 +564,76 @@ fn the_menu_refuses_to_start_without_a_terminal() {
 }
 
 #[test]
+fn the_command_line_prints_json_for_other_programs() {
+    let home = tempfile::tempdir().unwrap();
+    let catalog = fixtures();
+    let helixforge = |args: &[&str]| {
+        Command::new(PROGRAM)
+            .arg("--catalog-dir")
+            .arg(&catalog)
+            .args(args)
+            .arg("--json")
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path().join("config"))
+            .env("XDG_STATE_HOME", home.path().join("state"))
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let document = |args: &[&str]| -> serde_json::Value {
+        let output = helixforge(args);
+        assert!(output.status.success(), "{args:?}: {output:?}");
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .unwrap_or_else(|error| panic!("{args:?} is not JSON: {error}: {output:?}"));
+        assert_eq!(value["schema"], 1);
+        value
+    };
+
+    let listed = document(&["list"]);
+    assert_eq!(listed["command"], "list");
+    let text = listed["data"]["tabs"].to_string();
+    assert!(text.contains("\"id\":\"marker\""), "{text}");
+
+    let found = document(&["search", "mark"]);
+    assert_eq!(found["data"]["results"][0]["id"], "marker");
+    assert_eq!(found["data"]["results"][0]["kind"], "script");
+    let none = document(&["search", "qqqzzz"]);
+    assert_eq!(none["data"]["results"], serde_json::json!([]));
+
+    let info = document(&["info", "marker"]);
+    assert_eq!(info["data"]["name"], "Marker");
+
+    let planned = document(&["plan", "bundle"]);
+    let steps = planned["data"]["steps"].as_array().unwrap();
+    assert_eq!(steps[0]["name"], "Marker");
+    assert_eq!(steps[1]["name"], "Report");
+    assert_eq!(planned["data"]["runnable"], true);
+    let dry = document(&["run", "bundle", "--dry-run"]);
+    assert_eq!(dry["command"], "plan");
+    assert!(
+        !home.path().join("marker.txt").exists(),
+        "a dry run runs nothing"
+    );
+
+    assert_eq!(
+        document(&["history"])["data"]["runs"],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        document(&["profile", "list"])["data"]["profiles"],
+        serde_json::json!([])
+    );
+    assert!(document(&["system"])["data"]["distribution"]["id"].is_string());
+
+    // Changing anything is refused, before anything runs.
+    let refused = helixforge(&["run", "marker", "--yes"]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--dry-run"));
+    assert!(refused.stdout.is_empty());
+    assert!(!helixforge(&["docgen", "walkthrough.md"]).status.success());
+}
+
+#[test]
 fn the_command_line_runs_fixtures_and_says_when_history_cannot_be_written() {
     let home = tempfile::tempdir().unwrap();
     let catalog = fixtures();

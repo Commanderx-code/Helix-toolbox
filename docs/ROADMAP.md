@@ -182,7 +182,7 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] The Install Plan screen keeps its plan for a few seconds and drops it
       after a run, since planning now asks the package manager
 
-## v0.6.0: unified update overview and JSON command line
+## v0.6.0: unified update overview and JSON command line (done)
 
 - [x] Unified update overview (item 6): an Updates screen and `helixforge
       updates` with what pacman, apt, dnf or zypper, the AUR helper,
@@ -190,7 +190,12 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       waiting, offline from what they know or online through read-only
       commands; updates delegated to those tools, one after another, after
       confirmation
-- [ ] JSON output (item 9)
+- [x] JSON output (item 9): `--json` on system, list, search, info,
+      status, plan, history, updates, doctor, backups and profile list, and
+      on every `--dry-run` plan, in versioned shapes documented in
+      docs/JSON.md; refused for anything that changes the machine
+- [x] Command-line output piped into `head` ends quietly instead of with a
+      broken pipe error
 
 ## v0.5.0: workstation profiles, favourites and search (done)
 
