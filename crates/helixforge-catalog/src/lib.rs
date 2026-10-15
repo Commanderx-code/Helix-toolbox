@@ -123,6 +123,15 @@ pub fn sweep_stale(parent: &Path) -> usize {
     removed
 }
 
+/// Write an embedded tree into `target`. include_dir writes a tree's own
+/// files into `target` without creating it, and creates it only on the way
+/// to a subdirectory, so whether that comes first depends on the order the
+/// build machine's file system listed them: make it first.
+fn unpack(tree: &Dir, target: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(target)?;
+    tree.extract(target)
+}
+
 impl Catalog {
     /// Unpack the embedded catalog and read it. With `validate`, entries whose
     /// preconditions fail on this machine are left out.
@@ -131,12 +140,13 @@ impl Catalog {
         sweep_stale(&parent);
         let directory = Unpacked::create(&parent)
             .map_err(|error| CatalogError::Io(PathBuf::from("temporary directory"), error))?;
-        EMBEDDED_CATALOG
-            .extract(directory.path().join("catalog"))
-            .map_err(|error| CatalogError::Io(directory.path().to_path_buf(), error))?;
-        EMBEDDED_SCRIPTS
-            .extract(directory.path().join("scripts"))
-            .map_err(|error| CatalogError::Io(directory.path().to_path_buf(), error))?;
+        for (tree, name) in [
+            (&EMBEDDED_CATALOG, "catalog"),
+            (&EMBEDDED_SCRIPTS, "scripts"),
+        ] {
+            let target = directory.path().join(name);
+            unpack(tree, &target).map_err(|error| CatalogError::Io(target, error))?;
+        }
         let tabs = load_tabs(directory.path(), validate)?;
         Ok(Self {
             tabs,
@@ -789,6 +799,17 @@ fn holds(condition: &Precondition) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_tree_with_files_at_its_top_unpacks_into_a_new_directory() {
+        let parent = tempfile::tempdir().unwrap();
+        let target = parent.path().join("scripts");
+        unpack(&EMBEDDED_SCRIPTS, &target).unwrap();
+        // Files at the top of scripts/, beside its folders.
+        assert!(target.join("verify.sh").is_file());
+        assert!(target.join("package.sh").is_file());
+        assert!(target.join("installers").is_dir());
+    }
+
     use super::*;
 
     #[test]

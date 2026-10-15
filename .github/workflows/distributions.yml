@@ -27,6 +27,15 @@ jobs:
         with:
           name: helixforge
           path: target/release/helixforge
+      - name: Arch, Debian and RPM packages of the build
+        run: |
+          scripts/install-nfpm.sh "$RUNNER_TEMP/bin"
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$version" target/release/helixforge dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: dist/
 
   distribution:
     needs: build
@@ -216,3 +225,46 @@ jobs:
         run: |
           ls -l /bin/sh
           python3 -B -m unittest discover -s tests/installers -t tests/installers
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: packages
+      - name: The native package installs, works and removes cleanly
+        run: |
+          ls -l packages
+          case "${{ matrix.family }}" in
+            Arch)
+              pacman -U --noconfirm packages/helixforge-*-x86_64.pkg.tar.zst
+              pacman -Ql helixforge > files.txt ;;
+            Debian)
+              apt-get install -y ./packages/helixforge_*_amd64.deb
+              dpkg -L helixforge > files.txt ;;
+            Fedora)
+              dnf install -y ./packages/helixforge-*.x86_64.rpm
+              rpm -ql helixforge > files.txt ;;
+          esac
+          # Arch and Fedora link /usr/sbin to /usr/bin, which comes first on PATH.
+          test "$(readlink -f "$(command -v helixforge)")" = /usr/bin/helixforge
+          helixforge --version | grep -qE '^helixforge [0-9]+\.[0-9]+\.[0-9]+$'
+          helixforge list --json | python3 -c 'import json, sys; assert json.load(sys.stdin)["schema"] == 1'
+          helixforge system | grep -q "(${{ matrix.family }} family)"
+          # The images leave out manual pages and documentation, so these are
+          # checked in the package's own file list.
+          for file in /usr/bin/helixforge /usr/share/man/man1/helixforge.1.gz \
+              /usr/share/bash-completion/completions/helixforge \
+              /usr/share/zsh/site-functions/_helixforge \
+              /usr/share/fish/vendor_completions.d/helixforge.fish \
+              /usr/share/applications/helixforge.desktop \
+              /usr/share/icons/hicolor/512x512/apps/helixforge.png; do
+            grep -qE "^(helixforge )?$file\$" files.txt
+          done
+          test -f /usr/share/bash-completion/completions/helixforge
+          test -f /usr/share/applications/helixforge.desktop
+          case "${{ matrix.family }}" in
+            Arch) pacman -R --noconfirm helixforge ;;
+            Debian) apt-get remove -y helixforge ;;
+            Fedora) dnf remove -y helixforge ;;
+          esac
+          hash -r
+          test ! -e /usr/bin/helixforge
+          test ! -e /usr/share/applications/helixforge.desktop

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=HelixForge
+GenericName=System setup
+Comment=Build, configure and optimise this machine from a terminal menu
+Exec=helixforge
+Icon=helixforge
+Terminal=true
+Categories=System;Settings;
+Keywords=install;packages;setup;dotfiles;update;

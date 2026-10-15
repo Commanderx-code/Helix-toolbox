@@ -30,6 +30,9 @@ jobs:
     timeout-minutes: 40
     permissions:
       contents: write
+      # Signed build provenance for the published files.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,6 +92,27 @@ jobs:
           target/release/helixforge docgen docs/walkthrough.md
           target/release/helixforge --help >/dev/null
           target/release/helixforge --version | grep -qx "helixforge $HELIXFORGE_VERSION"
+      - name: Package the tested build
+        if: steps.release.outputs.build == 'true'
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          mkdir -p /tmp/helixforge-release
+          cp target/release/helixforge /tmp/helixforge-release/helixforge-linux-x86_64
+          scripts/install-nfpm.sh "$RUNNER_TEMP/bin"
+          PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$VERSION" target/release/helixforge /tmp/helixforge-release
+          cd /tmp/helixforge-release
+          sha256sum helixforge-linux-x86_64 helixforge_*.deb helixforge-*.rpm helixforge-*.pkg.tar.zst > SHA256SUMS
+          cat SHA256SUMS
+      - name: Attest where the files were built
+        if: steps.release.outputs.build == 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            /tmp/helixforge-release/helixforge-linux-x86_64
+            /tmp/helixforge-release/helixforge_*.deb
+            /tmp/helixforge-release/helixforge-*.rpm
+            /tmp/helixforge-release/helixforge-*.pkg.tar.zst
       - name: Commit tested source updates
         if: steps.sync.outputs.changed == 'true'
         run: |
@@ -107,13 +131,22 @@ jobs:
         run: |
           revision=$(git rev-parse HEAD)
           tag="v$VERSION"
-          mkdir -p /tmp/helixforge-release
-          cp target/release/helixforge /tmp/helixforge-release/helixforge-linux-x86_64
           python3 -B scripts/sync-sources.py --render
           git diff --exit-code
           cd /tmp/helixforge-release
-          sha256sum helixforge-linux-x86_64 > SHA256SUMS
-          printf 'HelixForge %s, built from commit %s.\n\nLinux x86_64; built on Ubuntu 22.04 (glibc 2.35 or newer).\nUpdate HelixForge, then run the entry you want.\n' "$tag" "$revision" > release-notes.md
+          {
+            printf 'HelixForge %s, built from commit %s.\n\n' "$tag" "$revision"
+            printf 'Linux x86_64; built on Ubuntu 22.04 (glibc 2.35 or newer).\n\n'
+            printf 'Install the package for your distribution, or run the program directly:\n\n'
+            printf '```sh\n'
+            printf 'sudo pacman -U helixforge-%s-1-x86_64.pkg.tar.zst   # Arch and derivatives\n' "$VERSION"
+            printf 'sudo apt install ./helixforge_%s-1_amd64.deb        # Debian, Ubuntu\n' "$VERSION"
+            printf 'sudo dnf install ./helixforge-%s-1.x86_64.rpm       # Fedora (zypper on openSUSE)\n' "$VERSION"
+            printf '```\n\n'
+            printf 'Check a download with %s, and where it was built with %s. See docs/INSTALL.md.\n' \
+              "\`sha256sum --check --ignore-missing SHA256SUMS\`" \
+              "\`gh attestation verify <file> --repo $GITHUB_REPOSITORY\`"
+          } > release-notes.md
           # A draft left by a failed run may point at an older commit; start again.
           if [ "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)" = true ]; then
             gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
@@ -122,5 +155,5 @@ jobs:
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$revision" --draft --title "HelixForge $tag" --notes-file release-notes.md
           fi
-          gh release upload "$tag" helixforge-linux-x86_64 SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+          gh release upload "$tag" helixforge-linux-x86_64 helixforge_*.deb helixforge-*.rpm helixforge-*.pkg.tar.zst SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
           gh release edit "$tag" --draft=false --latest --repo "$GITHUB_REPOSITORY"

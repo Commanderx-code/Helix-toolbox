@@ -1,0 +1,83 @@
+# Arch, Debian and RPM packages of one release build, made with nfpm by
+# scripts/package.sh, which fills in the version and stages the build in
+# target/package-stage.
+name: helixforge
+arch: amd64
+platform: linux
+version: ${HELIXFORGE_VERSION}
+release: 1
+section: admin
+priority: optional
+maintainer: Commanderx-code <Commanderx-code@users.noreply.github.com>
+description: |
+  Build, configure and optimise a Linux machine from a terminal menu.
+  HelixForge plans every change before it runs it: packages through the
+  distribution's package manager, Flatpak or Nix, configuration scripts,
+  updates, backups and health checks, with a command line and JSON output.
+vendor: HelixForge
+homepage: https://github.com/Commanderx-code/Helix-Forge
+license: MIT
+
+# The release build needs glibc 2.35 or newer; scripts run under bash and
+# fetch with curl and git, and system changes go through sudo.
+depends:
+  - bash
+recommends:
+  - sudo
+  - curl
+  - git
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.35)
+      - bash
+    recommends:
+      - sudo
+      - curl
+      - git
+      - ca-certificates
+  rpm:
+    depends:
+      - glibc >= 2.35
+      - bash
+  archlinux:
+    depends:
+      - glibc
+      - bash
+
+archlinux:
+  packager: Commanderx-code <Commanderx-code@users.noreply.github.com>
+
+contents:
+  - src: target/package-stage/helixforge
+    dst: /usr/bin/helixforge
+    file_info:
+      mode: 0755
+  - src: target/package-stage/completions/helixforge.bash
+    dst: /usr/share/bash-completion/completions/helixforge
+  - src: target/package-stage/completions/_helixforge
+    dst: /usr/share/zsh/site-functions/_helixforge
+  - src: target/package-stage/completions/helixforge.fish
+    dst: /usr/share/fish/vendor_completions.d/helixforge.fish
+  - src: target/package-stage/man/
+    dst: /usr/share/man/man1/
+  - src: packaging/helixforge.desktop
+    dst: /usr/share/applications/helixforge.desktop
+  - src: assets/icon.png
+    dst: /usr/share/icons/hicolor/512x512/apps/helixforge.png
+  - src: README.md
+    dst: /usr/share/doc/helixforge/README.md
+  - src: docs/JSON.md
+    dst: /usr/share/doc/helixforge/JSON.md
+  - src: docs/INSTALL.md
+    dst: /usr/share/doc/helixforge/INSTALL.md
+  - src: LICENSE
+    dst: /usr/share/doc/helixforge/copyright
+    packager: deb
+  - src: LICENSE
+    dst: /usr/share/licenses/helixforge/LICENSE
+    packager: archlinux
+  - src: LICENSE
+    dst: /usr/share/licenses/helixforge/LICENSE
+    packager: rpm
+    type: license

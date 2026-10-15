@@ -564,6 +564,34 @@ fn the_menu_refuses_to_start_without_a_terminal() {
 }
 
 #[test]
+fn completions_and_manual_pages_describe_the_commands() {
+    for shell in ["bash", "zsh", "fish"] {
+        let output = Command::new(PROGRAM)
+            .args(["completions", shell])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{shell}");
+        let text = String::from_utf8_lossy(&output.stdout);
+        assert!(text.contains("helixforge"), "{shell}");
+        assert!(text.contains("updates"), "{shell}: {text}");
+    }
+    let pages = tempfile::tempdir().unwrap();
+    let output = Command::new(PROGRAM)
+        .arg("manpages")
+        .arg(pages.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let main = fs::read_to_string(pages.path().join("helixforge.1")).unwrap();
+    assert!(main.contains("helixforge\\-updates(1)"), "{main}");
+    assert!(pages.path().join("helixforge-run.1").exists());
+    assert!(
+        !pages.path().join("helixforge-native.1").exists(),
+        "hidden commands stay out"
+    );
+}
+
+#[test]
 fn the_command_line_prints_json_for_other_programs() {
     let home = tempfile::tempdir().unwrap();
     let catalog = fixtures();

@@ -14,7 +14,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 python3 -B -m unittest discover -s tests/installers
 shellcheck -x -P . scripts/shared/*.sh scripts/installers/*.sh scripts/installers/commander/*.sh \
-    tests/fixtures/scripts/shared/*.sh tests/fixtures/scripts/installers/*.sh start.sh
+    tests/fixtures/scripts/shared/*.sh tests/fixtures/scripts/installers/*.sh start.sh \
+    scripts/package.sh scripts/install-nfpm.sh
 find scripts/installers -name '*.sh' -not -path '*/commander/*' -print0 | xargs -0 shellcheck -x -P . -S error
 # Rendering the dotfiles and Myfish exports again must change nothing.
 generated() {

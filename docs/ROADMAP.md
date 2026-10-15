@@ -182,6 +182,18 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] The Install Plan screen keeps its plan for a few seconds and drops it
       after a run, since planning now asks the package manager
 
+## v0.7.0: packaging, usability, documentation and beta testing
+
+- [x] Native packaging (item 10): an Arch package, a Debian package and an
+      RPM from each tested release build, made with nfpm by
+      `scripts/package.sh`, with bash, zsh and fish completions, manual
+      pages, a menu entry and icon; installed, used and removed in the
+      Arch, Debian, Ubuntu and Fedora containers; SHA-256 sums and signed
+      build provenance attestations for every published file, with
+      verification instructions in docs/INSTALL.md
+- [ ] ARM64 builds
+- [ ] Usability, documentation and beta testing
+
 ## v0.6.0: unified update overview and JSON command line (done)
 
 - [x] Unified update overview (item 6): an Updates screen and `helixforge

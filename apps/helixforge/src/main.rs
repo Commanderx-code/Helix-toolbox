@@ -184,6 +184,12 @@ enum Command {
     },
     /// Write the catalog walkthrough as Markdown.
     Docgen { file: PathBuf },
+    /// Print shell completions: helixforge completions fish >
+    /// ~/.config/fish/completions/helixforge.fish (the packages install them).
+    Completions { shell: clap_complete::Shell },
+    /// Write the manual pages into a directory; the packages are built with it.
+    #[command(hide = true)]
+    Manpages { directory: PathBuf },
     /// Run a native operation; the engine calls this from a run.
     #[command(hide = true)]
     Native { action: String },
@@ -263,7 +269,13 @@ fn main() -> Result<()> {
         Ok(catalog)
     };
     match cli.command.unwrap_or(Command::Tui(TuiArgs::default())) {
-        Command::Tui(_) | Command::Docgen { .. } | Command::Native { .. } if as_json => {
+        Command::Tui(_)
+        | Command::Docgen { .. }
+        | Command::Native { .. }
+        | Command::Completions { .. }
+        | Command::Manpages { .. }
+            if as_json =>
+        {
             bail!(
                 "--json is for system, list, search, info, status, plan, history, updates, doctor, backups and profile list, and for --dry-run plans"
             )
@@ -810,6 +822,24 @@ fn main() -> Result<()> {
                         .unwrap_or_default()
                 );
             }
+            Ok(())
+        }
+        Command::Completions { shell } => {
+            clap_complete::generate(
+                shell,
+                &mut <Cli as clap::CommandFactory>::command(),
+                "helixforge",
+                &mut io::stdout(),
+            );
+            Ok(())
+        }
+        Command::Manpages { directory } => {
+            std::fs::create_dir_all(&directory)
+                .with_context(|| format!("cannot create {}", directory.display()))?;
+            clap_mangen::generate_to(<Cli as clap::CommandFactory>::command(), &directory)
+                .with_context(|| {
+                    format!("cannot write the manual pages in {}", directory.display())
+                })?;
             Ok(())
         }
         Command::Docgen { file } => {

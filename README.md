@@ -32,6 +32,13 @@ or newer) it runs from a checkout instead:
 cargo run -p helixforge -- --help    # the command line
 ```
 
+To keep it installed, each release also has an Arch package, a Debian/Ubuntu
+package and an RPM for Fedora and openSUSE, with shell completions, manual
+pages and a menu entry; each file has a SHA-256 sum and a signed build
+provenance attestation. [docs/INSTALL.md](docs/INSTALL.md) shows how to
+install and check them. `helixforge completions bash|zsh|fish` prints the
+completions for a copy that is not installed from a package.
+
 In the interface the sidebar is a menu of screens. `Tab` or `j`/`k` in the
 sidebar move between Dashboard, Applications, Favourites, Install Plan, and the other
 areas, History and Settings; `Enter` or `l` opens the selected screen and

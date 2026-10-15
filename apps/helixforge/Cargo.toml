@@ -9,6 +9,8 @@ description = "HelixForge: build, configure and optimise a Linux machine from a 
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+clap_complete = "4.5"
+clap_mangen = "0.2"
 crossterm.workspace = true
 helixforge-catalog = { path = "../../crates/helixforge-catalog" }
 helixforge-core = { path = "../../crates/helixforge-core" }
