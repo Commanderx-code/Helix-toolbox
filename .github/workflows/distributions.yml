@@ -107,6 +107,9 @@ jobs:
             grep -q '^1. Remove ' removal.txt
             yes | bin/helixforge remove ${{ matrix.removable }} --yes
             # A bare "! command" never fails a step under set -e; test it explicitly.
+            # Forget the path bash remembered from the install check above, or
+            # command -v reports the removed file.
+            hash -r
             if command -v ${{ matrix.program }}; then
               echo "${{ matrix.program }} is still installed after removal" >&2
               exit 1
