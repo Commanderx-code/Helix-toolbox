@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::Style,
     symbols::border,
-    text::{Line, Text},
+    text::{Line, Span, Text},
     widgets::{Block, Clear, Paragraph, Wrap},
 };
 
@@ -52,7 +52,7 @@ impl TextPopup {
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, theme: Theme) {
         let block = Block::bordered()
-            .border_set(border::PLAIN)
+            .border_set(border::ROUNDED)
             .border_style(Style::default().fg(theme.focused()))
             .title(format!(" {} ", self.title))
             .title_alignment(Alignment::Center)
@@ -65,6 +65,10 @@ impl TextPopup {
             paragraph = paragraph.wrap(Wrap { trim: false });
         }
         frame.render_widget(Clear, area);
+        frame.render_widget(
+            Block::default().style(theme.card()),
+            Block::bordered().inner(area),
+        );
         frame.render_widget(paragraph, area);
     }
 
@@ -140,9 +144,22 @@ impl ConfirmPopup {
         }
     }
 
+    /// `area` shrunk to the confirmation's height, centred in it.
+    pub fn fitted(&self, area: Rect) -> Rect {
+        // Borders, the lines, a blank line and the buttons with space around.
+        let height = (self.lines.len() as u16 + 6).clamp(9, area.height.max(1));
+        let height = height.min(area.height);
+        Rect::new(
+            area.x,
+            area.y + (area.height - height) / 2,
+            area.width,
+            height,
+        )
+    }
+
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, theme: Theme) {
         let block = Block::bordered()
-            .border_set(border::PLAIN)
+            .border_set(border::ROUNDED)
             .border_style(Style::default().fg(theme.focused()))
             .title(" CONFIRM ")
             .title_alignment(Alignment::Center)
@@ -151,11 +168,16 @@ impl ConfirmPopup {
         let sections = Layout::vertical([
             Constraint::Min(1),
             Constraint::Length(1),
-            Constraint::Length(2),
+            Constraint::Length(1),
+            Constraint::Length(1),
         ])
         .split(inner);
         self.visible_lines = sections[0].height as usize;
         frame.render_widget(Clear, area);
+        frame.render_widget(
+            Block::default().style(theme.card()),
+            Block::bordered().inner(area),
+        );
         frame.render_widget(block, area);
         let lines: Vec<Line> = self
             .lines
@@ -176,10 +198,17 @@ impl ConfirmPopup {
             Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }),
             sections[0],
         );
-        let actions = Text::from(vec![
-            Line::styled("[Y] Run", Style::default().fg(theme.success()).bold()),
-            Line::styled("[N] Cancel", Style::default().fg(theme.failure()).bold()),
-        ]);
+        let button = |label: &'static str, colour| {
+            Span::styled(
+                label,
+                Style::default().bg(colour).fg(theme.on_highlight()).bold(),
+            )
+        };
+        let actions = Text::from(Line::from(vec![
+            button(" [Y] Run ", theme.success()),
+            Span::raw("    "),
+            button(" [N] Cancel ", theme.failure()),
+        ]));
         frame.render_widget(
             Paragraph::new(actions).alignment(Alignment::Center),
             sections[2],

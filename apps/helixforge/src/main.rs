@@ -82,9 +82,14 @@ enum Command {
 
 #[derive(clap::Args, Clone, Debug, Default)]
 pub struct TuiArgs {
-    /// Colour theme: default, or compatible for terminals with few colours.
-    #[arg(short, long, value_enum, default_value_t = Theme::Default)]
-    pub theme: Theme,
+    /// Colour theme for this run: default (over the terminal's background),
+    /// solid (dark panels), or compatible (sixteen colours). Settings in the
+    /// menu changes the remembered one.
+    #[arg(short, long, value_enum)]
+    pub theme: Option<Theme>,
+    /// Draw plain text instead of Nerd Font icons for this run.
+    #[arg(long)]
+    pub plain: bool,
     /// Skip the confirmation before running an entry.
     #[arg(short = 'y', long)]
     pub skip_confirmation: bool,

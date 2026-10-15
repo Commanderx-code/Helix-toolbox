@@ -9,7 +9,7 @@ use ratatui::{
     style::Style,
     symbols::border,
     text::Line,
-    widgets::Block,
+    widgets::{Block, Padding},
 };
 use std::path::{Path, PathBuf};
 use tui_term::widget::PseudoTerminal;
@@ -135,12 +135,13 @@ impl RunningView {
             " Ctrl-C stops the command ".to_string()
         };
         let block = Block::bordered()
-            .border_set(border::PLAIN)
+            .border_set(border::ROUNDED)
             .border_style(Style::default().fg(colour))
             .title(title)
             .title_alignment(Alignment::Center)
             .title_style(Style::default().fg(theme.title()).bold())
-            .title_bottom(Line::from(note).centered());
+            .title_bottom(Line::from(note).centered())
+            .padding(Padding::horizontal(1));
         let inner = block.inner(area);
         self.session.resize(inner.height, inner.width);
         let mut parser = vt100::Parser::new(inner.height.max(1), inner.width.max(1), 2000);

@@ -3,8 +3,10 @@
 
 use super::{
     hints::Hint,
+    icons::Icon,
     popup::{ConfirmPopup, Decision, TextPopup, centered},
     running::RunningView,
+    settings::{self, Look},
     sysinfo::Overview,
     theme::Theme,
 };
@@ -17,7 +19,7 @@ use helixforge_platform::LinuxInfo;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    style::Style,
+    style::{Color, Style},
     symbols::border,
     text::{Line, Span, Text},
     widgets::{Block, List, ListState, Padding, Paragraph, Wrap},
@@ -25,11 +27,9 @@ use ratatui::{
 
 const MIN_WIDTH: u16 = 100;
 const MIN_HEIGHT: u16 = 25;
-const SIDEBAR_WIDTH: u16 = 28;
+const SIDEBAR_WIDTH: u16 = 30;
+const HEADER_HEIGHT: u16 = 4;
 const HIGHLIGHT: &str = "> ";
-const GROUP_ICON: &str = "[D]";
-const ENTRY_ICON: &str = "[*]";
-const QUEUED_ICON: &str = "*";
 const ROOT_WARNING: &str = "You are running HelixForge as root.\n\nEvery entry then has full access to the system. The entries expect to run as your normal user and ask for your password when they need it.";
 const FLAGS_GUIDE: &str = "The flags column names what an entry does:
 
@@ -48,7 +48,7 @@ P* - the same action, privileged
 Risk in a plan: D, K and SI are high; installs, services and anything privileged are medium; the rest is low.
 ";
 const HELP: &str = "Everywhere
-  Tab / Shift-Tab   next / previous screen       t   switch theme
+  Tab / Shift-Tab   next / previous screen       t   next theme (remembered)
   /                 search every area            ?   this help
   q / Ctrl-C        quit
 
@@ -122,6 +122,8 @@ struct AreaState {
     selected: usize,
 }
 
+const QUICK_ICONS: [Icon; 4] = [Icon::Applications, Icon::Plan, Icon::Doctor, Icon::History];
+
 const QUICK_ACTIONS: [(&str, &str); 4] = [
     ("Browse Applications", "Search and install tools"),
     ("Review the Install Plan", "See what is queued and run it"),
@@ -151,6 +153,10 @@ pub struct App {
     size_bypass: bool,
     skip_confirmation: bool,
     show_hidden: bool,
+    /// Nerd Font icons, or plain text.
+    icons: bool,
+    /// Where theme and icon choices are saved; none in tests.
+    settings_path: Option<std::path::PathBuf>,
 }
 
 impl App {
@@ -161,7 +167,7 @@ impl App {
         let mut app = Self {
             catalog,
             platform,
-            theme: args.theme,
+            theme: args.theme.unwrap_or_default(),
             focus: Focus::Sidebar,
             screen: Screen::Dashboard,
             menu,
@@ -180,6 +186,8 @@ impl App {
             size_bypass: args.size_bypass,
             skip_confirmation: args.skip_confirmation,
             show_hidden: args.override_validation,
+            icons: !args.plain,
+            settings_path: None,
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -190,6 +198,34 @@ impl App {
             )));
         }
         app
+    }
+
+    /// Use and keep the saved look; `--theme` and `--plain` given on the
+    /// command line win for this run.
+    pub fn remembering(
+        mut self,
+        look: Look,
+        path: Option<std::path::PathBuf>,
+        args: &TuiArgs,
+    ) -> Self {
+        self.theme = args.theme.unwrap_or(look.theme);
+        self.icons = look.icons && !args.plain;
+        self.settings_path = path;
+        self
+    }
+
+    /// Save the theme and icon choice, when there is somewhere to save it.
+    fn save_look(&mut self) {
+        let Some(path) = &self.settings_path else {
+            return;
+        };
+        let look = Look {
+            theme: self.theme,
+            icons: self.icons,
+        };
+        if let Err(error) = settings::save(path, &look) {
+            tracing::warn!(%error, "the settings were not saved");
+        }
     }
 
     // ----- state helpers -----
@@ -276,7 +312,7 @@ impl App {
             Screen::Area(_) => self.rows.len(),
             Screen::Plan => self.queue.len(),
             Screen::History => self.records.len(),
-            Screen::Settings => 4,
+            Screen::Settings => 5,
         }
     }
 
@@ -338,8 +374,49 @@ impl App {
 
     // ----- drawing -----
 
+    fn glyph(&self, icon: Icon) -> &'static str {
+        icon.glyph(self.icons)
+    }
+
+    /// An icon and the space after it, or nothing when icons are off.
+    fn icon_gap(&self, icon: Icon) -> String {
+        match self.glyph(icon) {
+            "" => String::new(),
+            glyph => format!("{glyph}  "),
+        }
+    }
+
+    fn menu_icon(&self, screen: Screen) -> Icon {
+        match screen {
+            Screen::Dashboard => Icon::Dashboard,
+            Screen::Plan => Icon::Plan,
+            Screen::History => Icon::History,
+            Screen::Settings => Icon::Settings,
+            Screen::Area(index) => Icon::for_area(&self.catalog.tabs[index].id),
+        }
+    }
+
+    /// The style of the selected row of a list that has the focus.
+    fn highlight(&self, focused: bool) -> Style {
+        if focused {
+            self.theme.selection()
+        } else {
+            Style::default()
+        }
+    }
+
+    /// What marks the selected row of a list.
+    fn marker(&self, focused: bool) -> &'static str {
+        match (focused, self.icons) {
+            (false, _) => "  ",
+            (true, true) => "▌ ",
+            (true, false) => HIGHLIGHT,
+        }
+    }
+
     pub fn draw(&mut self, frame: &mut Frame) {
         let area = frame.area();
+        frame.render_widget(Block::default().style(self.theme.base()), area);
         let too_small = (area.width < MIN_WIDTH || area.height < MIN_HEIGHT)
             && !self.size_bypass
             && self.popup.is_none();
@@ -361,9 +438,9 @@ impl App {
             return;
         }
         let rows = Layout::vertical([
-            Constraint::Length(3),
+            Constraint::Length(HEADER_HEIGHT),
             Constraint::Min(1),
-            Constraint::Length(1),
+            Constraint::Length(2),
         ])
         .split(area);
         self.draw_header(frame, rows[0]);
@@ -380,7 +457,10 @@ impl App {
         }
         match &mut self.popup {
             Some(Popup::Text(popup)) => popup.draw(frame, centered(main, 95, 95), self.theme),
-            Some(Popup::Confirm(popup)) => popup.draw(frame, centered(main, 80, 70), self.theme),
+            Some(Popup::Confirm(popup)) => {
+                let area = popup.fitted(centered(main, 80, 70));
+                popup.draw(frame, area, self.theme)
+            }
             Some(Popup::Running(popup)) => popup.draw(frame, centered(main, 96, 96), self.theme),
             None => {}
         }
@@ -388,173 +468,410 @@ impl App {
     }
 
     fn draw_header(&self, frame: &mut Frame, area: Rect) {
-        let status = match &self.popup {
+        let (status, colour) = match &self.popup {
             Some(Popup::Running(running)) if !running.is_finished() => {
                 ("● RUNNING", self.theme.title())
             }
             _ => ("● SYSTEM READY", self.theme.success()),
         };
-        let block = Block::default()
-            .padding(Padding::horizontal(2))
-            .style(Style::default());
-        let inner = block.inner(area);
-        let left = Text::from(vec![
+        // The logo tile, then the wordmark and the tagline beside it.
+        let tile = Rect::new(area.x + 2, area.y, 5, 3).intersection(area);
+        let inside = self.framed(
+            frame,
+            tile,
+            self.theme.selected_line(),
+            Style::default().bg(self.theme.selected()),
+        );
+        frame.render_widget(
+            Paragraph::new(Line::styled(
+                self.glyph(Icon::Logo),
+                Style::default().fg(self.theme.focused()).bold(),
+            ))
+            .alignment(Alignment::Center),
+            inside,
+        );
+        let text = Rect::new(
+            area.x + 9,
+            area.y,
+            area.width.saturating_sub(11),
+            area.height.min(3),
+        )
+        .intersection(area);
+        let brand = Text::from(vec![
             Line::from(vec![
-                Span::styled("⬡ ", Style::default().fg(self.theme.focused())),
                 Span::styled("HELIX", Style::default().fg(self.theme.focused()).bold()),
                 Span::styled("FORGE", Style::default().fg(self.theme.title()).bold()),
             ]),
-            Line::from(Span::styled(
+            Line::styled(
                 "BUILD • CONFIGURE • OPTIMIZE",
-                Style::default().fg(self.theme.muted()),
-            )),
+                Style::default().fg(self.theme.faint()),
+            ),
         ]);
-        frame.render_widget(Paragraph::new(left), inner);
+        frame.render_widget(Paragraph::new(brand), text);
         frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                status.0,
-                Style::default().fg(status.1),
-            )))
-            .alignment(Alignment::Right),
-            inner,
+            Paragraph::new(Line::styled(status, Style::default().fg(colour).bold()))
+                .alignment(Alignment::Right),
+            text,
         );
-        let rule = Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1);
+        self.rule(frame, area.x, area.bottom().saturating_sub(1), area.width);
+    }
+
+    /// A rounded card whose fill stays inside its border, as in the design;
+    /// returns the space inside.
+    fn framed(&self, frame: &mut Frame, area: Rect, border: Color, fill: Style) -> Rect {
+        let block = Block::bordered()
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(border));
+        let inside = block.inner(area);
+        frame.render_widget(block, area);
+        frame.render_widget(Block::default().style(fill), inside);
+        inside
+    }
+
+    /// A horizontal divider.
+    fn rule(&self, frame: &mut Frame, x: u16, y: u16, width: u16) {
         frame.render_widget(
-            Paragraph::new("─".repeat(area.width as usize))
-                .style(Style::default().fg(self.theme.muted())),
-            rule,
+            Paragraph::new("─".repeat(width as usize))
+                .style(Style::default().fg(self.theme.line())),
+            Rect::new(x, y, width, 1).intersection(frame.area()),
         );
     }
 
     fn draw_sidebar(&mut self, frame: &mut Frame, area: Rect) {
         let focused = self.focus == Focus::Sidebar;
-        let mut lines: Vec<Line> = Vec::new();
-        let mut section = "";
-        for item in &self.menu {
-            if item.section != section {
-                section = item.section;
-                if !lines.is_empty() {
-                    lines.push(Line::from(""));
-                }
-                lines.push(Line::styled(
-                    format!(" {section}"),
-                    Style::default().fg(self.theme.muted()),
-                ));
-            }
-            let current = item.screen == self.screen;
-            let style = if current && focused {
-                Style::default()
-                    .bg(self.theme.focused())
-                    .fg(self.theme.on_highlight())
-                    .bold()
-            } else if current {
-                Style::default().fg(self.theme.focused()).bold()
-            } else {
-                Style::default().fg(self.theme.entry())
-            };
-            let marker = if current { HIGHLIGHT } else { "  " };
-            lines.push(Line::styled(
-                format!(
-                    " {marker}{:<width$}",
-                    item.label,
-                    width = area.width as usize - 4
-                ),
-                style,
-            ));
-        }
-        let block = Block::default()
-            .padding(Padding::new(1, 0, 1, 0))
-            .border_set(border::PLAIN)
+        let edge = Block::default()
             .borders(ratatui::widgets::Borders::RIGHT)
-            .border_style(Style::default().fg(self.theme.muted()));
-        frame.render_widget(Paragraph::new(Text::from(lines)).block(block), area);
+            .border_set(border::PLAIN)
+            .border_style(Style::default().fg(self.theme.line()));
+        let inner = edge.inner(area);
+        frame.render_widget(edge, area);
+        let inner = Rect::new(
+            inner.x + 1,
+            inner.y + 1,
+            inner.width.saturating_sub(2),
+            inner.height.saturating_sub(1),
+        );
+        // Menu items by section, in order.
+        let mut sections: Vec<(&'static str, Vec<usize>)> = Vec::new();
+        for (index, item) in self.menu.iter().enumerate() {
+            match sections.last_mut() {
+                Some((name, items)) if *name == item.section => items.push(index),
+                _ => sections.push((item.section, vec![index])),
+            }
+        }
+        // The first section's items are cards when there is room for them.
+        let compact = sections.len() * 3 + self.menu.len();
+        let cards = inner.height as usize >= compact + 2 * sections[0].1.len();
+        let bottom = inner.bottom();
+        let mut y = inner.y;
+        for (number, (name, items)) in sections.iter().enumerate() {
+            if number > 0 {
+                self.rule(frame, inner.x, y, inner.width);
+                y += 2;
+            }
+            if y >= bottom {
+                break;
+            }
+            frame.render_widget(
+                Paragraph::new(Line::styled(
+                    *name,
+                    Style::default().fg(self.theme.faint()).bold(),
+                )),
+                Rect::new(inner.x, y, inner.width, 1),
+            );
+            y += 1;
+            for &index in items {
+                let item = &self.menu[index];
+                let current = item.screen == self.screen;
+                let icon = self.icon_gap(self.menu_icon(item.screen));
+                let text_style = if current {
+                    Style::default().fg(self.theme.on_selected()).bold()
+                } else {
+                    Style::default().fg(self.theme.entry())
+                };
+                let label = Line::from(vec![
+                    Span::styled(
+                        icon,
+                        Style::default().fg(if current {
+                            self.theme.focused()
+                        } else {
+                            self.theme.muted()
+                        }),
+                    ),
+                    Span::styled(item.label.clone(), text_style),
+                ]);
+                if cards && number == 0 {
+                    if y + 3 > bottom {
+                        break;
+                    }
+                    let border = match (current, focused) {
+                        (true, true) => self.theme.focused(),
+                        (true, false) => self.theme.selected_line(),
+                        _ => self.theme.line(),
+                    };
+                    let fill = if current {
+                        Style::default().bg(self.theme.selected())
+                    } else {
+                        self.theme.card()
+                    };
+                    let inside =
+                        self.framed(frame, Rect::new(inner.x, y, inner.width, 3), border, fill);
+                    frame.render_widget(
+                        Paragraph::new(label)
+                            .block(Block::default().padding(Padding::horizontal(1))),
+                        inside,
+                    );
+                    y += 3;
+                } else {
+                    if y >= bottom {
+                        break;
+                    }
+                    let row = Rect::new(inner.x, y, inner.width, 1);
+                    let edge = if current && focused {
+                        Span::styled("▌", Style::default().fg(self.theme.focused()))
+                    } else {
+                        Span::raw(" ")
+                    };
+                    let mut spans = vec![edge, Span::raw(" ")];
+                    spans.extend(label.spans);
+                    let style = if current {
+                        Style::default().bg(self.theme.selected())
+                    } else {
+                        Style::default()
+                    };
+                    frame.render_widget(Paragraph::new(Line::from(spans)).style(style), row);
+                    y += 1;
+                }
+            }
+            y += 1;
+        }
     }
 
-    fn screen_block(&self, title: &str, subtitle: &str) -> Block<'static> {
-        Block::default()
-            .padding(Padding::new(2, 2, 1, 0))
-            .title(Line::from(vec![
-                Span::styled(
-                    format!(" {title} "),
+    /// A screen's title and subtitle; returns the space below them.
+    fn page(&self, frame: &mut Frame, area: Rect, title: &str, subtitle: &str) -> Rect {
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(1),
+        );
+        frame.render_widget(
+            Paragraph::new(Text::from(vec![
+                Line::styled(
+                    title.to_string(),
                     Style::default().fg(self.theme.entry()).bold(),
                 ),
-                Span::styled(
+                Line::styled(
                     subtitle.to_string(),
                     Style::default().fg(self.theme.muted()),
                 ),
-            ]))
+            ])),
+            inner,
+        );
+        Rect::new(
+            inner.x,
+            inner.y + 3,
+            inner.width,
+            inner.height.saturating_sub(3),
+        )
     }
 
     fn card(&self, title: &str) -> Block<'static> {
         Block::bordered()
             .border_set(border::ROUNDED)
-            .border_style(Style::default().fg(self.theme.muted()))
+            .border_style(Style::default().fg(self.theme.line()))
             .title(format!(" {title} "))
             .title_style(Style::default().fg(self.theme.entry()).bold())
             .padding(Padding::horizontal(1))
     }
 
+    /// Fill a card's inside, so the fill never reaches past its rounded
+    /// border; draw the card's widget over it afterwards.
+    fn fill(&self, frame: &mut Frame, area: Rect) {
+        let inside = Block::bordered().inner(area);
+        frame.render_widget(Block::default().style(self.theme.card()), inside);
+    }
+
     fn draw_dashboard(&mut self, frame: &mut Frame, area: Rect) {
-        let block = self.screen_block("Dashboard", "Welcome to your Linux command center.");
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-        let overview_height = self.overview.rows.len() as u16 + 2;
-        let parts = Layout::vertical([
-            Constraint::Length(overview_height),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(1),
-        ])
-        .split(inner);
-        let width = parts[0].width.saturating_sub(4) as usize;
-        let lines: Vec<Line> = self
-            .overview
-            .rows
-            .iter()
-            .map(|(label, value)| {
-                let gap = width.saturating_sub(label.len() + value.chars().count());
-                Line::from(vec![
-                    Span::styled(*label, Style::default().fg(self.theme.muted())),
-                    Span::raw(" ".repeat(gap)),
-                    Span::styled(value.clone(), Style::default().fg(self.theme.entry())),
-                ])
-            })
-            .collect();
-        frame.render_widget(
-            Paragraph::new(Text::from(lines)).block(self.card("System Overview")),
-            parts[0],
+        let content = self.page(
+            frame,
+            area,
+            "Dashboard",
+            "Welcome to your Linux command center.",
         );
+        let rows = self.overview.rows.len() as u16;
+        let actions = QUICK_ACTIONS.len() as u16;
+        let overview_height = |spaced: bool| if spaced { rows * 2 + 1 } else { rows + 2 };
+        // Roomy rows and two-line cards when they fit, tighter otherwise.
+        let (spaced, card) = [(true, 4), (false, 4), (false, 3), (false, 1)]
+            .into_iter()
+            .find(|&(spaced, card)| overview_height(spaced) + 3 + actions * card <= content.height)
+            .unwrap_or((false, 1));
+        let width = content.width.saturating_sub(4) as usize;
+        let mut lines: Vec<Line> = Vec::new();
+        for (index, (label, value)) in self.overview.rows.iter().enumerate() {
+            if spaced && index > 0 {
+                lines.push(Line::from(""));
+            }
+            let gap = width.saturating_sub(label.chars().count() + value.chars().count());
+            lines.push(Line::from(vec![
+                Span::styled(*label, Style::default().fg(self.theme.muted())),
+                Span::raw(" ".repeat(gap)),
+                Span::styled(value.clone(), Style::default().fg(self.theme.entry())),
+            ]));
+        }
+        let overview = Rect::new(
+            content.x,
+            content.y,
+            content.width,
+            overview_height(spaced).min(content.height),
+        );
+        let mut block = self.card("System Overview");
+        let corner = self.glyph(Icon::Overview);
+        if !corner.is_empty() {
+            block = block.title(
+                Line::styled(
+                    format!(" {corner} "),
+                    Style::default().fg(self.theme.focused()),
+                )
+                .right_aligned(),
+            );
+        }
+        self.fill(frame, overview);
+        frame.render_widget(Paragraph::new(Text::from(lines)).block(block), overview);
+        // A blank line before the heading, unless every action would not fit.
+        let gap = u16::from(overview_height(spaced) + 3 + actions * card <= content.height);
+        let heading = overview.bottom() + gap;
+        if heading >= content.bottom() {
+            return;
+        }
         frame.render_widget(
             Paragraph::new(Line::styled(
                 "Quick Actions",
                 Style::default().fg(self.theme.entry()).bold(),
             )),
-            parts[2],
+            Rect::new(content.x, heading, content.width, 1),
+        );
+        let list = Rect::new(
+            content.x,
+            heading + 1,
+            content.width,
+            content.bottom().saturating_sub(heading + 1),
         );
         let focused = self.focus == Focus::Main;
-        let items: Vec<Line> = QUICK_ACTIONS
-            .iter()
-            .map(|(title, detail)| {
-                Line::from(vec![
-                    Span::styled(*title, Style::default().fg(self.theme.entry()).bold()),
-                    Span::styled(
-                        format!("   {detail}"),
-                        Style::default().fg(self.theme.muted()),
-                    ),
-                ])
-            })
-            .collect();
-        let list = List::new(items)
-            .highlight_style(if focused {
-                Style::default()
-                    .bg(self.theme.focused())
-                    .fg(self.theme.on_highlight())
-                    .bold()
+        if card == 1 {
+            let items: Vec<Line> = QUICK_ACTIONS
+                .iter()
+                .map(|(title, detail)| {
+                    Line::from(vec![
+                        Span::styled(*title, Style::default().fg(self.theme.entry()).bold()),
+                        Span::styled(
+                            format!("   {detail}"),
+                            Style::default().fg(self.theme.muted()),
+                        ),
+                    ])
+                })
+                .collect();
+            let widget = List::new(items)
+                .highlight_style(self.highlight(focused))
+                .highlight_symbol(self.marker(focused));
+            frame.render_stateful_widget(widget, list, &mut self.main_state);
+            return;
+        }
+        let selected = self.main_state.selected().unwrap_or(0);
+        for (index, (title, detail)) in QUICK_ACTIONS.iter().enumerate() {
+            let rect = Rect::new(list.x, list.y + index as u16 * card, list.width, card);
+            if rect.bottom() > list.bottom() {
+                break;
+            }
+            self.action_card(
+                frame,
+                rect,
+                QUICK_ICONS[index],
+                title,
+                detail,
+                index == selected,
+                focused,
+            );
+        }
+    }
+
+    /// A quick action as a card: icon, title, detail and a chevron.
+    #[allow(clippy::too_many_arguments)]
+    fn action_card(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        icon: Icon,
+        title: &str,
+        detail: &str,
+        selected: bool,
+        focused: bool,
+    ) {
+        let border = match (selected, focused) {
+            (true, true) => self.theme.focused(),
+            (true, false) => self.theme.selected_line(),
+            _ => self.theme.line(),
+        };
+        let fill = if selected {
+            Style::default().bg(self.theme.selected())
+        } else {
+            self.theme.card()
+        };
+        let inside = self.framed(frame, area, border, fill);
+        let inner = Rect::new(
+            inside.x + 1,
+            inside.y,
+            inside.width.saturating_sub(2),
+            inside.height,
+        );
+        let icon = self.icon_gap(icon);
+        let indent = " ".repeat(icon.chars().count());
+        let title_style = Style::default()
+            .fg(if selected {
+                self.theme.on_selected()
             } else {
-                Style::default()
+                self.theme.entry()
             })
-            .highlight_symbol(if focused { HIGHLIGHT } else { "  " });
-        frame.render_stateful_widget(list, parts[3], &mut self.main_state);
+            .bold();
+        let icon = Span::styled(icon, Style::default().fg(self.theme.focused()));
+        let lines = if inner.height >= 2 {
+            vec![
+                Line::from(vec![icon, Span::styled(title.to_string(), title_style)]),
+                Line::from(vec![
+                    Span::raw(indent),
+                    Span::styled(detail.to_string(), Style::default().fg(self.theme.muted())),
+                ]),
+            ]
+        } else {
+            vec![Line::from(vec![
+                icon,
+                Span::styled(title.to_string(), title_style),
+                Span::styled(
+                    format!("   {detail}"),
+                    Style::default().fg(self.theme.muted()),
+                ),
+            ])]
+        };
+        let text = Rect::new(
+            inner.x,
+            inner.y,
+            inner.width.saturating_sub(2),
+            inner.height,
+        );
+        frame.render_widget(Paragraph::new(Text::from(lines)), text);
+        frame.render_widget(
+            Paragraph::new(Line::styled(
+                self.glyph(Icon::Chevron),
+                Style::default().fg(if selected {
+                    self.theme.focused()
+                } else {
+                    self.theme.muted()
+                }),
+            ))
+            .alignment(Alignment::Right),
+            Rect::new(inner.x, inner.y, inner.width, 1),
+        );
     }
 
     fn draw_area(&mut self, frame: &mut Frame, area: Rect) {
@@ -579,49 +896,57 @@ impl App {
         } else {
             trail.join(" › ")
         };
-        let block = self.screen_block(&name, &subtitle);
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-        let parts = Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).split(inner);
+        let content = self.page(frame, area, &name, &subtitle);
+        let parts = Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).split(content);
         self.draw_search(frame, parts[0]);
         self.draw_list(frame, parts[1]);
     }
 
     fn draw_search(&self, frame: &mut Frame, area: Rect) {
         let searching = self.focus == Focus::Search;
-        let text = if !searching && self.search.is_empty() {
-            Line::from(Span::styled(
+        let prefix = self.icon_gap(Icon::Search);
+        let mut spans = vec![Span::styled(
+            prefix.clone(),
+            Style::default().fg(if searching {
+                self.theme.focused()
+            } else {
+                self.theme.muted()
+            }),
+        )];
+        if !searching && self.search.is_empty() {
+            spans.push(Span::styled(
                 "Type to search every area (/)",
                 Style::default().fg(self.theme.muted()),
-            ))
+            ));
         } else {
-            let mut spans = vec![Span::styled(
+            spans.push(Span::styled(
                 self.search.iter().collect::<String>(),
                 Style::default().fg(self.theme.focused()).bold(),
-            )];
+            ));
             if let Some(completion) = &self.completion {
                 spans.push(Span::styled(
                     completion.clone(),
                     Style::default().fg(self.theme.muted()),
                 ));
             }
-            Line::from(spans)
-        };
+        }
         let colour = if searching {
             self.theme.focused()
         } else {
-            self.theme.muted()
+            self.theme.line()
         };
         let block = Block::bordered()
             .border_set(border::ROUNDED)
             .border_style(Style::default().fg(colour))
             .padding(Padding::horizontal(1));
+        self.fill(frame, area);
         if searching {
             let inner = block.inner(area);
-            let x = inner.x + self.search[..self.cursor].len() as u16;
+            let x =
+                inner.x + prefix.chars().count() as u16 + self.search[..self.cursor].len() as u16;
             frame.set_cursor_position((x.min(inner.right().saturating_sub(1)), inner.y));
         }
-        frame.render_widget(Paragraph::new(text).block(block), area);
+        frame.render_widget(Paragraph::new(Line::from(spans)).block(block), area);
     }
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
@@ -632,55 +957,67 @@ impl App {
             } else {
                 "Entries"
             })
-            .title(Line::from(" FLAGS ").right_aligned());
-        let content_width = (block.inner(area).width as usize).saturating_sub(HIGHLIGHT.len());
+            .title(
+                Line::styled(" FLAGS ", Style::default().fg(self.theme.muted())).right_aligned(),
+            );
+        let marker = self.marker(focused);
+        let content_width =
+            (block.inner(area).width as usize).saturating_sub(marker.chars().count());
+        let group = self.glyph(Icon::Group);
         let lines: Vec<Line> = self
             .rows
             .iter()
             .map(|row| match row {
-                Row::Up => Line::from(format!("{GROUP_ICON}  .."))
+                Row::Up => Line::from(format!("{group}  .."))
                     .style(Style::default().fg(self.theme.group())),
-                Row::Group { name, .. } => Line::from(format!("{GROUP_ICON}  {name}"))
+                Row::Group { name, .. } => Line::from(format!("{group}  {name}"))
                     .style(Style::default().fg(self.theme.group())),
                 Row::Entry(entry) => {
                     let queued = self.is_queued(entry);
-                    let style = if queued {
-                        Style::default().fg(self.theme.focused()).bold()
+                    let (style, icon_colour) = if queued {
+                        (
+                            Style::default().fg(self.theme.focused()).bold(),
+                            self.theme.success(),
+                        )
                     } else {
-                        Style::default().fg(self.theme.entry())
+                        (Style::default().fg(self.theme.entry()), self.theme.muted())
                     };
-                    let left = format!(
-                        "{ENTRY_ICON}  {} {}",
-                        entry.name,
-                        if queued { QUEUED_ICON } else { "" }
-                    );
+                    let icon = if queued {
+                        self.glyph(Icon::Queued)
+                    } else {
+                        self.glyph(Icon::Entry)
+                    };
+                    // Without icons, a queued entry is marked after its name.
+                    let suffix = if queued && !self.icons { " *" } else { "" };
+                    let left = format!("{icon}  {}{suffix}", entry.name);
                     let right = format!("{} ", entry.flags);
                     let gap = " "
                         .repeat(content_width.saturating_sub(left.chars().count() + right.len()));
-                    Line::from(format!("{left}{gap}{right}")).style(style)
+                    Line::from(vec![
+                        Span::styled(icon.to_string(), Style::default().fg(icon_colour)),
+                        Span::styled(format!("  {}{suffix}", entry.name), style),
+                        Span::raw(gap),
+                        Span::styled(right, Style::default().fg(self.theme.muted())),
+                    ])
                 }
             })
             .collect();
-        let highlight = if focused {
-            Style::default()
-                .bg(self.theme.focused())
-                .fg(self.theme.on_highlight())
-                .bold()
-        } else {
-            Style::default()
-        };
+        self.fill(frame, area);
         let list = List::new(lines)
             .block(block)
-            .highlight_style(highlight)
-            .highlight_symbol(if focused { HIGHLIGHT } else { "  " })
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(marker)
             .scroll_padding(1);
         frame.render_stateful_widget(list, area, &mut self.main_state);
     }
 
     fn draw_plan(&mut self, frame: &mut Frame, area: Rect) {
-        let block = self.screen_block("Install Plan", "Review planned changes before they run.");
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
+        let inner = self.page(
+            frame,
+            area,
+            "Install Plan",
+            "Review planned changes before they run.",
+        );
         if self.queue.is_empty() {
             frame.render_widget(
                 Paragraph::new(
@@ -723,8 +1060,13 @@ impl App {
             Err(error) => vec![format!("Cannot plan: {error}")],
         };
         let summary_height = summary.len() as u16 + 2;
-        let parts =
-            Layout::vertical([Constraint::Length(summary_height), Constraint::Min(1)]).split(inner);
+        let parts = Layout::vertical([
+            Constraint::Length(summary_height),
+            Constraint::Length(1),
+            Constraint::Min(1),
+        ])
+        .split(inner);
+        self.fill(frame, parts[0]);
         frame.render_widget(
             Paragraph::new(Text::from(
                 summary.into_iter().map(Line::from).collect::<Vec<_>>(),
@@ -746,6 +1088,10 @@ impl App {
                     .unwrap_or_else(|| "nothing to do".to_string());
                 Line::from(vec![
                     Span::styled(
+                        self.icon_gap(Icon::Queued),
+                        Style::default().fg(self.theme.success()),
+                    ),
+                    Span::styled(
                         entry.name.clone(),
                         Style::default().fg(self.theme.entry()).bold(),
                     ),
@@ -756,24 +1102,16 @@ impl App {
                 ])
             })
             .collect();
+        self.fill(frame, parts[2]);
         let list = List::new(items)
             .block(self.card("Queued entries"))
-            .highlight_style(if focused {
-                Style::default()
-                    .bg(self.theme.focused())
-                    .fg(self.theme.on_highlight())
-                    .bold()
-            } else {
-                Style::default()
-            })
-            .highlight_symbol(if focused { HIGHLIGHT } else { "  " });
-        frame.render_stateful_widget(list, parts[1], &mut self.main_state);
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused));
+        frame.render_stateful_widget(list, parts[2], &mut self.main_state);
     }
 
     fn draw_history(&mut self, frame: &mut Frame, area: Rect) {
-        let block = self.screen_block("History", "Past runs, newest first.");
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
+        let inner = self.page(frame, area, "History", "Past runs, newest first.");
         if self.records.is_empty() {
             frame.render_widget(
                 Paragraph::new("No runs recorded yet.")
@@ -793,7 +1131,8 @@ impl App {
                     ("failed", self.theme.failure())
                 };
                 Line::from(vec![
-                    Span::styled(format!("{:<7}", status), Style::default().fg(colour).bold()),
+                    Span::styled("● ", Style::default().fg(colour)),
+                    Span::styled(format!("{status:<8}"), Style::default().fg(colour).bold()),
                     Span::styled(
                         format!("{:<22}", timestamp(record.unix_timestamp)),
                         Style::default().fg(self.theme.muted()),
@@ -813,27 +1152,23 @@ impl App {
                 ])
             })
             .collect();
+        self.fill(frame, inner);
         let list = List::new(items)
             .block(self.card("Runs"))
-            .highlight_style(if focused {
-                Style::default()
-                    .bg(self.theme.focused())
-                    .fg(self.theme.on_highlight())
-                    .bold()
-            } else {
-                Style::default()
-            })
-            .highlight_symbol(if focused { HIGHLIGHT } else { "  " });
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused));
         frame.render_stateful_widget(list, inner, &mut self.main_state);
     }
 
     fn settings(&self) -> Vec<(String, String)> {
         vec![
+            ("Theme".to_string(), self.theme.label().to_string()),
             (
-                "Theme".to_string(),
-                match self.theme {
-                    Theme::Default => "default".to_string(),
-                    Theme::Compatible => "compatible".to_string(),
+                "Icons".to_string(),
+                if self.icons {
+                    "Nerd Font".to_string()
+                } else {
+                    "plain".to_string()
                 },
             ),
             (
@@ -860,9 +1195,12 @@ impl App {
     }
 
     fn draw_settings(&mut self, frame: &mut Frame, area: Rect) {
-        let block = self.screen_block("Settings", "Enter changes the selected setting.");
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
+        let inner = self.page(
+            frame,
+            area,
+            "Settings",
+            "Enter changes the selected setting; theme and icons are remembered.",
+        );
         let focused = self.focus == Focus::Main;
         let width = inner.width.saturating_sub(6) as usize;
         let items: Vec<Line> = self
@@ -877,37 +1215,45 @@ impl App {
                 ])
             })
             .collect();
+        self.fill(frame, inner);
         let list = List::new(items)
             .block(self.card("Settings"))
-            .highlight_style(if focused {
-                Style::default()
-                    .bg(self.theme.focused())
-                    .fg(self.theme.on_highlight())
-                    .bold()
-            } else {
-                Style::default()
-            })
-            .highlight_symbol(if focused { HIGHLIGHT } else { "  " });
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused));
         frame.render_stateful_widget(list, inner, &mut self.main_state);
     }
 
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
+        self.rule(frame, area.x, area.y, area.width);
         let (_, hints) = self.hints();
-        let mut spans: Vec<Span> = vec![Span::raw(" ")];
-        for (index, hint) in hints.iter().enumerate() {
-            if index > 0 {
-                spans.push(Span::styled(" · ", Style::default().fg(self.theme.muted())));
+        // Help and quit sit on the right, as in the design.
+        let (right, left): (Vec<&Hint>, Vec<&Hint>) = hints
+            .iter()
+            .partition(|hint| matches!(hint.keys(), ["?"] | ["q"]));
+        let spans = |hints: &[&Hint]| {
+            let mut spans: Vec<Span> = Vec::new();
+            for (index, hint) in hints.iter().enumerate() {
+                if index > 0 {
+                    spans.push(Span::styled(" · ", Style::default().fg(self.theme.faint())));
+                }
+                spans.push(Span::styled(
+                    hint.keys().join("/"),
+                    Style::default().fg(self.theme.entry()).bold(),
+                ));
+                spans.push(Span::styled(
+                    format!(" {}", hint.text()),
+                    Style::default().fg(self.theme.muted()),
+                ));
             }
-            spans.push(Span::styled(
-                hint.keys().join("/"),
-                Style::default().fg(self.theme.entry()).bold(),
-            ));
-            spans.push(Span::styled(
-                format!(" {}", hint.text()),
-                Style::default().fg(self.theme.muted()),
-            ));
-        }
-        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+            spans
+        };
+        let row =
+            Rect::new(area.x + 1, area.y + 1, area.width.saturating_sub(2), 1).intersection(area);
+        frame.render_widget(Paragraph::new(Line::from(spans(&left))), row);
+        frame.render_widget(
+            Paragraph::new(Line::from(spans(&right))).alignment(Alignment::Right),
+            row,
+        );
     }
 
     fn hints(&self) -> (&'static str, Vec<Hint>) {
@@ -1032,7 +1378,10 @@ impl App {
             KeyCode::Char('?') => {
                 self.popup = Some(Popup::Text(TextPopup::new("Keys", HELP, false)));
             }
-            KeyCode::Char('t') | KeyCode::Char('T') => self.theme = self.theme.next(),
+            KeyCode::Char('t') | KeyCode::Char('T') => {
+                self.theme = self.theme.next();
+                self.save_look();
+            }
             KeyCode::Char('g') | KeyCode::Char('G') if matches!(self.screen, Screen::Area(_)) => {
                 self.popup = Some(Popup::Text(TextPopup::new("Flags", FLAGS_GUIDE, true)));
             }
@@ -1321,9 +1670,16 @@ impl App {
 
     fn change_setting(&mut self) {
         match self.main_state.selected().unwrap_or(0) {
-            0 => self.theme = self.theme.next(),
-            1 => self.skip_confirmation = !self.skip_confirmation,
-            2 => {
+            0 => {
+                self.theme = self.theme.next();
+                self.save_look();
+            }
+            1 => {
+                self.icons = !self.icons;
+                self.save_look();
+            }
+            2 => self.skip_confirmation = !self.skip_confirmation,
+            3 => {
                 self.show_hidden = !self.show_hidden;
                 match Catalog::builtin(!self.show_hidden) {
                     Ok(catalog) => {
@@ -1555,7 +1911,10 @@ mod tests {
         let platform =
             LinuxInfo::from_os_release("ID=garuda\nID_LIKE=arch\nPRETTY_NAME=\"Garuda Linux\"\n")
                 .unwrap();
-        App::new(Catalog::builtin(false).unwrap(), platform, &args)
+        let mut app = App::new(Catalog::builtin(false).unwrap(), platform, &args);
+        // Plain text keeps these screen tests readable; one test draws icons.
+        app.icons = false;
+        app
     }
 
     fn screen(app: &mut App, width: u16, height: u16) -> String {
@@ -1770,7 +2129,10 @@ mod tests {
         app.focus = Focus::Main;
         assert!(screen(&mut app, 120, 40).contains("Ask before running"));
         press(&mut app, KeyCode::Enter);
-        assert_eq!(app.theme, Theme::Compatible);
+        assert_eq!(app.theme, Theme::Solid);
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Enter);
+        assert!(app.icons);
         press(&mut app, KeyCode::Char('j'));
         press(&mut app, KeyCode::Enter);
         assert!(app.skip_confirmation);
@@ -1785,6 +2147,27 @@ mod tests {
         app.open_screen(Screen::Area(0));
         press(&mut app, KeyCode::Char('g'));
         assert!(screen(&mut app, 120, 40).contains("privileged"));
+    }
+
+    #[test]
+    fn the_dashboard_draws_cards_and_icons_in_every_theme() {
+        let mut app = app();
+        app.icons = true;
+        for theme in [Theme::Default, Theme::Solid, Theme::Compatible] {
+            app.theme = theme;
+            let text = screen(&mut app, 120, 40);
+            assert!(text.contains("\u{f0e4}  Dashboard"), "{text}");
+            assert!(text.contains("\u{f0ad}  Maintenance"), "{text}");
+            assert!(text.contains("╭"), "{text}");
+            assert!(text.contains("See what is queued and run it"), "{text}");
+            assert!(text.contains("? Help"), "{text}");
+        }
+        // The smallest supported size still shows every quick action.
+        let text = screen(&mut app, 100, 25);
+        assert!(text.contains("View History"), "{text}");
+        assert!(text.contains("Install Plan"), "{text}");
+        app.icons = false;
+        assert!(!screen(&mut app, 120, 40).contains('\u{f0e4}'));
     }
 
     #[test]

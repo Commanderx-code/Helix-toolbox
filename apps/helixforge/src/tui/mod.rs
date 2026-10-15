@@ -4,8 +4,10 @@
 
 mod app;
 mod hints;
+pub mod icons;
 mod popup;
 mod running;
+pub mod settings;
 mod sysinfo;
 pub mod theme;
 
@@ -19,7 +21,9 @@ use helixforge_platform::LinuxInfo;
 use std::{sync::atomic::Ordering, time::Duration};
 
 pub fn run(catalog: Catalog, platform: LinuxInfo, args: TuiArgs) -> Result<()> {
-    let mut app = App::new(catalog, platform, &args);
+    let path = settings::path();
+    let look = path.as_deref().map(settings::load).unwrap_or_default();
+    let mut app = App::new(catalog, platform, &args).remembering(look, path, &args);
     let mut terminal = ratatui::init();
     let result = event_loop(&mut terminal, &mut app);
     ratatui::restore();

@@ -48,6 +48,8 @@ impl Terminal {
             })
             .unwrap();
         command.env("HOME", state);
+        // The interface's remembered look lives here, away from the user's.
+        command.env("XDG_CONFIG_HOME", state.join("config"));
         command.env("XDG_STATE_HOME", state.join("state"));
         command.env("TMPDIR", state.join("tmp"));
         command.env("HELIXFORGE_TEST_OUT", state.join("marker.txt"));
@@ -161,7 +163,10 @@ impl Drop for Terminal {
         // ignores the hangup; stop those by the process ids they recorded.
         for suffix in ["child", "stubborn"] {
             if let Ok(pid) = fs::read_to_string(self.state.join(format!("marker.txt.{suffix}"))) {
-                let _ = Command::new("kill").args(["-KILL", pid.trim()]).status();
+                let _ = Command::new("kill")
+                    .args(["-KILL", pid.trim()])
+                    .stderr(std::process::Stdio::null())
+                    .status();
             }
         }
     }
@@ -220,7 +225,8 @@ fn the_menu_runs_fixture_entries_from_the_keyboard() {
     });
     tui.keys("\r");
     tui.keys(" ");
-    tui.wait_for(&["[*]  Marker"]);
+    // The check-circle icon marks a queued entry.
+    tui.wait_for(&["\u{f058}  Marker"]);
     // Escape in the search box clears it and the whole list returns.
     tui.keys("/");
     tui.keys(ESC);
@@ -229,7 +235,7 @@ fn the_menu_runs_fixture_entries_from_the_keyboard() {
     // The install plan, one place up the sidebar, lists it; declining the
     // confirmation runs nothing.
     tui.keys(BACK_TAB);
-    tui.wait_for(&["> Install Plan", "Marker"]);
+    tui.wait_for(&["Review planned changes", "Marker"]);
     tui.keys("\r");
     tui.wait_for(&["CONFIRM", "[Y] Run", "Marker"]);
     tui.keys("n");
@@ -308,7 +314,7 @@ fn the_menu_runs_fixture_entries_from_the_keyboard() {
 
     // The history screen lists the four runs, newest first.
     tui.keys("\t");
-    tui.wait_for(&["> History"]);
+    tui.wait_for(&["Past runs, newest first"]);
     tui.wait_until("the history screen", |screen| {
         screen.contains("exit 9") && screen.contains("interrupted")
     });
@@ -795,4 +801,32 @@ fn the_command_line_asks_on_the_terminal_when_input_is_a_pipe() {
     cli.keys("no\r");
     assert_ne!(cli.wait_for_exit(), 0);
     assert!(!home.path().join("marker.txt").exists());
+}
+
+#[test]
+fn the_theme_and_icon_choices_are_remembered() {
+    let home = tempfile::tempdir().unwrap();
+    let mut tui = fixture_menu(home.path());
+    tui.wait_for(&["\u{f0e4}"]);
+    // Settings is the last item in the sidebar.
+    tui.keys(BACK_TAB);
+    tui.wait_for(&["theme and icons are remembered", "default", "Nerd Font"]);
+    tui.keys("\r");
+    tui.keys("\r");
+    tui.wait_for(&["solid"]);
+    tui.keys("j");
+    tui.keys("\r");
+    tui.wait_for(&["plain"]);
+    tui.keys("q");
+    assert_eq!(tui.wait_for_exit(), 0);
+    let saved = fs::read_to_string(home.path().join("config/helixforge/settings.toml")).unwrap();
+    assert!(saved.contains("theme = \"solid\""), "{saved}");
+    assert!(saved.contains("icons = false"), "{saved}");
+
+    let mut tui = fixture_menu(home.path());
+    tui.keys(BACK_TAB);
+    tui.wait_for(&["solid", "plain"]);
+    assert!(!tui.contents().contains("\u{f0e4}"));
+    tui.keys("q");
+    assert_eq!(tui.wait_for_exit(), 0);
 }

@@ -44,6 +44,15 @@ second `Ctrl-C` kills it), `l` saves its output, and History lists every run.
 `?` shows all keys and `q` quits. The menu needs a terminal; the commands
 below also work without one.
 
+The menu follows the HelixForge dashboard design: cards for the main screens
+and quick actions, with Nerd Font icons. `t` or Settings switches between
+three themes: **default** draws over your terminal's own background, so a
+wallpaper or transparency shows through; **solid** paints the design's dark
+panels; **compatible** keeps to sixteen colours. Settings also turns the icons
+off for terminals without a Nerd Font. Both choices are remembered in
+`~/.config/helixforge/settings.toml`; `--theme` and `--plain` override them
+for one run.
+
 From the command line:
 
 ```sh
