@@ -56,6 +56,12 @@ emulator and types keys. It checks:
 - `helixforge status` after real installs of htop and ripgrep: Installed,
   from the family's package manager, with a version, and `update htop
   --dry-run` saying it is up to date (Distributions)
+- profiles: file names from names, saving, replacing, refusing unknown
+  entries, empty profiles and unusable names, listing with a broken file,
+  the "Your profiles" group planning like a built-in profile, and a queue
+  flattened into one; the Install Plan's `s` saving one that then appears
+  under Profiles; `helixforge profile import`, `list`, a dry run of
+  `profile-<name>`, `export` and `delete` in a scratch configuration
 - the health checks against made-up machines: healthy, offline, DNS failing
   (restarting NetworkManager), failed system and user services, graphics
   with no driver or nouveau, a stale or busy pacman lock, unfinished dpkg,

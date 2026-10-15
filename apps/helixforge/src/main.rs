@@ -12,7 +12,7 @@ use helixforge_core::{Action, Entry, Item, NativeAction, printable};
 use helixforge_engine::{
     InheritedRunner, Machine, PackageState, Plan, backups, doctor, execute, history,
     inventory::{Inventory, Status, which},
-    package_state, plan, plan_removal, preflight, run_native,
+    package_state, plan, plan_removal, preflight, profiles, run_native,
 };
 use helixforge_platform::LinuxInfo;
 use std::{
@@ -137,6 +137,10 @@ enum Command {
         #[arg(long)]
         yes: bool,
     },
+    /// Your workstation profiles: list, export, import or delete them. Run one
+    /// like any entry: helixforge run profile-<name>.
+    #[command(subcommand)]
+    Profile(ProfileCommand),
     /// Show recent runs.
     History {
         #[arg(long, default_value_t = 20)]
@@ -147,6 +151,23 @@ enum Command {
     /// Run a native operation; the engine calls this from a run.
     #[command(hide = true)]
     Native { action: String },
+}
+
+#[derive(Subcommand)]
+enum ProfileCommand {
+    /// List your profiles and what each runs.
+    List,
+    /// Write a profile to a file to share or keep.
+    Export {
+        /// The profile's name, or its id (profile-<name>).
+        name: String,
+        /// Where to write it; the current directory and its name when left out.
+        file: Option<PathBuf>,
+    },
+    /// Add a profile from a file, after checking every entry it names exists.
+    Import { file: PathBuf },
+    /// Delete one of your profiles.
+    Delete { name: String },
 }
 
 #[derive(clap::Args, Clone, Debug, Default)]
@@ -179,11 +200,18 @@ fn main() -> Result<()> {
     let platform = LinuxInfo::detect().context("HelixForge needs Linux with /etc/os-release")?;
     let source = cli.catalog_dir;
     let load = |validate: bool| -> Result<Catalog> {
-        match &source {
+        let mut catalog = match &source {
             Some(directory) => Catalog::from_directory(directory, validate)
-                .with_context(|| format!("cannot load the catalog in {}", directory.display())),
-            None => Catalog::builtin(validate).context("cannot load the catalog"),
+                .with_context(|| format!("cannot load the catalog in {}", directory.display()))?,
+            None => Catalog::builtin(validate).context("cannot load the catalog")?,
+        };
+        // The user's own profiles join the Profiles area.
+        if let Some(directory) = profiles::dir() {
+            for problem in profiles::add_to(&mut catalog, &directory) {
+                eprintln!("Profile skipped: {}", printable(&problem));
+            }
         }
+        Ok(catalog)
     };
     match cli.command.unwrap_or(Command::Tui(TuiArgs::default())) {
         Command::Tui(args) => {
@@ -459,6 +487,69 @@ fn main() -> Result<()> {
                 })?;
             let planned = backups::plan_restore(&found);
             confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "RESTORE")
+        }
+        Command::Profile(command) => {
+            let catalog = load(false)?;
+            let directory = profiles::dir().context("cannot find the configuration folder")?;
+            let (found, _) = profiles::load_all(&directory, &catalog);
+            let named = |name: &str| {
+                let wanted = name.strip_prefix(profiles::PREFIX).unwrap_or(name);
+                let wanted = profiles::slug(wanted).unwrap_or_default();
+                found
+                    .iter()
+                    .find(|(slug, _)| *slug == wanted)
+                    .cloned()
+                    .with_context(|| {
+                        format!("no profile named '{name}'; see helixforge profile list")
+                    })
+            };
+            match command {
+                ProfileCommand::List => {
+                    if found.is_empty() {
+                        println!(
+                            "No profiles yet. In the menu's Install Plan, s saves what is queued as one; or import one with helixforge profile import <file>."
+                        );
+                    }
+                    for (slug, profile) in &found {
+                        println!(
+                            "{}{slug}  {}\n    {}",
+                            profiles::PREFIX,
+                            printable(&profile.name),
+                            profile.entries.join(", ")
+                        );
+                    }
+                }
+                ProfileCommand::Export { name, file } => {
+                    let (slug, profile) = named(&name)?;
+                    let file = file.unwrap_or_else(|| PathBuf::from(format!("{slug}.toml")));
+                    profiles::write(&file, &profile)?;
+                    println!(
+                        "Exported {} to {}",
+                        printable(&profile.name),
+                        file.display()
+                    );
+                }
+                ProfileCommand::Import { file } => {
+                    let profile = profiles::read(&file, &catalog)?;
+                    let saved = profiles::save(&directory, &profile, &catalog)?;
+                    println!(
+                        "Imported {} ({} entries) as {}; run it with helixforge run {}{}",
+                        printable(&profile.name),
+                        profile.entries.len(),
+                        saved.display(),
+                        profiles::PREFIX,
+                        saved.file_stem().unwrap_or_default().to_string_lossy()
+                    );
+                }
+                ProfileCommand::Delete { name } => {
+                    let (slug, profile) = named(&name)?;
+                    let path = directory.join(format!("{slug}.toml"));
+                    std::fs::remove_file(&path)
+                        .with_context(|| format!("cannot delete {}", path.display()))?;
+                    println!("Deleted {}", printable(&profile.name));
+                }
+            }
+            Ok(())
         }
         Command::History { limit } => {
             let records = history::read(limit)?;

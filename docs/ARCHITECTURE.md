@@ -131,6 +131,14 @@ run), verifies the package steps that finished, and `describe()` adds "1 of 3
 steps done" to the history. `history::active()` finds other HelixForge runs
 still going from their markers, a preflight blocker.
 
+`profiles` keeps the user's workstation profiles as TOML (`Profile`: name,
+description, entry ids) in `$XDG_CONFIG_HOME/helixforge/profiles/<slug>.toml`.
+`check()` refuses an empty profile or one naming entries the catalog lacks;
+`add_to()` puts every valid one into the Profiles tab as a "Your profiles"
+group of `Action::Profile` entries with ids `profile-<slug>`, so planning,
+queueing and running treat them like the catalog's own. `from_queue()` turns
+the Install Plan into a profile, expanding profiles so none nests.
+
 `doctor::examine()` runs the health checks through a `System` (reading
 files, listing folders, links, a few read-only commands, a name lookup with a
 time limit, free space, owners, running processes); `Here` is this machine

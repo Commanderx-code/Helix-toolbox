@@ -89,6 +89,22 @@ banner. Elsewhere, including Konsole, tmux and the console, with icons off or
 in the compatible theme, it is the text header. HelixForge asks the terminal
 once at start and waits at most 0.4 seconds for the answer.
 
+**Profiles** of your own: queue what a workstation needs (applications,
+the Myfish shell setup, dotfiles configurations, system tweaks; all are
+entries) and press `s` on the Install Plan to save it under a name. It is a
+TOML file in `~/.config/helixforge/profiles/` and appears under Profiles,
+**Your profiles**, where `Enter` runs it and `Space` queues it, like the
+built-in ones; its entries run in order, after what they depend on.
+`helixforge profile list`, `export <name> [file]`, `import <file>` (which
+refuses a profile naming entries this catalog does not have) and `delete
+<name>`; `helixforge run profile-<name>` runs one.
+
+```toml
+name = "Dev Box"
+description = "Terminal tools and editor configuration"
+entries = ["git", "ripgrep", "myfish-fish", "dotfiles-nvim", "ghostty"]
+```
+
 **Helix Doctor** checks the machine, read-only, and shows what it found:
 network and DNS (a name lookup of github.com), failed system and user
 services with their last journal lines, whether each graphics card has a
@@ -132,6 +148,7 @@ helixforge plan git system-report     # what running entries would do
 helixforge run git --dry-run          # the plan, nothing changed
 helixforge run git                    # runs after you type RUN, asked on the terminal even when piped
 helixforge remove ardour              # removes a package entry that offers it
+helixforge profile list               # your profiles; also export, import, delete
 helixforge doctor                     # health checks, read-only
 helixforge doctor --repair permissions  # one repair, after confirmation
 helixforge backups                    # configuration backups, newest first

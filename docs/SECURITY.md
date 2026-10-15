@@ -65,3 +65,8 @@
   points at, and follows none while recursing, so the repair cannot hand a
   system file to the user. Backups are found
   without following links, and links are never offered for restore.
+- An imported or saved profile whose name or description contains control
+  characters is refused, and entry ids the catalog does not have are shown
+  through `printable()` in the error, so a shared profile file cannot carry
+  escape sequences into the terminal. The name typed in the menu accepts no
+  control characters either.

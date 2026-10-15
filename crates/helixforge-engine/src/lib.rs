@@ -18,6 +18,7 @@ pub mod doctor;
 pub mod history;
 pub mod inventory;
 pub mod preflight;
+pub mod profiles;
 pub mod pty;
 
 use helixforge_core::{

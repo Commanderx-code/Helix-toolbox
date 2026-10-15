@@ -966,6 +966,71 @@ esac
 }
 
 #[test]
+fn profiles_are_imported_planned_exported_and_deleted() {
+    let home = tempfile::tempdir().unwrap();
+    let config = home.path().join("config");
+    let helixforge = |args: &[&str]| {
+        let output = Command::new(PROGRAM)
+            .args(args)
+            .current_dir(home.path())
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", &config)
+            .env("XDG_STATE_HOME", home.path().join("state"))
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        (
+            output.status.success(),
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
+    };
+    let shared = home.path().join("shared.toml");
+    fs::write(
+        &shared,
+        "name = \"Shared Box\"\nentries = [\"git\", \"meld\"]\n",
+    )
+    .unwrap();
+    let (ok, out, err) = helixforge(&["profile", "import", shared.to_str().unwrap()]);
+    assert!(ok, "{out}\n{err}");
+    assert!(
+        out.contains("run it with helixforge run profile-shared-box"),
+        "{out}"
+    );
+    let bad = home.path().join("bad.toml");
+    fs::write(
+        &bad,
+        "name = \"Bad\"\nentries = [\"git\", \"no-such-entry\"]\n",
+    )
+    .unwrap();
+    let (ok, _, err) = helixforge(&["profile", "import", bad.to_str().unwrap()]);
+    assert!(!ok);
+    assert!(err.contains("no-such-entry"), "{err}");
+    let (_, out, _) = helixforge(&["profile", "list"]);
+    assert!(
+        out.contains("profile-shared-box  Shared Box") && out.contains("git, meld"),
+        "{out}"
+    );
+    // It plans like any entry; a dry run changes nothing.
+    let (ok, out, _) = helixforge(&["run", "profile-shared-box", "--dry-run"]);
+    assert!(ok, "{out}");
+    // Planned or already installed, depending on the machine; never run.
+    assert!(out.contains("Git") && out.contains("Meld"), "{out}");
+    assert!(!out.contains("==>"), "{out}");
+    let (ok, _, _) = helixforge(&["profile", "export", "Shared Box"]);
+    assert!(ok);
+    let exported = fs::read_to_string(home.path().join("shared-box.toml")).unwrap();
+    assert!(
+        exported.contains("entries = [\"git\", \"meld\"]"),
+        "{exported}"
+    );
+    let (ok, _, _) = helixforge(&["profile", "delete", "shared-box"]);
+    assert!(ok);
+    let (_, out, _) = helixforge(&["profile", "list"]);
+    assert!(out.contains("No profiles yet"), "{out}");
+}
+
+#[test]
 fn a_backup_is_listed_and_restored_with_the_current_file_kept() {
     let home = tempfile::tempdir().unwrap();
     let config = home.path().join("config");

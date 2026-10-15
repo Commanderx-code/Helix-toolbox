@@ -297,3 +297,94 @@ mod tests {
         assert!(popup.handle_key(&KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)));
     }
 }
+
+/// What a line of input ended with.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Answer {
+    Typing,
+    Given(String),
+    Cancelled,
+}
+
+/// A one-line question, such as the name to save a profile under.
+pub struct InputPopup {
+    title: String,
+    prompt: String,
+    value: String,
+}
+
+impl InputPopup {
+    pub fn new(title: impl Into<String>, prompt: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            prompt: prompt.into(),
+            value: String::new(),
+        }
+    }
+
+    /// Enter gives the answer (when it is not blank), Escape cancels.
+    pub fn handle_key(&mut self, key: &KeyEvent) -> Answer {
+        match key.code {
+            KeyCode::Enter if !self.value.trim().is_empty() => Answer::Given(self.value.clone()),
+            KeyCode::Esc => Answer::Cancelled,
+            KeyCode::Backspace => {
+                self.value.pop();
+                Answer::Typing
+            }
+            KeyCode::Char(character)
+                if !character.is_control() && self.value.chars().count() < 60 =>
+            {
+                self.value.push(character);
+                Answer::Typing
+            }
+            _ => Answer::Typing,
+        }
+    }
+
+    /// `area` shrunk to the question's height, centred in it.
+    pub fn fitted(&self, area: Rect) -> Rect {
+        let height = 7.min(area.height);
+        Rect::new(
+            area.x,
+            area.y + (area.height - height) / 2,
+            area.width,
+            height,
+        )
+    }
+
+    pub fn draw(&self, frame: &mut Frame, area: Rect, theme: Theme) {
+        let block = Block::bordered()
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(theme.focused()))
+            .title(format!(" {} ", self.title))
+            .title_alignment(Alignment::Center)
+            .title_style(Style::default().fg(theme.title()).bold());
+        frame.render_widget(Clear, area);
+        frame.render_widget(
+            Block::default().style(theme.card()),
+            Block::bordered().inner(area),
+        );
+        let text = Text::from(vec![
+            Line::from(self.prompt.as_str()),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(
+                    self.value.as_str(),
+                    Style::default().fg(theme.entry()).bold(),
+                ),
+                Span::styled("▏", Style::default().fg(theme.focused())),
+            ]),
+        ]);
+        frame.render_widget(
+            Paragraph::new(text).block(block).wrap(Wrap { trim: false }),
+            area,
+        );
+    }
+
+    pub fn hints(&self) -> (&'static str, Vec<Hint>) {
+        (
+            "Question",
+            vec![Hint::new(&["Enter"], "Save"), Hint::new(&["Esc"], "Cancel")],
+        )
+    }
+}

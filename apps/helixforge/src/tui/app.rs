@@ -5,7 +5,7 @@ use super::{
     banner,
     hints::Hint,
     icons::Icon,
-    popup::{ConfirmPopup, Decision, TextPopup, centered},
+    popup::{Answer, ConfirmPopup, Decision, InputPopup, TextPopup, centered},
     running::RunningView,
     settings::{self, Look},
     sysinfo::Overview,
@@ -18,7 +18,7 @@ use helixforge_core::{Action, Entry, Item};
 use helixforge_engine::{
     EngineError, Plan, backups, doctor, history,
     inventory::{Inventory, Status, which},
-    plan, plan_removal, preflight,
+    plan, plan_removal, preflight, profiles,
 };
 use helixforge_platform::LinuxInfo;
 use ratatui::{
@@ -77,7 +77,7 @@ Areas (Applications and the other catalog screens)
 
 Install Plan
   Enter             run the plan                 x / Delete  remove the selected entry
-  c                 clear the plan
+  c                 clear the plan               s           save it as a profile
 
 History, Backups, Helix Doctor
   Enter             log / restore / evidence     r           reload or check again; d backup; f repair
@@ -113,6 +113,8 @@ enum Popup {
     Text(TextPopup),
     Confirm(ConfirmPopup),
     Running(Box<RunningView>),
+    /// The name to save the Install Plan's queue under, as a profile.
+    ProfileName(InputPopup),
 }
 
 #[derive(Clone)]
@@ -178,6 +180,8 @@ pub struct App {
     backups: Vec<backups::Backup>,
     /// What the last health check found.
     diagnoses: Vec<doctor::Diagnosis>,
+    /// Where profiles are saved; the user's configuration unless a test says.
+    profiles_dir: Option<std::path::PathBuf>,
     /// A health check running in the background, if any.
     examining: Option<mpsc::Receiver<Vec<doctor::Diagnosis>>>,
     /// Whether this run of the interface checks the machine; off in tests.
@@ -246,6 +250,7 @@ impl App {
             snapshot_tool: None,
             backups: Vec::new(),
             diagnoses: Vec::new(),
+            profiles_dir: None,
             examining: None,
             examine_here: false,
             ran_from_plan: false,
@@ -625,6 +630,10 @@ impl App {
         }
         match &mut self.popup {
             Some(Popup::Text(popup)) => popup.draw(frame, centered(main, 95, 95), self.theme),
+            Some(Popup::ProfileName(popup)) => {
+                let area = popup.fitted(centered(main, 80, 70));
+                popup.draw(frame, area, self.theme)
+            }
             Some(Popup::Confirm(popup)) => {
                 let area = popup.fitted(centered(main, 80, 70));
                 popup.draw(frame, area, self.theme)
@@ -1631,6 +1640,7 @@ impl App {
     fn hints(&self) -> (&'static str, Vec<Hint>) {
         match &self.popup {
             Some(Popup::Text(popup)) => return popup.hints(),
+            Some(Popup::ProfileName(popup)) => return popup.hints(),
             Some(Popup::Confirm(popup)) => return popup.hints(),
             Some(Popup::Running(popup)) => return popup.hints(),
             None => {}
@@ -1673,6 +1683,9 @@ impl App {
                 }
                 Screen::Plan => {
                     list.push(Hint::new(&["Enter"], "Run plan"));
+                    if !self.queue.is_empty() {
+                        list.push(Hint::new(&["s"], "Save as profile"));
+                    }
                     list.push(Hint::new(&["x"], "Remove"));
                     list.push(Hint::new(&["c"], "Clear"));
                 }
@@ -1722,6 +1735,17 @@ impl App {
             Some(Popup::Text(popup)) => {
                 if popup.handle_key(key) {
                     self.popup = None;
+                }
+                return true;
+            }
+            Some(Popup::ProfileName(popup)) => {
+                if control_c {
+                    return false;
+                }
+                match popup.handle_key(key) {
+                    Answer::Typing => {}
+                    Answer::Cancelled => self.popup = None,
+                    Answer::Given(name) => self.save_profile(&name),
                 }
                 return true;
             }
@@ -1919,6 +1943,12 @@ impl App {
                 KeyCode::Char('c') => {
                     self.queue.clear();
                     self.clamp_main();
+                }
+                KeyCode::Char('s') if !self.queue.is_empty() => {
+                    self.popup = Some(Popup::ProfileName(InputPopup::new(
+                        "Save as a profile",
+                        "A name for this profile (it is saved in ~/.config/helixforge/profiles):",
+                    )));
                 }
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
@@ -2143,6 +2173,40 @@ impl App {
             }
         }
         self.popup = Some(Popup::Text(TextPopup::new(entry.name.clone(), text, true)));
+    }
+
+    /// Save the queue as a profile and show it in the Profiles area.
+    fn save_profile(&mut self, name: &str) {
+        let profile = profiles::from_queue(name, &self.queue);
+        let directory = self.profiles_dir.clone().or_else(profiles::dir);
+        let saved = directory
+            .as_deref()
+            .ok_or_else(|| "cannot find the configuration folder".to_string())
+            .and_then(|directory| {
+                profiles::save(directory, &profile, &self.catalog)
+                    .map_err(|error| error.to_string())
+            });
+        self.popup = Some(Popup::Text(match saved {
+            Ok(path) => {
+                if let Some(directory) = &directory {
+                    profiles::add_to(&mut self.catalog, directory);
+                    self.menu = build_menu(&self.catalog);
+                    self.update_rows();
+                }
+                TextPopup::new(
+                    "Profile saved",
+                    format!(
+                        "{} ({} entries) is saved as {}.\n\nIt is under Profiles, Your profiles: Enter runs it, Space queues it. To share it: helixforge profile export \"{}\".",
+                        profile.name,
+                        profile.entries.len(),
+                        path.display(),
+                        profile.name
+                    ),
+                    true,
+                )
+            }
+            Err(error) => TextPopup::new("Profile not saved", error, true),
+        }));
     }
 
     /// Run the health checks in the background.
@@ -2373,7 +2437,10 @@ impl App {
             3 => {
                 self.show_hidden = !self.show_hidden;
                 match Catalog::builtin(!self.show_hidden) {
-                    Ok(catalog) => {
+                    Ok(mut catalog) => {
+                        if let Some(directory) = self.profiles_dir.clone().or_else(profiles::dir) {
+                            profiles::add_to(&mut catalog, &directory);
+                        }
                         self.catalog = catalog;
                         self.menu = build_menu(&self.catalog);
                         self.areas = vec![AreaState::default(); self.catalog.tabs.len()];
@@ -2801,6 +2868,35 @@ mod tests {
         assert_eq!(app.main_state.selected(), Some(1));
         press(&mut app, KeyCode::Char('h'));
         assert_eq!(app.focus, Focus::Sidebar);
+    }
+
+    #[test]
+    fn the_install_plan_saves_as_a_profile_that_appears_under_profiles() {
+        let mut app = app();
+        let directory = tempfile::tempdir().unwrap();
+        app.profiles_dir = Some(directory.path().to_path_buf());
+        app.queue = vec![
+            app.catalog.find("git").unwrap().clone(),
+            app.catalog.find("meld").unwrap().clone(),
+        ];
+        app.open_screen(Screen::Plan);
+        app.focus = Focus::Main;
+        assert!(screen(&mut app, 140, 40).contains("s Save as profile"));
+        press(&mut app, KeyCode::Char('s'));
+        assert!(screen(&mut app, 140, 40).contains("Save as a profile"));
+        // A blank name is not accepted; Escape would cancel.
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::ProfileName(_))));
+        type_text(&mut app, "Dev Box");
+        press(&mut app, KeyCode::Enter);
+        let shown = screen(&mut app, 140, 40);
+        assert!(shown.contains("Profile saved"), "{shown}");
+        let saved = directory.path().join("dev-box.toml");
+        assert!(saved.exists());
+        let entry = app.catalog.find("profile-dev-box").unwrap();
+        assert!(
+            matches!(&entry.action, Action::Profile { entries } if entries == &["git", "meld"])
+        );
     }
 
     #[test]
