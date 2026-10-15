@@ -16,6 +16,8 @@ pub struct Look {
     pub icons: bool,
     /// After a failed step, continue with the steps that do not need it.
     pub keep_going: bool,
+    /// Take a snapshot before system changes, where the machine can.
+    pub snapshots: bool,
 }
 
 impl Default for Look {
@@ -24,6 +26,7 @@ impl Default for Look {
             theme: Theme::Solid,
             icons: true,
             keep_going: false,
+            snapshots: true,
         }
     }
 }
@@ -73,6 +76,7 @@ mod tests {
             theme: Theme::Transparent,
             icons: false,
             keep_going: true,
+            snapshots: false,
         };
         save(&path, &look).unwrap();
         assert_eq!(load(&path), look);

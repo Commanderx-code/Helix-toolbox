@@ -1,5 +1,5 @@
 name = "Restore Configuration Backups"
-description = "Browse Commander user-configuration backups and restore one, backing up the current configuration first. Symlink-managed configurations and system boot files are excluded."
+description = "Browse Commander user-configuration backups and restore one, backing up the current configuration first. Symlink-managed configurations and system boot files are excluded. The Backups screen in the sidebar lists these together with system backups (GRUB, SDDM, Plymouth, pacman.conf) and restores either kind."
 flags = "FM"
 multi_select = false
 order = 2

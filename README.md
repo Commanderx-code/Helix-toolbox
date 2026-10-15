@@ -89,6 +89,23 @@ banner. Elsewhere, including Konsole, tmux and the console, with icons off or
 in the compatible theme, it is the text header. HelixForge asks the terminal
 once at start and waits at most 0.4 seconds for the answer.
 
+The **Backups** screen (and `helixforge backups`) lists the configuration
+backups HelixForge's entries leave beside a file before changing it
+(`<file>.commander-backup-<time>`, `<file>.helixforge-backup-<time>`), newest
+first: your own in `~/.config`, `~/.local/share` and `~`, and system ones in
+`/etc`, `/boot` and the SDDM theme and font folders. `Enter` (or `helixforge
+restore <backup>`) puts one back after a confirmation: the file now in its
+place is moved aside as its own backup first, so a restore can be undone the
+same way; system files ask for your password. Only backups HelixForge finds
+can be restored.
+
+On Btrfs with Snapper (a `root` configuration) or with Timeshift, a snapshot
+is taken first before runs that change system files, the kernel or disks
+(flags PFM, K, D, SI, or high risk): **Snapshot before system changes** in
+Settings, `--snapshot` on the command line. HelixForge does not roll
+snapshots or packages back itself; the Backups screen says where to (Btrfs
+Assistant, `snapper rollback`, Timeshift).
+
 From the command line:
 
 ```sh
@@ -101,6 +118,8 @@ helixforge plan git system-report     # what running entries would do
 helixforge run git --dry-run          # the plan, nothing changed
 helixforge run git                    # runs after you type RUN, asked on the terminal even when piped
 helixforge remove ardour              # removes a package entry that offers it
+helixforge backups                    # configuration backups, newest first
+helixforge restore <backup>           # put one back, keeping the current file
 helixforge history                    # recent runs
 helixforge docgen docs/walkthrough.md # the catalog as Markdown
 ```

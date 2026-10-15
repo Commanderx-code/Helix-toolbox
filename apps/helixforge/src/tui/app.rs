@@ -16,7 +16,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use helixforge_catalog::Catalog;
 use helixforge_core::{Action, Entry, Item};
 use helixforge_engine::{
-    EngineError, Plan, history,
+    EngineError, Plan, backups, history,
     inventory::{Inventory, Status, which},
     plan, plan_removal, preflight,
 };
@@ -79,8 +79,8 @@ Install Plan
   Enter             run the plan                 x / Delete  remove the selected entry
   c                 clear the plan
 
-History
-  Enter             show the saved log           r           reload
+History and Backups
+  Enter             show the log / restore it    r           reload; d shows a backup
 
 Settings
   Enter / Space     change the selected setting
@@ -96,6 +96,7 @@ enum Screen {
     Area(usize),
     Plan,
     History,
+    Backups,
     Settings,
 }
 
@@ -167,6 +168,12 @@ pub struct App {
     icons: bool,
     /// After a failed step, continue with the steps that do not need it.
     keep_going: bool,
+    /// Take a snapshot before system changes, where the machine can.
+    snapshots: bool,
+    /// The snapshot tool set up here, if any; none in tests.
+    snapshot_tool: Option<backups::Snapshots>,
+    /// The backups the Backups screen lists, newest first.
+    backups: Vec<backups::Backup>,
     /// Whether the run in the window started from the Install Plan, whose
     /// unfinished entries then stay queued.
     ran_from_plan: bool,
@@ -227,6 +234,9 @@ impl App {
             show_hidden: args.override_validation,
             icons: !args.plain,
             keep_going: false,
+            snapshots: true,
+            snapshot_tool: None,
+            backups: Vec::new(),
             ran_from_plan: false,
             settings_path: None,
             banner: None,
@@ -258,6 +268,8 @@ impl App {
         self.theme = args.theme.unwrap_or(look.theme);
         self.icons = look.icons && !args.plain;
         self.keep_going = look.keep_going;
+        self.snapshots = look.snapshots;
+        self.snapshot_tool = backups::Snapshots::here();
         self.settings_path = path;
         self
     }
@@ -324,6 +336,7 @@ impl App {
             theme: self.theme,
             icons: self.icons,
             keep_going: self.keep_going,
+            snapshots: self.snapshots,
         };
         if let Err(error) = settings::save(path, &look) {
             tracing::warn!(%error, "the settings were not saved");
@@ -414,7 +427,8 @@ impl App {
             Screen::Area(_) => self.rows.len(),
             Screen::Plan => self.queue.len(),
             Screen::History => self.records.len(),
-            Screen::Settings => 5,
+            Screen::Backups => self.backups.len(),
+            Screen::Settings => self.settings().len(),
         }
     }
 
@@ -457,6 +471,9 @@ impl App {
         self.main_state.select(Some(selected));
         if screen == Screen::History {
             self.reload_history();
+        }
+        if screen == Screen::Backups {
+            self.reload_backups();
         }
         self.update_rows();
     }
@@ -505,6 +522,7 @@ impl App {
             Screen::Dashboard => Icon::Dashboard,
             Screen::Plan => Icon::Plan,
             Screen::History => Icon::History,
+            Screen::Backups => Icon::Backups,
             Screen::Settings => Icon::Settings,
             Screen::Area(index) => Icon::for_area(&self.catalog.tabs[index].id),
         }
@@ -572,6 +590,7 @@ impl App {
             Screen::Area(_) => self.draw_area(frame, main),
             Screen::Plan => self.draw_plan(frame, main),
             Screen::History => self.draw_history(frame, main),
+            Screen::Backups => self.draw_backups(frame, main),
             Screen::Settings => self.draw_settings(frame, main),
         }
         match &mut self.popup {
@@ -1309,6 +1328,114 @@ impl App {
         frame.render_stateful_widget(list, parts[2], &mut self.main_state);
     }
 
+    fn draw_backups(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Backups",
+            "Configuration backups HelixForge's entries left, newest first.",
+        );
+        let snapshots = match (self.snapshot_tool, self.snapshots) {
+            (Some(tool), true) => vec![
+                format!(
+                    "{} is set up: a snapshot is taken before runs that change system files, the kernel or disks.",
+                    tool.label()
+                ),
+                format!("Roll back with {}.", tool.how_to_restore()),
+            ],
+            (Some(tool), false) => vec![
+                format!(
+                    "{} is set up, but Settings has snapshots before system changes off.",
+                    tool.label()
+                ),
+                format!("Roll back with {}.", tool.how_to_restore()),
+            ],
+            (None, _) => vec![
+                "Neither Snapper (with a root configuration) nor Timeshift is set up, so no snapshots are taken.".to_string(),
+            ],
+        };
+        let closing = "HelixForge restores configuration backups; it does not roll packages back.";
+        // The card is as tall as its text once wrapped to the card's width.
+        let width = (inner.width.saturating_sub(4) as usize).max(1);
+        let rows: usize = snapshots
+            .iter()
+            .map(String::as_str)
+            .chain([closing])
+            .map(|text| text.chars().count().div_ceil(width).max(1))
+            .sum();
+        let mut lines: Vec<Line> = snapshots.into_iter().map(Line::from).collect();
+        lines.push(Line::styled(
+            closing,
+            Style::default().fg(self.theme.muted()),
+        ));
+        let parts = Layout::vertical([
+            Constraint::Length(rows as u16 + 2),
+            Constraint::Length(1),
+            Constraint::Min(1),
+        ])
+        .split(inner);
+        self.fill(frame, parts[0]);
+        frame.render_widget(
+            Paragraph::new(Text::from(lines))
+                .block(self.card("Snapshots"))
+                .wrap(Wrap { trim: true }),
+            parts[0],
+        );
+        self.fill(frame, parts[2]);
+        if self.backups.is_empty() {
+            frame.render_widget(
+                Paragraph::new(
+                    "No backups yet. Entries that change your configuration or system files keep the old copy here.",
+                )
+                .block(self.card("Backups"))
+                .style(Style::default().fg(self.theme.muted()))
+                .wrap(Wrap { trim: true }),
+                parts[2],
+            );
+            return;
+        }
+        let home = std::env::var("HOME").unwrap_or_default();
+        let shown = |path: &std::path::Path| {
+            let text = path.display().to_string();
+            match text.strip_prefix(&home) {
+                Some(rest) if !home.is_empty() => format!("~{rest}"),
+                _ => text,
+            }
+        };
+        let focused = self.focus == Focus::Main;
+        let items: Vec<Line> = self
+            .backups
+            .iter()
+            .map(|backup| {
+                let (scope, colour) = if backup.system {
+                    ("system", self.theme.warning())
+                } else {
+                    ("user  ", self.theme.success())
+                };
+                Line::from(vec![
+                    Span::styled(
+                        format!("{:<21}", backup.taken.as_deref().unwrap_or("unknown time")),
+                        Style::default().fg(self.theme.muted()),
+                    ),
+                    Span::styled(format!("{scope}  "), Style::default().fg(colour)),
+                    Span::styled(
+                        shown(&backup.original),
+                        Style::default().fg(self.theme.entry()),
+                    ),
+                    Span::styled(
+                        if backup.directory { "/" } else { "" },
+                        Style::default().fg(self.theme.entry()),
+                    ),
+                ])
+            })
+            .collect();
+        let list = List::new(items)
+            .block(self.card("Backups"))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused));
+        frame.render_stateful_widget(list, parts[2], &mut self.main_state);
+    }
+
     fn draw_history(&mut self, frame: &mut Frame, area: Rect) {
         let inner = self.page(frame, area, "History", "Past runs, newest first.");
         if self.records.is_empty() {
@@ -1392,6 +1519,14 @@ impl App {
                     "continue".to_string()
                 } else {
                     "stop".to_string()
+                },
+            ),
+            (
+                "Snapshot before system changes".to_string(),
+                match (self.snapshot_tool, self.snapshots) {
+                    (None, _) => "not set up here".to_string(),
+                    (Some(tool), true) => format!("yes ({})", tool.label()),
+                    (Some(_), false) => "no".to_string(),
                 },
             ),
             (
@@ -1513,6 +1648,14 @@ impl App {
                 }
                 Screen::History => {
                     list.push(Hint::new(&["Enter"], "Show log"));
+                    list.push(Hint::new(&["r"], "Reload"));
+                }
+                Screen::Backups => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    if !self.backups.is_empty() {
+                        list.push(Hint::new(&["Enter"], "Restore"));
+                        list.push(Hint::new(&["d"], "Details"));
+                    }
                     list.push(Hint::new(&["r"], "Reload"));
                 }
                 Screen::Settings => list.push(Hint::new(&["Enter"], "Change")),
@@ -1747,6 +1890,17 @@ impl App {
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
+            Screen::Backups => match key.code {
+                KeyCode::Enter => {
+                    if let Some(backup) = self.selected_backup().cloned() {
+                        self.confirm_plan(Ok(backups::plan_restore(&backup)));
+                    }
+                }
+                KeyCode::Char('d') => self.describe_backup(),
+                KeyCode::Char('r') => self.reload_backups(),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
             Screen::Settings => match key.code {
                 KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') | KeyCode::Right => {
                     self.change_setting()
@@ -1933,6 +2087,41 @@ impl App {
         self.popup = Some(Popup::Text(TextPopup::new(entry.name.clone(), text, true)));
     }
 
+    fn reload_backups(&mut self) {
+        self.backups = backups::discover(&backups::Roots::here());
+        self.clamp_main();
+    }
+
+    fn selected_backup(&self) -> Option<&backups::Backup> {
+        self.main_state
+            .selected()
+            .and_then(|index| self.backups.get(index))
+    }
+
+    fn describe_backup(&mut self) {
+        let Some(backup) = self.selected_backup() else {
+            return;
+        };
+        let text = format!(
+            "Backup of: {}\nTaken: {}\nCopy: {}\nKind: {}, {}\n\nEnter restores it. The current {} is moved aside as its own backup first, so the restore can be undone the same way.",
+            backup.original.display(),
+            backup.taken.as_deref().unwrap_or("unknown"),
+            backup.backup.display(),
+            if backup.directory {
+                "a folder"
+            } else {
+                "a file"
+            },
+            if backup.system {
+                "a system file (restoring asks for your password)"
+            } else {
+                "your own file"
+            },
+            if backup.directory { "folder" } else { "file" },
+        );
+        self.popup = Some(Popup::Text(TextPopup::new("Backup", text, true)));
+    }
+
     fn show_log(&mut self) {
         let Some(record) = self
             .main_state
@@ -1986,6 +2175,10 @@ impl App {
             }
             4 => {
                 self.keep_going = !self.keep_going;
+                self.save_look();
+            }
+            5 if self.snapshot_tool.is_some() => {
+                self.snapshots = !self.snapshots;
                 self.save_look();
             }
             _ => {}
@@ -2071,6 +2264,16 @@ impl App {
             self.popup = Some(Popup::Text(TextPopup::new("Nothing to run", text, true)));
             return;
         }
+        // A snapshot first when the run changes the system, where possible.
+        let mut planned = planned;
+        if self.snapshots
+            && let Some(tool) = self.snapshot_tool
+            && backups::worth_a_snapshot(&planned, &|id| {
+                self.catalog.find(id).map(|entry| entry.flags.clone())
+            })
+        {
+            backups::with_snapshot(&mut planned, tool);
+        }
         let findings = self.findings(&planned);
         if preflight::blocked(&findings) {
             let lines: Vec<String> = findings.iter().map(preflight::Finding::line).collect();
@@ -2091,7 +2294,6 @@ impl App {
             }
         )];
         header.extend(findings.iter().map(preflight::Finding::line));
-        let mut planned = planned;
         planned.keep_going = self.keep_going;
         if planned.steps.len() > 1 {
             header.push(format!(
@@ -2183,6 +2385,11 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
     menu.push(MenuItem {
         label: "History".into(),
         screen: Screen::History,
+        section: "MORE TOOLS",
+    });
+    menu.push(MenuItem {
+        label: "Backups".into(),
+        screen: Screen::Backups,
         section: "MORE TOOLS",
     });
     menu.push(MenuItem {
@@ -2432,6 +2639,57 @@ mod tests {
         assert!(
             screen(&mut app, 140, 40).contains("Status: Managed (Home Manager 0.74.4)"),
             "the description says it too"
+        );
+    }
+
+    #[test]
+    fn backups_are_listed_described_and_restored_and_snapshots_go_first() {
+        let mut app = app();
+        app.backups = vec![backups::Backup {
+            backup: "/home/me/.config/ghostty/config.commander-backup-20261001000000-1".into(),
+            original: "/home/me/.config/ghostty/config".into(),
+            taken: Some("2026-10-01 00:00:00".into()),
+            system: false,
+            directory: false,
+        }];
+        app.snapshot_tool = Some(backups::Snapshots::Snapper);
+        app.screen = Screen::Backups;
+        app.focus = Focus::Main;
+        app.main_state.select(Some(0));
+        let shown = screen(&mut app, 140, 40);
+        assert!(shown.contains("2026-10-01 00:00:00"), "{shown}");
+        assert!(shown.contains("ghostty/config"));
+        assert!(shown.contains("Snapper is set up"));
+        assert!(shown.contains("does not roll packages"), "{shown}");
+        press(&mut app, KeyCode::Char('d'));
+        assert!(screen(&mut app, 140, 40).contains("moved aside as its own backup"));
+        press(&mut app, KeyCode::Esc);
+        app.popup = None;
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let shown = screen(&mut app, 140, 40);
+        assert!(
+            shown.contains("cp -a /home/me/.config/ghostty/config.commander-backup"),
+            "{shown}"
+        );
+        assert!(
+            !shown.contains("Take a Snapper snapshot"),
+            "a user file needs no snapshot"
+        );
+        app.popup = None;
+        app.pending = None;
+        // A GRUB theme changes system files: the snapshot comes first.
+        let grub = app.catalog.find("grub").unwrap().clone();
+        app.confirm(vec![grub]);
+        let shown = screen(&mut app, 160, 40);
+        assert!(shown.contains("1. Take a Snapper snapshot"), "{shown}");
+        app.popup = None;
+        app.pending = None;
+        app.snapshots = false;
+        app.confirm(vec![app.catalog.find("grub").unwrap().clone()]);
+        assert!(
+            !screen(&mut app, 160, 40).contains("Snapper snapshot"),
+            "off in Settings"
         );
     }
 

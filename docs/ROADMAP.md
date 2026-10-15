@@ -182,6 +182,16 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] The Install Plan screen keeps its plan for a few seconds and drops it
       after a run, since planning now asks the package manager
 
+## v0.4.0: backup and recovery, HELIX Doctor 2.0
+
+- [x] Backup and recovery center (item 3): one Backups screen and
+      `helixforge backups` for user and system configuration backups, with
+      when each was taken and what it covers; restores that keep the
+      replaced file as a backup; a Snapper or Timeshift snapshot first before
+      system changes where the machine supports it, without promising
+      package rollback
+- [ ] HELIX Doctor 2.0 (item 5)
+
 ## v0.3.0: dependencies, conflicts and the installation queue (done)
 
 - [x] Checks before a run (item 2): missing tools, entries that replace

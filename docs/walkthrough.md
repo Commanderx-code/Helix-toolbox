@@ -253,7 +253,7 @@ WINE for running Windows programs, and the Proton builds and compatibility tools
 ## Maintenance
 
 - **Topgrade Updates**: Install your Topgrade configuration adapted to this distro, with backups and update confirmations. Optionally run updates afterward.
-- **Restore Configuration Backups**: Browse Commander user-configuration backups and restore one, backing up the current configuration first. Symlink-managed configurations and system boot files are excluded.
+- **Restore Configuration Backups**: Browse Commander user-configuration backups and restore one, backing up the current configuration first. Symlink-managed configurations and system boot files are excluded. The Backups screen in the sidebar lists these together with system backups (GRUB, SDDM, Plymouth, pacman.conf) and restores either kind.
 
 ### System Setup
 

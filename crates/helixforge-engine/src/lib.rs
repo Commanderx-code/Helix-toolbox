@@ -13,6 +13,7 @@
 //! one before it fails or leaves the package missing. After a run, [`verify`]
 //! checks that each package step left its package installed, or removed.
 
+pub mod backups;
 pub mod history;
 pub mod inventory;
 pub mod preflight;
@@ -86,6 +87,16 @@ pub enum Step {
         id: String,
         name: String,
         action: NativeAction,
+    },
+    /// A small program HelixForge builds itself from quoted values only:
+    /// restoring a backup, taking a snapshot.
+    Shell {
+        id: String,
+        name: String,
+        program: String,
+        /// How plans show it.
+        display: String,
+        requires: Vec<String>,
     },
     /// Brings installed packages up to date through one source; on Arch, the
     /// whole system for every target at once.
@@ -244,6 +255,7 @@ impl Step {
             | Step::Command { id, .. }
             | Step::Nix { id, .. }
             | Step::Native { id, .. }
+            | Step::Shell { id, .. }
             | Step::Update { id, .. } => id,
         }
     }
@@ -255,6 +267,7 @@ impl Step {
             | Step::Command { name, .. }
             | Step::Nix { name, .. }
             | Step::Native { name, .. }
+            | Step::Shell { name, .. }
             | Step::Update { name, .. } => name,
         }
     }
@@ -299,6 +312,7 @@ impl Step {
             Step::Nix { action, .. } => nix_command(action).join(" "),
             Step::Native { action, .. } => format!("helixforge native {}", action.id()),
             Step::Update { source, .. } => source.command_line(),
+            Step::Shell { display, .. } => display.clone(),
         }
     }
 
@@ -339,6 +353,7 @@ impl Step {
             },
             Step::Script { program, .. } => vec![program.clone()],
             Step::Update { source, .. } => source.requires.clone(),
+            Step::Shell { requires, .. } => requires.clone(),
             Step::Command { .. } | Step::Native { .. } => Vec::new(),
         }
     }
@@ -1013,6 +1028,7 @@ pub fn shell_program_with(
                 "native".to_string(),
                 action.id().to_string(),
             ]),
+            Step::Shell { program, .. } => program.clone(),
             Step::Update {
                 source, targets, ..
             } => {

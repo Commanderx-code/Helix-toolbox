@@ -131,6 +131,17 @@ run), verifies the package steps that finished, and `describe()` adds "1 of 3
 steps done" to the history. `history::active()` finds other HelixForge runs
 still going from their markers, a preflight blocker.
 
+`backups` finds configuration backups by name (`parse_name`: the original
+and the time stamp) under `Roots`: the user's configuration and data
+folders to any depth (skipping caches, repositories and links) and the home
+folder, and `/etc`, `/boot` and two SDDM folders a few levels deep, which need
+root to restore. `plan_restore()` builds a `Step::Shell` (a program HelixForge
+composes from quoted paths only) that moves the current file aside as
+`.helixforge-backup-<time>` and copies the backup back. `Snapshots` detects
+Snapper with a root configuration or Timeshift; `worth_a_snapshot()` says
+whether a plan changes the system (risk high, or PFM, K, D, SI flags) and
+`with_snapshot()` puts a snapshot step first.
+
 `Entry::identity()` gives what an entry installs, from its package action or,
 for script and command entries, its `detect` table, so detection, status and
 updates treat both alike; scripts still run when chosen. A command on the

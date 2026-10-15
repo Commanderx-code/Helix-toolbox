@@ -966,6 +966,58 @@ esac
 }
 
 #[test]
+fn a_backup_is_listed_and_restored_with_the_current_file_kept() {
+    let home = tempfile::tempdir().unwrap();
+    let config = home.path().join("config");
+    let original = config.join("ghostty/config");
+    let backup = config.join("ghostty/config.commander-backup-20261001000000-1");
+    fs::create_dir_all(original.parent().unwrap()).unwrap();
+    fs::write(&original, "current").unwrap();
+    fs::write(&backup, "older").unwrap();
+    let helixforge = |args: &[&str]| {
+        let output = Command::new(PROGRAM)
+            .arg("--catalog-dir")
+            .arg(fixtures())
+            .args(args)
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", &config)
+            .env("XDG_DATA_HOME", home.path().join("data"))
+            .env("XDG_STATE_HOME", home.path().join("state"))
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        (
+            output.status.success(),
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
+    };
+    let (ok, out, _) = helixforge(&["backups"]);
+    assert!(ok);
+    assert!(out.contains("2026-10-01 00:00:00  user    "), "{out}");
+    assert!(out.contains(&original.display().to_string()));
+    let (ok, out, err) = helixforge(&["restore", backup.to_str().unwrap(), "--yes"]);
+    assert!(ok, "{out}\n{err}");
+    assert!(out.contains("HelixForge: restored"), "{out}");
+    assert_eq!(fs::read_to_string(&original).unwrap(), "older");
+    let kept: Vec<_> = fs::read_dir(original.parent().unwrap())
+        .unwrap()
+        .flatten()
+        .filter(|item| {
+            item.file_name()
+                .to_string_lossy()
+                .contains(".helixforge-backup-")
+        })
+        .collect();
+    assert_eq!(kept.len(), 1, "the file it replaced is kept");
+    assert_eq!(fs::read_to_string(kept[0].path()).unwrap(), "current");
+    // Only backups HelixForge finds can be restored.
+    let (ok, _, err) = helixforge(&["restore", "/etc/hostname", "--yes"]);
+    assert!(!ok);
+    assert!(err.contains("is not a backup HelixForge knows"), "{err}");
+}
+
+#[test]
 fn unfinished_entries_stay_in_the_install_plan_after_a_run() {
     let home = tempfile::tempdir().unwrap();
     let mut tui = fixture_menu(home.path());

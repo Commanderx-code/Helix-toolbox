@@ -12,6 +12,7 @@ pub enum Icon {
     Security,
     Profiles,
     History,
+    Backups,
     Settings,
     Area,
     Group,
@@ -37,6 +38,7 @@ impl Icon {
                 Icon::Security => "\u{f132}",       // shield
                 Icon::Profiles => "\u{f1b3}",       // cubes
                 Icon::History => "\u{f1da}",        // history
+                Icon::Backups => "\u{f187}",        // archive
                 Icon::Settings => "\u{f013}",       // cog
                 Icon::Area => "\u{f07b}",           // folder
                 Icon::Group => "\u{f07b}",          // folder

@@ -10,7 +10,7 @@ use clap::{Parser, Subcommand};
 use helixforge_catalog::Catalog;
 use helixforge_core::{Action, Entry, Item, NativeAction};
 use helixforge_engine::{
-    InheritedRunner, Machine, PackageState, Plan, execute, history,
+    InheritedRunner, Machine, PackageState, Plan, backups, execute, history,
     inventory::{Inventory, Status, which},
     package_state, plan, plan_removal, preflight, run_native,
 };
@@ -79,6 +79,10 @@ enum Command {
         /// After a failed step, go on with the steps that do not need it.
         #[arg(long)]
         keep_going: bool,
+        /// Take a Snapper or Timeshift snapshot first when the run changes
+        /// the system (privileged files, the kernel, disks).
+        #[arg(long)]
+        snapshot: bool,
     },
     /// Remove package entries that offer removal, after confirmation.
     Remove {
@@ -104,6 +108,20 @@ enum Command {
         /// After a failed step, go on with the steps that do not need it.
         #[arg(long)]
         keep_going: bool,
+    },
+    /// List configuration backups HelixForge's entries have left, newest
+    /// first, and whether snapshots are taken before system changes.
+    Backups,
+    /// Put a backup back; the current file is kept as a backup first.
+    Restore {
+        /// The backup's path, as `helixforge backups` lists it.
+        backup: PathBuf,
+        /// Show the plan and stop.
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip the confirmation phrase, for deliberate automation.
+        #[arg(long)]
+        yes: bool,
     },
     /// Show recent runs.
     History {
@@ -277,10 +295,14 @@ fn main() -> Result<()> {
             dry_run,
             yes,
             keep_going,
+            snapshot,
         } => {
             let catalog = load(false)?;
             let mut planned = plan_ids(&catalog, &platform, &ids)?;
             planned.keep_going = keep_going;
+            if snapshot {
+                add_snapshot(&catalog, &mut planned);
+            }
             confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "RUN")
         }
         Command::Remove { ids, dry_run, yes } => {
@@ -326,6 +348,51 @@ fn main() -> Result<()> {
             planned.keep_going = keep_going;
             confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "UPDATE")
         }
+        Command::Backups => {
+            match backups::Snapshots::here() {
+                Some(tool) => println!(
+                    "Snapshots: {} is set up; run --snapshot and the menu take one before system changes. Roll back with {}. HelixForge does not roll back packages itself.\n",
+                    tool.label(),
+                    tool.how_to_restore()
+                ),
+                None => println!(
+                    "Snapshots: neither Snapper (with a root configuration) nor Timeshift is set up, so none are taken.\n"
+                ),
+            }
+            let found = backups::discover(&backups::Roots::here());
+            if found.is_empty() {
+                println!("No backups found.");
+            }
+            for backup in found {
+                println!(
+                    "{}  {:<6}  {}\n    {}",
+                    backup.taken.as_deref().unwrap_or("unknown time       "),
+                    if backup.system { "system" } else { "user" },
+                    backup.original.display(),
+                    backup.backup.display()
+                );
+            }
+            Ok(())
+        }
+        Command::Restore {
+            backup,
+            dry_run,
+            yes,
+        } => {
+            let catalog = load(false)?;
+            // Only a backup HelixForge finds can be restored, never any path.
+            let found = backups::discover(&backups::Roots::here())
+                .into_iter()
+                .find(|known| known.backup == backup)
+                .with_context(|| {
+                    format!(
+                        "{} is not a backup HelixForge knows; see helixforge backups",
+                        backup.display()
+                    )
+                })?;
+            let planned = backups::plan_restore(&found);
+            confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "RESTORE")
+        }
         Command::History { limit } => {
             let records = history::read(limit)?;
             if records.is_empty() {
@@ -358,6 +425,20 @@ fn main() -> Result<()> {
             print!("{}", run_native(action, &platform));
             Ok(())
         }
+    }
+}
+
+/// Put a snapshot step first when the plan changes the system and the
+/// machine can take one; otherwise say why not.
+fn add_snapshot(catalog: &Catalog, planned: &mut Plan) {
+    let flags = |id: &str| catalog.find(id).map(|entry| entry.flags.clone());
+    if !backups::worth_a_snapshot(planned, &flags) {
+        println!("No snapshot: this run does not change system files, the kernel or disks.");
+        return;
+    }
+    match backups::Snapshots::here() {
+        Some(tool) => backups::with_snapshot(planned, tool),
+        None => println!("No snapshot: neither Snapper nor Timeshift is set up here."),
     }
 }
 
