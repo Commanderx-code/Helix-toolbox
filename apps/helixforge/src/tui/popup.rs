@@ -271,7 +271,7 @@ mod tests {
         );
         let mut terminal = Terminal::new(TestBackend::new(40, 11)).unwrap();
         terminal
-            .draw(|frame| popup.draw(frame, frame.area(), Theme::Default))
+            .draw(|frame| popup.draw(frame, frame.area(), Theme::Solid))
             .unwrap();
         let buffer = terminal.backend().buffer();
         let text: String = (0..11)

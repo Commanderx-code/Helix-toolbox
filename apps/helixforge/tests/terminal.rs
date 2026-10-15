@@ -880,22 +880,22 @@ fn the_theme_and_icon_choices_are_remembered() {
     tui.wait_for(&["\u{f0e4}"]);
     // Settings is the last item in the sidebar.
     tui.keys(BACK_TAB);
-    tui.wait_for(&["theme and icons are remembered", "default", "Nerd Font"]);
+    tui.wait_for(&["theme and icons are remembered", "solid", "Nerd Font"]);
     tui.keys("\r");
     tui.keys("\r");
-    tui.wait_for(&["solid"]);
+    tui.wait_for(&["transparent"]);
     tui.keys("j");
     tui.keys("\r");
     tui.wait_for(&["plain"]);
     tui.keys("q");
     assert_eq!(tui.wait_for_exit(), 0);
     let saved = fs::read_to_string(home.path().join("config/helixforge/settings.toml")).unwrap();
-    assert!(saved.contains("theme = \"solid\""), "{saved}");
+    assert!(saved.contains("theme = \"transparent\""), "{saved}");
     assert!(saved.contains("icons = false"), "{saved}");
 
     let mut tui = fixture_menu(home.path());
     tui.keys(BACK_TAB);
-    tui.wait_for(&["solid", "plain"]);
+    tui.wait_for(&["transparent", "plain"]);
     assert!(!tui.contents().contains("\u{f0e4}"));
     tui.keys("q");
     assert_eq!(tui.wait_for_exit(), 0);

@@ -48,9 +48,10 @@ below also work without one.
 
 The menu follows the HelixForge dashboard design: cards for the main screens
 and quick actions, with Nerd Font icons. `t` or Settings switches between
-three themes: **default** draws over your terminal's own background, so a
-wallpaper or transparency shows through; **solid** paints the design's dark
-panels; **compatible** keeps to sixteen colours. Settings also turns the icons
+three themes: **solid**, the default, paints the design's dark panels;
+**transparent** draws over your terminal's own background, so a wallpaper or
+transparency shows through (it was called **default** before, and that name
+still works); **compatible** keeps to sixteen colours. Settings also turns the icons
 off for terminals without a Nerd Font. Both choices are remembered in
 `~/.config/helixforge/settings.toml`; `--theme` and `--plain` override them
 for one run.

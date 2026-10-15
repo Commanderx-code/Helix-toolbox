@@ -19,7 +19,7 @@ pub struct Look {
 impl Default for Look {
     fn default() -> Self {
         Self {
-            theme: Theme::Default,
+            theme: Theme::Solid,
             icons: true,
         }
     }
@@ -65,8 +65,9 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("helixforge/settings.toml");
         assert_eq!(load(&path), Look::default());
+        assert_eq!(Look::default().theme, Theme::Solid);
         let look = Look {
-            theme: Theme::Solid,
+            theme: Theme::Transparent,
             icons: false,
         };
         save(&path, &look).unwrap();
@@ -74,8 +75,11 @@ mod tests {
         assert!(
             fs::read_to_string(&path)
                 .unwrap()
-                .contains("theme = \"solid\"")
+                .contains("theme = \"transparent\"")
         );
+        // The transparent theme's old name still loads.
+        fs::write(&path, "theme = \"default\"\n").unwrap();
+        assert_eq!(load(&path).theme, Theme::Transparent);
         fs::write(&path, "theme = 3\n").unwrap();
         assert_eq!(load(&path), Look::default());
     }

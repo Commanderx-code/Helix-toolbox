@@ -2,32 +2,37 @@ use clap::ValueEnum;
 use ratatui::style::{Color, Style};
 use serde::{Deserialize, Serialize};
 
-/// HelixForge's cyan and purple palette. `Default` draws over the terminal's
-/// own background, so a wallpaper or transparency shows through; `Solid` paints
-/// the dark panels of the dashboard design; `Compatible` keeps to the sixteen
-/// basic colours for terminals that render true colour poorly.
+/// HelixForge's cyan and purple palette. `Solid`, the default, paints the dark
+/// panels of the dashboard design; `Transparent` draws over the terminal's own
+/// background, so a wallpaper or transparency shows through; `Compatible`
+/// keeps to the sixteen basic colours for terminals that render true colour
+/// poorly.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Theme {
     #[default]
-    Default,
     Solid,
+    /// Called `default` before Solid became the default; the old name is
+    /// still read from saved settings and the command line.
+    #[serde(alias = "default")]
+    #[value(alias = "default")]
+    Transparent,
     Compatible,
 }
 
 impl Theme {
     pub fn next(self) -> Self {
         match self {
-            Theme::Default => Theme::Solid,
-            Theme::Solid => Theme::Compatible,
-            Theme::Compatible => Theme::Default,
+            Theme::Solid => Theme::Transparent,
+            Theme::Transparent => Theme::Compatible,
+            Theme::Compatible => Theme::Solid,
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
-            Theme::Default => "default",
             Theme::Solid => "solid",
+            Theme::Transparent => "transparent",
             Theme::Compatible => "compatible",
         }
     }
@@ -128,7 +133,7 @@ impl Theme {
 
     fn pick(self, rich: Color, compatible: Color) -> Color {
         match self {
-            Theme::Default | Theme::Solid => rich,
+            Theme::Solid | Theme::Transparent => rich,
             Theme::Compatible => compatible,
         }
     }

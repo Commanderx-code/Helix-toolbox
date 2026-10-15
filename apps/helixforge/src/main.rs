@@ -82,9 +82,9 @@ enum Command {
 
 #[derive(clap::Args, Clone, Debug, Default)]
 pub struct TuiArgs {
-    /// Colour theme for this run: default (over the terminal's background),
-    /// solid (dark panels), or compatible (sixteen colours). Settings in the
-    /// menu changes the remembered one.
+    /// Colour theme for this run: solid (dark panels, the default),
+    /// transparent (over the terminal's background), or compatible (sixteen
+    /// colours). Settings in the menu changes the remembered one.
     #[arg(short, long, value_enum)]
     pub theme: Option<Theme>,
     /// Draw plain text instead of Nerd Font icons for this run.

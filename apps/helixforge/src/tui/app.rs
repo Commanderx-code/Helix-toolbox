@@ -2039,7 +2039,7 @@ mod tests {
         app.icons = true;
         app.theme = Theme::Compatible;
         assert!(screen(&mut app, 120, 40).contains("BUILD • CONFIGURE"));
-        app.theme = Theme::Default;
+        app.theme = Theme::Solid;
         app.size_bypass = true;
         let narrow = screen(&mut app, 40, 30);
         assert!(!narrow.contains('\u{10EEEE}'));
@@ -2217,8 +2217,9 @@ mod tests {
         app.open_screen(Screen::Settings);
         app.focus = Focus::Main;
         assert!(screen(&mut app, 120, 40).contains("Ask before running"));
+        assert_eq!(app.theme, Theme::Solid, "solid is the default");
         press(&mut app, KeyCode::Enter);
-        assert_eq!(app.theme, Theme::Solid);
+        assert_eq!(app.theme, Theme::Transparent);
         press(&mut app, KeyCode::Char('j'));
         press(&mut app, KeyCode::Enter);
         assert!(app.icons);
@@ -2242,7 +2243,7 @@ mod tests {
     fn the_dashboard_draws_cards_and_icons_in_every_theme() {
         let mut app = app();
         app.icons = true;
-        for theme in [Theme::Default, Theme::Solid, Theme::Compatible] {
+        for theme in [Theme::Solid, Theme::Transparent, Theme::Compatible] {
             app.theme = theme;
             let text = screen(&mut app, 120, 40);
             assert!(text.contains("\u{f0e4}  Dashboard"), "{text}");
