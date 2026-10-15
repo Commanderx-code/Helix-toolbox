@@ -3,5 +3,11 @@ description = "OpenShot Video Editor is a free and open-source video editor."
 flags = "I"
 order = 116
 
-[script]
-id = "applications-setup/design-tools/openshot"
+[package]
+binary = "openshot"
+debian = "openshot-qt"
+fedora = "openshot-qt"
+suse = "openshot-qt"
+aur = "openshot"
+flatpak = "org.openshot.OpenShot"
+removable = true

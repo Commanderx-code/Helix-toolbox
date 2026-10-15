@@ -3,5 +3,9 @@ description = "A Genesis emulator. NO Games are included"
 flags = "FM"
 order = 101
 
-[script]
-id = "gaming/emulators/sega/blastem"
+[package]
+binary = "blastem"
+debian = "blastem"
+aur = "blastem"
+flatpak = "com.retrodev.blastem"
+removable = true

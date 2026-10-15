@@ -3,5 +3,7 @@ description = "An Experimental Xbox 360 emulator. NO Games or Bios' are included
 flags = "FM"
 order = 102
 
-[script]
-id = "gaming/emulators/xbox/xenia"
+[package]
+binary = "xenia"
+aur = "xenia-canary-bin"
+removable = true

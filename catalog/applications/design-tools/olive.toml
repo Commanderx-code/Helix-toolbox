@@ -3,5 +3,9 @@ description = "Olive is a free and open-source cross-platform non-linear video e
 flags = "I"
 order = 115
 
-[script]
-id = "applications-setup/design-tools/olive"
+[package]
+binary = "olive"
+fedora = "olive"
+aur = "olive"
+flatpak = "org.olivevideoeditor.Olive"
+removable = true

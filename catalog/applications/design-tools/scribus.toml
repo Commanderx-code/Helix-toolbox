@@ -3,5 +3,11 @@ description = "Scribus is free and open-source desktop publishing software avail
 flags = "I"
 order = 118
 
-[script]
-id = "applications-setup/design-tools/scribus"
+[package]
+binary = "scribus"
+debian = "scribus"
+fedora = "scribus"
+suse = "scribus"
+aur = "scribus"
+flatpak = "net.scribus.Scribus"
+removable = true

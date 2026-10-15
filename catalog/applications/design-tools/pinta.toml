@@ -3,5 +3,10 @@ description = "Pinta is an open-source, cross-platform bitmap image drawing and 
 flags = "I"
 order = 117
 
-[script]
-id = "applications-setup/design-tools/pinta"
+[package]
+binary = "pinta"
+fedora = "pinta"
+suse = "pinta"
+aur = "pinta"
+flatpak = "com.github.PintaProject.Pinta"
+removable = true

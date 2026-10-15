@@ -3,5 +3,8 @@ description = "A Dreamcast emulator. NO Games are included"
 flags = "FM"
 order = 102
 
-[script]
-id = "gaming/emulators/sega/flycast"
+[package]
+binary = "flycast"
+aur = "flycast"
+flatpak = "org.flycast.Flycast"
+removable = true

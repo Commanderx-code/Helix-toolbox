@@ -3,5 +3,8 @@ description = "Super Nintendo Emulator. NO Games are included"
 flags = "FM"
 order = 101
 
-[script]
-id = "gaming/emulators/nintendo/bsnes"
+[package]
+binary = "bsnes"
+aur = "bsnes-hd"
+flatpak = "dev.bsnes.bsnes"
+removable = true

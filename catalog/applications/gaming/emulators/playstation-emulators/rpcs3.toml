@@ -3,5 +3,8 @@ description = "A Playstation 3 emulator. NO Games or Bios' are included"
 flags = "FM"
 order = 103
 
-[script]
-id = "gaming/emulators/playstation/rpcs3"
+[package]
+binary = "rpcs3"
+aur = "rpcs3-bin"
+flatpak = "net.rpcs3.RPCS3"
+removable = true

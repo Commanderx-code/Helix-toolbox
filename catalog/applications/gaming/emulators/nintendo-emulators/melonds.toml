@@ -3,5 +3,8 @@ description = "Nintendo DS and DSi Emulator. NO Games are included"
 flags = "FM"
 order = 104
 
-[script]
-id = "gaming/emulators/nintendo/melonds"
+[package]
+binary = "melonDS"
+aur = "melonds-bin"
+flatpak = "net.kuribo64.melonDS"
+removable = true

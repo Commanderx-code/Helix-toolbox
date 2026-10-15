@@ -3,5 +3,9 @@ description = "N64 Emulator. NO Games are included"
 flags = "FM"
 order = 106
 
-[script]
-id = "gaming/emulators/nintendo/mupen64plus"
+[package]
+binary = "mupen64plus"
+debian = "mupen64plus-qt"
+fedora = "mupen64plus"
+aur = "mupen64plus"
+removable = true

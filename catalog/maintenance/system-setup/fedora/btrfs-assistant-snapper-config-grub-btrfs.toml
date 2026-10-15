@@ -3,5 +3,10 @@ description = "Installs Btrfs Assistant, Snapper, dnf snapper plugin and takes t
 flags = "I PFM SS"
 order = 101
 
+[[preconditions]]
+matches = true
+check = "command_exists"
+values = ["btrfs"]
+
 [script]
 id = "system-setup/fedora/fedora-btrfs-assistant"

@@ -3,5 +3,11 @@ description = "Ardour is a free and open-source digital audio workstation and ha
 flags = "I"
 order = 101
 
-[script]
-id = "applications-setup/design-tools/ardour"
+[package]
+binary = "ardour"
+debian = "ardour"
+fedora = "ardour"
+suse = "ardour"
+aur = "ardour"
+flatpak = "org.ardour.Ardour"
+removable = true

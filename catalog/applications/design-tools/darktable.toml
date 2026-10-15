@@ -3,5 +3,11 @@ description = "Darktable is a free and open-source photography application and r
 flags = "I"
 order = 107
 
-[script]
-id = "applications-setup/design-tools/darktable"
+[package]
+binary = "darktable"
+debian = "darktable"
+fedora = "darktable"
+suse = "darktable"
+aur = "darktable"
+flatpak = "org.darktable.Darktable"
+removable = true

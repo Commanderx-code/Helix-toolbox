@@ -12,8 +12,19 @@ live under `scripts/installers/commander/` with their Python tests; the
 general catalog's scripts keep their old directory tree under
 `scripts/installers/` and source the shared helpers through two forwarding
 shims, so none of them was edited. They keep their MIT notice; see
-`THIRD_PARTY_NOTICES.md`. Turning the plain package installs among them into
-data-only package entries is a later clean-up, not needed for parity.
+`THIRD_PARTY_NOTICES.md`.
+
+38 of the general installers were one package per package manager, often
+from the AUR on Arch with a Flatpak fallback, and 29 of them wrapped that in
+an "install or uninstall" prompt. They are package entries now, and their
+scripts are gone. The reason: as data, HelixForge plans them before they run
+(showing the exact command and whether a password is needed), reports when
+they are already installed, including as a Flatpak, and offers removal with
+`r` or `helixforge remove` instead of a prompt inside a script. The package
+model grew openSUSE, Alpine, Void and Solus names, `aur` and `flatpak` for
+this, so no distribution these scripts supported was dropped. The other 138
+installers add repositories, run several steps or configure what they
+install, and stay scripts.
 
 ## Commander installers
 

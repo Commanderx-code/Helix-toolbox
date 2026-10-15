@@ -12,7 +12,7 @@ use crate::TuiArgs;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use helixforge_catalog::Catalog;
 use helixforge_core::{Action, Entry, Item};
-use helixforge_engine::{Plan, history, plan};
+use helixforge_engine::{EngineError, Plan, history, plan, plan_removal};
 use helixforge_platform::LinuxInfo;
 use ratatui::{
     Frame,
@@ -62,6 +62,7 @@ Areas (Applications and the other catalog screens)
   j / k             move                         Enter / l   open a group or run an entry
   h                 parent group, or the sidebar Space       add to or remove from the install plan
   d                 description                  p           preview the script or command
+  r                 remove an installed package (entries that offer it)
   g                 flags guide
 
 Install Plan
@@ -934,8 +935,11 @@ impl App {
                     match self.selected_row() {
                         Some(Row::Up) => list.push(Hint::new(&["Enter", "h"], "Parent")),
                         Some(Row::Group { .. }) => list.push(Hint::new(&["Enter"], "Open")),
-                        Some(Row::Entry(_)) => {
+                        Some(Row::Entry(entry)) => {
                             list.push(Hint::new(&["Enter"], "Run"));
+                            if removable(entry) {
+                                list.push(Hint::new(&["r"], "Remove"));
+                            }
                             list.push(Hint::new(&["Space"], "Plan"));
                             list.push(Hint::new(&["d"], "Describe"));
                             list.push(Hint::new(&["p"], "Preview"));
@@ -1095,6 +1099,14 @@ impl App {
                 KeyCode::Char('p') | KeyCode::Char('P') => self.preview(),
                 KeyCode::Char('d') | KeyCode::Char('D') => self.describe(),
                 KeyCode::Char(' ') => self.toggle_queue(),
+                KeyCode::Char('r') | KeyCode::Char('R') => {
+                    if let Some(entry) = self.selected_entry().cloned()
+                        && removable(&entry)
+                    {
+                        let planned = plan_removal([&entry], &self.platform);
+                        self.confirm_plan(planned);
+                    }
+                }
                 _ => {}
             },
             Screen::Plan => match key.code {
@@ -1334,7 +1346,13 @@ impl App {
         if entries.is_empty() {
             return;
         }
-        let planned = match plan(entries.iter(), &self.platform, &|id| self.catalog.find(id)) {
+        let planned = plan(entries.iter(), &self.platform, &|id| self.catalog.find(id));
+        self.confirm_plan(planned);
+    }
+
+    /// Show a plan's confirmation, or why there is nothing to run.
+    fn confirm_plan(&mut self, planned: Result<Plan, EngineError>) {
+        let planned = match planned {
             Ok(planned) => planned,
             Err(error) => {
                 self.popup = Some(Popup::Text(TextPopup::new(
@@ -1409,6 +1427,16 @@ impl App {
             },
         );
     }
+}
+
+fn removable(entry: &Entry) -> bool {
+    matches!(
+        entry.action,
+        Action::Package {
+            removable: true,
+            ..
+        }
+    )
 }
 
 fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
@@ -1678,6 +1706,32 @@ mod tests {
         press(&mut app, KeyCode::Char('n'));
         assert!(app.popup.is_none());
         assert!(!press(&mut app, KeyCode::Char('q')));
+    }
+
+    #[test]
+    fn removable_entries_offer_removal_and_others_do_not() {
+        let mut app = app();
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "Tenacity");
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 120, 40).contains("Remove"));
+        press(&mut app, KeyCode::Char('r'));
+        let text = screen(&mut app, 120, 40);
+        assert!(
+            text.contains("not installed") || text.contains("Remove Tenacity"),
+            "{text}"
+        );
+        press(&mut app, KeyCode::Esc);
+        app.popup = None;
+        press(&mut app, KeyCode::Char('h'));
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "Machine Summary");
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('r'));
+        assert!(
+            app.popup.is_none(),
+            "a non-package entry has nothing to remove"
+        );
     }
 
     #[test]

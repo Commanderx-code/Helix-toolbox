@@ -33,6 +33,8 @@ pub enum EngineError {
     UnsupportedEntry(String),
     #[error("unsafe catalog value: {0}")]
     Invalid(String),
+    #[error("{0} is not a package entry that can be removed")]
+    NotRemovable(String),
     #[error("profile {0} names an entry that is not in the catalog: {1}")]
     UnknownMember(String, String),
     #[error("required executable not found: {0}")]
@@ -44,11 +46,12 @@ pub enum EngineError {
 /// One thing to run, with everything needed to run it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Step {
+    /// Installs or removes a package: one or more commands run in order.
     Package {
         id: String,
         name: String,
-        manager: PackageManager,
-        package: String,
+        commands: Vec<Vec<String>>,
+        requires: Vec<String>,
     },
     Script {
         id: String,
@@ -100,9 +103,11 @@ impl Step {
     /// The command line as the shell will run it, for previews and plans.
     pub fn display(&self) -> String {
         match self {
-            Step::Package {
-                manager, package, ..
-            } => package_command(*manager, package).join(" "),
+            Step::Package { commands, .. } => commands
+                .iter()
+                .map(|command| command.join(" "))
+                .collect::<Vec<_>>()
+                .join(" && "),
             Step::Script {
                 file,
                 program,
@@ -131,9 +136,7 @@ impl Step {
     /// The executables a step needs before it can start.
     fn requirements(&self) -> Vec<String> {
         match self {
-            Step::Package { manager, .. } => {
-                vec![manager.executable().to_string(), "sudo".to_string()]
-            }
+            Step::Package { requires, .. } => requires.clone(),
             Step::Nix { action, .. } => match action {
                 NixAction::ProfileInstall { .. } => vec!["nix".to_string()],
                 NixAction::HomeManagerSwitch { .. } => vec!["home-manager".to_string()],
@@ -203,26 +206,30 @@ fn add_entry<'a>(
     trail: &mut Vec<String>,
 ) -> Result<(), EngineError> {
     let step = match &entry.action {
-        Action::Package { binary, packages } => {
-            let manager = platform.manager.ok_or(EngineError::UnsupportedPlatform)?;
-            let package = packages
-                .for_manager(manager)
-                .ok_or_else(|| EngineError::UnsupportedEntry(entry.id.clone()))?;
-            if !valid_package_name(package) || !valid_package_name(binary) {
-                return Err(EngineError::Invalid(entry.id.clone()));
-            }
-            if binary_exists(binary) {
-                into.notes.push(format!(
-                    "{}: already installed ({binary} is on the PATH)",
-                    entry.name
-                ));
+        Action::Package {
+            binary,
+            packages,
+            aur,
+            flatpak,
+            ..
+        } => {
+            if let Some(found) = installed(binary, flatpak.as_deref()) {
+                into.notes
+                    .push(format!("{}: already installed ({found})", entry.name));
                 return Ok(());
             }
+            let (commands, requires) = install_commands(
+                entry,
+                platform,
+                packages,
+                aur.as_deref(),
+                flatpak.as_deref(),
+            )?;
             Step::Package {
                 id: entry.id.clone(),
                 name: entry.name.clone(),
-                manager,
-                package: package.to_string(),
+                commands,
+                requires,
             }
         }
         Action::Script { file, interactive } => {
@@ -313,19 +320,175 @@ pub fn managed_path_in(home: &Path, writes: &[String]) -> Option<PathBuf> {
     None
 }
 
-fn package_command(manager: PackageManager, package: &str) -> Vec<String> {
-    let mut words: Vec<String> = match manager {
-        PackageManager::Arch => vec![
-            "sudo".into(),
-            "pacman".into(),
-            "-S".into(),
-            "--needed".into(),
-        ],
-        PackageManager::Debian => vec!["sudo".into(), "apt-get".into(), "install".into()],
-        PackageManager::Fedora => vec!["sudo".into(), "dnf".into(), "install".into()],
+const FLATHUB: &str = "https://dl.flathub.org/repo/flathub.flatpakrepo";
+
+fn words(base: Vec<&str>, extra: &[&str]) -> Vec<String> {
+    base.into_iter()
+        .chain(extra.iter().copied())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Where an installed package was found: its executable on the PATH, or its
+/// Flatpak in the system or user installation.
+fn installed(binary: &str, flatpak: Option<&str>) -> Option<String> {
+    if binary_exists(binary) {
+        return Some(format!("{binary} is on the PATH"));
+    }
+    let id = flatpak?;
+    let mut roots = vec![PathBuf::from("/var/lib/flatpak")];
+    if let Some(home) = std::env::var_os("HOME") {
+        roots.push(PathBuf::from(home).join(".local/share/flatpak"));
+    }
+    flatpak_installed_in(&roots, id).then(|| format!("{id} is installed from Flathub"))
+}
+
+/// Whether a Flatpak application is installed under any of the roots.
+pub fn flatpak_installed_in(roots: &[PathBuf], id: &str) -> bool {
+    roots.iter().any(|root| root.join("app").join(id).is_dir())
+}
+
+/// The AUR helper to use, paru before yay.
+pub fn aur_helper(exists: &dyn Fn(&str) -> bool) -> Option<&'static str> {
+    ["paru", "yay"].into_iter().find(|helper| exists(helper))
+}
+
+/// The commands that install a package entry on this machine, and what they need.
+fn install_commands(
+    entry: &Entry,
+    platform: &LinuxInfo,
+    packages: &helixforge_core::PackageNames,
+    aur: Option<&str>,
+    flatpak: Option<&str>,
+) -> Result<(Vec<Vec<String>>, Vec<String>), EngineError> {
+    let check = |name: &str| {
+        if valid_package_name(name) {
+            Ok(())
+        } else {
+            Err(EngineError::Invalid(entry.id.clone()))
+        }
     };
-    words.push(package.to_string());
-    words
+    if let Some(manager) = platform.manager {
+        if let Some(package) = packages.for_manager(manager) {
+            check(package)?;
+            return Ok((
+                vec![words(manager.install_command(), &[package])],
+                vec![manager.executable().to_string(), "sudo".to_string()],
+            ));
+        }
+        if manager == PackageManager::Arch
+            && let Some(package) = aur
+        {
+            check(package)?;
+            // A missing helper becomes a requirement the run reports before starting.
+            let helper = aur_helper(&|name| binary_exists(name)).unwrap_or("paru");
+            return Ok((
+                vec![words(vec![helper, "-S", "--needed"], &[package])],
+                vec![helper.to_string()],
+            ));
+        }
+    }
+    if let Some(id) = flatpak {
+        if !helixforge_core::valid_flatpak_id(id) {
+            return Err(EngineError::Invalid(entry.id.clone()));
+        }
+        return Ok((
+            vec![
+                words(
+                    vec![
+                        "sudo",
+                        "flatpak",
+                        "remote-add",
+                        "--if-not-exists",
+                        "flathub",
+                    ],
+                    &[FLATHUB],
+                ),
+                words(vec!["sudo", "flatpak", "install", "flathub"], &[id]),
+            ],
+            vec!["flatpak".to_string(), "sudo".to_string()],
+        ));
+    }
+    match platform.manager {
+        Some(_) => Err(EngineError::UnsupportedEntry(entry.id.clone())),
+        None => Err(EngineError::UnsupportedPlatform),
+    }
+}
+
+/// Plan removing package entries. An entry is removed the way it is found
+/// installed: its Flatpak, else the family's package, else on Arch the AUR
+/// package with pacman. Entries that are not installed become notes.
+pub fn plan_removal<'a>(
+    entries: impl IntoIterator<Item = &'a Entry>,
+    platform: &LinuxInfo,
+) -> Result<Plan, EngineError> {
+    let mut result = Plan::default();
+    for entry in entries {
+        let Action::Package {
+            binary,
+            packages,
+            aur,
+            flatpak,
+            removable,
+        } = &entry.action
+        else {
+            return Err(EngineError::NotRemovable(entry.id.clone()));
+        };
+        if !removable {
+            return Err(EngineError::NotRemovable(entry.id.clone()));
+        }
+        let mut roots = vec![PathBuf::from("/var/lib/flatpak")];
+        if let Some(home) = std::env::var_os("HOME") {
+            roots.push(PathBuf::from(home).join(".local/share/flatpak"));
+        }
+        let (commands, requires) = if let Some(id) = flatpak
+            .as_deref()
+            .filter(|id| flatpak_installed_in(&roots, id))
+        {
+            (
+                vec![words(vec!["sudo", "flatpak", "uninstall"], &[id])],
+                vec!["flatpak".to_string(), "sudo".to_string()],
+            )
+        } else if !binary_exists(binary) {
+            result
+                .notes
+                .push(format!("{}: not installed, nothing to remove", entry.name));
+            continue;
+        } else {
+            let manager = platform.manager.ok_or(EngineError::UnsupportedPlatform)?;
+            let package = packages.for_manager(manager).or(match manager {
+                PackageManager::Arch => aur.as_deref(),
+                _ => None,
+            });
+            let Some(package) = package else {
+                result.notes.push(format!(
+                    "{}: installed, but not by a package HelixForge knows; remove it the way it was installed",
+                    entry.name
+                ));
+                continue;
+            };
+            if !valid_package_name(package) {
+                return Err(EngineError::Invalid(entry.id.clone()));
+            }
+            (
+                vec![words(manager.remove_command(), &[package])],
+                vec![manager.executable().to_string(), "sudo".to_string()],
+            )
+        };
+        result.privileged = true;
+        result.risk = result.risk.max(Risk::Medium);
+        result.requirements.extend(requires.iter().cloned());
+        result.steps.push(Step::Package {
+            id: entry.id.clone(),
+            name: format!("Remove {}", entry.name),
+            commands,
+            requires,
+        });
+    }
+    result.requirements.sort();
+    result.requirements.dedup();
+    info!(steps = result.steps.len(), "planned removal");
+    Ok(result)
 }
 
 fn nix_command(action: &NixAction) -> Vec<String> {
@@ -364,9 +527,11 @@ pub fn shell_program(plan: &Plan, lib_dir: &Path, this: &Path) -> String {
     );
     for step in &plan.steps {
         let body = match step {
-            Step::Package {
-                manager, package, ..
-            } => quoted(&package_command(*manager, package)),
+            Step::Package { commands, .. } => commands
+                .iter()
+                .map(|command| quoted(command))
+                .collect::<Vec<_>>()
+                .join(" &&\n"),
             Step::Script {
                 file,
                 program,
@@ -610,8 +775,11 @@ mod tests {
                 packages: PackageNames {
                     arch: Some("sample".into()),
                     debian: Some("sample-deb".into()),
-                    fedora: None,
+                    ..Default::default()
                 },
+                aur: None,
+                flatpak: None,
+                removable: true,
             },
         )
     }
@@ -641,6 +809,100 @@ mod tests {
     }
 
     #[test]
+    fn aur_and_flatpak_routes_and_the_other_families() {
+        let mut entry = package_entry();
+        entry.action = Action::Package {
+            binary: "helixforge-nonexistent-binary-12345".into(),
+            packages: PackageNames {
+                suse: Some("sample-suse".into()),
+                ..Default::default()
+            },
+            aur: Some("sample-bin".into()),
+            flatpak: Some("org.example.Sample".into()),
+            removable: false,
+        };
+        let suse = plan([&entry], &platform(Some(PackageManager::Suse)), &none).unwrap();
+        assert_eq!(suse.steps[0].display(), "sudo zypper install sample-suse");
+        let arch = plan([&entry], &platform(Some(PackageManager::Arch)), &none).unwrap();
+        let shown = arch.steps[0].display();
+        assert!(
+            shown == "paru -S --needed sample-bin" || shown == "yay -S --needed sample-bin",
+            "{shown}"
+        );
+        let fedora = plan([&entry], &platform(Some(PackageManager::Fedora)), &none).unwrap();
+        assert_eq!(
+            fedora.steps[0].display(),
+            format!(
+                "sudo flatpak remote-add --if-not-exists flathub {FLATHUB} && sudo flatpak install flathub org.example.Sample"
+            )
+        );
+        assert_eq!(fedora.requirements, ["flatpak", "sudo"]);
+        let unknown = plan([&entry], &platform(None), &none).unwrap();
+        assert!(unknown.steps[0].display().contains("flatpak install"));
+        assert_eq!(aur_helper(&|name| name == "yay"), Some("yay"));
+        assert_eq!(aur_helper(&|_| true), Some("paru"));
+        assert_eq!(aur_helper(&|_| false), None);
+    }
+
+    #[test]
+    fn removal_follows_how_the_package_is_installed() {
+        let mut present = package_entry();
+        present.action = Action::Package {
+            binary: "sh".into(),
+            packages: PackageNames {
+                debian: Some("dash".into()),
+                ..Default::default()
+            },
+            aur: Some("sh-bin".into()),
+            flatpak: None,
+            removable: true,
+        };
+        let debian = plan_removal([&present], &platform(Some(PackageManager::Debian))).unwrap();
+        assert_eq!(debian.steps[0].display(), "sudo apt-get remove dash");
+        assert_eq!(debian.steps[0].name(), "Remove SAMPLE");
+        assert!(debian.privileged);
+        assert_eq!(debian.risk, Risk::Medium);
+        let arch = plan_removal([&present], &platform(Some(PackageManager::Arch))).unwrap();
+        assert_eq!(arch.steps[0].display(), "sudo pacman -R sh-bin");
+        let fedora = plan_removal([&present], &platform(Some(PackageManager::Fedora))).unwrap();
+        assert!(fedora.steps.is_empty());
+        assert!(fedora.notes[0].contains("not by a package"));
+        let absent =
+            plan_removal([&package_entry()], &platform(Some(PackageManager::Arch))).unwrap();
+        assert!(absent.steps.is_empty());
+        assert!(absent.notes[0].contains("not installed"));
+        let mut fixed = package_entry();
+        if let Action::Package { removable, .. } = &mut fixed.action {
+            *removable = false;
+        }
+        assert!(matches!(
+            plan_removal([&fixed], &platform(Some(PackageManager::Arch))),
+            Err(EngineError::NotRemovable(_))
+        ));
+        let script = entry(
+            "script",
+            "",
+            Action::Command {
+                line: "true".into(),
+            },
+        );
+        assert!(matches!(
+            plan_removal([&script], &platform(Some(PackageManager::Arch))),
+            Err(EngineError::NotRemovable(_))
+        ));
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("app/org.example.Sample")).unwrap();
+        assert!(flatpak_installed_in(
+            &[root.path().to_path_buf()],
+            "org.example.Sample"
+        ));
+        assert!(!flatpak_installed_in(
+            &[root.path().to_path_buf()],
+            "org.example.Other"
+        ));
+    }
+
+    #[test]
     fn installed_packages_become_notes_and_profiles_expand() {
         let installed = entry(
             "shell",
@@ -651,6 +913,9 @@ mod tests {
                     arch: Some("sh".into()),
                     ..Default::default()
                 },
+                aur: None,
+                flatpak: None,
+                removable: true,
             },
         );
         let report = entry(

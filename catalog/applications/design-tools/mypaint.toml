@@ -3,5 +3,11 @@ description = "MyPaint is a free and open-source raster graphics editor for digi
 flags = "I"
 order = 112
 
-[script]
-id = "applications-setup/design-tools/mypaint"
+[package]
+binary = "mypaint"
+debian = "mypaint"
+fedora = "mypaint"
+suse = "mypaint"
+aur = "mypaint"
+flatpak = "org.mypaint.MyPaint"
+removable = true

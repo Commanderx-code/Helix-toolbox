@@ -3,5 +3,8 @@ description = "Nintendo Switch emulator. NO Games are included"
 flags = "FM"
 order = 107
 
-[script]
-id = "gaming/emulators/nintendo/ryujinx"
+[package]
+binary = "ryujinx"
+aur = "ryujinx"
+flatpak = "io.github.ryubing.Ryujinx"
+removable = true

@@ -3,5 +3,7 @@ description = "ZapZap is an open source whatsapp desktop client for Linux users 
 flags = "I"
 order = 107
 
-[script]
-id = "applications-setup/communication-apps/zapzap-setup"
+[package]
+binary = "com.rtosta.zapzap"
+aur = "zapzap"
+flatpak = "com.rtosta.zapzap"

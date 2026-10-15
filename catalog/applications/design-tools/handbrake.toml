@@ -3,5 +3,9 @@ description = "HandBrake is a free and open-source transcoder for digital video 
 flags = "I"
 order = 109
 
-[script]
-id = "applications-setup/design-tools/handbrake"
+[package]
+binary = "handbrake"
+debian = "handbrake"
+aur = "handbrake"
+flatpak = "fr.handbrake.ghb"
+removable = true

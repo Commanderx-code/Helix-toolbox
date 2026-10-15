@@ -8,5 +8,7 @@ matches = true
 check = "command_exists"
 values = ["pacman"]
 
-[script]
-id = "applications-setup/shelly-setup"
+[package]
+binary = "shelly"
+aur = "shelly"
+removable = true

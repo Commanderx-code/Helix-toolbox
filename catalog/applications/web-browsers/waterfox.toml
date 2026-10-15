@@ -3,5 +3,7 @@ description = "Waterfox is the privacy-focused web browser engineered to give yo
 flags = "FI"
 order = 111
 
-[script]
-id = "applications-setup/browsers/waterfox"
+[package]
+binary = "net.waterfox.waterfox"
+aur = "waterfox-bin"
+flatpak = "net.waterfox.waterfox"

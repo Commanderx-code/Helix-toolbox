@@ -3,5 +3,11 @@ description = "Krita is a free and open-source raster graphics editor designed p
 flags = "I"
 order = 111
 
-[script]
-id = "applications-setup/design-tools/krita"
+[package]
+binary = "krita"
+debian = "krita"
+fedora = "krita"
+suse = "krita"
+aur = "krita"
+flatpak = "org.kde.krita"
+removable = true

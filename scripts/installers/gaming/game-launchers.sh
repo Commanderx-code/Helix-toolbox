@@ -2,7 +2,7 @@
 
 SCRIPT_DIR=$(dirname -- "$0")
 SCRIPT_DIR=$(cd -- "$SCRIPT_DIR" && pwd)
-# shellcheck source=core/tabs/common-script.sh
+# shellcheck source=scripts/installers/common-script.sh
 . "$SCRIPT_DIR/../common-script.sh"
 
 set_launcher() {

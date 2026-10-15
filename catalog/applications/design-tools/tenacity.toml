@@ -3,5 +3,8 @@ description = "Tenacity is an easy-to-use, cross-platform multi-track audio edit
 flags = "I"
 order = 120
 
-[script]
-id = "applications-setup/design-tools/tenacity"
+[package]
+binary = "tenacity"
+aur = "tenacity"
+flatpak = "org.tenacityaudio.Tenacity"
+removable = true

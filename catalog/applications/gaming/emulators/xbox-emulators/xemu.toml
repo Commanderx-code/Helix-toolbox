@@ -3,5 +3,8 @@ description = "An Original Xbox emulator. NO Games or Bios' are included"
 flags = "FM"
 order = 101
 
-[script]
-id = "gaming/emulators/xbox/xemu"
+[package]
+binary = "xemu"
+aur = "xemu-bin"
+flatpak = "app.xemu.xemu"
+removable = true

@@ -3,5 +3,7 @@ description = "Zoom is a widely-used video conferencing platform that allows use
 flags = "I"
 order = 108
 
-[script]
-id = "applications-setup/communication-apps/zoom-setup"
+[package]
+binary = "us.zoom.Zoom"
+aur = "zoom"
+flatpak = "us.zoom.Zoom"

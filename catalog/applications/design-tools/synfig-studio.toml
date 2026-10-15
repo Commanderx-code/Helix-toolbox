@@ -3,5 +3,9 @@ description = "Synfig Studio is a free and open-source vector-based 2D animation
 flags = "I"
 order = 119
 
-[script]
-id = "applications-setup/design-tools/synfigstudio"
+[package]
+binary = "synfigstudio"
+fedora = "synfigstudio"
+aur = "synfigstudio"
+flatpak = "org.synfig.SynfigStudio"
+removable = true

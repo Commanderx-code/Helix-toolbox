@@ -3,5 +3,7 @@ description = "A Sega Saturn emulator. NO Games are included"
 flags = "FM"
 order = 103
 
-[script]
-id = "gaming/emulators/sega/kronos"
+[package]
+binary = "kronos"
+aur = "kronos"
+removable = true

@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use helixforge_catalog::Catalog;
 use helixforge_core::{Action, Entry, Item, NativeAction};
-use helixforge_engine::{InheritedRunner, Plan, execute, history, plan, run_native};
+use helixforge_engine::{InheritedRunner, Plan, execute, history, plan, plan_removal, run_native};
 use helixforge_platform::{LinuxInfo, binary_exists};
 use std::{
     io::{self, IsTerminal, Write},
@@ -46,6 +46,16 @@ enum Command {
     Plan { ids: Vec<String> },
     /// Run entries in this terminal, after confirmation.
     Run {
+        ids: Vec<String>,
+        /// Show the plan and stop.
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip the confirmation phrase, for deliberate automation.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Remove package entries that offer removal, after confirmation.
+    Remove {
         ids: Vec<String>,
         /// Show the plan and stop.
         #[arg(long)]
@@ -118,7 +128,13 @@ fn main() -> Result<()> {
                 println!("Flags: {}", entry.flags);
             }
             match &entry.action {
-                Action::Package { binary, packages } => {
+                Action::Package {
+                    binary,
+                    packages,
+                    aur,
+                    flatpak,
+                    removable,
+                } => {
                     println!(
                         "Kind: package, provides {binary} ({})",
                         if binary_exists(binary) {
@@ -127,14 +143,19 @@ fn main() -> Result<()> {
                             "not installed"
                         }
                     );
-                    for (family, name) in [
-                        ("arch", &packages.arch),
-                        ("debian", &packages.debian),
-                        ("fedora", &packages.fedora),
-                    ] {
+                    for (family, name) in packages.all() {
                         if let Some(name) = name {
                             println!("  {family}: {name}");
                         }
+                    }
+                    if let Some(aur) = aur {
+                        println!("  AUR (Arch, through paru or yay): {aur}");
+                    }
+                    if let Some(flatpak) = flatpak {
+                        println!("  Flathub, for other families: {flatpak}");
+                    }
+                    if *removable {
+                        println!("Removable: helixforge remove {}", entry.id);
                     }
                 }
                 Action::Script { file, interactive } => println!(
@@ -158,33 +179,16 @@ fn main() -> Result<()> {
         Command::Run { ids, dry_run, yes } => {
             let catalog = Catalog::builtin(false)?;
             let planned = plan_ids(&catalog, &platform, &ids)?;
-            print_plan(&planned);
-            if planned.is_empty() {
-                println!("Nothing to run.");
-                return Ok(());
+            confirm_and_run(&catalog, &planned, dry_run, yes, "RUN")
+        }
+        Command::Remove { ids, dry_run, yes } => {
+            let catalog = Catalog::builtin(false)?;
+            let mut entries = Vec::new();
+            for id in &ids {
+                entries.push(find(&catalog, id)?);
             }
-            if dry_run {
-                println!("Dry run: nothing was changed.");
-                return Ok(());
-            }
-            if !yes {
-                if !io::stdin().is_terminal() {
-                    bail!("confirmation needs a terminal; use --dry-run or --yes");
-                }
-                print!("Type RUN to continue: ");
-                io::stdout().flush()?;
-                let mut answer = String::new();
-                io::stdin().read_line(&mut answer)?;
-                if answer.trim() != "RUN" {
-                    bail!("cancelled; nothing was changed");
-                }
-            }
-            let this = std::env::current_exe().context("cannot find the HelixForge executable")?;
-            let outcome = execute(&planned, &catalog.lib_dir(), &this, &mut InheritedRunner)?;
-            if !outcome.succeeded() {
-                bail!("the run stopped: {}", outcome.describe());
-            }
-            Ok(())
+            let planned = plan_removal(entries, &platform)?;
+            confirm_and_run(&catalog, &planned, dry_run, yes, "REMOVE")
         }
         Command::History { limit } => {
             let records = history::read(limit)?;
@@ -219,6 +223,43 @@ fn main() -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// Show a plan, ask for the confirmation word unless told not to, and run it.
+fn confirm_and_run(
+    catalog: &Catalog,
+    planned: &Plan,
+    dry_run: bool,
+    yes: bool,
+    word: &str,
+) -> Result<()> {
+    print_plan(planned);
+    if planned.is_empty() {
+        println!("Nothing to run.");
+        return Ok(());
+    }
+    if dry_run {
+        println!("Dry run: nothing was changed.");
+        return Ok(());
+    }
+    if !yes {
+        if !io::stdin().is_terminal() {
+            bail!("confirmation needs a terminal; use --dry-run or --yes");
+        }
+        print!("Type {word} to continue: ");
+        io::stdout().flush()?;
+        let mut answer = String::new();
+        io::stdin().read_line(&mut answer)?;
+        if answer.trim() != word {
+            bail!("cancelled; nothing was changed");
+        }
+    }
+    let this = std::env::current_exe().context("cannot find the HelixForge executable")?;
+    let outcome = execute(planned, &catalog.lib_dir(), &this, &mut InheritedRunner)?;
+    if !outcome.succeeded() {
+        bail!("the run stopped: {}", outcome.describe());
+    }
+    Ok(())
 }
 
 fn list_items(items: &[Item], depth: usize) {

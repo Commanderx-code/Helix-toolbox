@@ -51,6 +51,7 @@ helixforge info git                   # one entry
 helixforge plan git system-report     # what running entries would do
 helixforge run git --dry-run          # the plan, nothing changed
 helixforge run git                    # runs after you type RUN
+helixforge remove ardour              # removes a package entry that offers it
 helixforge history                    # recent runs
 helixforge docgen docs/walkthrough.md # the catalog as Markdown
 ```
@@ -63,15 +64,17 @@ Doctor, Maintenance, Security and Profiles. Each is a directory with a
 directories with a `group.toml`. An entry is one of six kinds:
 
 ```toml
-name = "Git"
-description = "Distributed version control."
+name = "Ardour"
+description = "A digital audio workstation."
 flags = "I"                      # what it does; g in the interface explains the codes
 
-[package]                        # one native package per family
-binary = "git"                   # installed when this is on the PATH
-arch = "git"
-debian = "git"
-fedora = "git"
+[package]                        # one package per family, then the AUR, then Flathub
+binary = "ardour"                # installed when this is on the PATH (or its Flatpak is)
+debian = "ardour"                # also arch, fedora, suse, alpine, void, solus
+fedora = "ardour"
+aur = "ardour"                   # Arch, through paru or yay, when arch is not given
+flatpak = "org.ardour.Ardour"    # for families with no package
+removable = true                 # offer removal: r in the interface, helixforge remove
 ```
 
 ```toml

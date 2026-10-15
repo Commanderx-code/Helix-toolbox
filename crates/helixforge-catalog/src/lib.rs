@@ -8,7 +8,7 @@
 
 use helixforge_core::{
     Action, Check, Entry, Group, Item, NativeAction, NixAction, PackageNames, Precondition, Tab,
-    valid_id, valid_package_name, valid_script_segment,
+    valid_binary_name, valid_flatpak_id, valid_id, valid_package_name, valid_script_segment,
 };
 use helixforge_platform::binary_exists;
 use include_dir::{Dir, include_dir};
@@ -151,6 +151,22 @@ struct PackageFile {
     debian: Option<String>,
     #[serde(default)]
     fedora: Option<String>,
+    #[serde(default)]
+    suse: Option<String>,
+    #[serde(default)]
+    alpine: Option<String>,
+    #[serde(default)]
+    void: Option<String>,
+    #[serde(default)]
+    solus: Option<String>,
+    /// The Arch package from the AUR, through paru or yay, when `arch` is not given.
+    #[serde(default)]
+    aur: Option<String>,
+    /// The Flathub application id, for families without a package.
+    #[serde(default)]
+    flatpak: Option<String>,
+    #[serde(default)]
+    removable: bool,
 }
 
 #[derive(Deserialize)]
@@ -379,13 +395,25 @@ fn action_of(
             arch: package.arch.clone(),
             debian: package.debian.clone(),
             fedora: package.fedora.clone(),
+            suse: package.suse.clone(),
+            alpine: package.alpine.clone(),
+            void: package.void.clone(),
+            solus: package.solus.clone(),
         };
-        if !valid_package_name(&package.binary)
-            || packages.is_empty()
-            || [&packages.arch, &packages.debian, &packages.fedora]
-                .into_iter()
-                .flatten()
-                .any(|name| !valid_package_name(name))
+        let names_valid = packages
+            .all()
+            .iter()
+            .filter_map(|(_, name)| *name)
+            .chain(package.aur.as_deref())
+            .all(valid_package_name);
+        let has_source = !packages.is_empty() || package.aur.is_some() || package.flatpak.is_some();
+        if !valid_binary_name(&package.binary)
+            || !names_valid
+            || !has_source
+            || package
+                .flatpak
+                .as_deref()
+                .is_some_and(|id| !valid_flatpak_id(id))
         {
             return Err(CatalogError::Invalid(format!(
                 "{} has an invalid package section",
@@ -395,6 +423,9 @@ fn action_of(
         return Ok(Some(Action::Package {
             binary: package.binary.clone(),
             packages,
+            aur: package.aur.clone(),
+            flatpak: package.flatpak.clone(),
+            removable: package.removable,
         }));
     }
     if let Some(script) = &entry.script {
@@ -701,6 +732,18 @@ mod tests {
             (
                 "flag.toml",
                 "name = \"Flag\"\n[package]\nbinary = \"x\"\narch = \"--overwrite\"\n",
+            ),
+            (
+                "aurflag.toml",
+                "name = \"Aur\"\n[package]\nbinary = \"x\"\naur = \"-x\"\n",
+            ),
+            (
+                "flat.toml",
+                "name = \"Flat\"\n[package]\nbinary = \"x\"\nflatpak = \"not an id\"\n",
+            ),
+            (
+                "nothing.toml",
+                "name = \"Nothing\"\n[package]\nbinary = \"x\"\nremovable = true\n",
             ),
             (
                 "unknown.toml",

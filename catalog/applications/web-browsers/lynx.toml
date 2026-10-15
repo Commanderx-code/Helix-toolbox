@@ -3,5 +3,12 @@ description = "Lynx is a highly configurable text-based web browser for use on c
 flags = "I"
 order = 106
 
-[script]
-id = "applications-setup/browsers/lynx"
+[package]
+binary = "lynx"
+arch = "lynx"
+debian = "lynx"
+fedora = "lynx"
+suse = "lynx"
+alpine = "lynx"
+void = "lynx"
+solus = "lynx"

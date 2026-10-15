@@ -3,5 +3,10 @@ description = "Telegram is a cloud-based messaging app known for its speed and s
 flags = "I"
 order = 105
 
-[script]
-id = "applications-setup/communication-apps/telegram-setup"
+[package]
+binary = "telegram-desktop"
+arch = "telegram-desktop"
+alpine = "telegram-desktop"
+void = "telegram-desktop"
+solus = "telegram"
+flatpak = "org.telegram.desktop"

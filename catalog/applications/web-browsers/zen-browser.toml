@@ -3,5 +3,7 @@ description = "Zen Browser is a privacy-focused web browser designed for enhance
 flags = "I"
 order = 112
 
-[script]
-id = "applications-setup/browsers/zen-browser"
+[package]
+binary = "io.github.zen_browser.zen"
+aur = "zen-browser-bin"
+flatpak = "io.github.zen_browser.zen"

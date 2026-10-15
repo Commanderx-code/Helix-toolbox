@@ -1,5 +1,5 @@
 #!/bin/sh -e
-# shellcheck source=core/tabs/common-script.sh
+# shellcheck source=scripts/installers/common-script.sh
 . ../../common-script.sh
 
 # Check the distro before environment setup or package operations.

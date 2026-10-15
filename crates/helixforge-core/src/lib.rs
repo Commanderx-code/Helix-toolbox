@@ -11,6 +11,10 @@ pub enum PackageManager {
     Arch,
     Debian,
     Fedora,
+    Suse,
+    Alpine,
+    Void,
+    Solus,
 }
 
 impl PackageManager {
@@ -19,6 +23,10 @@ impl PackageManager {
             Self::Arch => "pacman",
             Self::Debian => "apt-get",
             Self::Fedora => "dnf",
+            Self::Suse => "zypper",
+            Self::Alpine => "apk",
+            Self::Void => "xbps-install",
+            Self::Solus => "eopkg",
         }
     }
 
@@ -27,6 +35,36 @@ impl PackageManager {
             Self::Arch => "pacman (Arch family)",
             Self::Debian => "APT (Debian family)",
             Self::Fedora => "DNF (Fedora family)",
+            Self::Suse => "zypper (openSUSE family)",
+            Self::Alpine => "apk (Alpine family)",
+            Self::Void => "xbps (Void family)",
+            Self::Solus => "eopkg (Solus family)",
+        }
+    }
+
+    /// The command that installs packages, without the package names.
+    pub fn install_command(self) -> Vec<&'static str> {
+        match self {
+            Self::Arch => vec!["sudo", "pacman", "-S", "--needed"],
+            Self::Debian => vec!["sudo", "apt-get", "install"],
+            Self::Fedora => vec!["sudo", "dnf", "install"],
+            Self::Suse => vec!["sudo", "zypper", "install"],
+            Self::Alpine => vec!["sudo", "apk", "add"],
+            Self::Void => vec!["sudo", "xbps-install", "-S"],
+            Self::Solus => vec!["sudo", "eopkg", "install"],
+        }
+    }
+
+    /// The command that removes packages, without the package names.
+    pub fn remove_command(self) -> Vec<&'static str> {
+        match self {
+            Self::Arch => vec!["sudo", "pacman", "-R"],
+            Self::Debian => vec!["sudo", "apt-get", "remove"],
+            Self::Fedora => vec!["sudo", "dnf", "remove"],
+            Self::Suse => vec!["sudo", "zypper", "remove"],
+            Self::Alpine => vec!["sudo", "apk", "del"],
+            Self::Void => vec!["sudo", "xbps-remove"],
+            Self::Solus => vec!["sudo", "eopkg", "remove"],
         }
     }
 }
@@ -38,6 +76,10 @@ pub struct PackageNames {
     pub arch: Option<String>,
     pub debian: Option<String>,
     pub fedora: Option<String>,
+    pub suse: Option<String>,
+    pub alpine: Option<String>,
+    pub void: Option<String>,
+    pub solus: Option<String>,
 }
 
 impl PackageNames {
@@ -46,11 +88,28 @@ impl PackageNames {
             PackageManager::Arch => self.arch.as_deref(),
             PackageManager::Debian => self.debian.as_deref(),
             PackageManager::Fedora => self.fedora.as_deref(),
+            PackageManager::Suse => self.suse.as_deref(),
+            PackageManager::Alpine => self.alpine.as_deref(),
+            PackageManager::Void => self.void.as_deref(),
+            PackageManager::Solus => self.solus.as_deref(),
         }
     }
 
+    /// Every family with its package name, for listings and validation.
+    pub fn all(&self) -> [(&'static str, Option<&str>); 7] {
+        [
+            ("arch", self.arch.as_deref()),
+            ("debian", self.debian.as_deref()),
+            ("fedora", self.fedora.as_deref()),
+            ("suse", self.suse.as_deref()),
+            ("alpine", self.alpine.as_deref()),
+            ("void", self.void.as_deref()),
+            ("solus", self.solus.as_deref()),
+        ]
+    }
+
     pub fn is_empty(&self) -> bool {
-        self.arch.is_none() && self.debian.is_none() && self.fedora.is_none()
+        self.all().iter().all(|(_, name)| name.is_none())
     }
 }
 
@@ -58,11 +117,16 @@ impl PackageNames {
 /// interface. The engine turns these into explicit plans.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action {
-    /// Install one native package with the family's package manager.
+    /// Install one package: the family's native package, else on Arch the
+    /// AUR package through paru or yay, else the Flatpak from Flathub.
     Package {
         /// The executable whose presence means the package is installed.
         binary: String,
         packages: PackageNames,
+        aur: Option<String>,
+        flatpak: Option<String>,
+        /// Whether the entry offers removal as well.
+        removable: bool,
     },
     /// Run a script from its own directory. Interactive scripts need a
     /// terminal for their prompts; the others could run unattended.
@@ -273,6 +337,32 @@ pub fn valid_script_segment(segment: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
 }
 
+/// An executable name to look for on the PATH, including Flatpak export names
+/// such as `org.gnome.meld`.
+pub fn valid_binary_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with(['-', '.'])
+        && name.len() <= 128
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"+._-".contains(&b))
+}
+
+/// A Flatpak application id: at least three dot-separated parts of letters,
+/// digits, hyphens and underscores.
+pub fn valid_flatpak_id(id: &str) -> bool {
+    let parts: Vec<&str> = id.split('.').collect();
+    parts.len() >= 3
+        && id.len() <= 255
+        && parts.iter().all(|part| {
+            !part.is_empty()
+                && !part.starts_with('-')
+                && part
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        })
+}
+
 /// Entry, group and tab identifiers: lowercase, digits and hyphens.
 pub fn valid_id(id: &str) -> bool {
     !id.is_empty()
@@ -304,6 +394,19 @@ mod tests {
             assert!(!valid_id(bad));
         }
         assert!(valid_script_segment("utility_functions"));
+        assert!(valid_binary_name("io.github.zen_browser.zen"));
+        assert!(!valid_binary_name("-rf"));
+        assert!(valid_flatpak_id("io.github.zen_browser.zen"));
+        assert!(valid_flatpak_id("org.gnome.meld"));
+        for bad in [
+            "meld",
+            "org.gnome",
+            "org..meld",
+            "org.gnome.-x",
+            "org.gnome.a b",
+        ] {
+            assert!(!valid_flatpak_id(bad), "{bad}");
+        }
         for bad in ["", "..", "_x", "A", "a.b"] {
             assert!(!valid_script_segment(bad));
         }

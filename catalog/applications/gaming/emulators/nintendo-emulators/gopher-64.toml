@@ -3,5 +3,10 @@ description = "N64 Emulator. NO Games are included"
 flags = "FM"
 order = 103
 
-[script]
-id = "gaming/emulators/nintendo/gopher64"
+[package]
+binary = "gopher64plus"
+debian = "gopher64"
+fedora = "gopher64"
+aur = "gopher64"
+flatpak = "io.github.gopher64.gopher64"
+removable = true

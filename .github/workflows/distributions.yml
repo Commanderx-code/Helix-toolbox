@@ -38,15 +38,19 @@ jobs:
           - image: archlinux:latest
             family: Arch
             group: Arch
+            removable: ''
           - image: debian:stable
             family: Debian
             group: Debian / Ubuntu
+            removable: mypaint
           - image: ubuntu:24.04
             family: Debian
             group: Ubuntu
+            removable: mypaint
           - image: fedora:latest
             family: Fedora
             group: Fedora
+            removable: mupen64plus
     container: ${{ matrix.image }}
     name: ${{ matrix.image }}
     steps:
@@ -88,6 +92,24 @@ jobs:
           bin/helixforge plan developer-basics | tee plan.txt
           grep -q 'already installed (rg is on the PATH)' plan.txt
           bin/helixforge history --limit 1 | grep -q 'ok'
+      - name: Converted package entries, removal and the AUR route
+        run: |
+          yes | bin/helixforge run lynx --yes
+          command -v lynx
+          if [ -n "${{ matrix.removable }}" ]; then
+            yes | bin/helixforge run ${{ matrix.removable }} --yes
+            command -v ${{ matrix.removable }}
+            bin/helixforge remove ${{ matrix.removable }} --dry-run | tee removal.txt
+            grep -q '^1. Remove ' removal.txt
+            yes | bin/helixforge remove ${{ matrix.removable }} --yes
+            ! command -v ${{ matrix.removable }}
+            bin/helixforge remove ${{ matrix.removable }} --dry-run | grep -q 'not installed'
+          else
+            # Arch takes these from the AUR; without paru or yay the run stops before it starts.
+            bin/helixforge plan tenacity | grep -q -- '-S --needed tenacity'
+            ! bin/helixforge run tenacity --yes
+            bin/helixforge remove tenacity --dry-run | grep -q 'not installed'
+          fi
       - name: Script and native entries
         run: |
           bin/helixforge run system-report machine-summary --yes | tee report.txt

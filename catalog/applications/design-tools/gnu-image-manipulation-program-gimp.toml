@@ -3,5 +3,11 @@ description = "GIMP is a free and open-source raster graphics editor. It is comm
 flags = "I"
 order = 108
 
-[script]
-id = "applications-setup/design-tools/gimp"
+[package]
+binary = "gimp"
+debian = "gimp"
+fedora = "gimp"
+suse = "gimp"
+aur = "gimp"
+flatpak = "org.gimp.GIMP"
+removable = true

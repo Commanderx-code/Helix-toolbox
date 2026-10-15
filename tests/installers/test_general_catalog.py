@@ -44,7 +44,22 @@ class GeneralCatalogTests(unittest.TestCase):
                 with self.subTest(entry=str(path.relative_to(ROOT))):
                     self.assertTrue((INSTALLERS / f'{script["id"]}.sh').is_file(), script['id'])
                     self.assertNotIn('..', script['id'])
-        self.assertGreater(count, 200)
+        self.assertGreater(count, 150)
+
+    def test_converted_entries_are_package_data(self):
+        # Installers that were one package per manager are catalog data now.
+        packages = 0
+        for path in CATALOG.rglob('*.toml'):
+            if path.name in ('tab.toml', 'group.toml', 'tabs.toml'):
+                continue
+            data = tomllib.loads(path.read_text())
+            if 'package' in data:
+                packages += 1
+                package = data['package']
+                with self.subTest(entry=str(path.relative_to(ROOT))):
+                    self.assertTrue(any(key in package for key in ('arch', 'debian', 'fedora', 'suse', 'alpine', 'void', 'solus', 'aur', 'flatpak')))
+                    self.assertNotIn('script', data)
+        self.assertGreaterEqual(packages, 44)
 
     def test_entry_ids_are_unique(self):
         stems = [path.stem for path in CATALOG.rglob('*.toml') if path.name not in ('tab.toml', 'group.toml', 'tabs.toml')]

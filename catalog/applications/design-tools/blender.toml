@@ -3,5 +3,11 @@ description = "Blender is a free and open-source 3D computer graphics software t
 flags = "I"
 order = 103
 
-[script]
-id = "applications-setup/design-tools/blender"
+[package]
+binary = "blender"
+debian = "blender"
+fedora = "blender"
+suse = "blender"
+aur = "blender"
+flatpak = "org.blender.Blender"
+removable = true

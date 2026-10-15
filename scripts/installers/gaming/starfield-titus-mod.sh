@@ -5,7 +5,7 @@ steam_common="Starfield"
 steam_compatdata="1716740/pfx/drive_c/users/steamuser/Documents/My Games/Starfield/"
 git_repo="https://github.com/ChrisTitusTech/starfield-config"
 
-# shellcheck source=core/tabs/gaming/common-steam-script.sh
+# shellcheck source=scripts/installers/gaming/common-steam-script.sh
 . ./common-steam-script.sh
 
 # Clone git repo then copy to compatdata_path and common_path

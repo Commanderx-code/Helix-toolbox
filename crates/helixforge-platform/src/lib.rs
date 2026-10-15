@@ -65,6 +65,20 @@ impl LinuxInfo {
             Some(PackageManager::Debian)
         } else if any(&["fedora", "rhel", "centos"]) {
             Some(PackageManager::Fedora)
+        } else if any(&[
+            "suse",
+            "opensuse",
+            "opensuse-tumbleweed",
+            "opensuse-leap",
+            "sles",
+        ]) {
+            Some(PackageManager::Suse)
+        } else if any(&["alpine"]) {
+            Some(PackageManager::Alpine)
+        } else if any(&["void"]) {
+            Some(PackageManager::Void)
+        } else if any(&["solus"]) {
+            Some(PackageManager::Solus)
         } else {
             None
         };
@@ -118,6 +132,25 @@ mod tests {
     fn ubuntu_maps_to_debian() {
         let info = LinuxInfo::from_os_release("ID=ubuntu\nID_LIKE=debian\n").unwrap();
         assert_eq!(info.manager, Some(PackageManager::Debian));
+    }
+
+    #[test]
+    fn the_other_families_are_recognised() {
+        for (text, manager) in [
+            (
+                "ID=opensuse-tumbleweed\nID_LIKE=\"opensuse suse\"\n",
+                PackageManager::Suse,
+            ),
+            ("ID=alpine\n", PackageManager::Alpine),
+            ("ID=void\n", PackageManager::Void),
+            ("ID=solus\n", PackageManager::Solus),
+        ] {
+            assert_eq!(
+                LinuxInfo::from_os_release(text).unwrap().manager,
+                Some(manager),
+                "{text}"
+            );
+        }
     }
 
     #[test]

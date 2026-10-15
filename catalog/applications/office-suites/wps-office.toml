@@ -2,5 +2,7 @@ name = "WPS Office"
 flags = "I"
 order = 104
 
-[script]
-id = "applications-setup/office-suites/wpsoffice"
+[package]
+binary = "com.wps.Office"
+aur = "wps-office"
+flatpak = "com.wps.Office"

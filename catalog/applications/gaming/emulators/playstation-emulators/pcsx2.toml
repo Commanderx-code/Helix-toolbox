@@ -3,5 +3,8 @@ description = "A Playstation 2 emulator. NO Games or Bios' are included"
 flags = "FM"
 order = 101
 
-[script]
-id = "gaming/emulators/playstation/pcsx2"
+[package]
+binary = "pcsx2"
+aur = "pcsx2"
+flatpak = "net.pcsx2.PCSX2"
+removable = true

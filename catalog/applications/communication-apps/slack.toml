@@ -3,5 +3,7 @@ description = "Slack is a collaboration platform designed for team communication
 flags = "I"
 order = 104
 
-[script]
-id = "applications-setup/communication-apps/slack-setup"
+[package]
+binary = "com.slack.Slack"
+aur = "slack-desktop"
+flatpak = "com.slack.Slack"

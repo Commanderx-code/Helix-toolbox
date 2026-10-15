@@ -3,5 +3,8 @@ description = "Super Nintendo Emulator. NO Games are included"
 flags = "FM"
 order = 108
 
-[script]
-id = "gaming/emulators/nintendo/snes9x"
+[package]
+binary = "snes9x"
+aur = "snes9x-gtk"
+flatpak = "com.snes9x.Snes9x"
+removable = true
