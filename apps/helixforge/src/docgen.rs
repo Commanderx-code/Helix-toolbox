@@ -56,6 +56,7 @@ mod tests {
                 action: Action::Command {
                     line: "true".into(),
                 },
+                detect: None,
             })
         };
         let tab = Tab {

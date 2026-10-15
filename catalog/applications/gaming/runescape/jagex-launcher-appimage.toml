@@ -5,3 +5,7 @@ order = 103
 
 [script]
 id = "commander/jagex-launcher-appimage"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "jagex-launcher"

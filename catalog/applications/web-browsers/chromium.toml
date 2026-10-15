@@ -5,3 +5,11 @@ order = 103
 
 [script]
 id = "applications-setup/browsers/chromium"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "chromium"
+arch = "chromium"
+debian = "chromium"
+fedora = "chromium"
+flatpak = "org.chromium.Chromium"

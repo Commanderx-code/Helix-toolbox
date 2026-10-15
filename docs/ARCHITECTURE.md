@@ -105,6 +105,13 @@ generation's `home-path` has the same file, NixOS for
 `Elsewhere` and `Absent`. The interface gathers it on a background thread
 when it opens and after each run; `helixforge status` prints it.
 
+`Entry::identity()` gives what an entry installs, from its package action or,
+for script and command entries, its `detect` table, so detection, status and
+updates treat both alike; scripts still run when chosen. A command on the
+PATH that none of the entry's packages explains is traced to its owning
+package (`pacman -Qoq`, `dpkg -S`, `rpm -qf`), which then answers status and
+updates.
+
 `Inventory::plan_update()` turns entries with an update into `Step::Update`s:
 one per entry through its own source (`flatpak update`, for the system or
 the user installation that has it; `apt-get install --only-upgrade`, `dnf

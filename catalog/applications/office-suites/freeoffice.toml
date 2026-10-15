@@ -4,3 +4,9 @@ order = 101
 
 [script]
 id = "applications-setup/office-suites/freeoffice"
+
+# What the script installs, so its status can be shown.
+[detect]
+debian = "softmaker-freeoffice-2024"
+fedora = "softmaker-freeoffice-2024"
+aur = "freeoffice"

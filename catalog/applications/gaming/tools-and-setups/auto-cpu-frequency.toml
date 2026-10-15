@@ -5,3 +5,8 @@ order = 101
 
 [script]
 id = "applications-setup/auto-cpufreq"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "auto-cpufreq"
+aur = "auto-cpufreq"

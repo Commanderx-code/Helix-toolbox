@@ -5,3 +5,10 @@ order = 101
 
 [script]
 id = "applications-setup/browsers/brave"
+
+# What the script installs, so its status can be shown.
+[detect]
+debian = "brave-browser"
+fedora = "brave-browser"
+aur = "brave-bin"
+flatpak = "com.brave.Browser"

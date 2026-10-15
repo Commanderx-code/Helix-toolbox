@@ -5,3 +5,7 @@ order = 113
 
 [script]
 id = "applications-setup/browsers/helium-browser"
+
+# What the script installs, so its status can be shown.
+[detect]
+aur = "helium-browser-bin"

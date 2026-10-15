@@ -1,5 +1,45 @@
 # Roadmap
 
+## Release plan
+
+| Version | Main objective | Roadmap items |
+| :--- | :--- | :--- |
+| v0.2.0 | Smart application detection, ownership and installed-state accuracy | status, updates, package identity (done) |
+| v0.3.0 | Dependency and conflict handling, more robust installation planning | 2 (dependencies and conflicts), 8 (installation queue) |
+| v0.4.0 | Unified backup and recovery, enhanced HELIX Doctor | 3 (backup and recovery center), 5 (HELIX Doctor 2.0) |
+| v0.5.0 | Workstation profiles, favourites and search | 4 (profiles 2.0), 7 (search and favourites) |
+| v0.6.0 | Unified update overview and JSON command line | 6 (update manager), 9 (JSON output) |
+| v0.7.0 | Packaging, usability, documentation and beta testing | 10 (native packaging) |
+| v1.0.0 | Stable, validated public TUI release | |
+
+The items:
+
+2. Dependency and conflict detection: before installing, check
+   prerequisites, package conflicts, alternatives, free space and existing
+   installations (WINE and WINE Staging, incompatible graphics drivers).
+3. Backup and recovery center: existing configuration backups in one place,
+   with the files they cover and how to restore them; optional Btrfs/Snapper
+   snapshots before high-risk changes where the system supports them. No
+   package rollback is promised unless the system provides it.
+4. Workstation profiles 2.0: presets of applications, shell settings,
+   dotfiles and optional tweaks, exported and imported as TOML.
+5. HELIX Doctor 2.0: guided troubleshooting (DNS, drivers, failed services,
+   package databases, permissions, boot configuration) that shows evidence
+   and offers a separately confirmed repair where one is supported.
+6. Unified update manager: updates across the native package manager,
+   Flatpak, AUR helpers and supported Nix workflows, delegated to those
+   tools.
+7. Search and favourites: fuzzy search, an installed-only filter, recently
+   used entries, pinned favourites, quick actions, and selections kept when
+   moving between categories.
+8. Installation queue: dependency ordering, skip or continue policies,
+   per-operation status and recovery instructions after a partial failure,
+   with package-manager operations kept serial.
+9. JSON output: stable JSON for system, list, plan, history and operation
+   status, for automation, other tools and the GUI.
+10. Native packaging: an Arch package, Debian and RPM packages, perhaps ARM64
+    builds, with signed provenance and verification instructions.
+
 ## Milestone 1: core foundation (done)
 
 - Cargo workspace: core, catalog, platform, engine, application
@@ -153,8 +193,10 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] Update action: `u` and `U` in the menu, `helixforge update`; one
       package through Flatpak, apt, dnf or zypper, the whole system with
       `pacman -Syu` on Arch; verified by the version changing
-- [ ] Next: status and updates for script entries, which would need to say
-      what they install
+- [x] Script entries say what they install in `[detect]` (52 application
+      scripts: Steam, Lutris, Heroic, VS Code, the browsers and more), so
+      they show status and update through that package; a command found in
+      none of an entry's packages is traced to the package that owns it
 
 ## Logo and banner (done)
 

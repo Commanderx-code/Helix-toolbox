@@ -5,3 +5,8 @@ order = 121
 
 [script]
 id = "applications-setup/noctalia-shell"
+
+# What the script installs, so its status can be shown.
+[detect]
+fedora = "noctalia-shell"
+aur = "noctalia-shell"

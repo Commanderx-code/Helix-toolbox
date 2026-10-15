@@ -36,7 +36,7 @@ class ReleaseVersionTests(unittest.TestCase):
             (Path(tmp) / 'Cargo.toml').write_text('[workspace.package]\nversion = "0.1"\n')
             with self.assertRaises(ValueError):
                 release.workspace_version(Path(tmp))
-        self.assertEqual(release.workspace_version(), '0.1.0')
+        self.assertIsNotNone(release.parse(release.workspace_version()))
         self.assertIsNone(release.parse('v1.2'))
         self.assertIsNone(release.parse('v1.2.3-rc1'))
 

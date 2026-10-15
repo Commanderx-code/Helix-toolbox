@@ -5,3 +5,11 @@ order = 103
 
 [script]
 id = "applications-setup/communication-apps/signal-setup"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "signal-desktop"
+arch = "signal-desktop"
+debian = "signal-desktop"
+fedora = "signal-desktop"
+flatpak = "org.signal.Signal"

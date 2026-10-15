@@ -5,3 +5,11 @@ order = 102
 
 [script]
 id = "applications-setup/design-tools/audacity"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "audacity"
+arch = "audacity"
+debian = "audacity"
+fedora = "audacity"
+flatpak = "org.audacityteam.Audacity"

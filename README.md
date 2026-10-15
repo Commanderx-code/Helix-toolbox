@@ -73,9 +73,15 @@ install --only-upgrade`, `dnf upgrade` or `zypper update` for that package,
 and on Arch `pacman -Syu`, the whole system, since updating one package alone
 is a partial upgrade, which Arch does not support. Afterwards each package's
 version is compared with its version before; one that did not change is not
-verified. Entries managed by Nix say to update them there, and script entries
-to run them again. Script entries, whose installers decide what they install, show
-only their flags.
+verified. Entries managed by Nix say to update them there.
+
+Script entries such as Steam, VS Code or Firefox show the same status when
+they say what they install (most application scripts do), and `u` updates
+that package; a script entry without it shows only its flags and is updated
+by running it again. When a command is on the PATH but in none of an entry's
+packages, the package that owns the file is looked up (`pacman -Qo`, `dpkg
+-S`, `rpm -qf`), so `/usr/bin/github-desktop` shows as `pacman: github-desktop
+3.4.14-2`.
 
 In terminals that show pictures through Kitty's graphics (Ghostty, Kitty) or
 Sixel (foot, WezTerm, xterm with Sixel on), the header is the HelixForge
@@ -127,6 +133,22 @@ through Nix, Home Manager or a download is not installed twice. An entry
 that replaces another package names it in `conflicts` (WINE Staging has
 `conflicts = ["wine"]`): when that package is installed, the plan says it
 will be replaced instead of taking the entry as installed.
+
+A script or command entry says what it installs in a `[detect]` table with
+the same fields (no `removable` or `conflicts`); its script still runs when
+chosen, and the plan notes that the software is already there:
+
+```toml
+[script]
+id = "gaming/steam-launcher"
+
+[detect]
+binary = "steam"
+arch = "steam"
+debian = "steam-installer"
+fedora = "steam"
+flatpak = "com.valvesoftware.Steam"
+```
 
 ```toml
 [script]                         # scripts/installers/system-report.sh, run from its directory

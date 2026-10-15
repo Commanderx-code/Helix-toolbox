@@ -5,3 +5,9 @@ order = 108
 
 [script]
 id = "applications-setup/browsers/thorium"
+
+# What the script installs, so its status can be shown.
+[detect]
+debian = "thorium-browser"
+fedora = "thorium-browser"
+aur = "thorium-browser-bin"

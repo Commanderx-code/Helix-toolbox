@@ -5,3 +5,9 @@ order = 109
 
 [script]
 id = "gaming/protonplus"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "protonplus"
+aur = "protonplus"
+flatpak = "com.vysp3r.ProtonPlus"

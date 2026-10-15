@@ -5,3 +5,10 @@ order = 122
 
 [script]
 id = "applications-setup/podman-setup"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "podman"
+arch = "podman"
+debian = "podman"
+fedora = "podman"

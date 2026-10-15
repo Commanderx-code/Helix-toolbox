@@ -5,3 +5,10 @@ order = 102
 
 [script]
 id = "applications-setup/communication-apps/jitsi-setup"
+
+# What the script installs, so its status can be shown.
+[detect]
+debian = "jitsi-meet"
+fedora = "jitsi-meet"
+aur = "jitsi-meet-bin"
+flatpak = "org.jitsi.jitsi-meet"

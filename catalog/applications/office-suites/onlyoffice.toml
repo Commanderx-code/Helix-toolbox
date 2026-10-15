@@ -4,3 +4,9 @@ order = 103
 
 [script]
 id = "applications-setup/office-suites/onlyoffice"
+
+# What the script installs, so its status can be shown.
+[detect]
+debian = "onlyoffice-desktopeditors"
+aur = "onlyoffice-bin"
+flatpak = "org.onlyoffice.desktopeditors"

@@ -5,3 +5,11 @@ order = 104
 
 [script]
 id = "gaming/lutris-launcher"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "lutris"
+arch = "lutris"
+debian = "lutris"
+fedora = "lutris"
+flatpak = "net.lutris.Lutris"

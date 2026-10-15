@@ -5,3 +5,10 @@ order = 120
 
 [script]
 id = "applications-setup/kitty-setup"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "kitty"
+arch = "kitty"
+debian = "kitty"
+fedora = "kitty"

@@ -5,3 +5,11 @@ order = 109
 
 [script]
 id = "applications-setup/developer-tools/vscodium"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "codium"
+debian = "codium"
+fedora = "codium"
+aur = "vscodium-bin"
+flatpak = "com.vscodium.codium"

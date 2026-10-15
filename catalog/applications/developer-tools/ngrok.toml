@@ -5,3 +5,7 @@ order = 106
 
 [script]
 id = "applications-setup/developer-tools/ngrok"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "ngrok"

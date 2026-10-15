@@ -5,3 +5,10 @@ order = 116
 
 [script]
 id = "applications-setup/docker-setup"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "docker"
+arch = "docker"
+debian = "docker-ce"
+fedora = "docker-ce"

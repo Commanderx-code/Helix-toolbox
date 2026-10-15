@@ -5,3 +5,7 @@ order = 102
 
 [script]
 id = "commander/jagex-launcher-flatpak"
+
+# What the script installs, so its status can be shown.
+[detect]
+flatpak = "com.jagexlauncher.JagexLauncher"

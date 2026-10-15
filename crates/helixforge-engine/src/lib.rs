@@ -424,23 +424,14 @@ pub fn package_state(
     platform: &LinuxInfo,
     machine: Machine,
 ) -> Option<PackageState> {
-    let Action::Package {
+    let helixforge_core::Identity {
         binary,
         packages,
         aur,
         flatpak,
         conflicts,
-        ..
-    } = &entry.action
-    else {
-        return None;
-    };
-    let probes = own_probes(
-        packages,
-        aur.as_deref(),
-        flatpak.as_deref(),
-        platform.manager,
-    );
+    } = entry.identity()?;
+    let probes = own_probes(packages, aur, flatpak, platform.manager);
     if let Some(found) = probes.iter().find(|probe| (machine.holds)(probe)) {
         return Some(PackageState::Installed(found.describe()));
     }
@@ -550,6 +541,16 @@ fn add_entry<'a>(
             }
         }
         Action::Script { file, interactive } => {
+            // What it installs may be there already; the script still runs,
+            // since it may set more up.
+            if let Some(PackageState::Installed(found) | PackageState::OnPath(found)) =
+                package_state(entry, platform, machine)
+            {
+                into.notes.push(format!(
+                    "{}: already installed ({found}); its script runs anyway",
+                    entry.name
+                ));
+            }
             let (program, args) = helixforge_catalog::interpreter(file);
             Step::Script {
                 id: entry.id.clone(),
@@ -1464,6 +1465,7 @@ mod tests {
             multi_select: true,
             writes: Vec::new(),
             action,
+            detect: None,
         }
     }
 

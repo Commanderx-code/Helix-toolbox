@@ -5,3 +5,8 @@ order = 101
 
 [script]
 id = "applications-setup/developer-tools/cursor"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "cursor"
+aur = "cursor-bin"

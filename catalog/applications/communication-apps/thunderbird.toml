@@ -5,3 +5,11 @@ order = 106
 
 [script]
 id = "applications-setup/communication-apps/thunderbird-setup"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "thunderbird"
+arch = "thunderbird"
+debian = "thunderbird"
+fedora = "thunderbird"
+flatpak = "org.mozilla.Thunderbird"

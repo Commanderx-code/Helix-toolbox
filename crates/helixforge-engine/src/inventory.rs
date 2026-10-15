@@ -4,7 +4,7 @@
 //! list of entries is answered by lookups.
 
 use crate::{PackageState, Plan, Probe, Source, Step, UpdateTarget};
-use helixforge_core::{Action, Entry, PackageManager, Risk};
+use helixforge_core::{Entry, PackageManager, Risk};
 use helixforge_platform::LinuxInfo;
 use std::{
     collections::{HashMap, HashSet},
@@ -101,6 +101,8 @@ pub struct Inventory {
     /// Where Home Manager's and NixOS's commands are, to name who manages a
     /// command from the Nix store.
     nix_places: Vec<(String, PathBuf)>,
+    /// Which package owns a file, fixed for tests; None asks the manager.
+    owners: Option<HashMap<PathBuf, String>>,
 }
 
 impl Inventory {
@@ -192,7 +194,14 @@ impl Inventory {
             flatpaks,
             flatpak_updates,
             nix_places: Vec::new(),
+            owners: Some(HashMap::new()),
         }
+    }
+
+    /// The same, with which package owns each file fixed, for tests.
+    pub fn with_owners(mut self, owners: HashMap<PathBuf, String>) -> Self {
+        self.owners = Some(owners);
+        self
     }
 
     /// Whether a probe holds, answered from the snapshot where it can be,
@@ -238,12 +247,12 @@ impl Inventory {
         let mut plan = Plan::default();
         let mut system = Vec::new();
         for entry in entries {
-            let Action::Package {
+            let Some(helixforge_core::Identity {
                 packages,
                 aur,
                 flatpak,
                 ..
-            } = &entry.action
+            }) = entry.identity()
             else {
                 plan.notes.push(format!(
                     "{}: its installer decides what it installs; run it again to update",
@@ -286,13 +295,19 @@ impl Inventory {
                     continue;
                 }
             }
-            let probes = crate::own_probes(
-                packages,
-                aur.as_deref(),
-                flatpak.as_deref(),
-                platform.manager,
-            );
-            let Some(probe) = probes.into_iter().find(|probe| self.holds(probe)) else {
+            let probes = crate::own_probes(packages, aur, flatpak, platform.manager);
+            let owned = || {
+                let binary = entry.identity()?.binary?;
+                let path = on_path(binary)?;
+                let target = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+                let (manager, name) = self.owner(&path).or_else(|| self.owner(&target))?;
+                Some(Probe::Package { manager, name })
+            };
+            let Some(probe) = probes
+                .into_iter()
+                .find(|probe| self.holds(probe))
+                .or_else(owned)
+            else {
                 continue;
             };
             let target = UpdateTarget {
@@ -377,16 +392,13 @@ impl Inventory {
         platform: &LinuxInfo,
         on_path: &dyn Fn(&str) -> Option<PathBuf>,
     ) -> Option<Status> {
-        let Action::Package {
+        let helixforge_core::Identity {
             binary,
             packages,
             aur,
             flatpak,
             ..
-        } = &entry.action
-        else {
-            return None;
-        };
+        } = entry.identity()?;
         let holds = |probe: &Probe| self.holds(probe);
         let found = |binary: &str| on_path(binary).is_some();
         let machine = crate::Machine {
@@ -396,20 +408,19 @@ impl Inventory {
         match crate::package_state(entry, platform, machine)? {
             PackageState::Absent { replaces } => Some(Status::Absent { replaces }),
             PackageState::OnPath(_) => {
-                let path = binary.as_deref().and_then(on_path)?;
-                Some(self.placed(binary.as_deref().unwrap_or_default(), path))
+                let path = binary.and_then(on_path)?;
+                Some(self.placed(binary.unwrap_or_default(), path))
             }
             PackageState::Installed(_) => {
                 // A Nix install of the same command that the PATH finds first.
-                let shadowed = binary.as_deref().and_then(|binary| {
-                    match self.placed(binary, on_path(binary)?) {
+                let shadowed =
+                    binary.and_then(|binary| match self.placed(binary, on_path(binary)?) {
                         Status::Managed { by, version } => Some(match version {
                             Some(version) => format!("{by}'s {version}"),
                             None => format!("{by}'s"),
                         }),
                         _ => None,
-                    }
-                });
+                    });
                 // Which of its sources: the family's package, the AUR's, the Flatpak.
                 let manager = platform.manager;
                 let native = manager.and_then(|manager| {
@@ -418,7 +429,7 @@ impl Inventory {
                         .map(|name| (name, source_name(manager).to_string()))
                 });
                 let from_aur = (manager == Some(PackageManager::Arch))
-                    .then_some(aur.as_deref())
+                    .then_some(aur)
                     .flatten()
                     .map(|name| (name, "AUR".to_string()));
                 for (name, source) in native.into_iter().chain(from_aur) {
@@ -448,7 +459,7 @@ impl Inventory {
                         });
                     }
                 }
-                let id = flatpak.as_deref()?;
+                let id = flatpak?;
                 let version = self
                     .flatpaks
                     .get(id)
@@ -477,13 +488,58 @@ impl Inventory {
     fn placed(&self, binary: &str, path: PathBuf) -> Status {
         let target = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
         let resolve = |path: &Path| std::fs::canonicalize(path).ok();
-        match nix_owner(binary, &target, &self.nix_places, &resolve) {
-            Some(by) => Status::Managed {
+        if let Some(by) = nix_owner(binary, &target, &self.nix_places, &resolve) {
+            return Status::Managed {
                 by,
                 version: store_version(&target),
-            },
-            None => Status::Elsewhere { path },
+            };
         }
+        // A package other than the entry's own may have installed it.
+        let Some((manager, name)) = self.owner(&path).or_else(|| self.owner(&target)) else {
+            return Status::Elsewhere { path };
+        };
+        let source = format!("{}: {name}", source_name(manager));
+        let version = self
+            .native
+            .as_ref()
+            .and_then(|native| native.get(&name))
+            .cloned();
+        match self.native_updates.get(&name) {
+            Some(latest) => Status::Update {
+                source,
+                version,
+                latest: Some(latest.clone()),
+                shadowed: None,
+            },
+            None => Status::Installed {
+                source,
+                version,
+                shadowed: None,
+            },
+        }
+    }
+
+    /// The package of this machine's manager that owns a file.
+    pub fn owner(&self, path: &Path) -> Option<(PackageManager, String)> {
+        let manager = self.manager?;
+        if let Some(owners) = &self.owners {
+            return owners.get(path).map(|name| (manager, name.clone()));
+        }
+        let path = path.to_str()?;
+        let name = match manager {
+            PackageManager::Arch => output(&["pacman", "-Qoq", path])?,
+            PackageManager::Debian => output(&["dpkg", "-S", path])?
+                .split(':')
+                .next()?
+                .to_string(),
+            PackageManager::Fedora | PackageManager::Suse => {
+                output(&["rpm", "-qf", "--qf", "%{NAME}", path])?
+            }
+            _ => return None,
+        };
+        let name = name.lines().next()?.trim().to_string();
+        // Errors go to standard error; a valid name is all that counts.
+        helixforge_core::valid_package_name(&name).then_some((manager, name))
     }
 }
 
@@ -670,7 +726,7 @@ pub fn which(binary: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use helixforge_core::PackageNames;
+    use helixforge_core::{Action, PackageNames};
 
     fn platform(manager: PackageManager) -> LinuxInfo {
         LinuxInfo {
@@ -707,6 +763,7 @@ mod tests {
                 conflicts: conflicts.iter().map(|name| name.to_string()).collect(),
                 removable: true,
             },
+            detect: None,
         }
     }
 
@@ -1083,5 +1140,70 @@ mod tests {
         assert!(program.contains("'sudo' 'pacman' '-Syu'"), "{program}");
         assert!(program.contains("'pacman' '-Q' 'ripgrep'"));
         assert!(program.contains("is not installed after the update"));
+    }
+
+    #[test]
+    fn a_command_from_another_package_is_shown_and_updated_through_it() {
+        let arch = platform(PackageManager::Arch);
+        let inventory = Inventory::from_parts(
+            Some(PackageManager::Arch),
+            Some(map(&[("github-desktop", "3.4.14-2")])),
+            map(&[("github-desktop", "3.4.15-1")]),
+            HashMap::new(),
+            HashSet::new(),
+        )
+        .with_owners(
+            [(
+                PathBuf::from("/usr/bin/github-desktop"),
+                "github-desktop".to_string(),
+            )]
+            .into(),
+        );
+        let mut entry = package(
+            "github-desktop",
+            Some("github-desktop"),
+            None,
+            Some("github-desktop-bin"),
+            None,
+            &[],
+        );
+        // A script entry that says what it installs, as the catalog's do.
+        let identity = entry.identity().map(|identity| helixforge_core::Detect {
+            binary: identity.binary.map(String::from),
+            packages: identity.packages.clone(),
+            aur: identity.aur.map(String::from),
+            flatpak: None,
+        });
+        entry.action = Action::Script {
+            file: PathBuf::from("githubdesktop.sh"),
+            interactive: true,
+        };
+        entry.detect = identity;
+        let found = |binary: &str| {
+            (binary == "github-desktop").then(|| PathBuf::from("/usr/bin/github-desktop"))
+        };
+        let status = inventory.status(&entry, &arch, &found).unwrap();
+        assert_eq!(status.label(), "Update");
+        assert_eq!(
+            status.detail(),
+            "pacman: github-desktop 3.4.14-2 → 3.4.15-1"
+        );
+        let planned = inventory.plan_update([&entry], &arch, &found);
+        let Step::Update { targets, .. } = &planned.steps[0] else {
+            panic!("expected an update step");
+        };
+        assert_eq!(
+            targets[0].probe,
+            Probe::Package {
+                manager: PackageManager::Arch,
+                name: "github-desktop".into()
+            }
+        );
+        assert_eq!(targets[0].from.as_deref(), Some("3.4.14-2"));
+        // Not owned by any package: installed elsewhere, nothing to update.
+        let unowned = inventory.clone().with_owners(HashMap::new());
+        let planned = unowned.plan_update([&entry], &arch, &found);
+        assert!(planned.steps.is_empty());
+        assert!(planned.notes[0].contains("installed outside a package manager"));
     }
 }

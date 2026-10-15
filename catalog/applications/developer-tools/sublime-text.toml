@@ -5,3 +5,11 @@ order = 107
 
 [script]
 id = "applications-setup/developer-tools/sublime"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "subl"
+debian = "sublime-text"
+fedora = "sublime-text"
+aur = "sublime-text-4"
+flatpak = "com.sublimehq.SublimeText"

@@ -4,3 +4,11 @@ order = 102
 
 [script]
 id = "applications-setup/pdf-suites/okular"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "okular"
+arch = "okular"
+debian = "okular"
+fedora = "okular"
+flatpak = "org.kde.okular"

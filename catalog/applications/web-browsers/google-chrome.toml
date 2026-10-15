@@ -5,3 +5,11 @@ order = 104
 
 [script]
 id = "applications-setup/browsers/google-chrome"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "google-chrome-stable"
+debian = "google-chrome-stable"
+fedora = "google-chrome-stable"
+aur = "google-chrome"
+flatpak = "com.google.Chrome"

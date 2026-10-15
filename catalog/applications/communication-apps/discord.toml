@@ -5,3 +5,11 @@ order = 101
 
 [script]
 id = "applications-setup/communication-apps/discord-setup"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "discord"
+arch = "discord"
+debian = "discord"
+fedora = "discord"
+flatpak = "com.discordapp.Discord"

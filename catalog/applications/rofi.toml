@@ -5,3 +5,10 @@ order = 124
 
 [script]
 id = "applications-setup/rofi-setup"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "rofi"
+arch = "rofi"
+debian = "rofi"
+fedora = "rofi"

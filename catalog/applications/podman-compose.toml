@@ -5,3 +5,10 @@ order = 123
 
 [script]
 id = "applications-setup/podman-compose-setup"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "podman-compose"
+arch = "podman-compose"
+debian = "podman-compose"
+fedora = "podman-compose"

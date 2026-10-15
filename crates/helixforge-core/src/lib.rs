@@ -262,6 +262,61 @@ pub struct Entry {
     /// engine can refuse to run over files another tool manages.
     pub writes: Vec<String>,
     pub action: Action,
+    /// What a script or command entry installs, so its status can be shown;
+    /// package entries carry this in their action.
+    pub detect: Option<Detect>,
+}
+
+/// The packages and command that show a non-package entry's software.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Detect {
+    pub binary: Option<String>,
+    pub packages: PackageNames,
+    pub aur: Option<String>,
+    pub flatpak: Option<String>,
+}
+
+/// What an entry installs, from its package action or its `detect` table.
+#[derive(Clone, Copy, Debug)]
+pub struct Identity<'a> {
+    pub binary: Option<&'a str>,
+    pub packages: &'a PackageNames,
+    pub aur: Option<&'a str>,
+    pub flatpak: Option<&'a str>,
+    pub conflicts: &'a [String],
+}
+
+impl Entry {
+    /// What the entry installs, if it says.
+    pub fn identity(&self) -> Option<Identity<'_>> {
+        match (&self.action, &self.detect) {
+            (
+                Action::Package {
+                    binary,
+                    packages,
+                    aur,
+                    flatpak,
+                    conflicts,
+                    ..
+                },
+                _,
+            ) => Some(Identity {
+                binary: binary.as_deref(),
+                packages,
+                aur: aur.as_deref(),
+                flatpak: flatpak.as_deref(),
+                conflicts,
+            }),
+            (_, Some(detect)) => Some(Identity {
+                binary: detect.binary.as_deref(),
+                packages: &detect.packages,
+                aur: detect.aur.as_deref(),
+                flatpak: detect.flatpak.as_deref(),
+                conflicts: &[],
+            }),
+            (_, None) => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -434,6 +489,7 @@ mod tests {
             action: Action::Command {
                 line: "true".into(),
             },
+            detect: None,
         };
         assert!(!privileged("FM", &entry.action));
         assert!(privileged("I FM", &entry.action));

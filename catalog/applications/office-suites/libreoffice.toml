@@ -4,3 +4,11 @@ order = 102
 
 [script]
 id = "applications-setup/office-suites/libreoffice"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "libreoffice"
+arch = "libreoffice-fresh"
+debian = "libreoffice-core"
+fedora = "libreoffice"
+flatpak = "org.libreoffice.LibreOffice"

@@ -5,3 +5,9 @@ order = 110
 
 [script]
 id = "gaming/protonup-qt"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "protonup-qt"
+aur = "protonup-qt"
+flatpak = "net.davidotek.pupgui2"

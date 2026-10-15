@@ -5,3 +5,8 @@ order = 103
 
 [script]
 id = "applications-setup/developer-tools/jetbrains-toolbox"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "jetbrains-toolbox"
+aur = "jetbrains-toolbox"

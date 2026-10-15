@@ -5,3 +5,7 @@ order = 113
 
 [script]
 id = "applications-setup/design-tools/natron"
+
+# What the script installs, so its status can be shown.
+[detect]
+flatpak = "fr.natron.natron"

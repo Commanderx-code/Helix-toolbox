@@ -5,3 +5,7 @@ order = 102
 
 [script]
 id = "gaming/emulators/playstation/play-emu"
+
+# What the script installs, so its status can be shown.
+[detect]
+flatpak = "org.purei.Play"

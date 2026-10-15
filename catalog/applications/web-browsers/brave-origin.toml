@@ -5,3 +5,9 @@ order = 102
 
 [script]
 id = "applications-setup/browsers/brave-origin"
+
+# What the script installs, so its status can be shown.
+[detect]
+debian = "brave-origin"
+fedora = "brave-origin"
+aur = "brave-origin-bin"

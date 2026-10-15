@@ -5,3 +5,8 @@ order = 110
 
 [script]
 id = "applications-setup/developer-tools/zed"
+
+# What the script installs, so its status can be shown.
+[detect]
+arch = "zed"
+flatpak = "dev.zed.Zed"

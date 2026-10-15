@@ -5,3 +5,11 @@ order = 107
 
 [script]
 id = "applications-setup/browsers/firefox"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "firefox"
+arch = "firefox"
+debian = "firefox-esr"
+fedora = "firefox"
+flatpak = "org.mozilla.firefox"

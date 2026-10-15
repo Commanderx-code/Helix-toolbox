@@ -5,3 +5,10 @@ order = 105
 
 [script]
 id = "gaming/emulators/nintendo/mgba"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "mgba-qt"
+arch = "mgba-qt"
+debian = "mgba-qt"
+flatpak = "io.mgba.mGBA"

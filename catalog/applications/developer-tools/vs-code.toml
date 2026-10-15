@@ -5,3 +5,11 @@ order = 108
 
 [script]
 id = "applications-setup/developer-tools/vscode"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "code"
+debian = "code"
+fedora = "code"
+aur = "visual-studio-code-bin"
+flatpak = "com.visualstudio.code"

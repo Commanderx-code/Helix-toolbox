@@ -269,7 +269,7 @@ impl App {
             .catalog
             .entries()
             .into_iter()
-            .filter(|entry| matches!(entry.action, Action::Package { .. }))
+            .filter(|entry| entry.identity().is_some())
             .cloned()
             .collect();
         let platform = self.platform.clone();

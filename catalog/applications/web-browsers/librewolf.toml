@@ -5,3 +5,11 @@ order = 105
 
 [script]
 id = "applications-setup/browsers/librewolf"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "librewolf"
+debian = "librewolf"
+fedora = "librewolf"
+aur = "librewolf-bin"
+flatpak = "io.gitlab.librewolf-community"

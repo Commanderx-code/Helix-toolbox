@@ -9,8 +9,8 @@
 //! killed are removed the next time HelixForge starts.
 
 use helixforge_core::{
-    Action, Check, Entry, Group, Item, NativeAction, NixAction, PackageNames, Precondition, Tab,
-    valid_binary_name, valid_flatpak_id, valid_id, valid_package_name, valid_script_segment,
+    Action, Check, Detect, Entry, Group, Item, NativeAction, NixAction, PackageNames, Precondition,
+    Tab, valid_binary_name, valid_flatpak_id, valid_id, valid_package_name, valid_script_segment,
 };
 use helixforge_platform::binary_exists;
 use include_dir::{Dir, include_dir};
@@ -219,6 +219,34 @@ struct EntryFile {
     native: Option<NativeFile>,
     #[serde(default)]
     profile: Option<ProfileFile>,
+    /// What a script or command entry installs, for its status.
+    #[serde(default)]
+    detect: Option<DetectFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DetectFile {
+    #[serde(default)]
+    binary: Option<String>,
+    #[serde(default)]
+    arch: Option<String>,
+    #[serde(default)]
+    debian: Option<String>,
+    #[serde(default)]
+    fedora: Option<String>,
+    #[serde(default)]
+    suse: Option<String>,
+    #[serde(default)]
+    alpine: Option<String>,
+    #[serde(default)]
+    void: Option<String>,
+    #[serde(default)]
+    solus: Option<String>,
+    #[serde(default)]
+    aur: Option<String>,
+    #[serde(default)]
+    flatpak: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -432,6 +460,7 @@ fn load_items(
             let Some(action) = action_of(&entry, &path, installers, validate)? else {
                 continue;
             };
+            let detect = detect_of(&entry, &path)?;
             if !ids.insert(stem.to_string()) {
                 return Err(CatalogError::Invalid(format!("duplicate entry id: {stem}")));
             }
@@ -447,6 +476,7 @@ fn load_items(
                     multi_select: parent_multi_select && entry.multi_select,
                     writes: entry.writes,
                     action,
+                    detect,
                 }),
             ));
         }
@@ -454,6 +484,47 @@ fn load_items(
     // Groups first, then entries; each by order, then name.
     found.sort_by(|a, b| (a.0, a.1, &a.2).cmp(&(b.0, b.1, &b.2)));
     Ok(found.into_iter().map(|(_, _, _, item)| item).collect())
+}
+
+/// The entry's `detect` table, checked; a package entry has its own.
+fn detect_of(entry: &EntryFile, path: &Path) -> Result<Option<Detect>, CatalogError> {
+    let Some(detect) = &entry.detect else {
+        return Ok(None);
+    };
+    let packages = PackageNames {
+        arch: detect.arch.clone(),
+        debian: detect.debian.clone(),
+        fedora: detect.fedora.clone(),
+        suse: detect.suse.clone(),
+        alpine: detect.alpine.clone(),
+        void: detect.void.clone(),
+        solus: detect.solus.clone(),
+    };
+    let valid = entry.package.is_none()
+        && packages
+            .all()
+            .iter()
+            .filter_map(|(_, name)| *name)
+            .chain(detect.aur.as_deref())
+            .all(valid_package_name)
+        && detect.binary.as_deref().is_none_or(valid_binary_name)
+        && detect.flatpak.as_deref().is_none_or(valid_flatpak_id)
+        && (detect.binary.is_some()
+            || !packages.is_empty()
+            || detect.aur.is_some()
+            || detect.flatpak.is_some());
+    if !valid {
+        return Err(CatalogError::Invalid(format!(
+            "{} has an invalid detect section",
+            path.display()
+        )));
+    }
+    Ok(Some(Detect {
+        binary: detect.binary.clone(),
+        packages,
+        aur: detect.aur.clone(),
+        flatpak: detect.flatpak.clone(),
+    }))
 }
 
 /// The entry's action; `None` when what it needs (a script's interpreter,
@@ -864,6 +935,27 @@ mod tests {
     }
 
     #[test]
+    fn script_entries_say_what_they_install() {
+        let directory = sample();
+        write(
+            directory.path(),
+            "catalog/apps/steamish.toml",
+            "name = \"Steamish\"\n[command]\nline = \"true\"\n\n[detect]\nbinary = \"steam\"\narch = \"steam\"\nflatpak = \"com.valvesoftware.Steam\"\n",
+        );
+        let catalog = Catalog::from_directory(directory.path(), false).unwrap();
+        let entry = catalog.find("steamish").unwrap();
+        let identity = entry.identity().unwrap();
+        assert_eq!(identity.binary, Some("steam"));
+        assert_eq!(identity.packages.arch.as_deref(), Some("steam"));
+        assert_eq!(identity.flatpak, Some("com.valvesoftware.Steam"));
+        assert!(identity.conflicts.is_empty());
+        assert!(catalog.find("zed").unwrap().identity().is_none());
+        // Every built-in entry that says what it installs loads.
+        let builtin = Catalog::builtin(false).unwrap();
+        assert!(builtin.find("steam").unwrap().identity().is_some());
+    }
+
+    #[test]
     fn broken_entries_are_errors() {
         for (name, text) in [
             (
@@ -893,6 +985,18 @@ mod tests {
             (
                 "nothing.toml",
                 "name = \"Nothing\"\n[package]\nbinary = \"x\"\nremovable = true\n",
+            ),
+            (
+                "detectflag.toml",
+                "name = \"Detect\"\n[command]\nline = \"true\"\n[detect]\narch = \"--overwrite\"\n",
+            ),
+            (
+                "detectempty.toml",
+                "name = \"Empty\"\n[command]\nline = \"true\"\n[detect]\n",
+            ),
+            (
+                "detectpackage.toml",
+                "name = \"Both\"\n[package]\narch = \"x\"\n[detect]\narch = \"x\"\n",
             ),
             (
                 "unknown.toml",

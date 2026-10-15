@@ -5,3 +5,11 @@ order = 109
 
 [script]
 id = "applications-setup/browsers/tor-browser"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "torbrowser-launcher"
+arch = "torbrowser-launcher"
+debian = "torbrowser-launcher"
+fedora = "torbrowser-launcher"
+flatpak = "org.torproject.torbrowser-launcher"

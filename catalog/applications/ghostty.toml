@@ -5,3 +5,8 @@ order = 118
 
 [script]
 id = "applications-setup/ghostty-setup"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "ghostty"
+arch = "ghostty"

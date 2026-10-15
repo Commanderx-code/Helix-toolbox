@@ -5,3 +5,11 @@ order = 110
 
 [script]
 id = "applications-setup/browsers/vivaldi"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "vivaldi"
+arch = "vivaldi"
+debian = "vivaldi-stable"
+fedora = "vivaldi-stable"
+flatpak = "com.vivaldi.Vivaldi"

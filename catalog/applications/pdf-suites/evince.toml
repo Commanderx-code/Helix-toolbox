@@ -4,3 +4,11 @@ order = 101
 
 [script]
 id = "applications-setup/pdf-suites/evince"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "evince"
+arch = "evince"
+debian = "evince"
+fedora = "evince"
+flatpak = "org.gnome.Evince"

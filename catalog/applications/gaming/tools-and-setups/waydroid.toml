@@ -10,3 +10,10 @@ values = ["wayland", "Wayland"]
 
 [script]
 id = "applications-setup/waydroid-setup"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "waydroid"
+debian = "waydroid"
+fedora = "waydroid"
+aur = "waydroid"

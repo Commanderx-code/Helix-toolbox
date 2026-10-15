@@ -239,7 +239,7 @@ fn main() -> Result<()> {
                 catalog
                     .entries()
                     .into_iter()
-                    .filter(|entry| matches!(entry.action, Action::Package { .. }))
+                    .filter(|entry| entry.identity().is_some())
                     .collect()
             } else {
                 ids.iter()

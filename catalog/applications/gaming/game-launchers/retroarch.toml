@@ -5,3 +5,11 @@ order = 108
 
 [script]
 id = "gaming/retroarch-launcher"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "retroarch"
+arch = "retroarch"
+debian = "retroarch"
+fedora = "retroarch"
+flatpak = "org.libretro.RetroArch"

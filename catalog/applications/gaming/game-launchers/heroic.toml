@@ -5,3 +5,9 @@ order = 102
 
 [script]
 id = "gaming/heroic-launcher"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "heroic"
+aur = "heroic-games-launcher-bin"
+flatpak = "com.heroicgameslauncher.hgl"

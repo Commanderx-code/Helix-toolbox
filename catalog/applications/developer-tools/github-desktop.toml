@@ -5,3 +5,11 @@ order = 102
 
 [script]
 id = "applications-setup/developer-tools/githubdesktop"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "github-desktop"
+debian = "github-desktop"
+fedora = "github-desktop"
+aur = "github-desktop-bin"
+flatpak = "io.github.shiftey.Desktop"

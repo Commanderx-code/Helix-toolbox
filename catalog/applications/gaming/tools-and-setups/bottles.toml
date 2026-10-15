@@ -5,3 +5,7 @@ order = 103
 
 [script]
 id = "applications-setup/bottles-setup"
+
+# What the script installs, so its status can be shown.
+[detect]
+flatpak = "com.usebottles.bottles"

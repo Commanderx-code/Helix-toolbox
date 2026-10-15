@@ -5,3 +5,11 @@ order = 114
 
 [script]
 id = "applications-setup/design-tools/obs-studio"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "obs"
+arch = "obs-studio"
+debian = "obs-studio"
+fedora = "obs-studio"
+flatpak = "com.obsproject.Studio"
