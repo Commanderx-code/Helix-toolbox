@@ -5406,7 +5406,12 @@ mod tests {
         app.open_screen(Screen::Reliability);
         app.focus = Focus::Main;
         let text = screen(&mut app, 140, 40);
-        assert!(text.contains("No container record"), "{text}");
+        // A release build carries the Distributions record; others say they have none.
+        assert!(
+            text.contains("No container record")
+                || text.contains("Container record: Distributions run"),
+            "{text}"
+        );
         assert!(text.contains("Stand-in Tested"), "{text}");
         // The first rows are critical: boot, login, drivers, whole systems.
         assert!(app.reliability_rows[0].2.critical);
