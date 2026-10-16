@@ -4,6 +4,24 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.3.0
+
+- **System change preview**: `e` on the Install Plan, in the confirmation or
+  on a backup, and `--effects` on `plan` and the dry runs, show what a plan is
+  expected to change, marked known, expected or not known in advance: the
+  packages the package manager says come with it (asked without root), files
+  side by side as the installer's own code would write them (GRUB, the boot
+  splash's kernel command line and initramfs hooks, SDDM, AppArmor), a
+  backup against the file it replaces, services, and when it takes effect.
+  The boot, login-screen and AppArmor entries declare their effects in a new
+  `[effects]` catalog table.
+- **Hardware and firmware center**: a Hardware screen and `helixforge
+  hardware` list fwupd's firmware updates apart from its devices, disks with
+  their temperature, sensors, battery health and cycles, PCI devices with
+  their drivers and USB devices, read without root. A firmware update asks
+  for the word FIRMWARE before its plan; a SMART check runs with your
+  password, after confirmation.
+
 ## v1.2.0
 
 - **Reliability**: a new screen and `helixforge reliability` show how far

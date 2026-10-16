@@ -268,7 +268,58 @@ pub struct Entry {
     pub detect: Option<Detect>,
     /// What it needs from the machine, checked before a run.
     pub needs: Needs,
+    /// What a script entry is expected to change, for the change preview.
+    pub effects: Effects,
 }
+
+/// What an entry's script is expected to change, declared in its catalog
+/// file, so the change preview can show it before it runs. A script may do
+/// more than this; the preview says so.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Effects {
+    pub files: Vec<FileEffect>,
+    /// Packages the script installs besides any of its own identity.
+    pub packages: Vec<String>,
+    /// Services it enables, disables, starts or restarts.
+    pub services: Vec<String>,
+    /// When the change takes effect, such as "at the next reboot".
+    pub takes_effect: Option<String>,
+    /// What cannot be known before it runs.
+    pub unknown: Vec<String>,
+}
+
+impl Effects {
+    pub fn is_empty(&self) -> bool {
+        self.files.is_empty()
+            && self.packages.is_empty()
+            && self.services.is_empty()
+            && self.takes_effect.is_none()
+            && self.unknown.is_empty()
+    }
+}
+
+/// A file a script changes.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct FileEffect {
+    /// Absolute, or under `~/`.
+    pub path: String,
+    /// What happens to it.
+    pub change: String,
+    /// The arguments to the installers' `configure.py` that print its new
+    /// contents without writing anything, when there is such a renderer.
+    pub render: Vec<String>,
+    /// When it applies, such as "the machine boots with GRUB".
+    pub when: Option<String>,
+}
+
+/// The `configure.py` actions that only print a file's new contents.
+pub const RENDERERS: [&str; 5] = [
+    "grub",
+    "grub-cmdline",
+    "sddm",
+    "mkinitcpio-hooks",
+    "limine-cmdline",
+];
 
 /// What an entry needs from the machine beyond its tools.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -534,6 +585,7 @@ mod tests {
             },
             detect: None,
             needs: Default::default(),
+            effects: Default::default(),
         };
         assert!(!privileged("FM", &entry.action));
         assert!(privileged("I FM", &entry.action));

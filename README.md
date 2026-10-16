@@ -50,6 +50,12 @@ Debian, Ubuntu, Fedora and openSUSE.
   it back queued for review.
 - **A command palette** (`Ctrl-K`) reaches every screen, action and entry by
   name.
+- **See a change before it happens**: `e` shows what a plan will change on
+  this machine, configuration files side by side as the installer would
+  write them, and marks what cannot be known in advance.
+- **Hardware and firmware**: fwupd firmware updates, disk, temperature and
+  battery health, PCI and USB devices, with SMART checks and firmware
+  updates behind their own confirmation.
 - **Know what you are running**: the Reliability screen shows how far each
   entry has been tested (in distribution containers, with stand-ins, on real
   machines), critical boot and driver entries first, and the trust inspector

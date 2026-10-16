@@ -98,6 +98,30 @@ unpacked to a private temporary directory when it starts, so scripts run as
 real files. The copy is removed on exit; one left behind by a HelixForge that
 was killed is removed the next time HelixForge starts.
 
+A script entry can say what it changes in an `[effects]` table, which the
+change preview shows before it runs:
+
+```toml
+[effects]
+packages = ["plymouth (with plymouth-themes on Debian and Ubuntu)"]
+services = ["enables sddm.service from the next reboot, if you agree"]
+takes_effect = "the boot splash shows from the next reboot"
+unknown = ["the regenerated boot menu, written from the installed kernels"]
+
+[[effects.files]]
+path = "/etc/default/grub"
+change = "adds splash to the kernel command line; backed up first"
+render = ["grub-cmdline", "/etc/default/grub", "add", "splash"]
+when = "the machine boots with GRUB"
+```
+
+`render` names one of the installers' `configure.py` actions that only
+print a file's new contents (`grub`, `grub-cmdline`, `sddm`,
+`mkinitcpio-hooks`, `limine-cmdline`), then the file it reads, which must be
+`path`; the preview runs it on the file as it is and shows the two side by
+side. `{grub}` stands for `/boot/grub` (`/boot/grub2` on Fedora) and `{time}`
+for the date and time the installer puts in a name.
+
 `catalog/validation.toml` says how far entries are tested beyond the checks
 every entry gets: `[critical]` names the entries whose failure can stop a
 machine booting, logging in or showing a display; each `[[stand-ins]]`

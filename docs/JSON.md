@@ -4,7 +4,7 @@
 of text, for scripts, other tools and the graphical interface to come. It
 works with the commands that read (`system`, `list`, `search`, `info`,
 `status`, `plan`, `history`, `updates`, `doctor`, `backups`, `drift check`,
-`drift list`, `reliability`, `trust`, `profile list`)
+`drift list`, `reliability`, `trust`, `hardware`, `profile list`)
 and with `--dry-run` plans (`run`, `remove`, `update`, `updates --apply`,
 `restore`, `doctor --repair`). Anything that would change the machine is
 refused with `--json` unless it is a dry run: a script cannot start a run by
@@ -90,6 +90,13 @@ not a package, else `state` and the fields for it, with the `label` and
 | `findings` | `[{severity, message}]` from the checks before a run, `severity` `blocker` or `warning` |
 | `runnable` | there are steps and no blockers |
 
+With `--effects`, a plan also has `effects`: for each step `{id, name,
+changes}`, each change `{certainty, area, text, diff}`. `certainty` is
+`known`, `expected` or `unknown`; `area` is `file`, `package`, `service`,
+`boot` or `other`; `diff` is `null` or `{path, changed, rows}`, each row
+`{before, after, tag}` with `tag` being `same`, `changed`, `removed` or
+`added`.
+
 ## history
 
 `{runs: [{unix_timestamp, entries, names, success, result, log}]}`, newest
@@ -169,6 +176,17 @@ subject, text}`, `standing` being `provenance` (signed build provenance),
 `checked` (a checksum or signature a tool checks), `pinned` (fixed to a
 revision by its hash), `unverified` or `unknown`. `validation` is an
 assessment as above.
+
+## hardware
+
+`{firmware, disks, sensors, batteries, pci, usb}`. `firmware` is
+`{available, devices, updates, note}`: devices `{id, name, vendor, version,
+updatable}`, updates `{device_id, device, from, to, summary, urgency}`.
+A disk is `{name, model, bytes, kind, firmware, celsius}` (`kind` `NVMe`,
+`SSD`, `HDD` or `USB`); a sensor `{chip, label, celsius, high, critical}`; a
+battery `{name, status, capacity, health, cycles, model, technology}`
+(`capacity` and `health` in percent); a device `{address, class, name,
+driver}`. Unknown values are `null`.
 
 ## profile list
 

@@ -105,6 +105,7 @@ impl Repair {
                 program,
                 display,
                 requires: requires.clone(),
+                changes: Vec::new(),
             }],
             requirements: requires,
             privileged,

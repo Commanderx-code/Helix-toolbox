@@ -436,6 +436,7 @@ mod tests {
             },
             detect: None,
             needs,
+            effects: Default::default(),
         }
     }
 

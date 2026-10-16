@@ -191,6 +191,7 @@ pub fn entry(slug: &str, profile: &Profile) -> Entry {
         },
         detect: None,
         needs: Default::default(),
+        effects: Default::default(),
     }
 }
 

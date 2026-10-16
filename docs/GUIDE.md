@@ -35,6 +35,7 @@ and press `Enter`.
 | Install Plan | What you queued, checked and ready to run together |
 | Configurations | Shell, dotfiles and desktop configuration |
 | Helix Doctor | Health checks that only read the system, with repairs |
+| Hardware | Firmware updates, disks, temperatures, batteries, devices |
 | Maintenance, Security | Clean-ups, system tweaks and hardening |
 | Profiles | Ready-made sets of entries, and your own |
 | Drift | How the machine differs from a saved baseline or a profile |
@@ -60,7 +61,10 @@ and press `Enter`.
    `Enter` runs one entry straight away instead.
 6. On the Install Plan, check the plan: the steps in order, the risk, whether
    it asks for your password, and anything that blocks it (a missing tool,
-   too little space, a conflicting package). `Enter` runs it.
+   too little space, a conflicting package). `e` shows what it is expected
+   to change: configuration files side by side where they can be worked
+   out, the packages that come with it, services, and what cannot be known
+   before it runs. `Enter` runs it.
 7. The run asks `[Y]` first, then shows its output in a window inside the
    menu. Type into it when an installer asks a question. `Ctrl-C` stops it;
    `l` saves the log.
@@ -131,6 +135,14 @@ The **HelixForge** row updates HelixForge itself, the way it was installed:
 the new package for your distribution (downloaded and checked first), `cargo
 install` again, or a fresh build of your checkout. Copies run through the
 launcher or `start.sh` are always the latest release already.
+
+## The hardware
+
+**Hardware** lists firmware updates fwupd knows of, the disks with their
+temperatures, the sensors, battery health and the PCI and USB devices, all
+read without changing anything. `f` updates a device's firmware after you
+type FIRMWARE and confirm its plan; keep a laptop on mains power while it
+runs. `s` checks a disk's SMART health, which asks for your password.
 
 ## When something is wrong
 

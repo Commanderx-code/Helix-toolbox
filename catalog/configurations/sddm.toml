@@ -11,3 +11,32 @@ values = ["sddm"]
 
 [script]
 id = "commander/sddm"
+
+# What it changes, for the change preview.
+[effects]
+packages = ["Qt 6 modules the theme needs (qt6-svg, qt6-virtualkeyboard, qt6-multimedia and others; their Debian and Fedora names elsewhere)", "git, if it is missing"]
+services = ["with your answer at the end: disables the display manager running now and enables sddm.service, from the next reboot; no service is restarted now"]
+takes_effect = "the login screen changes at the next login, or at the next reboot when SDDM is switched on"
+unknown = ["whether SilentSDDM is copied in: a package that already owns the theme keeps it"]
+
+[[effects.files]]
+path = "/usr/share/sddm/themes/silent"
+change = "the SilentSDDM theme with the dotfiles presets and backgrounds; the existing theme is backed up"
+
+[[effects.files]]
+path = "/usr/local/share/fonts/silent-sddm"
+change = "the theme's fonts"
+
+[[effects.files]]
+path = "/etc/sddm.conf.d/zz-commander-theme.conf"
+change = "selects the silent theme; backed up first"
+
+[[effects.files]]
+path = "/etc/sddm.conf.d/10-numlock.conf"
+change = "Num Lock on at the login screen, from dotfiles; backed up first"
+
+[[effects.files]]
+path = "/etc/sddm.conf"
+change = "the silent theme, the on-screen keyboard and the greeter settings it needs; other settings stay; backed up first"
+render = ["sddm", "/etc/sddm.conf"]
+when = "the file exists"

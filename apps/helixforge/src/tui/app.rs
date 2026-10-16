@@ -3,6 +3,7 @@
 
 use super::{
     banner,
+    effects::{EffectsPopup, Outcome as EffectsOutcome},
     hints::Hint,
     icons::Icon,
     palette::{Choice, Outcome, Palette},
@@ -75,10 +76,11 @@ Areas (Applications and the other catalog screens)
 
 Install Plan
   Enter             run the plan                 x / Delete  remove the selected entry
-  c                 clear the plan               s           save it as a profile
+  c                 clear the plan               s           save it as a profile;  e  what it changes
 
-History, Backups, Helix Doctor, Updates, Drift, Reliability, Settings
+History, Backups, Helix Doctor, Hardware, Updates, Drift, Reliability, Settings
   Enter             log / restore / details / change   r   reload or check again; f repair; u / U update
+  Hardware: f       update firmware (type FIRMWARE)    s   SMART check;  Backups: e  side by side
   Drift: b          compare with another         s   save this machine; Space / a plan what is missing
   Reliability: i    critical or untested only    v   where the entry comes from
 
@@ -104,6 +106,8 @@ enum Screen {
     Drift,
     /// How far each entry has been tested.
     Reliability,
+    /// Firmware, disks, temperatures, batteries and devices.
+    Hardware,
     Settings,
 }
 
@@ -124,6 +128,34 @@ enum Popup {
     BaselineName(InputPopup),
     /// Every screen, action and entry, searchable (Ctrl-K).
     Palette(Palette),
+    /// What a plan is expected to change.
+    Effects(EffectsPopup),
+    /// The word that confirms a firmware update, before its plan is shown.
+    FirmwareWord(InputPopup),
+}
+
+/// A confirmation's header and its steps with their commands.
+type Confirming = (Vec<String>, Vec<(String, String)>);
+
+/// A line of the Hardware screen.
+#[derive(Clone, Debug)]
+enum HardwareRow {
+    Heading(String),
+    Item {
+        text: String,
+        /// Shown in a warning colour.
+        attention: bool,
+        details: String,
+        act: Option<HardwareAct>,
+    },
+}
+
+#[derive(Clone, Debug)]
+enum HardwareAct {
+    /// Update this firmware, by its index in the updates.
+    Firmware(usize),
+    /// Check this disk's SMART health.
+    Smart(String),
 }
 
 /// What a command palette choice does.
@@ -375,9 +407,18 @@ pub struct App {
     doctor_wanted: Option<&'static str>,
     /// What this build knows about how its entries were tested; read once.
     evidence: Option<reliability::Evidence>,
+    /// The confirmation's lines, to show it again after the change preview.
+    confirming: Option<Confirming>,
     /// The Reliability screen's rows: entry ids, names and standing.
     reliability_rows: Vec<(String, String, reliability::Assessment)>,
     coverage: Coverage,
+    /// What the Hardware screen last read, and its rows.
+    hardware: Option<helixforge_engine::hardware::Hardware>,
+    hardware_rows: Vec<HardwareRow>,
+    /// A look at the hardware running in the background, if any.
+    reading_hardware: Option<mpsc::Receiver<helixforge_engine::hardware::Hardware>>,
+    /// The firmware update waiting for its confirming word.
+    firmware_pending: Option<Plan>,
 }
 
 /// A plan of the queue as it was, from when it was made, with what the
@@ -452,8 +493,13 @@ impl App {
             palette_acts: Vec::new(),
             doctor_wanted: None,
             evidence: None,
+            confirming: None,
             reliability_rows: Vec::new(),
             coverage: Coverage::All,
+            hardware: None,
+            hardware_rows: Vec::new(),
+            reading_hardware: None,
+            firmware_pending: None,
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -690,6 +736,7 @@ impl App {
                 .as_ref()
                 .map_or(0, |(_, report)| report.differences.len()),
             Screen::Reliability => self.reliability_rows.len(),
+            Screen::Hardware => self.hardware_rows.len(),
             Screen::Doctor => self.diagnoses.len() + self.doctor_entries().len(),
             Screen::Settings => self.settings().len(),
         }
@@ -753,6 +800,9 @@ impl App {
         if screen == Screen::Reliability {
             self.reload_reliability();
         }
+        if screen == Screen::Hardware && self.hardware.is_none() {
+            self.read_hardware();
+        }
         self.update_rows();
     }
 
@@ -775,6 +825,21 @@ impl App {
                     return true;
                 }
                 Err(mpsc::TryRecvError::Disconnected) => self.examining = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(receiver) = &self.reading_hardware {
+            match receiver.try_recv() {
+                Ok(found) => {
+                    self.hardware_rows = hardware_rows(&found);
+                    self.hardware = Some(found);
+                    self.reading_hardware = None;
+                    if self.screen == Screen::Hardware {
+                        self.clamp_main();
+                    }
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.reading_hardware = None,
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }
@@ -837,6 +902,7 @@ impl App {
             Screen::Updates => Icon::Updates,
             Screen::Drift => Icon::Drift,
             Screen::Reliability => Icon::Reliability,
+            Screen::Hardware => Icon::Hardware,
             Screen::Favorites => Icon::Favorites,
             Screen::Doctor => Icon::Doctor,
             Screen::Settings => Icon::Settings,
@@ -911,12 +977,15 @@ impl App {
             Screen::Updates => self.draw_updates(frame, main),
             Screen::Drift => self.draw_drift(frame, main),
             Screen::Reliability => self.draw_reliability(frame, main),
+            Screen::Hardware => self.draw_hardware(frame, main),
             Screen::Doctor => self.draw_doctor(frame, main),
             Screen::Settings => self.draw_settings(frame, main),
         }
         match &mut self.popup {
             Some(Popup::Text(popup)) => popup.draw(frame, centered(main, 95, 95), self.theme),
-            Some(Popup::ProfileName(popup) | Popup::BaselineName(popup)) => {
+            Some(
+                Popup::ProfileName(popup) | Popup::BaselineName(popup) | Popup::FirmwareWord(popup),
+            ) => {
                 let area = popup.fitted(centered(main, 80, 70));
                 popup.draw(frame, area, self.theme)
             }
@@ -924,6 +993,7 @@ impl App {
                 let area = popup.fitted(main);
                 popup.draw(frame, area, self.theme)
             }
+            Some(Popup::Effects(popup)) => popup.draw(frame, centered(main, 96, 96), self.theme),
             Some(Popup::Confirm(popup)) => {
                 let area = popup.fitted(centered(main, 80, 70));
                 popup.draw(frame, area, self.theme)
@@ -2051,8 +2121,11 @@ impl App {
     fn hints(&self) -> (&'static str, Vec<Hint>) {
         match &self.popup {
             Some(Popup::Text(popup)) => return popup.hints(),
-            Some(Popup::ProfileName(popup) | Popup::BaselineName(popup)) => return popup.hints(),
+            Some(
+                Popup::ProfileName(popup) | Popup::BaselineName(popup) | Popup::FirmwareWord(popup),
+            ) => return popup.hints(),
             Some(Popup::Palette(popup)) => return popup.hints(),
+            Some(Popup::Effects(popup)) => return popup.hints(),
             Some(Popup::Confirm(popup)) => return popup.hints(),
             Some(Popup::Running(popup)) => return popup.hints(),
             None => {}
@@ -2106,6 +2179,7 @@ impl App {
                 Screen::Plan => {
                     list.push(Hint::new(&["Enter"], "Run plan"));
                     if !self.queue.is_empty() {
+                        list.push(Hint::new(&["e"], "Changes"));
                         list.push(Hint::new(&["s"], "Save as profile"));
                     }
                     list.push(Hint::new(&["x"], "Remove"));
@@ -2160,6 +2234,22 @@ impl App {
                     list.push(Hint::new(&["s"], "Save baseline"));
                     list.push(Hint::new(&["r"], "Check again"));
                 }
+                Screen::Hardware => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    if let Some(HardwareRow::Item { act, .. }) = self.selected_hardware() {
+                        list.push(Hint::new(&["Enter"], "Details"));
+                        match act {
+                            Some(HardwareAct::Firmware(_)) => {
+                                list.push(Hint::new(&["f"], "Update firmware"))
+                            }
+                            Some(HardwareAct::Smart(_)) => {
+                                list.push(Hint::new(&["s"], "SMART check"))
+                            }
+                            None => {}
+                        }
+                    }
+                    list.push(Hint::new(&["r"], "Read again"));
+                }
                 Screen::Reliability => {
                     list.push(Hint::new(&["↑↓"], "Navigate"));
                     if !self.reliability_rows.is_empty() {
@@ -2179,6 +2269,7 @@ impl App {
                     list.push(Hint::new(&["↑↓"], "Navigate"));
                     if !self.backups.is_empty() {
                         list.push(Hint::new(&["Enter"], "Restore"));
+                        list.push(Hint::new(&["e"], "Side by side"));
                         list.push(Hint::new(&["d"], "Details"));
                     }
                     list.push(Hint::new(&["r"], "Reload"));
@@ -2217,6 +2308,34 @@ impl App {
                 }
                 return true;
             }
+            Some(Popup::FirmwareWord(popup)) => {
+                if control_c {
+                    return false;
+                }
+                match popup.handle_key(key) {
+                    Answer::Typing => {}
+                    Answer::Cancelled => {
+                        self.popup = None;
+                        self.firmware_pending = None;
+                    }
+                    Answer::Given(word) => {
+                        self.popup = None;
+                        match self.firmware_pending.take() {
+                            Some(planned) if word.trim() == "FIRMWARE" => {
+                                self.confirm_plan(Ok(planned))
+                            }
+                            _ => {
+                                self.popup = Some(Popup::Text(TextPopup::new(
+                                    "Not confirmed",
+                                    "The firmware update needs the word FIRMWARE, in capitals. Nothing was changed.",
+                                    true,
+                                )))
+                            }
+                        }
+                    }
+                }
+                return true;
+            }
             Some(Popup::BaselineName(popup)) => {
                 if control_c {
                     return false;
@@ -2225,6 +2344,19 @@ impl App {
                     Answer::Typing => {}
                     Answer::Cancelled => self.popup = None,
                     Answer::Given(name) => self.save_baseline(&name),
+                }
+                return true;
+            }
+            Some(Popup::Effects(popup)) => {
+                if control_c {
+                    return false;
+                }
+                if popup.handle_key(key) == EffectsOutcome::Closed {
+                    let back = popup.from_confirmation;
+                    self.popup = None;
+                    if back && let Some((header, lines)) = &self.confirming {
+                        self.popup = Some(Popup::Confirm(ConfirmPopup::new(header, lines)));
+                    }
                 }
                 return true;
             }
@@ -2254,6 +2386,12 @@ impl App {
                     Decision::Cancel => {
                         self.popup = None;
                         self.pending = None;
+                        self.confirming = None;
+                    }
+                    Decision::Effects => {
+                        if let Some(planned) = self.pending.clone() {
+                            self.show_effects(&planned, true);
+                        }
                     }
                     Decision::Pending => {}
                 }
@@ -2460,6 +2598,20 @@ impl App {
                     self.queue.clear();
                     self.clamp_main();
                 }
+                KeyCode::Char('e') if !self.queue.is_empty() => {
+                    match plan(self.queue.iter(), &self.platform, &|id| {
+                        self.catalog.find(id)
+                    }) {
+                        Ok(planned) => self.show_effects(&planned, false),
+                        Err(error) => {
+                            self.popup = Some(Popup::Text(TextPopup::new(
+                                "Cannot plan",
+                                error.to_string(),
+                                true,
+                            )))
+                        }
+                    }
+                }
                 KeyCode::Char('s') if !self.queue.is_empty() => {
                     self.popup = Some(Popup::ProfileName(InputPopup::new(
                         "Save as a profile",
@@ -2509,6 +2661,53 @@ impl App {
                 },
                 KeyCode::Char('U') => self.update_every_channel(),
                 KeyCode::Char('r') => self.gather_updates(true),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::Hardware => match key.code {
+                KeyCode::Enter | KeyCode::Char('d') => {
+                    if let Some(HardwareRow::Item { text, details, .. }) = self.selected_hardware()
+                    {
+                        self.popup = Some(Popup::Text(TextPopup::new(
+                            text.clone(),
+                            details.clone(),
+                            true,
+                        )));
+                    }
+                }
+                KeyCode::Char('f') => {
+                    if let Some(HardwareRow::Item {
+                        act: Some(HardwareAct::Firmware(index)),
+                        ..
+                    }) = self.selected_hardware()
+                        && let Some(update) = self
+                            .hardware
+                            .as_ref()
+                            .and_then(|found| found.firmware.updates.get(*index))
+                        && let Some(planned) = helixforge_engine::hardware::plan_firmware(update)
+                    {
+                        let prompt = format!(
+                            "Updating firmware can leave {} unusable if it is interrupted. Keep the machine on mains power. Type FIRMWARE to see the plan:",
+                            update.device
+                        );
+                        self.firmware_pending = Some(planned);
+                        self.popup = Some(Popup::FirmwareWord(InputPopup::new(
+                            "Firmware update",
+                            prompt,
+                        )));
+                    }
+                }
+                KeyCode::Char('s') => {
+                    if let Some(HardwareRow::Item {
+                        act: Some(HardwareAct::Smart(disk)),
+                        ..
+                    }) = self.selected_hardware()
+                        && let Some(planned) = helixforge_engine::hardware::plan_smart(disk)
+                    {
+                        self.confirm_plan(Ok(planned));
+                    }
+                }
+                KeyCode::Char('r') => self.read_hardware(),
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
@@ -2569,6 +2768,11 @@ impl App {
                     }
                 }
                 KeyCode::Char('d') => self.describe_backup(),
+                KeyCode::Char('e') => {
+                    if let Some(backup) = self.selected_backup().cloned() {
+                        self.show_effects(&backups::plan_restore(&backup), false);
+                    }
+                }
                 KeyCode::Char('r') => self.reload_backups(),
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
@@ -3843,6 +4047,107 @@ impl App {
         frame.render_stateful_widget(list, parts[2], &mut self.main_state);
     }
 
+    /// The change preview of a plan.
+    fn show_effects(&mut self, planned: &Plan, from_confirmation: bool) {
+        let scripts = self.catalog.root().join("scripts");
+        let render =
+            |arguments: &[String]| helixforge_engine::preview::render_with(&scripts, arguments);
+        let look = helixforge_engine::preview::Look {
+            system: &doctor::Here,
+            render: &render,
+        };
+        let steps = helixforge_engine::preview::preview(
+            planned,
+            &|id| self.catalog.find(id),
+            &self.platform,
+            &look,
+        );
+        self.popup = Some(Popup::Effects(EffectsPopup::new(steps, from_confirmation)));
+    }
+
+    // ----- Hardware -----
+
+    /// Read the hardware in the background; fwupd can take a moment.
+    fn read_hardware(&mut self) {
+        if !self.examine_here {
+            return;
+        }
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(helixforge_engine::hardware::gather(&doctor::Here));
+        });
+        self.reading_hardware = Some(receiver);
+    }
+
+    fn selected_hardware(&self) -> Option<&HardwareRow> {
+        self.hardware_rows.get(self.main_state.selected()?)
+    }
+
+    fn draw_hardware(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Hardware",
+            "Firmware, disks, sensors, batteries and devices, read-only; updates and SMART checks ask first.",
+        );
+        self.fill(frame, inner);
+        let focused = self.focus == Focus::Main;
+        let mut items: Vec<Line> = Vec::new();
+        if self.hardware_rows.is_empty() {
+            items.push(Line::styled(
+                if self.reading_hardware.is_some() {
+                    "Reading the hardware…"
+                } else {
+                    "Press r to read this machine's hardware."
+                },
+                Style::default().fg(self.theme.muted()),
+            ));
+        }
+        for row in &self.hardware_rows {
+            items.push(match row {
+                HardwareRow::Heading(title) => Line::styled(
+                    title.clone(),
+                    Style::default().fg(self.theme.group()).bold(),
+                ),
+                HardwareRow::Item {
+                    text,
+                    attention,
+                    act,
+                    ..
+                } => Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(
+                        text.clone(),
+                        Style::default().fg(if *attention {
+                            self.theme.warning()
+                        } else {
+                            self.theme.entry()
+                        }),
+                    ),
+                    Span::styled(
+                        match act {
+                            Some(HardwareAct::Firmware(_)) => "  · f updates it",
+                            Some(HardwareAct::Smart(_)) => "  · s checks its health",
+                            None => "",
+                        },
+                        Style::default().fg(self.theme.focused()),
+                    ),
+                ]),
+            });
+        }
+        let title = if self.reading_hardware.is_some() && !self.hardware_rows.is_empty() {
+            "This machine (reading again…)"
+        } else {
+            "This machine"
+        };
+        let list = List::new(items)
+            .block(self.card(title))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused))
+            .scroll_padding(1);
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
+    }
+
     // ----- Reliability and trust -----
 
     /// This build's testing record, read on first use.
@@ -4292,6 +4597,7 @@ impl App {
             return;
         }
         self.popup = Some(Popup::Confirm(ConfirmPopup::new(&header, &lines)));
+        self.confirming = Some((header, lines));
     }
 
     fn run_pending(&mut self) {
@@ -4312,6 +4618,214 @@ impl App {
             },
         );
     }
+}
+
+/// The Hardware screen's lines, section by section.
+fn hardware_rows(found: &helixforge_engine::hardware::Hardware) -> Vec<HardwareRow> {
+    use helixforge_engine::hardware::size;
+    let item = |text: String, attention: bool, details: String, act: Option<HardwareAct>| {
+        HardwareRow::Item {
+            text,
+            attention,
+            details,
+            act,
+        }
+    };
+    let mut rows = vec![HardwareRow::Heading("Firmware".to_string())];
+    if let Some(note) = &found.firmware.note {
+        rows.push(item(note.clone(), false, note.clone(), None));
+    }
+    for (index, update) in found.firmware.updates.iter().enumerate() {
+        rows.push(item(
+            format!(
+                "Update for {}: {} → {}",
+                update.device,
+                update.from.as_deref().unwrap_or("?"),
+                update.to
+            ),
+            true,
+            format!(
+                "{}\nNow: {}\nAvailable: {}\nUrgency: {}\n\n{}\n\nf updates it through fwupd after you type FIRMWARE and confirm the plan. Keep the machine on mains power; some updates finish at the next reboot.",
+                update.device,
+                update.from.as_deref().unwrap_or("unknown"),
+                update.to,
+                update.urgency.as_deref().unwrap_or("not given"),
+                update.summary.as_deref().unwrap_or("No summary.")
+            ),
+            Some(HardwareAct::Firmware(index)),
+        ));
+    }
+    if found.firmware.available {
+        let updatable: Vec<&helixforge_engine::hardware::FirmwareDevice> = found
+            .firmware
+            .devices
+            .iter()
+            .filter(|device| device.updatable)
+            .collect();
+        let listing: Vec<String> = updatable
+            .iter()
+            .map(|device| {
+                format!(
+                    "{}{}",
+                    device.name,
+                    device
+                        .version
+                        .as_deref()
+                        .map(|version| format!(" {version}"))
+                        .unwrap_or_default()
+                )
+            })
+            .collect();
+        rows.push(item(
+            format!(
+                "{} devices, {} updatable through fwupd{}",
+                found.firmware.devices.len(),
+                updatable.len(),
+                if found.firmware.updates.is_empty() {
+                    "; no updates in the metadata fwupd has"
+                } else {
+                    ""
+                }
+            ),
+            false,
+            format!(
+                "Updatable through fwupd:\n{}\n\nThe updates come from the metadata fwupd already has; fwupdmgr refresh fetches newer metadata.",
+                listing.join("\n")
+            ),
+            None,
+        ));
+    }
+    rows.push(HardwareRow::Heading("Disks".to_string()));
+    for disk in &found.disks {
+        let text = format!(
+            "{}  {}  {}  {}{}",
+            disk.name,
+            disk.kind,
+            disk.bytes.map(size).unwrap_or_default(),
+            disk.model.as_deref().unwrap_or("unknown model"),
+            disk.celsius
+                .map(|celsius| format!("  {celsius:.0} °C"))
+                .unwrap_or_default()
+        );
+        rows.push(item(
+            text.clone(),
+            false,
+            format!(
+                "{text}\nFirmware: {}\n\nSMART health needs root to read; s checks it after confirmation. It only reads the disk's own health record.",
+                disk.firmware.as_deref().unwrap_or("unknown")
+            ),
+            Some(HardwareAct::Smart(disk.name.clone())),
+        ));
+    }
+    rows.push(HardwareRow::Heading("Temperatures".to_string()));
+    let hot: Vec<&helixforge_engine::hardware::Sensor> =
+        found.sensors.iter().filter(|sensor| sensor.hot()).collect();
+    let warmest = found
+        .sensors
+        .iter()
+        .max_by(|a, b| a.celsius.total_cmp(&b.celsius));
+    let all: Vec<String> = found
+        .sensors
+        .iter()
+        .map(|sensor| {
+            format!(
+                "{} {}: {:.1} °C{}",
+                sensor.chip,
+                sensor.label,
+                sensor.celsius,
+                sensor
+                    .critical
+                    .map(|critical| format!(" (critical {critical:.0})"))
+                    .unwrap_or_default()
+            )
+        })
+        .collect();
+    match warmest {
+        Some(warmest) => rows.push(item(
+            format!(
+                "{} sensors; the warmest {} {} at {:.0} °C{}",
+                found.sensors.len(),
+                warmest.chip,
+                warmest.label,
+                warmest.celsius,
+                if hot.is_empty() {
+                    String::new()
+                } else {
+                    format!("; {} near their limit", hot.len())
+                }
+            ),
+            !hot.is_empty(),
+            all.join("\n"),
+            None,
+        )),
+        None => rows.push(item(
+            "No temperature sensors found".to_string(),
+            false,
+            String::new(),
+            None,
+        )),
+    }
+    if !found.batteries.is_empty() {
+        rows.push(HardwareRow::Heading("Batteries".to_string()));
+    }
+    for battery in &found.batteries {
+        let text = format!(
+            "{}: {}{}{}",
+            battery.name,
+            battery
+                .capacity
+                .map(|capacity| format!("{capacity}% charged"))
+                .unwrap_or_else(|| "charge unknown".to_string()),
+            battery
+                .health
+                .map(|health| format!(", holds {health}% of its design capacity"))
+                .unwrap_or_default(),
+            battery
+                .cycles
+                .map(|cycles| format!(", {cycles} cycles"))
+                .unwrap_or_default()
+        );
+        rows.push(item(
+            text.clone(),
+            battery.health.is_some_and(|health| health < 70),
+            format!(
+                "{text}\nStatus: {}\nModel: {}\nType: {}\n\nBelow about 70% of its design capacity a battery is usually worth replacing.",
+                battery.status.as_deref().unwrap_or("unknown"),
+                battery.model.as_deref().unwrap_or("unknown"),
+                battery.technology.as_deref().unwrap_or("unknown")
+            ),
+            None,
+        ));
+    }
+    for (title, devices) in [("PCI devices", &found.pci), ("USB devices", &found.usb)] {
+        rows.push(HardwareRow::Heading(title.to_string()));
+        for device in devices {
+            let text = format!(
+                "{}{}",
+                device.name,
+                device
+                    .driver
+                    .as_deref()
+                    .map(|driver| format!("  [{driver}]"))
+                    .unwrap_or_default()
+            );
+            rows.push(item(
+                text.clone(),
+                false,
+                format!(
+                    "{text}\nAddress: {}{}",
+                    device.address,
+                    device
+                        .class
+                        .as_deref()
+                        .map(|class| format!("\nClass or id: {class}"))
+                        .unwrap_or_default()
+                ),
+                None,
+            ));
+        }
+    }
+    rows
 }
 
 /// Whether queueing a difference's entry would put back what it names.
@@ -4363,6 +4877,13 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
                 } else {
                     Screen::Area(index)
                 },
+                section: "MORE TOOLS",
+            });
+        }
+        if tab.id == "doctor" {
+            menu.push(MenuItem {
+                label: "Hardware".into(),
+                screen: Screen::Hardware,
                 section: "MORE TOOLS",
             });
         }
@@ -5461,6 +5982,164 @@ mod tests {
         assert!(matches!(app.popup, Some(Popup::Confirm(_))));
         let text = screen(&mut app, 140, 40);
         assert!(text.contains("only tested with stand-ins"), "{text}");
+    }
+
+    #[test]
+    fn the_change_preview_opens_from_the_plan_the_confirmation_and_backups() {
+        let mut app = app();
+        app.queue
+            .push(app.catalog.find("grub-dracula").unwrap().clone());
+        app.open_screen(Screen::Plan);
+        app.focus = Focus::Main;
+        assert!(screen(&mut app, 140, 40).contains("e Changes"));
+        press(&mut app, KeyCode::Char('e'));
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("CHANGES"), "{text}");
+        assert!(text.contains("Dracula GRUB Theme"), "{text}");
+        assert!(text.contains("not known in advance"), "{text}");
+        assert!(text.contains("grub-mkconfig"), "{text}");
+        press(&mut app, KeyCode::Esc);
+        assert!(app.popup.is_none());
+
+        // From the confirmation, and back to it.
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        assert!(screen(&mut app, 140, 40).contains("[E] Changes"));
+        press(&mut app, KeyCode::Char('e'));
+        assert!(matches!(app.popup, Some(Popup::Effects(_))));
+        assert!(screen(&mut app, 140, 40).contains("Back to the confirmation"));
+        press(&mut app, KeyCode::Esc);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        assert!(app.pending.is_some());
+        press(&mut app, KeyCode::Char('n'));
+
+        // A backup's restore, side by side with the file there now.
+        let directory = tempfile::tempdir().unwrap();
+        let original = directory.path().join("app.conf");
+        std::fs::write(&original, "colour = red\nsize = 2\n").unwrap();
+        let copy = directory
+            .path()
+            .join("app.conf.helixforge-backup-20261016120000");
+        std::fs::write(&copy, "colour = blue\nsize = 2\n").unwrap();
+        app.backups = vec![backups::Backup {
+            backup: copy,
+            original,
+            taken: None,
+            system: false,
+            directory: false,
+        }];
+        app.screen = Screen::Backups;
+        app.main_state.select(Some(0));
+        press(&mut app, KeyCode::Char('e'));
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("[side by side]"), "{text}");
+        assert!(text.contains("Enter Side by side"), "{text}");
+        press(&mut app, KeyCode::Enter);
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("SIDE BY SIDE"), "{text}");
+        assert!(text.contains("colour = red"), "{text}");
+        assert!(text.contains("colour = blue"), "{text}");
+        press(&mut app, KeyCode::Esc);
+        assert!(screen(&mut app, 140, 40).contains("CHANGES"));
+    }
+
+    #[test]
+    fn hardware_lists_firmware_disks_and_batteries_and_asks_before_changing() {
+        use helixforge_engine::hardware::{Battery, Disk, Firmware, FirmwareUpdate, Hardware};
+        let found = Hardware {
+            firmware: Firmware {
+                available: true,
+                updates: vec![FirmwareUpdate {
+                    device_id: "9ea4da9853eae668f5bd65b10d14e4363f619406".into(),
+                    device: "Bolt Receiver".into(),
+                    from: Some("MPR05.04".into()),
+                    to: "MPR05.06".into(),
+                    summary: Some("Fixes pairing".into()),
+                    urgency: Some("medium".into()),
+                }],
+                ..Firmware::default()
+            },
+            disks: vec![Disk {
+                name: "nvme0n1".into(),
+                model: Some("Samsung SSD 990 PRO 1TB".into()),
+                bytes: Some(1_000_204_886_016),
+                kind: "NVMe".into(),
+                firmware: Some("8B2QJXD7".into()),
+                celsius: Some(38.0),
+            }],
+            batteries: vec![Battery {
+                name: "BAT0".into(),
+                capacity: Some(100),
+                health: Some(65),
+                cycles: Some(662),
+                ..Battery::default()
+            }],
+            ..Hardware::default()
+        };
+        let mut app = app();
+        app.hardware_rows = hardware_rows(&found);
+        app.hardware = Some(found);
+        app.open_screen(Screen::Hardware);
+        app.focus = Focus::Main;
+        let text = screen(&mut app, 140, 40);
+        assert!(
+            text.contains("Update for Bolt Receiver: MPR05.04 → MPR05.06"),
+            "{text}"
+        );
+        assert!(
+            text.contains("nvme0n1  NVMe  1.0 TB  Samsung SSD 990 PRO 1TB"),
+            "{text}"
+        );
+        assert!(text.contains("holds 65% of its design capacity"), "{text}");
+        let update = app
+            .hardware_rows
+            .iter()
+            .position(|row| {
+                matches!(
+                    row,
+                    HardwareRow::Item {
+                        act: Some(HardwareAct::Firmware(_)),
+                        ..
+                    }
+                )
+            })
+            .unwrap();
+        app.main_state.select(Some(update));
+        assert!(screen(&mut app, 140, 40).contains("f Update firmware"));
+        // A firmware update needs the word before its plan is even shown.
+        press(&mut app, KeyCode::Char('f'));
+        assert!(matches!(app.popup, Some(Popup::FirmwareWord(_))));
+        type_text(&mut app, "yes");
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 140, 40).contains("Not confirmed"));
+        assert!(app.pending.is_none());
+        app.popup = None;
+        press(&mut app, KeyCode::Char('f'));
+        type_text(&mut app, "FIRMWARE");
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("Risk: high"), "{text}");
+        assert!(text.contains("sudo fwupdmgr update 9ea4da98"), "{text}");
+        press(&mut app, KeyCode::Char('n'));
+        let disk = app
+            .hardware_rows
+            .iter()
+            .position(|row| {
+                matches!(
+                    row,
+                    HardwareRow::Item {
+                        act: Some(HardwareAct::Smart(_)),
+                        ..
+                    }
+                )
+            })
+            .unwrap();
+        app.main_state.select(Some(disk));
+        press(&mut app, KeyCode::Char('s'));
+        assert!(
+            screen(&mut app, 140, 40).contains("sudo smartctl --health --attributes /dev/nvme0n1")
+        );
     }
 
     #[test]

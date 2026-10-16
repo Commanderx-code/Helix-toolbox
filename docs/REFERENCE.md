@@ -160,6 +160,43 @@ names what this distribution cannot install. `drift list`, `import` and
 `delete` manage the saved ones; `--exit-code` makes `check` exit with 1
 when anything differs.
 
+## What a change will do
+
+Before a plan runs, `e` (on the Install Plan, in the confirmation, or on a
+backup in Backups) and `--effects` on `plan` and the `--dry-run` commands show
+what it is expected to change on this machine, step by step, each change
+marked by how it is known:
+
+- **✓ known**: worked out here. A package step asks the package manager
+  without root (`pacman -Sp`, `apt-get -s`) which other packages come with it
+  or go; a configuration file is rendered by the installer's own code
+  (`configure.py`, which only prints) from the file as it is now and shown
+  side by side with it; a restore compares the file with the backup.
+- **~ expected**: what the entry declares in its `[effects]` table (files,
+  packages, services, when it takes effect) or its script plainly runs.
+- **? not known in advance**: what a script decides as it runs, the answers
+  it asks you for, a boot menu regenerated from the installed kernels, or the
+  dependencies dnf and zypper list only with root.
+
+`Enter` on a file shows it now and afterwards, side by side; on any other
+change, the whole line. The boot loader, boot splash, login screen and
+AppArmor entries declare their effects; other scripts are previewed by the
+paths they write and the services their script names, and say plainly that
+the rest cannot be known before they run.
+
+## Hardware
+
+**Hardware** reads the machine without root: fwupd's devices and the
+firmware updates in the metadata it already has; each disk's kind, size,
+model, firmware and temperature; every temperature sensor, with those near
+their limit picked out; each battery's charge, health (what it holds against
+its design capacity) and cycle count; PCI devices with their drivers, and USB
+devices. A firmware update (`f`) asks you to type FIRMWARE, then shows its
+plan with its own confirmation, because an interrupted firmware update can
+leave a device unusable; a SMART health check (`s`) reads the disk's health
+record and needs your password. `helixforge hardware`, `--smart <disk>` and
+`--firmware <device>` do the same from the command line.
+
 ## Reliability and trust
 
 **Reliability** lists every entry with how far it has been tested, the
@@ -255,6 +292,8 @@ helixforge remove ardour              # removes a package entry that offers it
 helixforge profile list               # your profiles; also export, import, delete
 helixforge drift save "Old laptop"    # record this machine as a baseline
 helixforge drift check                # how it differs now; --profile <name> for a profile
+helixforge plan sddm --effects        # what it would change, files side by side
+helixforge hardware                   # firmware, disks, temperatures, batteries, devices
 helixforge reliability --critical     # how far the boot, login and driver entries are tested
 helixforge trust sddm                 # where an entry comes from and what checks it
 helixforge doctor                     # health checks, read-only

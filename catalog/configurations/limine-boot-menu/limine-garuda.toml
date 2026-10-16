@@ -11,3 +11,18 @@ values = ["limine"]
 
 [script]
 id = "commander/limine-garuda"
+
+# What it changes, for the change preview.
+[effects]
+takes_effect = "the boot menu looks different from the next reboot"
+unknown = ["where limine.conf is: as /etc/default/limine's ESP_PATH says, or under /boot, /efi or /boot/efi", "the merged colours and timeout: they come from dotfiles at its pinned commit, read when it runs"]
+
+[[effects.files]]
+path = "/boot/limine.conf"
+change = "the look's colours and a two-second timeout merged into its global settings; boot entries and kernel arguments stay; backed up first"
+when = "limine.conf is on /boot"
+
+[[effects.files]]
+path = "/boot/dotfiles-splash.png"
+change = "the look's wallpaper, beside limine.conf"
+when = "limine.conf is on /boot"

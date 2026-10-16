@@ -183,6 +183,28 @@ jobs:
           # What restores it plans like any run, without changing anything.
           restore=$(python3 -c 'import json; print(json.load(open("drift.json"))["data"]["restore"][0])')
           bin/helixforge run "$restore" --dry-run | grep -q '^1\. htop$'
+      - name: The change preview and the hardware center, read-only
+        run: |
+          # htop was removed by the Drift step above.
+          bin/helixforge plan htop --effects | tee effects.txt
+          grep -qE '✓ installs htop from (pacman|apt-get|dnf|zypper)' effects.txt
+          case "${{ matrix.family }}" in
+            Arch) grep -qE '✓ pacman (lists nothing else|would also install)' effects.txt ;;
+            Debian) grep -qE '✓ apt (lists nothing else|would also install)' effects.txt ;;
+            *) grep -q '? which dependencies' effects.txt ;;
+          esac
+          bin/helixforge plan htop --effects --json | python3 -c 'import json, sys; d = json.load(sys.stdin)["data"]; assert d["effects"][0]["changes"][0]["certainty"] == "known", d'
+          # Containers have no GRUB, and the preview says so instead of guessing.
+          bin/helixforge plan grub-dracula --effects | grep -q '/etc/default/grub: .*it is not on this machine, so this does not apply'
+          bin/helixforge hardware | tee hardware.txt
+          grep -q '^Firmware$' hardware.txt
+          grep -q '^Disks$' hardware.txt
+          bin/helixforge hardware --json | python3 -c 'import json, sys; d = json.load(sys.stdin); assert d["schema"] == 1 and "disks" in d["data"], d'
+          bin/helixforge hardware --smart nvme0n1 --dry-run | grep -q 'sudo smartctl --health --attributes /dev/nvme0n1'
+          if bin/helixforge hardware --smart '../sda' --dry-run; then
+            echo "a disk name with a path was accepted" >&2
+            exit 1
+          fi
       - name: WINE and gaming packages the catalog names exist here
         run: |
           bin/helixforge plan wine winetricks protontricks minigalaxy | tee gaming.txt

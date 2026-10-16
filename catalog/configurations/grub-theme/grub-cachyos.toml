@@ -11,3 +11,21 @@ values = ["/etc/default/grub"]
 
 [script]
 id = "commander/grub-cachyos"
+
+# What it changes, for the change preview.
+[effects]
+takes_effect = "the boot menu looks different from the next reboot"
+unknown = ["the regenerated boot menu: grub-mkconfig writes it from the installed kernels when it runs"]
+
+[[effects.files]]
+path = "/etc/default/grub"
+change = "selects the theme with graphical output; kernel arguments and disk settings stay; backed up first"
+render = ["grub", "/etc/default/grub", "{grub}/themes/commander-cachyos-{time}/theme.txt", ""]
+
+[[effects.files]]
+path = "{grub}/themes/commander-cachyos-{time}"
+change = "the theme's files, copied in from its pinned source; an earlier theme folder stays"
+
+[[effects.files]]
+path = "{grub}/grub.cfg"
+change = "regenerated with the new settings; checked with grub-script-check before it replaces the current menu, which is backed up"

@@ -769,6 +769,7 @@ mod tests {
             },
             detect: None,
             needs: Default::default(),
+            effects: Default::default(),
         }
     }
 

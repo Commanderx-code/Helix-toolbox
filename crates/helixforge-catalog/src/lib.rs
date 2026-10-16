@@ -9,9 +9,9 @@
 //! killed are removed the next time HelixForge starts.
 
 use helixforge_core::{
-    Action, Check, Detect, Entry, GPU_VENDORS, Group, Item, NativeAction, Needs, NixAction,
-    PackageNames, Precondition, Tab, valid_binary_name, valid_flatpak_id, valid_id,
-    valid_package_name, valid_script_segment,
+    Action, Check, Detect, Effects, Entry, FileEffect, GPU_VENDORS, Group, Item, NativeAction,
+    Needs, NixAction, PackageNames, Precondition, Tab, valid_binary_name, valid_flatpak_id,
+    valid_id, valid_package_name, valid_script_segment,
 };
 use helixforge_platform::binary_exists;
 use include_dir::{Dir, include_dir};
@@ -240,6 +240,35 @@ struct EntryFile {
     detect: Option<DetectFile>,
     #[serde(default)]
     needs: Option<NeedsFile>,
+    /// What a script is expected to change, for the change preview.
+    #[serde(default)]
+    effects: Option<EffectsFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EffectsFile {
+    #[serde(default)]
+    files: Vec<FileEffectFile>,
+    #[serde(default)]
+    packages: Vec<String>,
+    #[serde(default)]
+    services: Vec<String>,
+    #[serde(default)]
+    takes_effect: Option<String>,
+    #[serde(default)]
+    unknown: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileEffectFile {
+    path: String,
+    change: String,
+    #[serde(default)]
+    render: Vec<String>,
+    #[serde(default)]
+    when: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -493,6 +522,7 @@ fn load_items(
             };
             let detect = detect_of(&entry, &path)?;
             let needs = needs_of(&entry, &path)?;
+            let effects = effects_of(&entry, &path)?;
             if !ids.insert(stem.to_string()) {
                 return Err(CatalogError::Invalid(format!("duplicate entry id: {stem}")));
             }
@@ -510,6 +540,7 @@ fn load_items(
                     action,
                     detect,
                     needs,
+                    effects,
                 }),
             ));
         }
@@ -517,6 +548,70 @@ fn load_items(
     // Groups first, then entries; each by order, then name.
     found.sort_by(|a, b| (a.0, a.1, &a.2).cmp(&(b.0, b.1, &b.2)));
     Ok(found.into_iter().map(|(_, _, _, item)| item).collect())
+}
+
+/// The entry's `effects` table, checked: plain text, absolute or home
+/// paths, and renderers that only print. A renderer's second argument is the
+/// file it reads, which must be the file the effect names.
+fn effects_of(entry: &EntryFile, path: &Path) -> Result<Effects, CatalogError> {
+    let Some(effects) = &entry.effects else {
+        return Ok(Effects::default());
+    };
+    let invalid = |why: &str| {
+        Err(CatalogError::Invalid(format!(
+            "{} has an invalid effects section: {why}",
+            path.display()
+        )))
+    };
+    if entry.script.is_none() {
+        return invalid("only script entries declare effects");
+    }
+    let plain =
+        |text: &str| !text.is_empty() && text.len() <= 400 && !text.chars().any(char::is_control);
+    let texts = effects
+        .packages
+        .iter()
+        .chain(&effects.services)
+        .chain(&effects.unknown)
+        .chain(effects.takes_effect.iter());
+    if !texts.into_iter().all(|text| plain(text)) {
+        return invalid("a text is empty, too long or has control characters");
+    }
+    let mut files = Vec::new();
+    for file in &effects.files {
+        let located = file.path.starts_with('/')
+            || file.path.starts_with("~/")
+            || file.path.starts_with("{grub}/");
+        if !located || file.path.contains("..") || !plain(&file.path) || !plain(&file.change) {
+            return invalid("a file needs an absolute or ~/ path and a change");
+        }
+        if file.when.as_deref().is_some_and(|when| !plain(when)) {
+            return invalid("a when is empty or has control characters");
+        }
+        if !file.render.is_empty() {
+            let known = helixforge_core::RENDERERS.contains(&file.render[0].as_str());
+            let reads = file.render.get(1) == Some(&file.path);
+            let safe = file.render.iter().all(|word| {
+                word.len() <= 256 && !word.chars().any(char::is_control) && !word.starts_with('-')
+            });
+            if !known || !reads || !safe {
+                return invalid("render names a renderer that only prints, then the file it reads");
+            }
+        }
+        files.push(FileEffect {
+            path: file.path.clone(),
+            change: file.change.clone(),
+            render: file.render.clone(),
+            when: file.when.clone(),
+        });
+    }
+    Ok(Effects {
+        files,
+        packages: effects.packages.clone(),
+        services: effects.services.clone(),
+        takes_effect: effects.takes_effect.clone(),
+        unknown: effects.unknown.clone(),
+    })
 }
 
 /// The entry's `needs` table, checked.

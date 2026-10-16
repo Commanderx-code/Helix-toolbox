@@ -49,10 +49,16 @@ struct Cli {
     catalog_dir: Option<PathBuf>,
     /// Print the result as JSON, for other programs (see docs/JSON.md): for
     /// system, list, search, info, status, plan, history, updates, doctor,
-    /// backups, drift check, drift list, reliability, trust and profile list,
-    /// and for --dry-run plans.
+    /// backups, drift check, drift list, reliability, trust, hardware and
+    /// profile list, and for --dry-run plans.
     #[arg(long, global = true)]
     json: bool,
+    /// With plan, or a --dry-run: also show what the plan is expected to
+    /// change on this machine: files side by side where their new contents
+    /// can be worked out, packages, services, and what cannot be known in
+    /// advance.
+    #[arg(long, global = true)]
+    effects: bool,
 }
 
 #[derive(Subcommand)]
@@ -186,6 +192,25 @@ enum Command {
         #[command(subcommand)]
         command: Option<drift::DriftCommand>,
     },
+    /// The hardware and firmware: fwupd's devices and the firmware updates it
+    /// knows of, disks, temperatures, batteries, PCI and USB devices. It only
+    /// reads; --smart and --firmware run a plan of their own, after
+    /// confirmation.
+    Hardware {
+        /// Read this disk's SMART health (nvme0n1, sda), which needs root.
+        #[arg(long, value_name = "DISK", conflicts_with = "firmware")]
+        smart: Option<String>,
+        /// Update this device's firmware through fwupd (its id, or its name
+        /// as listed); confirmed by typing FIRMWARE.
+        #[arg(long, value_name = "DEVICE")]
+        firmware: Option<String>,
+        /// With --smart or --firmware: show the plan and stop.
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip the confirmation phrase, for deliberate automation.
+        #[arg(long)]
+        yes: bool,
+    },
     /// How far each entry has been tested: in distribution containers, with
     /// stand-in commands, on virtual or real machines, or not yet; and its
     /// last successful run on this machine.
@@ -298,6 +323,7 @@ fn main() -> Result<()> {
     let source = cli.catalog_dir;
     let as_json = cli.json;
     JSON.store(as_json, std::sync::atomic::Ordering::Relaxed);
+    EFFECTS.store(cli.effects, std::sync::atomic::Ordering::Relaxed);
     let load = |validate: bool| -> Result<Catalog> {
         let mut catalog = match &source {
             Some(directory) => Catalog::from_directory(directory, validate)
@@ -322,7 +348,7 @@ fn main() -> Result<()> {
             if as_json =>
         {
             bail!(
-                "--json is for system, list, search, info, status, plan, history, updates, doctor, backups, report, drift check, drift list, reliability, trust and profile list, and for --dry-run plans"
+                "--json is for system, list, search, info, status, plan, history, updates, doctor, backups, report, drift check, drift list, reliability, trust, hardware and profile list, and for --dry-run plans"
             )
         }
         Command::Tui(args) => {
@@ -785,6 +811,55 @@ fn main() -> Result<()> {
             confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "RESTORE")
         }
         Command::Drift { command } => drift::run(command, &load(false)?, &platform, as_json),
+        Command::Hardware {
+            smart,
+            firmware,
+            dry_run,
+            yes,
+        } => {
+            let found = helixforge_engine::hardware::gather(&doctor::Here);
+            if let Some(disk) = smart {
+                let planned =
+                    helixforge_engine::hardware::plan_smart(&disk).with_context(|| {
+                        format!(
+                            "'{}' is not a disk name such as nvme0n1 or sda",
+                            printable(&disk)
+                        )
+                    })?;
+                return confirm_and_run(&load(false)?, &platform, &planned, dry_run, yes, "CHECK");
+            }
+            if let Some(device) = firmware {
+                let update = found
+                    .firmware
+                    .updates
+                    .iter()
+                    .find(|update| {
+                        update.device_id == device || update.device.eq_ignore_ascii_case(&device)
+                    })
+                    .with_context(|| {
+                        format!(
+                            "fwupd knows no firmware update for '{}'; see helixforge hardware",
+                            printable(&device)
+                        )
+                    })?;
+                let planned = helixforge_engine::hardware::plan_firmware(update)
+                    .context("fwupd gave that device an id HelixForge does not accept")?;
+                return confirm_and_run(
+                    &load(false)?,
+                    &platform,
+                    &planned,
+                    dry_run,
+                    yes,
+                    "FIRMWARE",
+                );
+            }
+            if as_json {
+                json::print("hardware", serde_json::to_value(&found).unwrap_or_default());
+                return Ok(());
+            }
+            print!("{}", hardware_text(&found));
+            Ok(())
+        }
         Command::Reliability { ids, critical } => {
             inspect::reliability(&load(false)?, &ids, critical, as_json)
         }
@@ -1108,8 +1183,147 @@ pub fn when(unix: u64) -> String {
     )
 }
 
+/// The hardware center as text.
+fn hardware_text(found: &helixforge_engine::hardware::Hardware) -> String {
+    use helixforge_engine::hardware::size;
+    let mut text = String::from("Firmware\n");
+    if let Some(note) = &found.firmware.note {
+        text.push_str(&format!("  {note}\n"));
+    }
+    if found.firmware.available {
+        if found.firmware.updates.is_empty() {
+            text.push_str("  No firmware updates in the metadata fwupd has (fwupdmgr refresh fetches newer).\n");
+        }
+        for update in &found.firmware.updates {
+            text.push_str(&format!(
+                "  Update: {} {} -> {}{}\n    helixforge hardware --firmware {}\n",
+                update.device,
+                update.from.as_deref().unwrap_or("?"),
+                update.to,
+                update
+                    .summary
+                    .as_deref()
+                    .map(|summary| format!(": {summary}"))
+                    .unwrap_or_default(),
+                update.device_id
+            ));
+        }
+        let updatable = found
+            .firmware
+            .devices
+            .iter()
+            .filter(|device| device.updatable)
+            .count();
+        text.push_str(&format!(
+            "  {} devices, {updatable} of them updatable through fwupd\n",
+            found.firmware.devices.len()
+        ));
+    }
+    text.push_str("\nDisks\n");
+    for disk in &found.disks {
+        text.push_str(&format!(
+            "  {:<10} {:<5} {:<9} {}{}{}\n",
+            disk.name,
+            disk.kind,
+            disk.bytes.map(size).unwrap_or_default(),
+            disk.model.as_deref().unwrap_or("unknown model"),
+            disk.firmware
+                .as_deref()
+                .map(|firmware| format!(", firmware {firmware}"))
+                .unwrap_or_default(),
+            disk.celsius
+                .map(|celsius| format!(", {celsius:.0} °C"))
+                .unwrap_or_default()
+        ));
+    }
+    if !found.disks.is_empty() {
+        text.push_str("  SMART health needs root: helixforge hardware --smart <disk>\n");
+    }
+    text.push_str("\nTemperatures\n");
+    for sensor in &found.sensors {
+        text.push_str(&format!(
+            "  {:<12} {:<24} {:>5.1} °C{}{}\n",
+            sensor.chip,
+            sensor.label,
+            sensor.celsius,
+            sensor
+                .critical
+                .map(|critical| format!("  (critical {critical:.0})"))
+                .unwrap_or_default(),
+            if sensor.hot() { "  HOT" } else { "" }
+        ));
+    }
+    if !found.batteries.is_empty() {
+        text.push_str("\nBatteries\n");
+    }
+    for battery in &found.batteries {
+        text.push_str(&format!(
+            "  {}: {}{}{}{}\n",
+            battery.name,
+            battery
+                .capacity
+                .map(|capacity| format!("{capacity}% charged"))
+                .unwrap_or_else(|| "charge unknown".to_string()),
+            battery
+                .health
+                .map(|health| format!(", holds {health}% of its design capacity"))
+                .unwrap_or_default(),
+            battery
+                .cycles
+                .map(|cycles| format!(", {cycles} cycles"))
+                .unwrap_or_default(),
+            battery
+                .status
+                .as_deref()
+                .map(|status| format!(" ({status})"))
+                .unwrap_or_default()
+        ));
+    }
+    text.push_str("\nPCI devices\n");
+    for device in &found.pci {
+        text.push_str(&format!(
+            "  {} {}{}\n",
+            device.address,
+            device.name,
+            device
+                .driver
+                .as_deref()
+                .map(|driver| format!("  [{driver}]"))
+                .unwrap_or_default()
+        ));
+    }
+    text.push_str("\nUSB devices\n");
+    for device in &found.usb {
+        text.push_str(&format!("  {} {}\n", device.address, device.name));
+    }
+    text
+}
+
 /// Whether --json was given, for the commands that confirm and run plans.
 static JSON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether --effects was given: plans show their change preview.
+static EFFECTS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// What a plan is expected to change on this machine.
+fn effects(
+    catalog: &Catalog,
+    platform: &LinuxInfo,
+    planned: &Plan,
+) -> Vec<helixforge_engine::preview::StepPreview> {
+    let scripts = catalog.root().join("scripts");
+    let render =
+        |arguments: &[String]| helixforge_engine::preview::render_with(&scripts, arguments);
+    helixforge_engine::preview::preview(
+        planned,
+        &|id| catalog.find(id),
+        platform,
+        &helixforge_engine::preview::Look {
+            system: &doctor::Here,
+            render: &render,
+        },
+    )
+}
 
 /// A plan and what the checks before a run found, as JSON.
 fn print_plan_json(catalog: &Catalog, platform: &LinuxInfo, planned: &Plan) {
@@ -1119,7 +1333,12 @@ fn print_plan_json(catalog: &Catalog, platform: &LinuxInfo, planned: &Plan) {
         &|id| catalog.find(id),
         &preflight::Facts::real(),
     );
-    json::print("plan", json::plan(planned, &findings));
+    let mut value = json::plan(planned, &findings);
+    if EFFECTS.load(std::sync::atomic::Ordering::Relaxed) {
+        value["effects"] = serde_json::to_value(effects(catalog, platform, planned))
+            .unwrap_or(serde_json::Value::Null);
+    }
+    json::print("plan", value);
 }
 
 /// Print a plan and what the checks before a run found; returns the findings.
@@ -1155,6 +1374,21 @@ fn print_plan(catalog: &Catalog, platform: &LinuxInfo, planned: &Plan) -> Vec<pr
     );
     for finding in &findings {
         println!("{}", finding.line());
+    }
+    if EFFECTS.load(std::sync::atomic::Ordering::Relaxed) && !planned.is_empty() {
+        println!("\nWhat it changes (✓ known, ~ expected, ? not known in advance):");
+        for step in effects(catalog, platform, planned) {
+            println!("{}", step.name);
+            for change in step.changes {
+                println!("  {} {}", change.certainty.mark(), change.text);
+                if let Some(diff) = change.diff.filter(|diff| diff.changed) {
+                    for line in diff.unified().lines() {
+                        println!("      {line}");
+                    }
+                }
+            }
+        }
+        println!();
     }
     let evidence = helixforge_engine::reliability::Evidence::load(catalog.root());
     for warning in helixforge_engine::reliability::warnings(

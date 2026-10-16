@@ -11,3 +11,17 @@ values = ["/etc/default/grub"]
 
 [script]
 id = "commander/grub-default"
+
+# What it changes, for the change preview.
+[effects]
+takes_effect = "the boot menu looks different from the next reboot"
+unknown = ["the regenerated boot menu: grub-mkconfig writes it from the installed kernels when it runs"]
+
+[[effects.files]]
+path = "/etc/default/grub"
+change = "turns the theme and background off and selects console output; kernel arguments and disk settings stay; backed up first"
+render = ["grub", "/etc/default/grub", "", ""]
+
+[[effects.files]]
+path = "{grub}/grub.cfg"
+change = "regenerated with the new settings; checked with grub-script-check before it replaces the current menu, which is backed up"

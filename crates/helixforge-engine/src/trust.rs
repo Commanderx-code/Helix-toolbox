@@ -242,7 +242,7 @@ fn provenance(build: &Build) -> Vec<Fact> {
         Install::Launcher | Install::Download => facts.push(fact(
             Standing::Checked,
             subject,
-            "downloaded by the launcher or start.sh and checked against the release's SHA256SUMS before it ran",
+            "run from where the launcher or start.sh keeps it; both check the download against the release's SHA256SUMS before running it",
         )),
         Install::Package => facts.push(fact(
             Standing::Checked,

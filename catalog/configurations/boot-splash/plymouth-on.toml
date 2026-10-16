@@ -6,3 +6,27 @@ order = 3
 
 [script]
 id = "commander/plymouth-on"
+
+# What it changes, for the change preview.
+[effects]
+packages = ["plymouth (with plymouth-themes on Debian and Ubuntu)"]
+takes_effect = "the boot splash shows from the next reboot"
+unknown = ["which boot loader file changes: /etc/default/limine where the Limine entry tool is installed, otherwise /etc/default/grub", "the regenerated boot menu and boot images, written from the installed kernels when it runs"]
+
+[[effects.files]]
+path = "/etc/default/grub"
+change = "adds splash to the kernel command line; backed up first"
+render = ["grub-cmdline", "/etc/default/grub", "add", "splash"]
+when = "the machine boots with GRUB"
+
+[[effects.files]]
+path = "/etc/default/limine"
+change = "adds splash to the kernel command line; backed up first"
+render = ["limine-cmdline", "/etc/default/limine", "add", "splash"]
+when = "the Limine entry tool manages the boot entries"
+
+[[effects.files]]
+path = "/etc/mkinitcpio.conf"
+change = "adds the plymouth hook; backed up first"
+render = ["mkinitcpio-hooks", "/etc/mkinitcpio.conf", "add"]
+when = "the boot images are built with mkinitcpio"

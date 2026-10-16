@@ -112,6 +112,8 @@ pub enum Decision {
     Pending,
     Run,
     Cancel,
+    /// Show the expected changes first.
+    Effects,
 }
 
 pub struct ConfirmPopup {
@@ -205,6 +207,8 @@ impl ConfirmPopup {
             button(" [Y] Run ", theme.success()),
             Span::raw("    "),
             button(" [N] Cancel ", theme.failure()),
+            Span::raw("    "),
+            button(" [E] Changes ", theme.title()),
         ]));
         frame.render_widget(
             Paragraph::new(actions).alignment(Alignment::Center),
@@ -215,6 +219,7 @@ impl ConfirmPopup {
     pub fn handle_key(&mut self, key: &KeyEvent) {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') => self.decision = Decision::Run,
+            KeyCode::Char('e') | KeyCode::Char('E') => self.decision = Decision::Effects,
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Char('q') | KeyCode::Esc => {
                 self.decision = Decision::Cancel;
             }
@@ -234,6 +239,7 @@ impl ConfirmPopup {
             vec![
                 Hint::new(&["y"], "Run"),
                 Hint::new(&["n", "q", "Esc"], "Cancel"),
+                Hint::new(&["e"], "What it changes"),
                 Hint::new(&["k", "Up"], "Scroll up"),
                 Hint::new(&["j", "Down"], "Scroll down"),
             ],

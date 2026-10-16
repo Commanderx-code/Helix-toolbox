@@ -16,3 +16,22 @@ values = ["ID=fedora"]
 
 [script]
 id = "commander/apparmor"
+
+# What it changes, for the change preview.
+[effects]
+packages = ["apparmor (with apparmor-utils and apparmor-profiles on Debian and Ubuntu), once the kernel runs AppArmor"]
+services = ["enables and starts apparmor.service, once the kernel runs AppArmor; its profiles may start enforcing"]
+takes_effect = "on Arch without AppArmor running: the kernel starts it from the next reboot, then run this entry again"
+unknown = ["which step runs: the kernel parameter when the running kernel has AppArmor off, otherwise the tools and the service"]
+
+[[effects.files]]
+path = "/etc/default/grub"
+change = "sets lsm=landlock,lockdown,yama,integrity,apparmor,bpf on the kernel command line, replacing any lsm=; backed up first"
+render = ["grub-cmdline", "/etc/default/grub", "set", "lsm=landlock,lockdown,yama,integrity,apparmor,bpf"]
+when = "Arch with GRUB, while AppArmor is off in the kernel"
+
+[[effects.files]]
+path = "/etc/default/limine"
+change = "sets lsm=landlock,lockdown,yama,integrity,apparmor,bpf on the kernel command line; backed up first"
+render = ["limine-cmdline", "/etc/default/limine", "set", "lsm=landlock,lockdown,yama,integrity,apparmor,bpf"]
+when = "Arch with the Limine entry tool, while AppArmor is off in the kernel"

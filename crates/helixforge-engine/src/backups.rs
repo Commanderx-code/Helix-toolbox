@@ -197,6 +197,12 @@ pub fn restore_step(backup: &Backup) -> Step {
         } else {
             Vec::new()
         },
+        changes: vec![crate::ShellChange {
+            path: backup.original.clone(),
+            from: (!backup.directory).then(|| backup.backup.clone()),
+            text: "put back from the backup; the one there now is kept as a backup first"
+                .to_string(),
+        }],
     }
 }
 
@@ -302,6 +308,7 @@ impl Snapshots {
             program,
             display: words.join(" "),
             requires: vec![self.tool().to_string(), "sudo".to_string()],
+            changes: Vec::new(),
         }
     }
 

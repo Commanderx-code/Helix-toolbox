@@ -6,7 +6,7 @@
 | :--- | :--- | :--- |
 | v1.1.0 | Configuration drift and the command palette | 1 (HELIX Drift), 6 (command palette) (done) |
 | v1.2.0 | How far each installer can be trusted | 4 (reliability dashboard), 7 (trust inspector) (done) |
-| v1.3.0 | Seeing a change before it happens, and the hardware | 2 (system change preview), 5 (hardware and firmware center) |
+| v1.3.0 | Seeing a change before it happens, and the hardware | 2 (system change preview), 5 (hardware and firmware center) (done) |
 | v1.4.0 | First-run setup and the desktop | 3 (setup wizard), 9 (desktop environment manager) |
 | v1.5.0 | Machines without reliable internet | 8 (offline installation bundles) |
 
@@ -43,6 +43,18 @@ The items:
    and offer the settings, themes, display-manager configuration and
    customisation profiles that fit, warning where Home Manager or a
    desktop's own tools own a setting.
+
+## v1.3.0: seeing a change before it happens, and the hardware (done)
+
+- [x] System change preview (item 2): known, expected and unknown changes
+      per step; package managers' own simulations; files rendered by the
+      installers' own code, side by side; restores against the file they
+      replace; `[effects]` for the boot, login-screen and AppArmor entries
+- [x] Hardware and firmware center (item 5): fwupd devices and updates,
+      disks, sensors, batteries, PCI and USB, read-only; SMART checks and
+      firmware updates as plans of their own, the latter behind a typed word
+- [ ] Previews of the dotfiles configurations' new contents, once their
+      pinned source is on the machine
 
 ## v1.2.0: how far each installer can be trusted (done)
 

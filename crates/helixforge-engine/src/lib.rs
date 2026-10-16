@@ -16,9 +16,11 @@
 pub mod backups;
 pub mod doctor;
 pub mod drift;
+pub mod hardware;
 pub mod history;
 pub mod inventory;
 pub mod preflight;
+pub mod preview;
 pub mod profiles;
 pub mod pty;
 pub mod reliability;
@@ -118,6 +120,8 @@ pub enum Step {
         /// How plans show it.
         display: String,
         requires: Vec<String>,
+        /// What it changes, for the change preview.
+        changes: Vec<ShellChange>,
     },
     /// Brings installed packages up to date through one source; on Arch, the
     /// whole system for every target at once.
@@ -127,6 +131,15 @@ pub enum Step {
         source: Source,
         targets: Vec<UpdateTarget>,
     },
+}
+
+/// A file a HelixForge-made step changes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ShellChange {
+    pub path: PathBuf,
+    /// The file whose contents it gets, when that is known.
+    pub from: Option<PathBuf>,
+    pub text: String,
 }
 
 /// A package an update step brings up to date.
@@ -1799,6 +1812,7 @@ mod tests {
             action,
             detect: None,
             needs: Default::default(),
+            effects: Default::default(),
         }
     }
 
