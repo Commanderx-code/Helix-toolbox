@@ -4,6 +4,13 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## Unreleased
+
+- Helix Doctor: a failed service whose unit file was removed (its package
+  uninstalled) is a notice, "removed, but its last failure is still
+  remembered", with `systemctl reset-failed` as the repair instead of a
+  restart that cannot work.
+
 ## v1.0.0
 
 The first stable release. What stays the same across 1.x is written down in

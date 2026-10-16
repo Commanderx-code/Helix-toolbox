@@ -422,16 +422,45 @@ fn services(system: &dyn System, into: &mut Vec<Diagnosis>) {
         let Some((_, listing)) = system.run(&command) else {
             continue;
         };
-        for unit in listing
-            .lines()
-            .filter_map(|line| line.split_whitespace().next())
-        {
+        for (unit, load) in listing.lines().filter_map(|line| {
+            let mut columns = line.split_whitespace();
+            Some((columns.next()?, columns.next().unwrap_or("")))
+        }) {
             if !unit.contains('.') || unit.contains(['/', '\'']) {
                 continue;
             }
             failed += 1;
+            let id = format!("{}service:{unit}", if user { "user-" } else { "" });
+            let systemctl: Vec<&str> = if user {
+                vec!["systemctl", "--user"]
+            } else {
+                vec!["sudo", "systemctl"]
+            };
+            // Its unit file is gone (the package was removed): nothing can
+            // restart it, and systemd only remembers that it failed.
+            if load == "not-found" {
+                let mut found = diagnosis(
+                    &id,
+                    &format!("Service {unit}"),
+                    Health::Notice,
+                    format!(
+                        "The {scope} service {unit} was removed, but its last failure is still remembered"
+                    ),
+                );
+                found.evidence.push(format!(
+                    "systemctl lists {unit} as failed with no unit file (not-found)"
+                ));
+                let mut forget = systemctl.clone();
+                forget.extend(["reset-failed", unit]);
+                found.repair = Some(Repair::new(
+                    format!("forget {unit}'s failure"),
+                    vec![forget],
+                ));
+                into.push(found);
+                continue;
+            }
             let mut found = diagnosis(
-                &format!("{}service:{unit}", if user { "user-" } else { "" }),
+                &id,
                 &format!("Service {unit}"),
                 Health::Problem,
                 format!("The {scope} service {unit} failed"),
@@ -447,17 +476,9 @@ fn services(system: &dyn System, into: &mut Vec<Diagnosis>) {
                     .evidence
                     .extend(lines.lines().map(|line| format!("journal: {line}")));
             }
-            found.repair = Some(if user {
-                Repair::new(
-                    format!("restart {unit}"),
-                    vec![vec!["systemctl", "--user", "restart", unit]],
-                )
-            } else {
-                Repair::new(
-                    format!("restart {unit}"),
-                    vec![vec!["sudo", "systemctl", "restart", unit]],
-                )
-            });
+            let mut restart = systemctl;
+            restart.extend(["restart", unit]);
+            found.repair = Some(Repair::new(format!("restart {unit}"), vec![restart]));
             into.push(found);
         }
     }
@@ -1183,6 +1204,40 @@ mod tests {
         );
         assert!(!plan.privileged);
         assert!(found.iter().all(|diagnosis| diagnosis.id != "services"));
+    }
+
+    #[test]
+    fn a_removed_service_is_forgotten_not_restarted() {
+        let mut fake = healthy();
+        fake.commands.insert(
+            "systemctl --failed --no-legend --plain".into(),
+            (
+                true,
+                "autorandr.service not-found failed failed autorandr.service\n".into(),
+            ),
+        );
+        fake.commands.insert(
+            "systemctl --user --failed --no-legend --plain".into(),
+            (
+                true,
+                "old.service not-found failed failed old.service\n".into(),
+            ),
+        );
+        let found = examine(&fake, Some(PackageManager::Arch));
+        let gone = find(&found, "service:autorandr.service");
+        assert_eq!(gone.health, Health::Notice);
+        assert!(gone.summary.contains("was removed"), "{}", gone.summary);
+        let repair = gone.repair.as_ref().unwrap();
+        assert_eq!(repair.label, "forget autorandr.service's failure");
+        assert_eq!(
+            repair.plan("x").steps[0].display(),
+            "sudo systemctl reset-failed autorandr.service"
+        );
+        let user = find(&found, "user-service:old.service");
+        assert_eq!(
+            user.repair.as_ref().unwrap().plan("x").steps[0].display(),
+            "systemctl --user reset-failed old.service"
+        );
     }
 
     #[test]
