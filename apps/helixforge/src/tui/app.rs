@@ -73,7 +73,7 @@ Areas (Applications and the other catalog screens)
   d                 description                  p           preview the script or command
   r                 remove an installed package (entries that offer it)
   u                 update the entry             U           update every entry with an update
-  g                 flags guide     *   pin a favourite     i   show all, installed or updates
+  g                 flags guide     *   pin a favorite     i   show all, installed or updates
 
 Install Plan
   Enter             run the plan                 x / Delete  remove the selected entry
@@ -96,7 +96,7 @@ enum Screen {
     Area(usize),
     Plan,
     /// Pinned entries, then the ones run recently.
-    Favourites,
+    Favorites,
     History,
     Backups,
     /// The health checks, with the Helix Doctor area's reports below them.
@@ -189,7 +189,7 @@ const QUICK_ICONS: [Icon; 5] = [
     Icon::Plan,
     Icon::Doctor,
     Icon::History,
-    Icon::Favourites,
+    Icon::Favorites,
 ];
 
 const QUICK_ACTIONS: [(&str, &str); 5] = [
@@ -197,7 +197,7 @@ const QUICK_ACTIONS: [(&str, &str); 5] = [
     ("Review the Install Plan", "See what is queued and run it"),
     ("Run System Doctor", "Health checks and reports"),
     ("View History", "Past runs and their logs"),
-    ("Favourites", "Pinned and recently run entries"),
+    ("Favorites", "Pinned and recently run entries"),
 ];
 
 pub struct App {
@@ -239,9 +239,9 @@ pub struct App {
     /// Where profiles are saved; the user's configuration unless a test says.
     profiles_dir: Option<std::path::PathBuf>,
     /// Pinned entry ids, in the order pinned.
-    favourites: Vec<String>,
+    favorites: Vec<String>,
     /// Where they are saved; none in tests.
-    favourites_path: Option<std::path::PathBuf>,
+    favorites_path: Option<std::path::PathBuf>,
     /// Entry ids run recently, newest first.
     recent: Vec<String>,
     /// Which entries the lists show.
@@ -324,8 +324,8 @@ impl App {
             backups: Vec::new(),
             diagnoses: Vec::new(),
             profiles_dir: None,
-            favourites: Vec::new(),
-            favourites_path: None,
+            favorites: Vec::new(),
+            favorites_path: None,
             recent: Vec::new(),
             filter: Filter::All,
             before_search: None,
@@ -372,9 +372,9 @@ impl App {
         self.icons = look.icons && !args.plain;
         self.keep_going = look.keep_going;
         if let Some(path) = &path {
-            let favourites = settings::favourites_path(path);
-            self.favourites = settings::load_favourites(&favourites);
-            self.favourites_path = Some(favourites);
+            let favorites = settings::favorites_path(path);
+            self.favorites = settings::load_favorites(&favorites);
+            self.favorites_path = Some(favorites);
         }
         self.snapshots = look.snapshots;
         self.snapshot_tool = backups::Snapshots::here();
@@ -508,13 +508,9 @@ impl App {
                 .into_iter()
                 .map(|(_, entry)| Row::Entry(Box::new(entry)))
                 .collect()
-        } else if self.screen == Screen::Favourites {
-            let mut ids: Vec<&String> = self.favourites.iter().collect();
-            ids.extend(
-                self.recent
-                    .iter()
-                    .filter(|id| !self.favourites.contains(id)),
-            );
+        } else if self.screen == Screen::Favorites {
+            let mut ids: Vec<&String> = self.favorites.iter().collect();
+            ids.extend(self.recent.iter().filter(|id| !self.favorites.contains(id)));
             ids.into_iter()
                 .filter_map(|id| self.catalog.find(id))
                 .filter(|entry| wanted(entry))
@@ -572,7 +568,7 @@ impl App {
     fn main_len(&self) -> usize {
         match self.screen {
             Screen::Dashboard => QUICK_ACTIONS.len(),
-            Screen::Area(_) | Screen::Favourites => self.rows.len(),
+            Screen::Area(_) | Screen::Favorites => self.rows.len(),
             Screen::Plan => self.queue.len(),
             Screen::History => self.records.len(),
             Screen::Backups => self.backups.len(),
@@ -625,7 +621,7 @@ impl App {
         if screen == Screen::Backups {
             self.reload_backups();
         }
-        if screen == Screen::Favourites {
+        if screen == Screen::Favorites {
             self.reload_recent();
         }
         if screen == Screen::Doctor && self.diagnoses.is_empty() {
@@ -710,7 +706,7 @@ impl App {
             Screen::History => Icon::History,
             Screen::Backups => Icon::Backups,
             Screen::Updates => Icon::Updates,
-            Screen::Favourites => Icon::Favourites,
+            Screen::Favorites => Icon::Favorites,
             Screen::Doctor => Icon::Doctor,
             Screen::Settings => Icon::Settings,
             Screen::Area(index) => Icon::for_area(&self.catalog.tabs[index].id),
@@ -777,7 +773,7 @@ impl App {
         match self.screen {
             Screen::Dashboard => self.draw_dashboard(frame, main),
             Screen::Area(_) => self.draw_area(frame, main),
-            Screen::Favourites => self.draw_favourites(frame, main),
+            Screen::Favorites => self.draw_favorites(frame, main),
             Screen::Plan => self.draw_plan(frame, main),
             Screen::History => self.draw_history(frame, main),
             Screen::Backups => self.draw_backups(frame, main),
@@ -1308,7 +1304,7 @@ impl App {
         let focused = self.focus == Focus::Main;
         let title = match (self.searching(), self.screen) {
             (true, _) => "Results",
-            (false, Screen::Favourites) => "Favourites",
+            (false, Screen::Favorites) => "Favorites",
             (false, _) => "Entries",
         };
         let title = match self.filter {
@@ -1348,7 +1344,7 @@ impl App {
                     };
                     // Without icons, a queued entry is marked after its name; a pinned one
                     // always is.
-                    let pinned = if self.favourites.contains(&entry.id) {
+                    let pinned = if self.favorites.contains(&entry.id) {
                         " ★"
                     } else {
                         ""
@@ -1828,7 +1824,7 @@ impl App {
                     list.push(Hint::new(&["↑↓"], "Navigate"));
                     list.push(Hint::new(&["Enter"], "Select"));
                 }
-                Screen::Area(_) | Screen::Favourites => {
+                Screen::Area(_) | Screen::Favorites => {
                     list.push(Hint::new(&["↑↓"], "Navigate"));
                     match self.selected_row() {
                         Some(Row::Up) => list.push(Hint::new(&["Enter", "h"], "Parent")),
@@ -1846,7 +1842,7 @@ impl App {
                             list.push(Hint::new(&["p"], "Preview"));
                             list.push(Hint::new(
                                 &["*"],
-                                if self.favourites.contains(&entry.id) {
+                                if self.favorites.contains(&entry.id) {
                                     "Unpin"
                                 } else {
                                     "Pin"
@@ -2075,7 +2071,7 @@ impl App {
                         0 => Screen::Area(self.first_area()),
                         1 => Screen::Plan,
                         2 => Screen::Doctor,
-                        4 => Screen::Favourites,
+                        4 => Screen::Favorites,
                         _ => Screen::History,
                     };
                     self.open_screen(screen);
@@ -2083,9 +2079,9 @@ impl App {
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
-            Screen::Area(_) | Screen::Favourites => match key.code {
+            Screen::Area(_) | Screen::Favorites => match key.code {
                 KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.enter(),
-                KeyCode::Char('*') => self.toggle_favourite(),
+                KeyCode::Char('*') => self.toggle_favorite(),
                 KeyCode::Char('i') => {
                     self.filter = self.filter.next();
                     self.update_rows();
@@ -2323,22 +2319,22 @@ impl App {
     }
 
     /// Pin the selected entry, or unpin it, and remember it.
-    fn toggle_favourite(&mut self) {
+    fn toggle_favorite(&mut self) {
         let Some(entry) = self.selected_entry().cloned() else {
             return;
         };
-        match self.favourites.iter().position(|id| *id == entry.id) {
+        match self.favorites.iter().position(|id| *id == entry.id) {
             Some(position) => {
-                self.favourites.remove(position);
+                self.favorites.remove(position);
             }
-            None => self.favourites.push(entry.id.clone()),
+            None => self.favorites.push(entry.id.clone()),
         }
-        if let Some(path) = &self.favourites_path
-            && let Err(error) = settings::save_favourites(path, &self.favourites)
+        if let Some(path) = &self.favorites_path
+            && let Err(error) = settings::save_favorites(path, &self.favorites)
         {
-            tracing::warn!(%error, "the favourites were not saved");
+            tracing::warn!(%error, "the favorites were not saved");
         }
-        if self.screen == Screen::Favourites {
+        if self.screen == Screen::Favorites {
             self.update_rows();
         }
     }
@@ -2372,11 +2368,11 @@ impl App {
         }
     }
 
-    fn draw_favourites(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw_favorites(&mut self, frame: &mut Frame, area: Rect) {
         let content = self.page(
             frame,
             area,
-            "Favourites",
+            "Favorites",
             "Entries pinned with *, then the ones run recently.",
         );
         if self.rows.is_empty() {
@@ -2387,7 +2383,7 @@ impl App {
                 } else {
                     "Nothing here matches the filter; i changes it."
                 })
-                .block(self.card("Favourites"))
+                .block(self.card("Favorites"))
                 .style(Style::default().fg(self.theme.muted()))
                 .wrap(Wrap { trim: true }),
                 content,
@@ -3095,8 +3091,8 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
         });
     }
     menu.push(MenuItem {
-        label: "Favourites".into(),
-        screen: Screen::Favourites,
+        label: "Favorites".into(),
+        screen: Screen::Favorites,
         section: "MAIN MENU",
     });
     menu.push(MenuItem {
@@ -3803,21 +3799,21 @@ mod tests {
     }
 
     #[test]
-    fn pinned_and_recent_entries_are_listed_as_favourites() {
+    fn pinned_and_recent_entries_are_listed_as_favorites() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("favourites.toml");
         let mut app = app();
-        app.favourites_path = Some(path.clone());
-        assert!(screen(&mut app, 120, 40).contains("Favourites"));
+        app.favorites_path = Some(path.clone());
+        assert!(screen(&mut app, 120, 40).contains("Favorites"));
         press(&mut app, KeyCode::Char('/'));
         type_text(&mut app, "ripgrep");
         press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Char('*'));
-        assert_eq!(settings::load_favourites(&path), ["ripgrep"]);
+        assert_eq!(settings::load_favorites(&path), ["ripgrep"]);
         assert!(screen(&mut app, 120, 40).contains("Ripgrep ★"));
 
         app.search.clear();
-        app.screen = Screen::Favourites;
+        app.screen = Screen::Favorites;
         app.take_recent(vec![history::Record {
             unix_timestamp: 1,
             entries: vec!["fzf".into(), "ripgrep".into(), "gone".into()],
@@ -3830,7 +3826,7 @@ mod tests {
         app.main_state.select(Some(0));
         assert_eq!(entry_names(&app), ["Ripgrep", "fzf"], "pins come first");
         press(&mut app, KeyCode::Char('*'));
-        assert!(settings::load_favourites(&path).is_empty());
+        assert!(settings::load_favorites(&path).is_empty());
         assert_eq!(entry_names(&app), ["fzf", "Ripgrep"]);
         app.recent.clear();
         app.update_rows();

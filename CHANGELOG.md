@@ -6,6 +6,8 @@ dotfiles or Myfish sources raises the patch number and is not listed here.
 
 ## Unreleased
 
+- The Favourites screen is now spelled **Favorites**; pins stay in
+  `favourites.toml`, so nothing needs moving.
 - The Updates screen has a **HelixForge** row that updates HelixForge
   itself, the way it was installed: a package is downloaded, checked against
   the release's SHA256SUMS and installed with the package manager; a Cargo

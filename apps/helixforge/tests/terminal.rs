@@ -210,7 +210,7 @@ fn running(pid: &str) -> bool {
 }
 
 #[test]
-fn pinned_entries_are_kept_and_listed_under_favourites() {
+fn pinned_entries_are_kept_and_listed_under_favorites() {
     let home = tempfile::tempdir().unwrap();
     let catalog = fixtures();
     let args = [
@@ -220,7 +220,7 @@ fn pinned_entries_are_kept_and_listed_under_favourites() {
         "--bypass-root",
     ];
     let mut tui = Terminal::start(&args, home.path(), 40, 120);
-    tui.wait_for(&["SYSTEM READY", "Favourites"]);
+    tui.wait_for(&["SYSTEM READY", "Favorites"]);
     tui.keys("/");
     tui.keys("mark");
     tui.wait_for(&["Marker"]);
@@ -228,13 +228,13 @@ fn pinned_entries_are_kept_and_listed_under_favourites() {
     tui.keys("*");
     tui.wait_for(&["Marker ★"]);
     let saved = home.path().join("config/helixforge/favourites.toml");
-    tui.wait_until("the favourites to be saved", |_| {
+    tui.wait_until("the favorites to be saved", |_| {
         fs::read_to_string(&saved).is_ok_and(|text| text.contains("\"marker\""))
     });
     tui.keys("q");
     tui.wait_for_exit();
 
-    // The next start lists it under Favourites, two places up the sidebar.
+    // The next start lists it under Favorites, two places up the sidebar.
     let mut tui = Terminal::start(&args, home.path(), 40, 120);
     tui.wait_for(&["SYSTEM READY"]);
     tui.keys("/");
@@ -612,7 +612,7 @@ fn damaged_settings_profiles_and_history_never_stop_it() {
     assert!(problems.contains("no-such-entry"), "{problems}");
 
     // The menu opens with the default settings, and a pin replaces the
-    // unreadable favourites.
+    // unreadable favorites.
     let args = [
         "--catalog-dir",
         catalog.to_str().unwrap(),
@@ -620,7 +620,7 @@ fn damaged_settings_profiles_and_history_never_stop_it() {
         "--bypass-root",
     ];
     let mut tui = Terminal::start(&args, home.path(), 40, 120);
-    tui.wait_for(&["SYSTEM READY", "Favourites"]);
+    tui.wait_for(&["SYSTEM READY", "Favorites"]);
     tui.keys("/");
     tui.keys("mark");
     tui.wait_for(&["Marker"]);
@@ -629,8 +629,8 @@ fn damaged_settings_profiles_and_history_never_stop_it() {
     tui.wait_for(&["Marker ★"]);
     tui.keys("q");
     assert_eq!(tui.wait_for_exit(), 0);
-    let favourites = fs::read_to_string(config.join("favourites.toml")).unwrap();
-    assert!(favourites.contains("\"marker\""), "{favourites}");
+    let favorites = fs::read_to_string(config.join("favourites.toml")).unwrap();
+    assert!(favorites.contains("\"marker\""), "{favorites}");
 }
 
 #[test]

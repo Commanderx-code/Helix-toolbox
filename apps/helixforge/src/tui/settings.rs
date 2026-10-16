@@ -71,29 +71,29 @@ pub fn load(path: &Path) -> Look {
 /// Pinned entries, kept beside the settings as `favourites.toml`.
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-struct Favourites {
+struct Favorites {
     entries: Vec<String>,
 }
 
-/// Where the favourites are, beside `settings`.
-pub fn favourites_path(settings: &Path) -> PathBuf {
+/// Where the favorites are, beside `settings`.
+pub fn favorites_path(settings: &Path) -> PathBuf {
     settings.with_file_name("favourites.toml")
 }
 
 /// The pinned entry ids, in the order pinned; none when there is no file.
-pub fn load_favourites(path: &Path) -> Vec<String> {
+pub fn load_favorites(path: &Path) -> Vec<String> {
     fs::read_to_string(path)
         .ok()
-        .and_then(|text| toml::from_str::<Favourites>(&text).ok())
-        .map(|favourites| favourites.entries)
+        .and_then(|text| toml::from_str::<Favorites>(&text).ok())
+        .map(|favorites| favorites.entries)
         .unwrap_or_default()
 }
 
-pub fn save_favourites(path: &Path, entries: &[String]) -> std::io::Result<()> {
+pub fn save_favorites(path: &Path, entries: &[String]) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let text = toml::to_string(&Favourites {
+    let text = toml::to_string(&Favorites {
         entries: entries.to_vec(),
     })
     .map_err(std::io::Error::other)?;

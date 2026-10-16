@@ -28,7 +28,7 @@ every key, `/` searches every area, `t` changes the theme and `q` quits.
 |---|---|
 | Dashboard | The machine at a glance, and quick actions |
 | Applications | The application catalog, in groups |
-| Favourites | Entries you pinned with `*`, then the ones you ran recently |
+| Favorites | Entries you pinned with `*`, then the ones you ran recently |
 | Install Plan | What you queued, checked and ready to run together |
 | Configurations | Shell, dotfiles and desktop configuration |
 | Helix Doctor | Health checks that only read the system, with repairs |
@@ -62,7 +62,7 @@ every key, `/` searches every area, `t` changes the theme and `q` quits.
    Plan to run again.
 
 `i` in a list cycles between all entries, installed ones and ones with an
-update. `*` pins an entry to **Favourites**. `r` removes an installed package
+update. `*` pins an entry to **Favorites**. `r` removes an installed package
 entry that offers removal; `u` updates the selected entry and `U` every entry
 with an update.
 

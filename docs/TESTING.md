@@ -28,7 +28,7 @@ package installs happen only in the Distributions workflow's containers.
 emulator and types keys. It checks:
 
 - sidebar navigation, the help popup, search and clearing it
-- pinning an entry, `favourites.toml`, and the entry under Favourites after a
+- pinning an entry, `favourites.toml`, and the entry under Favorites after a
   restart
 - the Updates screen between the catalog areas and History; HelixForge's
   own row for each way of installing it, and `fetch-release` keeping a file
@@ -36,7 +36,7 @@ emulator and types keys. It checks:
   (from a release folder served over `file://`)
 - completions for bash, zsh and fish, and the manual pages, naming the
   commands and leaving out hidden ones
-- unreadable settings, favourites, profiles and history lines: skipped or
+- unreadable settings, favorites, profiles and history lines: skipped or
   replaced by defaults, with the menu and commands still working; settings
   from a later version (unknown names and values) keep the ones understood
 - the monochrome theme drawing no colour anywhere, the selection in reverse

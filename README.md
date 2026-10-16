@@ -108,7 +108,7 @@ password when they run.
 | `/` | Search every area |
 | `d` / `p` | Describe the entry / show exactly what it runs |
 | `u` / `U` | Update the entry / every entry with an update |
-| `*` | Pin to Favourites |
+| `*` | Pin to Favorites |
 | `t` | Change the theme |
 | `?` | Every key |
 

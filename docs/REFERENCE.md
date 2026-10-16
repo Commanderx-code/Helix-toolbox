@@ -7,7 +7,7 @@ entries themselves and how a run is planned.
 ## The menu
 
 In the interface the sidebar is a menu of screens. `Tab` or `j`/`k` in the
-sidebar move between Dashboard, Applications, Favourites, Install Plan, and the other
+sidebar move between Dashboard, Applications, Favorites, Install Plan, and the other
 areas, History and Settings; `Enter` or `l` opens the selected screen and
 `h` returns to the sidebar. In an area, `j`/`k` or the arrows move in the
 list, `Enter` opens a group or runs an entry, `Space` adds it to the install
@@ -25,7 +25,7 @@ text first, then names containing it, ids, loose spellings (`rpgrp` finds
 Ripgrep) and descriptions. `Escape` clears it and goes back to the row you
 were on. `i` cycles the list between all entries, installed ones (including
 those managed by Nix) and ones with an update, flattening the groups of the
-area. `*` pins the selected entry; **Favourites** lists pinned entries, then
+area. `*` pins the selected entry; **Favorites** lists pinned entries, then
 the ones run recently, from History, and is also a quick action on the
 Dashboard. Pins are kept in `~/.config/helixforge/favourites.toml`. Each area
 remembers its group and row when you move to another.
