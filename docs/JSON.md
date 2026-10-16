@@ -5,7 +5,7 @@ of text, for scripts, other tools and the graphical interface to come. It
 works with the commands that read (`system`, `list`, `search`, `info`,
 `status`, `plan`, `history`, `updates`, `doctor`, `backups`, `drift check`,
 `drift list`, `reliability`, `trust`, `hardware`, `setup`, `desktop`,
-`profile list`)
+`bundle verify`, `bundle create --dry-run`, `profile list`)
 and with `--dry-run` plans (`run`, `remove`, `update`, `updates --apply`,
 `restore`, `doctor --repair`). Anything that would change the machine is
 refused with `--json` unless it is a dry run: a script cannot start a run by
@@ -205,6 +205,14 @@ appearance, owners, blocked}`: `kind` is `kde`, `gnome`, `xfce`, `cinnamon`,
 files, theme}` or `null`; each appearance value `{key, label, value}`;
 `owners` says what else sets the look; `blocked` why HelixForge would not
 change it, or `null`. `entries` are the suggestions for this desktop.
+
+## bundle
+
+`bundle create --dry-run --json`: `{entries, downloads, dnf, complete}`,
+each entry `{id, name, offline, packages, network}`, each download `{url,
+file, checksum}`. `bundle verify --json`: the manifest, `{format, created,
+helixforge, release, distribution, family, architecture, complete, entries,
+files}`, each file `{path, sha256, bytes, source, assurance}`.
 
 ## profile list
 

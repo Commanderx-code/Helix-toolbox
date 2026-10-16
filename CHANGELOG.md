@@ -4,6 +4,21 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.5.0
+
+- **Offline installation bundles**: `helixforge bundle create <folder>
+  <entries>` downloads the packages entries need for this distribution and
+  architecture (the dependencies this machine lacks, or `--complete`), with
+  a copy of HelixForge, a manifest and `SHA256SUMS`; pacman's signatures come
+  along, apt's downloads are checked against the repository's signed index,
+  dnf's are signed. `bundle verify` checks a bundle; `bundle install`
+  copies its files to a private folder, checks them against the verified
+  sums and their signatures (`pacman-key --verify`, `rpm -K`; Debian packages
+  against this machine's signed index, or `--trust-bundle`), and installs
+  them from its files, after confirmation. Entries that need the network are named, not bundled.
+  pacman, apt and dnf are supported; zypper not yet.
+- The README's screenshots show the new sidebar.
+
 ## v1.4.0
 
 - **Setup wizard**: on the first start (and from Settings or `Ctrl-K`),

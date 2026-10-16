@@ -8,7 +8,7 @@
 | v1.2.0 | How far each installer can be trusted | 4 (reliability dashboard), 7 (trust inspector) (done) |
 | v1.3.0 | Seeing a change before it happens, and the hardware | 2 (system change preview), 5 (hardware and firmware center) (done) |
 | v1.4.0 | First-run setup and the desktop | 3 (setup wizard), 9 (desktop environment manager) (done) |
-| v1.5.0 | Machines without reliable internet | 8 (offline installation bundles) |
+| v1.5.0 | Machines without reliable internet | 8 (offline installation bundles) (done) |
 
 The items:
 
@@ -43,6 +43,16 @@ The items:
    and offer the settings, themes, display-manager configuration and
    customisation profiles that fit, warning where Home Manager or a
    desktop's own tools own a setting.
+
+## v1.5.0: machines without reliable internet (done)
+
+- [x] Offline bundles (item 8): HelixForge, its catalog and the packages
+      entries need for one distribution and architecture, with signatures
+      or the repository's checksums kept verifiable, a manifest and sums;
+      verified before use and installed without downloading; what needs the
+      network named
+- [ ] zypper bundles, which need a way to download without root
+- [ ] Flatpak bundles (`flatpak create-usb`), for installed applications
 
 ## v1.4.0: first-run setup and the desktop (done)
 

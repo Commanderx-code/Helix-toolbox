@@ -1,6 +1,7 @@
 //! HelixForge: build, configure and optimise a Linux machine from a terminal
 //! menu, or from the command line.
 
+mod bundle;
 mod docgen;
 mod drift;
 mod inspect;
@@ -193,6 +194,11 @@ enum Command {
         #[command(subcommand)]
         command: Option<drift::DriftCommand>,
     },
+    /// Offline installation bundles: download what entries need, with
+    /// HelixForge, into a folder for a machine of the same distribution
+    /// without reliable internet; check a bundle; install from one.
+    #[command(subcommand)]
+    Bundle(bundle::BundleCommand),
     /// The setup wizard: what this machine is, the workstations it offers
     /// (developer, gaming, privacy, minimal, custom), and a named one's plan
     /// for this machine, to review and run with helixforge run. It runs
@@ -364,7 +370,7 @@ fn main() -> Result<()> {
             if as_json =>
         {
             bail!(
-                "--json is for system, list, search, info, status, plan, history, updates, doctor, backups, report, drift check, drift list, reliability, trust, hardware, setup, desktop and profile list, and for --dry-run plans"
+                "--json is for system, list, search, info, status, plan, history, updates, doctor, backups, report, drift check, drift list, reliability, trust, hardware, setup, desktop, bundle verify and profile list, and for --dry-run plans"
             )
         }
         Command::Tui(args) => {
@@ -827,6 +833,7 @@ fn main() -> Result<()> {
             confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "RESTORE")
         }
         Command::Drift { command } => drift::run(command, &load(false)?, &platform, as_json),
+        Command::Bundle(command) => bundle::run(command, &load(false)?, &platform, as_json),
         Command::Setup { workstation } => {
             setup::run_setup(workstation, &load(true)?, &platform, as_json)
         }

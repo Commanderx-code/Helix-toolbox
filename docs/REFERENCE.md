@@ -194,6 +194,35 @@ entries for this desktop (its login screen theme, terminal configuration,
 boot splash) are listed below, to run or queue. `helixforge desktop`,
 `desktop save <name>`, `desktop apply <name>`, `list` and `delete`.
 
+## Offline bundles
+
+For a machine without reliable internet, `helixforge bundle create <folder>
+<entries…>` downloads, on a machine of the same distribution and
+architecture, the packages those entries need into a new folder, with a copy
+of HelixForge (the catalog and installers are inside it), a manifest
+(`bundle.toml`) and `SHA256SUMS`. By default it takes the dependencies this
+machine lacks, which suits a machine set up like it; `--complete` takes every
+dependency. pacman's packages come with their signatures, which `pacman -U`
+checks against its keyring when it installs them; apt's are checked against
+the checksums in the repository's signed index as they are downloaded; dnf's
+are signed, and `rpm -K` checks them before they install. Entries that need
+the network (Flatpaks, AUR builds, scripts, Nix) are listed as such and left
+out. zypper cannot download without root, so openSUSE is not supported yet.
+
+On the other machine, `./helixforge bundle verify .` checks that the bundle
+was made for this distribution and architecture and that every file matches
+its checksum. `./helixforge bundle install .`, after confirmation, copies the
+packages into a new private folder, checks the copies against the checksums
+it verified (written into the plan, not read from the bundle again), checks
+each signature (`pacman-key --verify`, `rpm -K`), and installs them from the
+files (dnf without its repositories). Debian packages have no
+signature of their own: each must be in this machine's signed repository
+index with the same checksum, or the install is refused unless
+`--trust-bundle` takes the bundle's word, for a bundle you made yourself.
+A bundle installs as a whole, since its entries share their dependencies.
+pacman and apt fetch only a dependency the bundle lacks, and only when the
+network is there; a `--complete` bundle lacks none.
+
 ## What a change will do
 
 Before a plan runs, `e` (on the Install Plan, in the confirmation, or on a
@@ -327,6 +356,7 @@ helixforge profile list               # your profiles; also export, import, dele
 helixforge drift save "Old laptop"    # record this machine as a baseline
 helixforge drift check                # how it differs now; --profile <name> for a profile
 helixforge setup gaming               # what the Gaming workstation would add here, as a plan
+helixforge bundle create ~/b git htop # packages and HelixForge, for a machine offline
 helixforge desktop                    # the desktop, its look and who else sets it
 helixforge plan sddm --effects        # what it would change, files side by side
 helixforge hardware                   # firmware, disks, temperatures, batteries, devices

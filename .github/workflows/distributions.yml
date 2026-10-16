@@ -221,6 +221,32 @@ jobs:
           fi
           # Containers run no desktop, and it says so.
           bin/helixforge desktop | grep -q '^Desktop   none found'
+      - name: An offline bundle is made, checked and installed from
+        run: |
+          # htop was removed by the Drift step above.
+          if [ "${{ matrix.family }}" = openSUSE ]; then
+            if bin/helixforge bundle create /tmp/bundle htop 2> unsupported.txt; then
+              echo "a zypper bundle was made" >&2
+              exit 1
+            fi
+            grep -q 'not supported yet' unsupported.txt
+            exit 0
+          fi
+          bin/helixforge bundle create /tmp/bundle htop steam | tee bundle.txt
+          grep -q '^Offline: htop$' bundle.txt
+          grep -q '^Needs the network: Steam' bundle.txt
+          (cd /tmp/bundle && sha256sum --check SHA256SUMS)
+          bin/helixforge bundle verify /tmp/bundle
+          # A changed file is caught before anything is installed.
+          cp -a /tmp/bundle /tmp/tampered
+          echo changed >> /tmp/tampered/helixforge
+          if bin/helixforge bundle install /tmp/tampered --dry-run; then
+            echo "a tampered bundle was accepted" >&2
+            exit 1
+          fi
+          yes | /tmp/bundle/helixforge bundle install /tmp/bundle --yes | tee installed.txt
+          command -v htop
+          bin/helixforge status htop | grep -qE '^htop +Installed'
       - name: WINE and gaming packages the catalog names exist here
         run: |
           bin/helixforge plan wine winetricks protontricks minigalaxy | tee gaming.txt
