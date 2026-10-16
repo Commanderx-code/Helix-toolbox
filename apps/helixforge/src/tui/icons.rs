@@ -16,6 +16,7 @@ pub enum Icon {
     Favorites,
     Updates,
     Drift,
+    Reliability,
     Settings,
     Area,
     Group,
@@ -45,6 +46,7 @@ impl Icon {
                 Icon::Favorites => "\u{f005}",      // star
                 Icon::Updates => "\u{f021}",        // refresh
                 Icon::Drift => "\u{f0ec}",          // exchange
+                Icon::Reliability => "\u{f0c3}",    // flask
                 Icon::Settings => "\u{f013}",       // cog
                 Icon::Area => "\u{f07b}",           // folder
                 Icon::Group => "\u{f07b}",          // folder

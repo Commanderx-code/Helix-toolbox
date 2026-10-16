@@ -8,14 +8,19 @@ dotfiles or Myfish repositories report new sources. Nobody tags by hand.
    `[workspace.package] version` series in `Cargo.toml`, or that version
    itself for the first release of a new series. Raising it in `Cargo.toml`
    (as the last pull request of a milestone does) starts a new series.
-2. The workflow runs every check `scripts/verify.sh` runs and builds the
+2. It waits for the Distributions workflow on the same commit and stops if
+   that failed; its record of what each container verified
+   (`scripts/validation-record.py`) is built into the program for the
+   Reliability screen and published as `validation.json`. A source update,
+   which has no Distributions run of its own, carries its ancestor's.
+3. The workflow runs every check `scripts/verify.sh` runs and builds the
    release program with the version stamped in.
-3. `scripts/package.sh` makes the Arch, Debian and RPM packages with nfpm;
+4. `scripts/package.sh` makes the Arch, Debian and RPM packages with nfpm;
    `SHA256SUMS` covers them and the program, and each gets a build
    provenance attestation.
-4. The GitHub release `vX.Y.Z` is created as a draft, the files are
+5. The GitHub release `vX.Y.Z` is created as a draft, the files are
    uploaded, and only then is it published.
-5. With a crates.io token set up (below), `scripts/stamp-version.py` writes
+6. With a crates.io token set up (below), `scripts/stamp-version.py` writes
    the version into the checkout's `Cargo.toml` and the five crates are
    published to crates.io in dependency order: `helixforge-core`,
    `helixforge-platform`, `helixforge-catalog`, `helixforge-engine`, then

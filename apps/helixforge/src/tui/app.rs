@@ -19,7 +19,7 @@ use helixforge_core::{Action, Entry, Item};
 use helixforge_engine::{
     EngineError, Plan, backups, doctor, drift, history,
     inventory::{Inventory, Status, which},
-    plan, plan_removal, preflight, profiles, updates,
+    plan, plan_removal, preflight, profiles, reliability, updates,
 };
 use helixforge_platform::LinuxInfo;
 use ratatui::{
@@ -69,7 +69,7 @@ Areas (Applications and the other catalog screens)
   j / k             move                         Enter / l   open a group or run an entry
   h                 parent group, or the sidebar Space       add to or remove from the install plan
   d                 description                  p           preview the script or command
-  r                 remove an installed package (entries that offer it)
+  r                 remove an installed package  v           where it comes from (trust)
   u                 update the entry             U           update every entry with an update
   g                 flags guide     *   pin a favorite     i   show all, installed or updates
 
@@ -77,12 +77,10 @@ Install Plan
   Enter             run the plan                 x / Delete  remove the selected entry
   c                 clear the plan               s           save it as a profile
 
-History, Backups, Helix Doctor, Updates, Drift
-  Enter             log / restore / details      r   reload or check again; f repair; u / U update
+History, Backups, Helix Doctor, Updates, Drift, Reliability, Settings
+  Enter             log / restore / details / change   r   reload or check again; f repair; u / U update
   Drift: b          compare with another         s   save this machine; Space / a plan what is missing
-
-Settings
-  Enter / Space     change the selected setting
+  Reliability: i    critical or untested only    v   where the entry comes from
 
 Running window
   Ctrl-C            stop; again, kill what is left  Enter / q   close when finished
@@ -104,6 +102,8 @@ enum Screen {
     Updates,
     /// How the machine differs from a baseline or a profile.
     Drift,
+    /// How far each entry has been tested.
+    Reliability,
     Settings,
 }
 
@@ -132,6 +132,8 @@ enum Act {
     Open(Screen),
     /// Plan the entry and ask, as Enter on it does.
     Entry(String),
+    /// Show the trust inspector for the entry.
+    Inspect(String),
     UpdatesOnline,
     /// Open Helix Doctor, and the details of the check with this id.
     Doctor(Option<&'static str>),
@@ -144,6 +146,42 @@ enum Act {
     Icons,
     Help,
     Quit,
+}
+
+/// Which entries the Reliability screen lists.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Coverage {
+    All,
+    /// Boot, login-screen, driver and whole-system entries.
+    Critical,
+    /// Not yet validated, or tested with stand-ins only.
+    Untested,
+}
+
+impl Coverage {
+    fn next(self) -> Self {
+        match self {
+            Coverage::All => Coverage::Critical,
+            Coverage::Critical => Coverage::Untested,
+            Coverage::Untested => Coverage::All,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Coverage::All => "all",
+            Coverage::Critical => "critical",
+            Coverage::Untested => "untested",
+        }
+    }
+
+    fn allows(self, assessment: &reliability::Assessment) -> bool {
+        match self {
+            Coverage::All => true,
+            Coverage::Critical => assessment.critical,
+            Coverage::Untested => assessment.level >= reliability::Level::StandInTested,
+        }
+    }
 }
 
 /// What Drift compares the machine with.
@@ -335,6 +373,11 @@ pub struct App {
     palette_acts: Vec<Act>,
     /// A health check to show once the checks finish, from the palette.
     doctor_wanted: Option<&'static str>,
+    /// What this build knows about how its entries were tested; read once.
+    evidence: Option<reliability::Evidence>,
+    /// The Reliability screen's rows: entry ids, names and standing.
+    reliability_rows: Vec<(String, String, reliability::Assessment)>,
+    coverage: Coverage,
 }
 
 /// A plan of the queue as it was, from when it was made, with what the
@@ -408,6 +451,9 @@ impl App {
             baselines_dir: None,
             palette_acts: Vec::new(),
             doctor_wanted: None,
+            evidence: None,
+            reliability_rows: Vec::new(),
+            coverage: Coverage::All,
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -643,6 +689,7 @@ impl App {
                 .drift_report
                 .as_ref()
                 .map_or(0, |(_, report)| report.differences.len()),
+            Screen::Reliability => self.reliability_rows.len(),
             Screen::Doctor => self.diagnoses.len() + self.doctor_entries().len(),
             Screen::Settings => self.settings().len(),
         }
@@ -702,6 +749,9 @@ impl App {
         }
         if screen == Screen::Drift {
             self.reload_drift();
+        }
+        if screen == Screen::Reliability {
+            self.reload_reliability();
         }
         self.update_rows();
     }
@@ -786,6 +836,7 @@ impl App {
             Screen::Backups => Icon::Backups,
             Screen::Updates => Icon::Updates,
             Screen::Drift => Icon::Drift,
+            Screen::Reliability => Icon::Reliability,
             Screen::Favorites => Icon::Favorites,
             Screen::Doctor => Icon::Doctor,
             Screen::Settings => Icon::Settings,
@@ -859,6 +910,7 @@ impl App {
             Screen::Backups => self.draw_backups(frame, main),
             Screen::Updates => self.draw_updates(frame, main),
             Screen::Drift => self.draw_drift(frame, main),
+            Screen::Reliability => self.draw_reliability(frame, main),
             Screen::Doctor => self.draw_doctor(frame, main),
             Screen::Settings => self.draw_settings(frame, main),
         }
@@ -2037,6 +2089,7 @@ impl App {
                             list.push(Hint::new(&["Space"], "Plan"));
                             list.push(Hint::new(&["d"], "Describe"));
                             list.push(Hint::new(&["p"], "Preview"));
+                            list.push(Hint::new(&["v"], "Trust"));
                             list.push(Hint::new(
                                 &["*"],
                                 if self.favorites.contains(&entry.id) {
@@ -2106,6 +2159,21 @@ impl App {
                     }
                     list.push(Hint::new(&["s"], "Save baseline"));
                     list.push(Hint::new(&["r"], "Check again"));
+                }
+                Screen::Reliability => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    if !self.reliability_rows.is_empty() {
+                        list.push(Hint::new(&["Enter"], "Details"));
+                        list.push(Hint::new(&["v"], "Trust"));
+                    }
+                    list.push(Hint::new(
+                        &["i"],
+                        match self.coverage {
+                            Coverage::All => "Show: all",
+                            Coverage::Critical => "Show: critical",
+                            Coverage::Untested => "Show: untested",
+                        },
+                    ));
                 }
                 Screen::Backups => {
                     list.push(Hint::new(&["↑↓"], "Navigate"));
@@ -2337,6 +2405,11 @@ impl App {
                 KeyCode::Char('h') | KeyCode::Left => self.back(),
                 KeyCode::Char('p') | KeyCode::Char('P') => self.preview(),
                 KeyCode::Char('d') | KeyCode::Char('D') => self.describe(),
+                KeyCode::Char('v') => {
+                    if let Some(id) = self.selected_entry().map(|entry| entry.id.clone()) {
+                        self.inspect(&id);
+                    }
+                }
                 KeyCode::Char(' ') => self.toggle_queue(),
                 KeyCode::Char('r') | KeyCode::Char('R') => {
                     if let Some(entry) = self.selected_entry().cloned()
@@ -2436,6 +2509,26 @@ impl App {
                 },
                 KeyCode::Char('U') => self.update_every_channel(),
                 KeyCode::Char('r') => self.gather_updates(true),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::Reliability => match key.code {
+                KeyCode::Enter | KeyCode::Char('d') => self.describe_reliability(),
+                KeyCode::Char('v') => {
+                    if let Some((id, _, _)) = self
+                        .main_state
+                        .selected()
+                        .and_then(|index| self.reliability_rows.get(index))
+                    {
+                        let id = id.clone();
+                        self.inspect(&id);
+                    }
+                }
+                KeyCode::Char('i') => {
+                    self.coverage = self.coverage.next();
+                    self.main_state.select(Some(0));
+                    self.reload_reliability();
+                }
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
@@ -3202,6 +3295,13 @@ impl App {
                     false,
                     Act::Entry(entry.id.clone()),
                 );
+                add(
+                    format!("Inspect {}", entry.name),
+                    "trust and testing",
+                    &entry.id,
+                    false,
+                    Act::Inspect(entry.id.clone()),
+                );
             }
         }
         (choices, acts)
@@ -3227,6 +3327,7 @@ impl App {
                     self.confirm(vec![entry]);
                 }
             }
+            Act::Inspect(id) => self.inspect(&id),
             Act::UpdatesOnline => {
                 self.open_screen(Screen::Updates);
                 self.focus = Focus::Main;
@@ -3742,6 +3843,206 @@ impl App {
         frame.render_stateful_widget(list, parts[2], &mut self.main_state);
     }
 
+    // ----- Reliability and trust -----
+
+    /// This build's testing record, read on first use.
+    fn evidence(&mut self) -> reliability::Evidence {
+        if self.evidence.is_none() {
+            self.evidence = Some(reliability::Evidence::load(self.catalog.root()));
+        }
+        self.evidence.clone().unwrap_or_default()
+    }
+
+    fn run_history(&self) -> Vec<history::Record> {
+        if self.examine_here {
+            history::read(1000).unwrap_or_default()
+        } else {
+            self.records.clone()
+        }
+    }
+
+    fn reload_reliability(&mut self) {
+        let evidence = self.evidence();
+        let records = self.run_history();
+        self.reliability_rows = crate::inspect::rows(&self.catalog, &evidence, &records)
+            .into_iter()
+            .filter(|(_, assessment)| self.coverage.allows(assessment))
+            .map(|(entry, assessment)| (entry.id.clone(), entry.name.clone(), assessment))
+            .collect();
+        self.clamp_main();
+    }
+
+    fn describe_reliability(&mut self) {
+        let Some((id, name, assessment)) = self
+            .main_state
+            .selected()
+            .and_then(|index| self.reliability_rows.get(index))
+        else {
+            return;
+        };
+        let mut text = format!(
+            "{}{}\n\n{}\n",
+            assessment.level.label(),
+            assessment
+                .verified
+                .as_deref()
+                .map(|date| format!(", last verified {date}"))
+                .unwrap_or_default(),
+            assessment.level.explain()
+        );
+        if assessment.critical {
+            text.push_str("\nA critical entry: if it fails, the machine may not boot, show its login screen or display, or it changes disks or the whole system. Keep a snapshot or a live USB at hand.\n");
+        }
+        if !assessment.evidence.is_empty() {
+            text.push_str("\nWhat shows it:\n");
+            for line in &assessment.evidence {
+                text.push_str(&format!("  {line}\n"));
+            }
+        }
+        text.push_str(&format!(
+            "\nv shows where {id} comes from and what checks it."
+        ));
+        self.popup = Some(Popup::Text(TextPopup::new(name.clone(), text, true)));
+    }
+
+    /// The trust inspector for an entry.
+    fn inspect(&mut self, id: &str) {
+        let Some(entry) = self.catalog.find(id).cloned() else {
+            return;
+        };
+        let evidence = self.evidence();
+        let records = self.run_history();
+        let build = if self.examine_here {
+            crate::inspect::build()
+        } else {
+            helixforge_engine::trust::Build {
+                version: crate::VERSION.to_string(),
+                release: false,
+                commit: None,
+                install: helixforge_engine::updates::Install::Other,
+            }
+        };
+        let found = helixforge_engine::trust::inspect(
+            &entry,
+            self.catalog.root(),
+            &self.platform,
+            &build,
+            &doctor::Here,
+            &evidence,
+            &records,
+        );
+        self.popup = Some(Popup::Text(TextPopup::new(
+            format!("Trust: {}", entry.name),
+            crate::inspect::text(&found),
+            true,
+        )));
+    }
+
+    fn draw_reliability(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Reliability",
+            "How far each entry has been tested; critical entries first. v shows where one comes from.",
+        );
+        let evidence = self.evidence();
+        let counts: Vec<String> = {
+            let records = self.run_history();
+            let all = crate::inspect::rows(&self.catalog, &evidence, &records);
+            crate::inspect::counts(&all)
+                .into_iter()
+                .map(|(level, count)| format!("{count} {}", level.label()))
+                .collect()
+        };
+        let summary = evidence.summary();
+        let counts = counts.join(" · ");
+        // As tall as its text once wrapped to the card's width.
+        let width = (inner.width.saturating_sub(4) as usize).max(1);
+        let rows: usize = [summary.as_str(), counts.as_str()]
+            .iter()
+            .map(|text| text.chars().count().div_ceil(width).max(1))
+            .sum();
+        let lines = vec![
+            Line::from(summary),
+            Line::styled(counts, Style::default().fg(self.theme.muted())),
+        ];
+        let parts = Layout::vertical([
+            Constraint::Length(rows as u16 + 2),
+            Constraint::Length(1),
+            Constraint::Min(1),
+        ])
+        .split(inner);
+        self.fill(frame, parts[0]);
+        frame.render_widget(
+            Paragraph::new(Text::from(lines))
+                .block(self.card("Record"))
+                .wrap(Wrap { trim: true }),
+            parts[0],
+        );
+        let focused = self.focus == Focus::Main;
+        let name_width = 34;
+        let items: Vec<Line> = self
+            .reliability_rows
+            .iter()
+            .map(|(_, name, assessment)| {
+                let colour = match assessment.level {
+                    reliability::Level::NotYetValidated if assessment.critical => {
+                        self.theme.failure()
+                    }
+                    reliability::Level::NotYetValidated => self.theme.muted(),
+                    reliability::Level::StandInTested => self.theme.warning(),
+                    _ => self.theme.success(),
+                };
+                let name: String = name.chars().take(name_width - 2).collect();
+                let mut detail = assessment.systems.join(", ");
+                if let Some(when) = assessment.here {
+                    if !detail.is_empty() {
+                        detail.push_str(" · ");
+                    }
+                    detail.push_str(&format!("ran here {}", helixforge_engine::date(when)));
+                }
+                Line::from(vec![
+                    Span::styled(
+                        format!("{:<19}", assessment.level.label()),
+                        Style::default().fg(colour).bold(),
+                    ),
+                    Span::styled(
+                        if assessment.critical { "! " } else { "  " },
+                        Style::default().fg(self.theme.failure()).bold(),
+                    ),
+                    Span::styled(
+                        format!("{name:<name_width$}"),
+                        Style::default().fg(self.theme.entry()),
+                    ),
+                    Span::styled(
+                        format!("{:<12}", assessment.verified.as_deref().unwrap_or("")),
+                        Style::default().fg(self.theme.muted()),
+                    ),
+                    Span::styled(detail, Style::default().fg(self.theme.faint())),
+                ])
+            })
+            .collect();
+        let title = match self.coverage {
+            Coverage::All => "Entries".to_string(),
+            coverage => format!("Entries · {}", coverage.label()),
+        };
+        self.fill(frame, parts[2]);
+        let list = List::new(items)
+            .block(
+                self.card(&title).title(
+                    Line::styled(
+                        " ! CRITICAL · LAST VERIFIED ",
+                        Style::default().fg(self.theme.muted()),
+                    )
+                    .right_aligned(),
+                ),
+            )
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused))
+            .scroll_padding(1);
+        frame.render_stateful_widget(list, parts[2], &mut self.main_state);
+    }
+
     fn reload_backups(&mut self) {
         self.backups = backups::discover(&backups::Roots::here());
         self.clamp_main();
@@ -3953,6 +4254,16 @@ impl App {
             }
         )];
         header.extend(findings.iter().map(preflight::Finding::line));
+        let evidence = self.evidence();
+        header.extend(
+            reliability::warnings(
+                planned.steps.iter().map(|step| step.id()),
+                &|id| self.catalog.find(id),
+                &evidence,
+            )
+            .into_iter()
+            .map(|warning| format!("Warning: {warning}")),
+        );
         planned.keep_going = self.keep_going;
         if planned.steps.len() > 1 {
             header.push(format!(
@@ -4059,6 +4370,11 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
     menu.push(MenuItem {
         label: "Drift".into(),
         screen: Screen::Drift,
+        section: "MORE TOOLS",
+    });
+    menu.push(MenuItem {
+        label: "Reliability".into(),
+        screen: Screen::Reliability,
         section: "MORE TOOLS",
     });
     menu.push(MenuItem {
@@ -5082,6 +5398,64 @@ mod tests {
         app.handle_key(&control_k);
         app.handle_key(&control_k);
         assert!(app.popup.is_none());
+    }
+
+    #[test]
+    fn reliability_lists_critical_entries_first_and_explains_each() {
+        let mut app = app();
+        app.open_screen(Screen::Reliability);
+        app.focus = Focus::Main;
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("No container record"), "{text}");
+        assert!(text.contains("Stand-in Tested"), "{text}");
+        // The first rows are critical: boot, login, drivers, whole systems.
+        assert!(app.reliability_rows[0].2.critical);
+        assert!(text.contains("! "), "{text}");
+        press(&mut app, KeyCode::Char('i'));
+        assert_eq!(app.coverage, Coverage::Critical);
+        assert!(app.reliability_rows.iter().all(|(_, _, row)| row.critical));
+        press(&mut app, KeyCode::Char('i'));
+        assert!(
+            app.reliability_rows
+                .iter()
+                .all(|(_, _, row)| row.level >= reliability::Level::StandInTested)
+        );
+        press(&mut app, KeyCode::Char('i'));
+        let sddm = app
+            .reliability_rows
+            .iter()
+            .position(|(id, _, _)| id == "sddm")
+            .unwrap();
+        app.main_state.select(Some(sddm));
+        press(&mut app, KeyCode::Enter);
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("A critical entry"), "{text}");
+        assert!(text.contains("test_sddm"), "{text}");
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Char('v'));
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("Trust: SDDM Theme"), "{text}");
+        assert!(text.contains("Pinned revision"), "{text}");
+    }
+
+    #[test]
+    fn v_inspects_an_entry_and_the_confirmation_warns_of_untested_boot_changes() {
+        let mut app = app();
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "ripgrep");
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 140, 40).contains("v Trust"));
+        press(&mut app, KeyCode::Char('v'));
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("Package integrity"), "{text}");
+        assert!(text.contains("built from source"), "{text}");
+        press(&mut app, KeyCode::Esc);
+        app.popup = None;
+        let grub = app.catalog.find("grub-dracula").unwrap().clone();
+        app.confirm(vec![grub]);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("only tested with stand-ins"), "{text}");
     }
 
     #[test]

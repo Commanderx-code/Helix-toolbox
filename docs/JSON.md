@@ -4,7 +4,7 @@
 of text, for scripts, other tools and the graphical interface to come. It
 works with the commands that read (`system`, `list`, `search`, `info`,
 `status`, `plan`, `history`, `updates`, `doctor`, `backups`, `drift check`,
-`drift list`, `profile list`)
+`drift list`, `reliability`, `trust`, `profile list`)
 and with `--dry-run` plans (`run`, `remove`, `update`, `updates --apply`,
 `restore`, `doctor --repair`). Anything that would change the machine is
 refused with `--json` unless it is a dry run: a script cannot start a run by
@@ -144,6 +144,31 @@ machine, in order, for `helixforge run`.
 `helixforge drift list --json`: `{baselines: [{id, name, taken, system,
 entries, files, settings, applied}]}`, newest first; the last four are
 counts, `id` the name `drift check` takes.
+
+## reliability
+
+`{record, entries: [{id, name, assessment}]}`. `record` is `{run, url,
+commit, finished, distributions}` for the Distributions run a release build
+carries, or `null`. An assessment is `{level, label, systems, verified,
+evidence, ran_here, critical}`: `level` is `hardware-tested`, `vm-tested`,
+`container-tested`, `stand-in-tested` or `not-yet-validated`; `systems` are
+the containers or reported systems; `verified` the last date (`YYYY-MM-DD`)
+or `null`; `ran_here` the last successful run on this machine in Unix
+seconds, or `null`; `critical` whether failing could stop the machine
+booting, logging in or showing a display, or it changes disks or the whole
+system.
+
+## trust
+
+`{id, name, kind, origin, file, sha256, licence, software_licence,
+provenance, integrity, downloads, privileges, validation}`. `file` and
+`sha256` are the installer script's, relative to the scripts folder;
+`software_licence` is what the package manager reports, or `null`. Each of
+`provenance`, `integrity` and `downloads` is a list of `{standing, label,
+subject, text}`, `standing` being `provenance` (signed build provenance),
+`checked` (a checksum or signature a tool checks), `pinned` (fixed to a
+revision by its hash), `unverified` or `unknown`. `validation` is an
+assessment as above.
 
 ## profile list
 

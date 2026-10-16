@@ -172,6 +172,11 @@ impl Catalog {
         self.tabs.iter().flat_map(Tab::entries).collect()
     }
 
+    /// The folder holding `catalog/` and `scripts/`.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// The shared shell helpers that scripts source through `HELIXFORGE_LIB`.
     pub fn lib_dir(&self) -> PathBuf {
         self.root.join("scripts/shared")

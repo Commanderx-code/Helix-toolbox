@@ -150,6 +150,12 @@ jobs:
           # Freshly installed, so nothing to update; on Arch it would be the whole system.
           bin/helixforge update htop --dry-run | tee update.txt
           grep -qE '^htop: up to date \((pacman|apt|dnf|zypper) [0-9]' update.txt
+      - name: More package entries every family has (git is already there)
+        run: |
+          yes | bin/helixforge run neovim btop --yes --keep-going | tee more.txt
+          for name in Neovim btop; do
+            grep -qE "^Verified: $name: " more.txt
+          done
       - name: Drift sees what changed since a baseline
         run: |
           echo one > "$HOME/drift-sample.conf"
@@ -341,3 +347,38 @@ jobs:
           hash -r
           test ! -e /usr/bin/helixforge
           test ! -e /usr/share/applications/helixforge.desktop
+      - name: Record what HelixForge verified in this container
+        run: |
+          bin/helixforge history --json --limit 1000 > history.json
+          python3 -B scripts/validation-record.py record "${{ matrix.image }}" history.json catalog \
+            > "validation-${{ strategy.job-index }}.json"
+          cat "validation-${{ strategy.job-index }}.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validation-${{ strategy.job-index }}
+          path: validation-${{ strategy.job-index }}.json
+
+  # One record of every container's results, which release builds carry for
+  # the reliability screen (scripts/validation-record.py).
+  record:
+    needs: distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: validation-*
+          path: parts
+          merge-multiple: true
+      - name: Merge the containers' records
+        run: |
+          python3 -B scripts/validation-record.py merge validation.json "$GITHUB_RUN_ID" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$GITHUB_SHA" parts/*.json
+          python3 -c 'import json; d = json.load(open("validation.json")); assert len(d["images"]) == 6, d; assert all(i["entries"].get("htop") == "verified" for i in d["images"].values()), d'
+          cat validation.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validation
+          path: validation.json

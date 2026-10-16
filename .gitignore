@@ -6,3 +6,5 @@
 .vscode/
 __pycache__/
 *.pyc
+# The Distributions record a release build carries; never committed.
+/catalog/validation-results.json

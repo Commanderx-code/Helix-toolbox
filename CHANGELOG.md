@@ -4,6 +4,27 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.2.0
+
+- **Reliability**: a new screen and `helixforge reliability` show how far
+  each entry has been tested: Container Tested (installed and verified in the
+  Distributions workflow's containers), Stand-in Tested (its installer run
+  against stand-in commands), VM Tested or Hardware Tested (from reports), or
+  Not Yet Validated, with the systems, the date it was last verified and its
+  last run on this machine. Boot, login-screen, driver and whole-system
+  entries come first, and running one that has no more than stand-in tests
+  says so in its confirmation.
+- **Trust inspector**: `v` on any entry, or `helixforge trust <id>`, shows
+  the installer's origin, file, checksum and licence, the software's
+  licence, and keeps release provenance, package integrity checks (pacman's
+  SigLevel, apt, dnf's gpgcheck, Flathub, the unreviewed AUR) and the
+  installer's own downloads (pinned, checked, or unverified) apart, with the
+  privileges it uses.
+- Releases wait for the Distributions workflow on their commit and are not
+  published when it fails; each carries the record of what the containers
+  verified, also published as `validation.json`. The containers now also
+  install Neovim and btop.
+
 ## v1.1.0
 
 - **HELIX Drift**: `helixforge drift save <name>` (or `s` on the new Drift

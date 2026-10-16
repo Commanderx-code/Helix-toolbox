@@ -1,0 +1,118 @@
+# How far each entry has been tested, beyond the checks every entry gets
+# (its script parses, its plan is built and its commands are quoted).
+#
+# Real installs in containers are not listed here: the Distributions
+# workflow records them from each container's own history, and release
+# builds carry that record. tests/installers/test_validation.py checks
+# that every entry and test named here exists.
+
+# Entries whose failure can leave a machine without a working boot, login
+# screen or display: the reliability screen lists them first, and a run of
+# one that is not yet validated says so before it starts. High-risk entries
+# (disk and whole-system changes) count too.
+[critical]
+entries = [
+    "grub", "grub-cachyos", "grub-catppuccin", "grub-ctt-bsol", "grub-ctt-cyberpunk",
+    "grub-ctt-cyberre", "grub-ctt-dedsec", "grub-ctt-fallout", "grub-ctt-minegrub",
+    "grub-ctt-shodan", "grub-default", "grub-dracula", "grub-tela", "grub-vimix",
+    "limine-cachyos", "limine-garuda",
+    "plymouth-on", "plymouth-off", "plymouth-theme", "plymouth-dotfiles",
+    "sddm", "apparmor", "selinux", "nvidia-drivers-hardware-acceleration",
+]
+
+# Installer tests that run an entry's script, or the helpers it calls,
+# against stand-in commands and files: they show what it would change,
+# without changing a system. They run on every change, and in each
+# distribution's container.
+[[stand-ins]]
+entries = ["apparmor"]
+tests = ["test_apparmor"]
+covers = "the kernel parameter on GRUB and Limine machines, the service, and restoring the GRUB defaults when the menu cannot be made"
+
+[[stand-ins]]
+entries = ["plymouth-on", "plymouth-off", "plymouth-theme", "plymouth-dotfiles"]
+tests = ["test_boot_splash"]
+covers = "the initramfs hook and kernel arguments added and removed once, the theme rebuilt with the distribution's tool, and the defaults and menu restored when generation fails"
+
+[[stand-ins]]
+entries = ["cachyos-gaming-applications", "cachyos-gaming-meta"]
+tests = ["test_cachyos_gaming"]
+covers = "the packages chosen on CachyOS and other Arch systems, WINE Staging kept, multilib and an AUR helper required, and every package verified afterwards"
+
+[[stand-ins]]
+entries = ["grub", "grub-cachyos", "grub-catppuccin", "grub-ctt-bsol", "grub-ctt-cyberpunk", "grub-ctt-cyberre", "grub-ctt-dedsec", "grub-ctt-fallout", "grub-ctt-minegrub", "grub-ctt-shodan", "grub-default", "grub-dracula", "grub-tela", "grub-vimix"]
+tests = ["test_grub_themes", "test_commander"]
+covers = "theme files prepared, boot settings kept, the serial terminal left alone, and the previous menu restored when generation or its syntax check fails"
+
+[[stand-ins]]
+entries = ["limine-cachyos", "limine-garuda"]
+tests = ["test_limine"]
+covers = "the look merged into limine.conf's global section once, kernel command lines kept, wallpapers installed with a backup, and nothing changed without limine.conf"
+
+[[stand-ins]]
+entries = ["sddm"]
+tests = ["test_sddm", "test_commander"]
+covers = "the theme, presets and fonts installed, existing themes and sddm.conf backed up, unrelated settings kept, and the switch of display manager declinable"
+
+[[stand-ins]]
+entries = ["topgrade", "dotfiles-ghostty"]
+tests = ["test_commander"]
+covers = "the configuration written without machine paths, existing files backed up, a failed copy restored, and links not overwritten"
+
+[[stand-ins]]
+entries = ["nala-package-manager"]
+tests = ["test_nala_platforms", "test_commander"]
+covers = "the platforms it supports, the alias added once to the shell's own configuration"
+
+[[stand-ins]]
+entries = ["pacman-config"]
+tests = ["test_pacman_config"]
+covers = "a stock pacman.conf turned on once, repeated lines removed and custom MAKEFLAGS kept"
+
+[[stand-ins]]
+entries = ["dotfiles-fastfetch"]
+tests = ["test_fastfetch", "test_fastfetch_support"]
+covers = "the layout and distribution logo chosen, image support installed where missing, and os-release read without running it"
+
+[[stand-ins]]
+entries = ["dotfiles-nvim", "dotfiles-starship", "dotfiles-konsole", "myfish", "myfish-fish", "myfish-bash", "myfish-zsh", "netwatch", "tfm", "cassette"]
+tests = ["test_source_sync"]
+covers = "the installers made from the dotfiles and Myfish exports: confirmation, backups, files managed by Home Manager left alone, and missing sources refused before anything is written"
+
+[[stand-ins]]
+entries = ["resolve-native", "resolve-container"]
+tests = ["test_resolve"]
+covers = "the native and container installs on Arch, Fedora, Debian, Ubuntu and Mint, the NVIDIA and Intel paths, the vendor repository's pinned key, and no launcher published after a failure"
+
+[[stand-ins]]
+entries = ["jagex-launcher-flatpak", "jagex-launcher-appimage"]
+tests = ["test_runescape"]
+covers = "the Flatpak from its repository with the 32-bit runtime, NVIDIA libraries matched to the driver, and only a real AppImage kept"
+
+[[stand-ins]]
+entries = ["tools-backups", "tools-diagnostics", "tools-resolve", "printer-driverless"]
+tests = ["test_toolbox_tools"]
+covers = "restores that keep the current copy, links inside a backup refused, diagnostics that install nothing, container repair and removal behind an exact confirmation, and print queues kept"
+
+[[stand-ins]]
+entries = ["workstation"]
+tests = ["test_workstation"]
+covers = "a fresh clone or a fast-forward of the dotfiles checkout before its setup runs, and other folders and package managers refused"
+
+[[stand-ins]]
+entries = ["zellij"]
+tests = ["test_zellij"]
+covers = "the package and its configuration, a repeat install, and Home Manager's links preserved"
+
+# Runs on real machines and virtual machines, from tester reports
+# (docs/REPORTING.md). Each names the entry, the system, the HelixForge
+# version and the date:
+#
+# [[hardware]]
+# entry = "sddm"
+# system = "Garuda Linux, KDE Plasma 6.5, NVIDIA GTX 1650 and Intel graphics"
+# version = "1.2.0"
+# date = "2026-10-20"
+# note = "theme shown at the next boot; switched from LightDM"
+#
+# [[vm]] takes the same fields.

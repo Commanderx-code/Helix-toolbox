@@ -50,6 +50,11 @@ Debian, Ubuntu, Fedora and openSUSE.
   it back queued for review.
 - **A command palette** (`Ctrl-K`) reaches every screen, action and entry by
   name.
+- **Know what you are running**: the Reliability screen shows how far each
+  entry has been tested (in distribution containers, with stand-ins, on real
+  machines), critical boot and driver entries first, and the trust inspector
+  shows where an installer comes from, what checks its packages and what it
+  downloads unchecked.
 - **Scriptable**: everything is also a command, with `--dry-run` and stable
   `--json` output.
 

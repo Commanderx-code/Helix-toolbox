@@ -3,6 +3,7 @@
 
 mod docgen;
 mod drift;
+mod inspect;
 mod json;
 mod logging;
 mod report;
@@ -48,8 +49,8 @@ struct Cli {
     catalog_dir: Option<PathBuf>,
     /// Print the result as JSON, for other programs (see docs/JSON.md): for
     /// system, list, search, info, status, plan, history, updates, doctor,
-    /// backups, drift check, drift list and profile list, and for --dry-run
-    /// plans.
+    /// backups, drift check, drift list, reliability, trust and profile list,
+    /// and for --dry-run plans.
     #[arg(long, global = true)]
     json: bool,
 }
@@ -185,6 +186,21 @@ enum Command {
         #[command(subcommand)]
         command: Option<drift::DriftCommand>,
     },
+    /// How far each entry has been tested: in distribution containers, with
+    /// stand-in commands, on virtual or real machines, or not yet; and its
+    /// last successful run on this machine.
+    Reliability {
+        /// The entries to show; every entry when none.
+        ids: Vec<String>,
+        /// Only the entries whose failure can stop a machine booting, logging
+        /// in or showing a display, and whole-system changes.
+        #[arg(long)]
+        critical: bool,
+    },
+    /// Where an entry's installer comes from (repository, revision, checksum,
+    /// licence), what checks the packages it installs, what it downloads
+    /// unchecked, the privileges it uses and how far it has been tested.
+    Trust { id: String },
     /// Your workstation profiles: list, export, import or delete them. Run one
     /// like any entry: helixforge run profile-<name>.
     #[command(subcommand)]
@@ -306,7 +322,7 @@ fn main() -> Result<()> {
             if as_json =>
         {
             bail!(
-                "--json is for system, list, search, info, status, plan, history, updates, doctor, backups, report, drift check, drift list and profile list, and for --dry-run plans"
+                "--json is for system, list, search, info, status, plan, history, updates, doctor, backups, report, drift check, drift list, reliability, trust and profile list, and for --dry-run plans"
             )
         }
         Command::Tui(args) => {
@@ -769,6 +785,10 @@ fn main() -> Result<()> {
             confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "RESTORE")
         }
         Command::Drift { command } => drift::run(command, &load(false)?, &platform, as_json),
+        Command::Reliability { ids, critical } => {
+            inspect::reliability(&load(false)?, &ids, critical, as_json)
+        }
+        Command::Trust { id } => inspect::trust(&load(false)?, &platform, &id, as_json),
         Command::Profile(command) => {
             let catalog = load(false)?;
             let directory = profiles::dir().context("cannot find the configuration folder")?;
@@ -1135,6 +1155,14 @@ fn print_plan(catalog: &Catalog, platform: &LinuxInfo, planned: &Plan) -> Vec<pr
     );
     for finding in &findings {
         println!("{}", finding.line());
+    }
+    let evidence = helixforge_engine::reliability::Evidence::load(catalog.root());
+    for warning in helixforge_engine::reliability::warnings(
+        planned.steps.iter().map(|step| step.id()),
+        &|id| catalog.find(id),
+        &evidence,
+    ) {
+        println!("Validation: {warning}");
     }
     findings
 }

@@ -5,7 +5,7 @@
 | Version | Main objective | Items |
 | :--- | :--- | :--- |
 | v1.1.0 | Configuration drift and the command palette | 1 (HELIX Drift), 6 (command palette) (done) |
-| v1.2.0 | How far each installer can be trusted | 4 (reliability dashboard), 7 (trust inspector) |
+| v1.2.0 | How far each installer can be trusted | 4 (reliability dashboard), 7 (trust inspector) (done) |
 | v1.3.0 | Seeing a change before it happens, and the hardware | 2 (system change preview), 5 (hardware and firmware center) |
 | v1.4.0 | First-run setup and the desktop | 3 (setup wizard), 9 (desktop environment manager) |
 | v1.5.0 | Machines without reliable internet | 8 (offline installation bundles) |
@@ -43,6 +43,20 @@ The items:
    and offer the settings, themes, display-manager configuration and
    customisation profiles that fit, warning where Home Manager or a
    desktop's own tools own a setting.
+
+## v1.2.0: how far each installer can be trusted (done)
+
+- [x] Installer reliability (item 4): Hardware, VM, Container and Stand-in
+      Tested or Not Yet Validated for every entry, from the Distributions
+      containers' own histories (built into each release), the installer
+      tests listed in `catalog/validation.toml` and tester reports; the
+      systems and date; this machine's runs; critical entries first and
+      named in their confirmation
+- [x] Trust inspector (item 7): origin, checksum and licences; release
+      provenance, package integrity and unchecked downloads kept apart;
+      privileges and validation
+- [x] Releases wait for Distributions on their commit
+- [ ] VM tests of the boot and login entries, and more hardware reports
 
 ## v1.1.0: configuration drift and the command palette (done)
 

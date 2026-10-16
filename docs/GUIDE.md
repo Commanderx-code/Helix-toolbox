@@ -38,6 +38,7 @@ and press `Enter`.
 | Maintenance, Security | Clean-ups, system tweaks and hardening |
 | Profiles | Ready-made sets of entries, and your own |
 | Drift | How the machine differs from a saved baseline or a profile |
+| Reliability | How far each entry has been tested, critical ones first |
 | Updates | What every package tool has waiting |
 | History | Every run, its result and its saved log |
 | Backups | Configuration backups entries left, to restore |
@@ -53,15 +54,17 @@ and press `Enter`.
    **Managed** when Nix or Home Manager provides it, or **Not installed**.
    The letters after it are its flags; `g` explains them.
 3. `d` describes the entry, `p` shows exactly what it will run.
-4. `Space` queues it in the **Install Plan**; queue as many as you like.
+4. `v` shows where it comes from and what checks it: the trust inspector
+   (below).
+5. `Space` queues it in the **Install Plan**; queue as many as you like.
    `Enter` runs one entry straight away instead.
-5. On the Install Plan, check the plan: the steps in order, the risk, whether
+6. On the Install Plan, check the plan: the steps in order, the risk, whether
    it asks for your password, and anything that blocks it (a missing tool,
    too little space, a conflicting package). `Enter` runs it.
-6. The run asks `[Y]` first, then shows its output in a window inside the
+7. The run asks `[Y]` first, then shows its output in a window inside the
    menu. Type into it when an installer asks a question. `Ctrl-C` stops it;
    `l` saves the log.
-7. Afterwards HelixForge checks each package with the package manager and
+8. Afterwards HelixForge checks each package with the package manager and
    says what it verified. Anything that did not finish stays in the Install
    Plan to run again.
 
@@ -79,6 +82,23 @@ configurations, tweaks) and press `s` on the Install Plan to name it. It is
 saved in `~/.config/helixforge/profiles/` and appears under Profiles, **Your
 profiles**. `helixforge profile export` and `import` move it to another
 machine.
+
+## How far to trust an entry
+
+**Reliability** shows how far each entry has been tested: **Container
+Tested** (installed and verified in distribution containers by the
+Distributions workflow), **Stand-in Tested** (its installer run against
+stand-in commands), **VM Tested** or **Hardware Tested** (reported from a
+virtual or real machine), or **Not Yet Validated**. Entries that could stop a
+machine booting, logging in or showing a display come first, marked `!`;
+those are the ones to have a snapshot or a live USB ready for. If you run
+one successfully, reporting it helps everyone ([REPORTING.md](REPORTING.md)).
+
+`v` on an entry opens the **trust inspector**: where its installer comes
+from, its checksum and licence, what checks the packages it installs (pacman
+or apt signatures, Flathub), what it downloads itself and whether anything
+checks that, and what it does as root. Signed release provenance, package
+integrity checks and unverified third-party downloads are listed apart.
 
 ## Moving to a new machine
 

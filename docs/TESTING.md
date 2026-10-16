@@ -126,10 +126,26 @@ engine's unit tests also run generated package programs against harmless
 commands: falling back, skipping a source whose tool is missing, stopping on
 an interrupted source, and removals that leave the package behind.
 
+## The reliability record
+
+Each Distributions container ends by turning its own HelixForge history into
+a record of the entries it ran successfully, and which of those HelixForge
+verified (`scripts/validation-record.py record`); a last job merges them into
+one `validation.json`. The release waits for Distributions on its commit,
+publishes nothing if that run failed, and builds `validation.json` into the
+program as `catalog/validation-results.json` (a source update, which has no
+run of its own, takes its ancestor's). The Reliability screen and
+`helixforge reliability` read it beside `catalog/validation.toml`, which
+lists the installer tests that cover each entry with stand-ins, the
+critical entries, and runs reported from virtual and real machines.
+`tests/installers/test_validation.py` checks that every entry and test that
+file names exists.
+
 ## Release checks
 
 Every push to `main` runs the Checks, Distributions and Sync sources
-workflows; the last publishes the next release, tagged `vMAJOR.MINOR.PATCH`,
+workflows; the last waits for Distributions on the same commit, then
+publishes the next release, tagged `vMAJOR.MINOR.PATCH`,
 with `helixforge-linux-x86_64` and `SHA256SUMS`, and checks that
 `helixforge --version` reports that version. `scripts/release-version.py`
 picks it: the commit's own version when it already has one (a rebuild), else
@@ -152,6 +168,8 @@ chmod +x helixforge-linux-x86_64
 
 - Boot, login-screen and desktop entries (GRUB, Limine, Plymouth, SDDM)
   need a real machine or a virtual machine; containers cannot boot them.
+  The Reliability screen shows them as critical, and a run of one that only
+  has stand-in tests says so before it starts.
 - Real Flatpak installs, Nix entries and `sudo` password prompts are not
   run by any automated test; Flathub fallback runs against a stand-in
   `flatpak`.

@@ -65,6 +65,12 @@ Open an issue on GitHub; the form asks for:
   folder as `~` and includes no host name or logs, but read it before
   posting.
 
+A run that went right is worth reporting too, above all for the boot,
+login-screen and driver entries, which no container can test: name the
+entry, the system and graphics hardware, the HelixForge version and the date,
+and it becomes a **Hardware Tested** or **VM Tested** record in
+`catalog/validation.toml`, shown on the Reliability screen to everyone.
+
 A run that went wrong is easier to fix with the exact entry, its log and the
 report than with any description. Ideas and missing entries are welcome too:
 the second issue form asks for package names and install instructions.

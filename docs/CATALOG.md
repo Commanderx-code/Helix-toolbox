@@ -98,6 +98,15 @@ unpacked to a private temporary directory when it starts, so scripts run as
 real files. The copy is removed on exit; one left behind by a HelixForge that
 was killed is removed the next time HelixForge starts.
 
+`catalog/validation.toml` says how far entries are tested beyond the checks
+every entry gets: `[critical]` names the entries whose failure can stop a
+machine booting, logging in or showing a display; each `[[stand-ins]]`
+names entries, the installer tests in `tests/installers/` that cover them
+and what they cover; `[[hardware]]` and `[[vm]]` record runs reported from
+real and virtual machines (`entry`, `system`, `version`, `date`, `note`).
+A new installer test or a tester's report goes there; the Reliability
+screen reads it.
+
 ## Plans
 
 Running entries first makes a plan: the steps in order, what they need,

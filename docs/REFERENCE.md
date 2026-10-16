@@ -160,6 +160,49 @@ names what this distribution cannot install. `drift list`, `import` and
 `delete` manage the saved ones; `--exit-code` makes `check` exit with 1
 when anything differs.
 
+## Reliability and trust
+
+**Reliability** lists every entry with how far it has been tested, the
+critical ones first (marked `!`: boot loaders, the boot splash, the login
+screen, kernel security modules, graphics drivers and whole-system or disk
+changes):
+
+| Level | Means |
+|---|---|
+| Hardware Tested | a tester ran it on a real machine and reported it |
+| VM Tested | it was run in a virtual machine and reported |
+| Container Tested | the Distributions workflow ran it in distribution containers and HelixForge verified the result there |
+| Stand-in Tested | installer tests run its script against stand-in commands and files, on every change and in each container |
+| Not Yet Validated | nothing tests it yet beyond the checks every entry gets |
+
+Beside each are the systems it was tested on, the date it was last verified
+and when it last ran successfully on this machine. Release builds carry the
+record of the Distributions run they were built after; other builds show the
+stand-in tests and reports only. `i` shows only critical or only untested
+entries, `Enter` the evidence. Before a critical entry with no more than
+stand-in tests runs, its confirmation says so. `helixforge reliability
+[--critical]` prints the same.
+
+`v` on any entry (or `helixforge trust <id>`) opens the **trust inspector**:
+the installer's origin (HelixForge's own installers, Linutil's, or commands
+built from package names), its file and SHA-256 checksum, its licence and
+the software's (as the package manager reports it), and three kinds of
+assurance kept apart:
+
+- **Release provenance**: whether this HelixForge, which ships the catalog
+  and every installer, is a release build with a signed build provenance
+  attestation, and whether its download was checked against `SHA256SUMS`.
+- **Package integrity**: what each package source checks: pacman's
+  signatures and the `SigLevel` in effect, apt's signed repositories, dnf's
+  `gpgcheck`, zypper's and Flatpak's signatures; the AUR's user-submitted
+  build scripts are marked unverified.
+- **Downloads the installer makes itself**: sources pinned to a commit,
+  downloads it checks with a checksum or signature, and ones nothing checks,
+  such as a script piped into a shell or a plain HTTP address.
+
+Then the privileges it uses (a password, system files, services, the
+commands it runs as root) and its validation level.
+
 ## Helix Doctor, backups and snapshots
 
 **Helix Doctor** checks the machine, read-only, and shows what it found:
@@ -212,6 +255,8 @@ helixforge remove ardour              # removes a package entry that offers it
 helixforge profile list               # your profiles; also export, import, delete
 helixforge drift save "Old laptop"    # record this machine as a baseline
 helixforge drift check                # how it differs now; --profile <name> for a profile
+helixforge reliability --critical     # how far the boot, login and driver entries are tested
+helixforge trust sddm                 # where an entry comes from and what checks it
 helixforge doctor                     # health checks, read-only
 helixforge doctor --repair permissions  # one repair, after confirmation
 helixforge backups                    # configuration backups, newest first
