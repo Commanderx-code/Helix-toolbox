@@ -33,9 +33,6 @@ jobs:
       # Signed build provenance for the published files.
       id-token: write
       attestations: write
-    env:
-      # Publishing to crates.io needs a token; without one that step is skipped.
-      CRATES_IO: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -163,11 +160,16 @@ jobs:
           gh release upload "$tag" helixforge-linux-x86_64 helixforge_*.deb helixforge-*.rpm helixforge-*.pkg.tar.zst SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
           gh release edit "$tag" --draft=false --latest --repo "$GITHUB_REPOSITORY"
       - name: Publish the crates to crates.io
-        if: steps.release.outputs.build == 'true' && env.CRATES_IO == 'true'
+        if: steps.release.outputs.build == 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           VERSION: ${{ steps.release.outputs.version }}
         run: |
+          # Publishing needs a token (docs/RELEASING.md); without one, skip.
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "No CARGO_REGISTRY_TOKEN secret with a value; not publishing to crates.io."
+            exit 0
+          fi
           # The crates carry the release's version; the checkout is not committed.
           python3 -B scripts/stamp-version.py "$VERSION"
           cargo update --workspace
