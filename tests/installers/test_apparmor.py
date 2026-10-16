@@ -97,6 +97,20 @@ backup_system() {{ backup="$1.backup"; cp -a "$1" "$backup"; }}
         self.assertEqual(self.defaults.read_text(), 'GRUB_TIMEOUT=5\nGRUB_CMDLINE_LINUX_DEFAULT="quiet splash"\n')
         self.assertEqual(self.calls(), [])
 
+    def test_a_service_systemd_skipped_is_started_after_asking_again(self):
+        # Seen in a VM: systemd kept its answer from before the package and
+        # skipped apparmor.service until it was re-executed.
+        self.enabled.write_text('Y\n')
+        (self.root / 'common-service-script.sh').write_text(
+            'INIT_MANAGER=systemctl\n'
+            'startAndEnableService() { echo "service $1" >> "$CALLS"; }\n'
+            'isServiceActive() { return 1; }\n')
+        self.write_tool('systemctl', 'echo "systemctl $*" >> "$CALLS"')
+        result = self.run_script()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.calls(), ['install apparmor', 'service apparmor', 'systemctl daemon-reexec',
+                                        'systemctl start apparmor', 'aa-status'])
+
     def test_enabled_kernel_installs_and_starts_the_service(self):
         self.enabled.write_text('Y\n')
         result = self.run_script()

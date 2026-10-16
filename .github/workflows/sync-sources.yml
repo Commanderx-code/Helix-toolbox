@@ -27,7 +27,7 @@ jobs:
   sync:
     if: github.repository_owner == 'Commanderx-code'
     runs-on: ubuntu-22.04
-    timeout-minutes: 75
+    timeout-minutes: 120
     permissions:
       contents: write
       # Signed build provenance for the published files.

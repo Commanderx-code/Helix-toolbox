@@ -270,7 +270,7 @@ changes):
 | Level | Means |
 |---|---|
 | Hardware Tested | a tester ran it on a real machine and reported it |
-| VM Tested | it was run in a virtual machine and reported |
+| VM Tested | the Distributions workflow ran it for real in an Arch or Debian virtual machine, rebooted into the result and checked it |
 | Container Tested | the Distributions workflow ran it in distribution containers and HelixForge verified the result there |
 | Stand-in Tested | installer tests run its script against stand-in commands and files, on every change and in each container |
 | Not Yet Validated | nothing tests it yet beyond the checks every entry gets |

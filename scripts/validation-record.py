@@ -3,6 +3,8 @@
 
   record IMAGE HISTORY CATALOG   what one container's HelixForge history shows
                                  it ran and verified, as JSON on stdout
+                                 (scripts/vm-tests.py writes the same for a
+                                 virtual machine, as image vm:NAME)
   merge OUT RUN URL COMMIT PART...
                                  one record from every container's
   fetch OUT                      in the release workflow: the record of the
@@ -46,10 +48,15 @@ def record(image, history, catalog):
 
 
 def merge(run, url, commit, parts):
-    images = {}
+    images, vms = {}, {}
     for part in parts:
         found = json.loads(Path(part).read_text())
-        images[found['image']] = {'entries': found['entries']}
+        if found['image'].startswith('vm:'):
+            # A virtual machine's cases: only those verified count.
+            verified = {entry: 'verified' for entry, outcome in found['entries'].items() if outcome == 'verified'}
+            vms[found['image'][3:]] = {'entries': verified}
+        else:
+            images[found['image']] = {'entries': found['entries']}
     return {
         'format': 1,
         'commit': commit,
@@ -57,6 +64,7 @@ def merge(run, url, commit, parts):
         'url': url,
         'finished': int(time.time()),
         'images': dict(sorted(images.items())),
+        'vms': dict(sorted(vms.items())),
     }
 
 
@@ -82,7 +90,7 @@ def download(run, out):
           f'from {len(found["images"])} containers.')
 
 
-def fetch(out, patience=1800, appear=180):
+def fetch(out, patience=3600, appear=180):
     head = subprocess.run(['git', 'rev-parse', 'HEAD'], check=True, capture_output=True, text=True).stdout.strip()
     started = time.time()
     while True:

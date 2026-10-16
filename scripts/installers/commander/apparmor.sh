@@ -38,4 +38,10 @@ case "$PACKAGER" in
     *) install_packages apparmor apparmor-utils apparmor-profiles ;;
 esac
 startAndEnableService apparmor
+# Right after the package is installed, systemd can still hold the answer it
+# had before about AppArmor, and skip the service; asked again, it starts.
+if [ "${INIT_MANAGER:-}" = systemctl ] && ! isServiceActive apparmor; then
+    "$ESCALATION_TOOL" systemctl daemon-reexec
+    "$ESCALATION_TOOL" systemctl start apparmor
+fi
 "$ESCALATION_TOOL" aa-status

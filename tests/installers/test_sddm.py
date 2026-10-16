@@ -117,6 +117,29 @@ fetch_source() {{ source_dir="{self.root}/sources/$1"; }}
         self.assertNotIn('systemctl enable --force sddm.service', self.calls())
         self.assertIn('enable --force sddm.service', result.stdout)
 
+    def test_without_a_display_manager_sddm_is_enabled_and_nothing_disabled(self):
+        # Seen in a VM: with no display-manager.service link, the installer
+        # took the link's own name for a display manager and failed to disable it.
+        # The folder exists on every systemd machine; the link does not.
+        (self.root / 'etc/systemd/system').mkdir(parents=True)
+        result = self.run_script(answer='y')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('systemctl enable --force sddm.service', self.calls())
+        self.assertFalse(any(call.startswith('systemctl disable') for call in self.calls()), self.calls())
+
+    def test_the_version_comes_from_the_package_manager_when_sddm_crashes(self):
+        # Seen on Arch with SDDM 0.21.0 and Qt 6.12: sddm --version aborts.
+        (self.root / 'sddm').write_text('#!/bin/sh\nkill -ABRT $$\n')
+        for version, works in (('0.21.0-7', True), ('0.20.0-1', False)):
+            (self.root / 'pacman').write_text(
+                f'#!/bin/sh\ncase "$1" in -Q) [ "$2" = sddm ] && echo "sddm {version}" ;; *) exit 1 ;; esac\n')
+            result = self.run_script(answer='n')
+            if works:
+                self.assertEqual(result.returncode, 0, result.stderr)
+            else:
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('requires SDDM 0.21.0 or newer', result.stderr)
+
     def test_a_packaged_theme_only_gets_the_presets(self):
         (self.root / 'pacman').write_text('#!/bin/sh\ncase "$1" in -Qo) exit 0 ;; -Qoq) echo sddm-silent-theme-git ;; esac\n')
         self.theme.mkdir(parents=True)

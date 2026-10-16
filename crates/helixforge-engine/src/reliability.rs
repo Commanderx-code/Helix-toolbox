@@ -42,7 +42,9 @@ impl Level {
     pub fn explain(self) -> &'static str {
         match self {
             Level::HardwareTested => "A tester ran it on a real machine and reported the result.",
-            Level::VmTested => "It was run in a virtual machine and the result reported.",
+            Level::VmTested => {
+                "It ran for real in a virtual machine: the Distributions workflow boots the distribution's cloud image, runs the entry, reboots into the result and checks it (the configuration, the kernel command line, the boot images, the services, a graphical boot menu or login screen). Real graphics hardware is not covered."
+            }
             Level::ContainerTested => {
                 "The Distributions workflow ran it in distribution containers and HelixForge verified the result there. Containers have no boot loader, login screen or desktop, so those parts are not covered."
             }
@@ -113,6 +115,10 @@ pub struct Results {
     /// `ran` for an entry with nothing to verify).
     #[serde(default)]
     pub images: BTreeMap<String, Image>,
+    /// By virtual machine (arch, debian): the entries run there, rebooted
+    /// into and checked by scripts/vm-tests.py.
+    #[serde(default)]
+    pub vms: BTreeMap<String, Image>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -144,6 +150,16 @@ pub struct Assessment {
     pub here: Option<u64>,
     /// A boot, login-screen, driver or whole-system entry.
     pub critical: bool,
+}
+
+/// A virtual machine as people name it: "Arch VM".
+pub fn vm_label(name: &str) -> String {
+    match name {
+        "arch" => "Arch VM".to_string(),
+        "debian" => "Debian VM".to_string(),
+        "fedora" => "Fedora VM".to_string(),
+        other => format!("{} VM", helixforge_core::printable(other)),
+    }
 }
 
 /// A container image as people name the system.
@@ -257,6 +273,37 @@ impl Evidence {
         }
         if let Some(results) = &self.results {
             let date = crate::date(results.finished);
+            let machines: Vec<String> = results
+                .vms
+                .iter()
+                .filter(|(_, found)| {
+                    found
+                        .entries
+                        .get(&entry.id)
+                        .is_some_and(|outcome| outcome == "verified")
+                })
+                .map(|(name, _)| vm_label(name))
+                .collect();
+            if !machines.is_empty() {
+                better(&mut assessment, Level::VmTested);
+                for machine in &machines {
+                    if !assessment.systems.contains(machine) {
+                        assessment.systems.push(machine.clone());
+                    }
+                }
+                if assessment
+                    .verified
+                    .as_ref()
+                    .is_none_or(|known| *known < date)
+                {
+                    assessment.verified = Some(date.clone());
+                }
+                assessment.evidence.push(format!(
+                    "In virtual machines, Distributions run {} on {date}: {}; run for real, rebooted into and checked",
+                    results.run,
+                    machines.join(", ")
+                ));
+            }
             let mut shown: Vec<String> = Vec::new();
             for (image, found) in &results.images {
                 if let Some(outcome) = found.entries.get(&entry.id) {
@@ -339,11 +386,15 @@ impl Evidence {
     pub fn summary(&self) -> String {
         match &self.results {
             Some(results) => format!(
-                "Container record: Distributions run {} on commit {}, {}, {} distributions.",
+                "Container record: Distributions run {} on commit {}, {}, {} distributions{}.",
                 results.run,
                 results.commit.chars().take(12).collect::<String>(),
                 crate::date(results.finished),
-                results.images.len()
+                results.images.len(),
+                match results.vms.len() {
+                    0 => String::new(),
+                    count => format!(" and {count} virtual machines"),
+                }
             ),
             None => "No container record in this build; release builds carry one.".to_string(),
         }
@@ -396,7 +447,8 @@ mod tests {
     const RESULTS: &str = r#"{"format": 1, "commit": "0123456789abcdef0123", "run": 42,
         "finished": 1792172552,
         "images": {"archlinux:latest": {"entries": {"htop": "verified"}},
-                   "ubuntu:24.04": {"entries": {"htop": "verified", "system-report": "ran"}}}}"#;
+                   "ubuntu:24.04": {"entries": {"htop": "verified", "system-report": "ran"}}},
+        "vms": {"arch": {"entries": {"sddm": "verified"}}}}"#;
 
     #[test]
     fn levels_come_from_the_record_never_beyond_it() {
@@ -423,11 +475,26 @@ mod tests {
         assert_eq!(htop.verified.as_deref(), Some("2026-10-16"));
         assert!(!htop.critical);
         assert_eq!(assess("system-report").level, Level::ContainerTested);
+        // Verified in a virtual machine: above its stand-in tests.
         let sddm = assess("sddm");
-        assert_eq!(sddm.level, Level::StandInTested);
+        assert_eq!(sddm.level, Level::VmTested);
         assert!(sddm.critical);
-        assert!(sddm.evidence[0].contains("test_sddm"));
-        assert!(sddm.evidence[0].contains("all 2 containers"));
+        assert!(
+            sddm.systems.contains(&"Arch VM".to_string()),
+            "{:?}",
+            sddm.systems
+        );
+        assert!(
+            sddm.evidence[0].contains("virtual machines"),
+            "{:?}",
+            sddm.evidence
+        );
+        assert!(sddm.evidence.iter().any(|line| line.contains("test_sddm")));
+        assert!(
+            found.summary().contains("1 virtual machines"),
+            "{}",
+            found.summary()
+        );
         let grub = assess("grub");
         assert_eq!(grub.level, Level::HardwareTested);
         assert_eq!(grub.verified.as_deref(), Some("2026-10-20"));
@@ -446,9 +513,14 @@ mod tests {
         assert_eq!(ripgrep.here, Some(1_700_000_000));
 
         // Before a run, critical entries short of a real test are named.
-        let warned = warnings(["sddm", "grub", "htop"], &|id| catalog.find(id), &found);
+        // SDDM, tested in a VM, and GRUB, on hardware, are not.
+        let warned = warnings(
+            ["sddm", "grub", "htop", "arch-server-setup"],
+            &|id| catalog.find(id),
+            &found,
+        );
         assert_eq!(warned.len(), 1, "{warned:?}");
-        assert!(warned[0].starts_with("SDDM"), "{warned:?}");
+        assert!(warned[0].starts_with("Arch Server Setup"), "{warned:?}");
         // Whole-system entries count as critical by their risk.
         assert!(found.critical(catalog.find("arch-server-setup").unwrap()));
     }

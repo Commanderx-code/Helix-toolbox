@@ -422,10 +422,55 @@ jobs:
           name: validation-${{ strategy.job-index }}
           path: validation-${{ strategy.job-index }}.json
 
-  # One record of every container's results, which release builds carry for
-  # the reliability screen (scripts/validation-record.py).
+  # The boot, login-screen and kernel entries for real, in virtual machines:
+  # each is run, rebooted into and checked (scripts/vm-tests.py). The screens
+  # captured while they boot are kept for a person to look at.
+  vm:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [arch, debian]
+    name: vm ${{ matrix.distro }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: helixforge
+          path: bin
+      - name: KVM and QEMU
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils genisoimage python3-pil
+          ls -l /dev/kvm
+      - name: The entries, run and rebooted into
+        run: |
+          chmod +x bin/helixforge
+          python3 -B scripts/vm-tests.py --distro "${{ matrix.distro }}" --binary bin/helixforge \
+            --work "$RUNNER_TEMP/vm" --out "validation-vm-${{ matrix.distro }}.json" --shots screens
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: vm-screens-${{ matrix.distro }}
+          path: screens
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validation-vm-${{ matrix.distro }}
+          path: validation-vm-${{ matrix.distro }}.json
+
+  # One record of every container's and virtual machine's results, which
+  # release builds carry for the reliability screen
+  # (scripts/validation-record.py).
   record:
-    needs: distribution
+    needs: [distribution, vm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -440,7 +485,7 @@ jobs:
         run: |
           python3 -B scripts/validation-record.py merge validation.json "$GITHUB_RUN_ID" \
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$GITHUB_SHA" parts/*.json
-          python3 -c 'import json; d = json.load(open("validation.json")); assert len(d["images"]) == 6, d; assert all(i["entries"].get("htop") == "verified" for i in d["images"].values()), d'
+          python3 -c 'import json; d = json.load(open("validation.json")); assert len(d["images"]) == 6, d; assert all(i["entries"].get("htop") == "verified" for i in d["images"].values()), d; assert sorted(d["vms"]) == ["arch", "debian"], d'
           cat validation.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

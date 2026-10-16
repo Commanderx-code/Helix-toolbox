@@ -7,7 +7,16 @@ if [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
     printf '%s\n' 'Run this installer from a graphical desktop session for the theme preview.' >&2
     exit 1
 fi
-python3 - "$(sddm --version)" <<'PY'
+# The package manager knows the version; sddm --version crashes outside a
+# graphical session with SDDM 0.21 and Qt 6.12, so it is only the fallback.
+case "$PACKAGER" in
+    pacman) sddm_version=$(pacman -Q sddm 2>/dev/null || true) ;;
+    apt-get | nala) sddm_version=$(dpkg-query -W -f='${Version}' sddm 2>/dev/null || true) ;;
+    dnf) sddm_version=$(rpm -q --qf '%{VERSION}' sddm 2>/dev/null || true) ;;
+    *) sddm_version='' ;;
+esac
+[ -n "$sddm_version" ] || sddm_version=$(sddm --version 2>/dev/null || true)
+python3 - "$sddm_version" <<'PY'
 import re, sys
 version = re.search(r'(\d+)\.(\d+)\.(\d+)', sys.argv[1])
 if not version or tuple(map(int, version.groups())) < (0, 21, 0):
@@ -24,7 +33,12 @@ if [ "$PACKAGER" = pacman ] && pacman -Qo "$theme" >/dev/null 2>&1; then
 else
     theme_origin='SilentSDDM 1.5.1 from its pinned source'
 fi
-display_manager=$(basename "$(readlink -f /etc/systemd/system/display-manager.service 2>/dev/null || true)")
+# Only a link names a display manager: readlink -f returns the path itself
+# when there is none, which would be taken for one.
+display_manager=''
+if [ -L /etc/systemd/system/display-manager.service ]; then
+    display_manager=$(basename "$(readlink -f /etc/systemd/system/display-manager.service)")
+fi
 switch_note=''
 if [ "$display_manager" != sddm.service ]; then
     if [ -n "$display_manager" ]; then

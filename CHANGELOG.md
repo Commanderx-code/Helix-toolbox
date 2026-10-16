@@ -4,6 +4,24 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.5.1
+
+- **Virtual machine tests**: the Distributions workflow boots Arch and
+  Debian cloud images under QEMU, runs the GRUB theme and default
+  appearance, the boot splash on and off, AppArmor and the SDDM theme for
+  real, reboots into each result and checks it, keeping the boot screens.
+  Entries verified there are VM Tested on the Reliability screen.
+- Found by them and fixed: the SDDM Theme entry refused to run on Arch with
+  SDDM 0.21 and Qt 6.12, where `sddm --version` crashes outside a desktop
+  session; it reads the version from the package manager now. AppArmor
+  Setup reported a failure on Arch right after installing the tools,
+  because systemd still held its answer from before the package and
+  skipped the service; it asks systemd again and starts it. The SDDM Theme
+  entry, on a machine with no display manager enabled yet, took the name of
+  the missing link for one and failed to disable it. On Debian, whose users
+  have no system folders on their PATH, the GRUB and boot splash entries
+  could not find grub-mkconfig or update-initramfs; runs add those folders.
+
 ## v1.5.0
 
 - **Offline installation bundles**: `helixforge bundle create <folder>

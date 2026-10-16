@@ -19,6 +19,7 @@ package installs happen only in the Distributions workflow's containers.
 | Workflow lint | `scripts/verify.sh` | actionlint over every workflow, including the shell in each step |
 | Source render | `scripts/verify.sh` | rendering the dotfiles and Myfish exports again changes no catalog file |
 | Crates | Checks workflow | `cargo package --workspace`: every crate packaged and built from its package, as crates.io and `cargo install` would |
+| Virtual machines | `scripts/vm-tests.py`, in the Distributions workflow | the boot, login-screen and kernel entries run for real in Arch and Debian cloud images under QEMU: each is run through `helixforge run`, rebooted into and checked, with the boot screens kept |
 | Distributions | `.github/workflows/distributions.yml` | Arch, Debian, Ubuntu 22.04 and 24.04, Fedora and openSUSE Tumbleweed containers with real package installs and removals, each verified, and the real package manager failing over to a stand-in Flathub; HelixForge's own package for each installed, used and removed |
 
 ## The program in a terminal
@@ -126,6 +127,38 @@ engine's unit tests also run generated package programs against harmless
 commands: falling back, skipping a source whose tool is missing, stopping on
 an interrupted source, and removals that leave the package behind.
 
+## Virtual machines
+
+`scripts/vm-tests.py --distro arch|debian` boots the distribution's cloud
+image (checked against its published checksum) under QEMU with KVM, with a
+user in the administrators' group and passwordless `sudo`. It first makes it
+boot like a desktop installation: GRUB and the kernel on the screen rather
+than the serial line, and the boot menu shown for five seconds. Then each
+case runs its entry through `helixforge run`, answering the installer's
+questions as they come (`APPLY`, the package manager's `[Y/n]`, yes to
+`[y/N]`), reboots, captures the screen every half second while the machine
+boots, and checks the result:
+
+| Entry | Checked after the reboot |
+|---|---|
+| Dracula GRUB Theme | `GRUB_THEME` names the installed theme, graphical output is selected, and a graphical boot menu was on the screen |
+| Restore Default GRUB Appearance | no theme is selected, and the machine boots |
+| Enable Boot Splash | `splash` is on the kernel command line and Plymouth is in the boot image |
+| Disable Boot Splash | `splash` is gone from the kernel command line |
+| AppArmor Setup and Status | AppArmor is enabled in the kernel (on Arch after the first phase's reboot), and its service is enabled and running |
+| SDDM Theme | its preview ran (on a virtual display, closed after 20 seconds), the silent theme is installed and selected, and SDDM shows a graphical login screen after the reboot |
+
+The captured screens (the boot menu, the splash, the login screen, the
+preview) are kept as the job's artifact, for a person to look at. Entries
+verified here are **VM Tested** on the Reliability screen. Real graphics
+hardware, UEFI firmware quirks and other boot loaders are not covered. It
+runs on a machine with KVM too, in a folder of its own:
+
+```sh
+python3 scripts/vm-tests.py --distro arch --binary target/release/helixforge \
+  --work /tmp/vm --out /tmp/vm/arch.json --shots /tmp/vm/screens
+```
+
 ## The reliability record
 
 Each Distributions container ends by turning its own HelixForge history into
@@ -166,10 +199,10 @@ chmod +x helixforge-linux-x86_64
 
 ## Not covered
 
-- Boot, login-screen and desktop entries (GRUB, Limine, Plymouth, SDDM)
-  need a real machine or a virtual machine; containers cannot boot them.
-  The Reliability screen shows them as critical, and a run of one that only
-  has stand-in tests says so before it starts.
+- Limine, Fedora's boot entries, UEFI boot and real graphics drivers: the
+  virtual machines boot Arch and Debian with GRUB on BIOS firmware. The
+  Reliability screen shows the boot entries as critical, and a run of one
+  that only has stand-in tests says so before it starts.
 - Real Flatpak installs, Nix entries and `sudo` password prompts are not
   run by any automated test; Flathub fallback runs against a stand-in
   `flatpak`.

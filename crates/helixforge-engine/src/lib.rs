@@ -1013,6 +1013,13 @@ pub fn quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+/// Debian gives normal users no system folders on their PATH, where
+/// grub-mkconfig, update-initramfs and other tools the installers look for
+/// live; the run adds them after the user's own, where they are missing.
+const SYSTEM_PATH: &str = "for hf_dir in /usr/local/sbin /usr/sbin /sbin; do\n  \
+    case \":$PATH:\" in *\":$hf_dir:\"*) ;; *) PATH=\"$PATH:$hf_dir\" ;; esac\n\
+    done\nexport PATH\n";
+
 /// The shell program that runs the steps in order and stops at the first
 /// failure. `lib_dir` is exported as `HELIXFORGE_LIB` for scripts; `this` is
 /// the HelixForge executable that native steps re-invoke.
@@ -1029,7 +1036,7 @@ pub fn shell_program_with(
     status: Option<&Path>,
 ) -> String {
     let mut text = format!(
-        "{LIB_VARIABLE}={}\nexport {LIB_VARIABLE}\nhf_steps={}\nhf_last=0\n\
+        "{SYSTEM_PATH}{LIB_VARIABLE}={}\nexport {LIB_VARIABLE}\nhf_steps={}\nhf_last=0\n\
          hf_status() {{ [ -z \"$hf_steps\" ] || printf '%s %s %s\\n' \"$1\" \"$2\" \"$3\" >> \"$hf_steps\"; }}\n",
         quote(&lib_dir.to_string_lossy()),
         quote(
@@ -1792,6 +1799,34 @@ pub fn run_native(action: NativeAction, platform: &LinuxInfo) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn runs_find_the_system_folders_debian_leaves_off_the_path() {
+        let program = super::shell_program(
+            &super::Plan::default(),
+            std::path::Path::new("/lib"),
+            std::path::Path::new("/hf"),
+        );
+        assert!(program.starts_with(super::SYSTEM_PATH));
+        let path_after = |path: &str| {
+            let output = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(format!("{}printf '%s' \"$PATH\"", super::SYSTEM_PATH))
+                .env("PATH", path)
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        };
+        assert_eq!(
+            path_after("/usr/local/bin:/usr/bin:/bin"),
+            "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
+        );
+        // Already there, nothing is added twice.
+        assert_eq!(
+            path_after("/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/sbin"),
+            "/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/sbin"
+        );
+    }
+
     use super::*;
     use helixforge_core::PackageNames;
 

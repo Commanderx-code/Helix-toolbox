@@ -89,7 +89,9 @@ The items:
       provenance, package integrity and unchecked downloads kept apart;
       privileges and validation
 - [x] Releases wait for Distributions on their commit
-- [ ] VM tests of the boot and login entries, and more hardware reports
+- [x] VM tests of the boot and login entries (v1.5.1): Arch and Debian
+      virtual machines run them for real, reboot and check
+- [ ] More hardware reports, Limine and UEFI in the virtual machines
 
 ## v1.1.0: configuration drift and the command palette (done)
 

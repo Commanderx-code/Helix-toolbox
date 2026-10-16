@@ -44,6 +44,15 @@ class ValidationRecordTest(unittest.TestCase):
         self.assertEqual(merged['run'], 42)
         self.assertEqual(list(merged['images']), ['archlinux:latest', 'fedora:latest'])
 
+    def test_virtual_machines_count_only_their_verified_cases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            part = Path(directory) / 'validation-vm-arch.json'
+            part.write_text(json.dumps({'image': 'vm:arch', 'entries': {'grub-dracula': 'verified'},
+                                        'failures': {'sddm': 'no login screen'}}))
+            merged = validation_record.merge('7', 'url', 'abc', [part])
+        self.assertEqual(merged['images'], {})
+        self.assertEqual(merged['vms'], {'arch': {'entries': {'grub-dracula': 'verified'}}})
+
     def test_validation_toml_names_real_entries_and_tests(self):
         claims = tomllib.loads((ROOT / 'catalog/validation.toml').read_text())
         known = validation_record.entry_ids(ROOT / 'catalog')
