@@ -33,7 +33,10 @@ emulator and types keys. It checks:
 - completions for bash, zsh and fish, and the manual pages, naming the
   commands and leaving out hidden ones
 - unreadable settings, favourites, profiles and history lines: skipped or
-  replaced by defaults, with the menu and commands still working
+  replaced by defaults, with the menu and commands still working; settings
+  from a later version (unknown names and values) keep the ones understood
+- the monochrome theme drawing no colour anywhere, the selection in reverse
+  video, and `NO_COLOR` not replacing the remembered theme
 - `--json` from list, search, info, plan, a dry run, history, profile list
   and system parsing as JSON with schema 1, and a real run or `docgen`
   refused with it

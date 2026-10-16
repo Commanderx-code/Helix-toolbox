@@ -10,13 +10,12 @@ inside the application after a confirmation, with a record of every run. It is
 written in Rust and built so a graphical interface can share the same engine
 later.
 
-> HelixForge is in beta (v0.7): it carries every entry of Commander Toolbox,
+> HelixForge 1.0 is stable: it carries every entry of Commander Toolbox,
 > which it replaces, and is tested on Arch, Debian, Ubuntu, Fedora and
-> openSUSE Tumbleweed. The
-> [user guide](docs/GUIDE.md) walks through it, the
-> [beta testing guide](docs/BETA.md) says how to help before v1.0, and the
-> [changelog](CHANGELOG.md) lists what each release brought. See
-> `docs/ROADMAP.md` for what comes next.
+> openSUSE Tumbleweed. The [user guide](docs/GUIDE.md) walks through it,
+> [STABILITY.md](docs/STABILITY.md) says what stays the same across 1.x,
+> [REPORTING.md](docs/REPORTING.md) says how to report a problem, and the
+> [changelog](CHANGELOG.md) lists what each release brought.
 
 ## Run
 
@@ -69,10 +68,12 @@ remembers its group and row when you move to another.
 
 The menu follows the HelixForge dashboard design: cards for the main screens
 and quick actions, with Nerd Font icons. `t` or Settings switches between
-three themes: **solid**, the default, paints the design's dark panels;
+four themes: **solid**, the default, paints the design's dark panels;
 **transparent** draws over your terminal's own background, so a wallpaper or
 transparency shows through (it was called **default** before, and that name
-still works); **compatible** keeps to sixteen colours. Settings also turns the icons
+still works); **compatible** keeps to sixteen colours; **monochrome** uses no
+colour at all, only bold and reverse video. With `NO_COLOR` set, HelixForge
+starts in monochrome without changing the theme it remembers. Settings also turns the icons
 off for terminals without a Nerd Font. Both choices are remembered in
 `~/.config/helixforge/settings.toml`; `--theme` and `--plain` override them
 for one run.

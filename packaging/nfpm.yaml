@@ -75,6 +75,10 @@ contents:
     dst: /usr/share/doc/helixforge/GUIDE.md
   - src: CHANGELOG.md
     dst: /usr/share/doc/helixforge/CHANGELOG.md
+  - src: docs/STABILITY.md
+    dst: /usr/share/doc/helixforge/STABILITY.md
+  - src: docs/REPORTING.md
+    dst: /usr/share/doc/helixforge/REPORTING.md
   - src: LICENSE
     dst: /usr/share/doc/helixforge/copyright
     packager: deb

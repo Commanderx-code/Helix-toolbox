@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 /// panels of the dashboard design; `Transparent` draws over the terminal's own
 /// background, so a wallpaper or transparency shows through; `Compatible`
 /// keeps to the sixteen basic colours for terminals that render true colour
-/// poorly.
+/// poorly; `Monochrome` uses no colour at all, only bold and reverse video,
+/// and is what `NO_COLOR` asks for.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Theme {
@@ -18,6 +19,7 @@ pub enum Theme {
     #[value(alias = "default")]
     Transparent,
     Compatible,
+    Monochrome,
 }
 
 impl Theme {
@@ -25,7 +27,8 @@ impl Theme {
         match self {
             Theme::Solid => Theme::Transparent,
             Theme::Transparent => Theme::Compatible,
-            Theme::Compatible => Theme::Solid,
+            Theme::Compatible => Theme::Monochrome,
+            Theme::Monochrome => Theme::Solid,
         }
     }
 
@@ -34,6 +37,7 @@ impl Theme {
             Theme::Solid => "solid",
             Theme::Transparent => "transparent",
             Theme::Compatible => "compatible",
+            Theme::Monochrome => "monochrome",
         }
     }
 
@@ -74,7 +78,7 @@ impl Theme {
     }
 
     pub fn disabled(self) -> Color {
-        Color::DarkGray
+        self.pick(Color::DarkGray, Color::DarkGray)
     }
 
     pub fn muted(self) -> Color {
@@ -130,16 +134,47 @@ impl Theme {
 
     /// A selected row or card.
     pub fn selection(self) -> Style {
-        Style::default()
-            .bg(self.selected())
-            .fg(self.on_selected())
-            .bold()
+        match self {
+            Theme::Monochrome => Style::default().reversed().bold(),
+            _ => Style::default()
+                .bg(self.selected())
+                .fg(self.on_selected())
+                .bold(),
+        }
+    }
+
+    /// The fill behind a selected card or sidebar row.
+    pub fn selected_fill(self) -> Style {
+        match self {
+            Theme::Monochrome => Style::default().reversed(),
+            _ => Style::default().bg(self.selected()),
+        }
+    }
+
+    /// A button in a popup, in the colour that says what it does.
+    pub fn button(self, colour: Color) -> Style {
+        match self {
+            Theme::Monochrome => Style::default().reversed().bold(),
+            _ => Style::default().bg(colour).fg(self.on_highlight()).bold(),
+        }
+    }
+
+    /// Whether this theme draws colour; the banner picture needs it.
+    pub fn colourful(self) -> bool {
+        matches!(self, Theme::Solid | Theme::Transparent)
     }
 
     fn pick(self, rich: Color, compatible: Color) -> Color {
         match self {
             Theme::Solid | Theme::Transparent => rich,
             Theme::Compatible => compatible,
+            Theme::Monochrome => Color::Reset,
         }
     }
+}
+
+/// Whether `NO_COLOR` asks for no colour: set, and not empty
+/// (<https://no-color.org>).
+pub fn no_color() -> bool {
+    std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty())
 }

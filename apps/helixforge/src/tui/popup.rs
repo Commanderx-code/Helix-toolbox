@@ -200,12 +200,7 @@ impl ConfirmPopup {
             Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }),
             sections[0],
         );
-        let button = |label: &'static str, colour| {
-            Span::styled(
-                label,
-                Style::default().bg(colour).fg(theme.on_highlight()).bold(),
-            )
-        };
+        let button = |label: &'static str, colour| Span::styled(label, theme.button(colour));
         let actions = Text::from(Line::from(vec![
             button(" [Y] Run ", theme.success()),
             Span::raw("    "),

@@ -16,10 +16,10 @@ Download the file for your distribution from the release, check it (below),
 then:
 
 ```sh
-sudo pacman -U helixforge-0.7.0-1-x86_64.pkg.tar.zst     # Arch, Garuda, CachyOS, Manjaro
-sudo apt install ./helixforge_0.7.0-1_amd64.deb          # Debian, Ubuntu, Mint, Pop!_OS
-sudo dnf install ./helixforge-0.7.0-1.x86_64.rpm         # Fedora
-sudo zypper install --allow-unsigned-rpm ./helixforge-0.7.0-1.x86_64.rpm   # openSUSE
+sudo pacman -U helixforge-1.0.0-1-x86_64.pkg.tar.zst     # Arch, Garuda, CachyOS, Manjaro
+sudo apt install ./helixforge_1.0.0-1_amd64.deb          # Debian, Ubuntu, Mint, Pop!_OS
+sudo dnf install ./helixforge-1.0.0-1.x86_64.rpm         # Fedora
+sudo zypper install --allow-unsigned-rpm ./helixforge-1.0.0-1.x86_64.rpm   # openSUSE
 ```
 
 The packages are not signed with a distribution key; zypper needs
@@ -57,7 +57,7 @@ which repository, workflow and commit produced it. With the GitHub command
 line:
 
 ```sh
-gh attestation verify helixforge_0.7.0-1_amd64.deb --repo Commanderx-code/Helix-Forge
+gh attestation verify helixforge_1.0.0-1_amd64.deb --repo Commanderx-code/Helix-Forge
 ```
 
 It succeeds only for a file built by this repository's release workflow,

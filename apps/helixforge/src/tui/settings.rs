@@ -9,7 +9,7 @@ use std::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct Look {
     pub theme: Theme,
     /// Nerd Font icons; off draws plain text instead.
@@ -41,16 +41,36 @@ pub fn path() -> Option<PathBuf> {
 }
 
 /// The saved look, or the default when there is none or it cannot be read.
+/// Each setting is read on its own: one this version does not understand,
+/// such as a theme from a later version, falls back to its default without
+/// losing the others, and settings it does not know are ignored.
 pub fn load(path: &Path) -> Look {
-    fs::read_to_string(path)
+    let Some(table) = fs::read_to_string(path)
         .ok()
-        .and_then(|text| toml::from_str(&text).ok())
-        .unwrap_or_default()
+        .and_then(|text| text.parse::<toml::Table>().ok())
+    else {
+        return Look::default();
+    };
+    let mut look = Look::default();
+    let get = |name: &str| table.get(name).cloned();
+    if let Some(theme) = get("theme").and_then(|value| value.try_into().ok()) {
+        look.theme = theme;
+    }
+    for (name, field) in [
+        ("icons", &mut look.icons),
+        ("keep_going", &mut look.keep_going),
+        ("snapshots", &mut look.snapshots),
+    ] {
+        if let Some(value) = get(name).and_then(|value| value.as_bool()) {
+            *field = value;
+        }
+    }
+    look
 }
 
 /// Pinned entries, kept beside the settings as `favourites.toml`.
 #[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 struct Favourites {
     entries: Vec<String>,
 }
@@ -127,5 +147,18 @@ mod tests {
         assert_eq!(load(&path).theme, Theme::Transparent);
         fs::write(&path, "theme = 3\n").unwrap();
         assert_eq!(load(&path), Look::default());
+        // A later version's theme and settings cost nothing else.
+        fs::write(
+            &path,
+            "theme = \"aurora\"\nicons = false\nanimations = true\n[future]\nx = 1\n",
+        )
+        .unwrap();
+        assert_eq!(
+            load(&path),
+            Look {
+                icons: false,
+                ..Look::default()
+            }
+        );
     }
 }

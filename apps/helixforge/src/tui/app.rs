@@ -9,7 +9,7 @@ use super::{
     running::RunningView,
     settings::{self, Look},
     sysinfo::Overview,
-    theme::Theme,
+    theme::{self, Theme},
 };
 use crate::TuiArgs;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -204,6 +204,8 @@ pub struct App {
     catalog: Catalog,
     platform: LinuxInfo,
     theme: Theme,
+    /// The theme to remember: the one chosen, not one NO_COLOR imposed.
+    saved_theme: Theme,
     focus: Focus,
     screen: Screen,
     menu: Vec<MenuItem>,
@@ -296,6 +298,7 @@ impl App {
             catalog,
             platform,
             theme: args.theme.unwrap_or_default(),
+            saved_theme: Theme::default(),
             focus: Focus::Sidebar,
             screen: Screen::Dashboard,
             menu,
@@ -359,7 +362,13 @@ impl App {
         path: Option<std::path::PathBuf>,
         args: &TuiArgs,
     ) -> Self {
-        self.theme = args.theme.unwrap_or(look.theme);
+        // NO_COLOR applies to this run only; the remembered theme stays.
+        self.saved_theme = look.theme;
+        self.theme = args.theme.unwrap_or(if theme::no_color() {
+            Theme::Monochrome
+        } else {
+            look.theme
+        });
         self.icons = look.icons && !args.plain;
         self.keep_going = look.keep_going;
         if let Some(path) = &path {
@@ -417,13 +426,11 @@ impl App {
         self
     }
 
-    /// The banner, unless icons are off, the sixteen-colour theme is in use,
+    /// The banner, unless icons are off, a theme with few or no colours is in use,
     /// or the terminal is too narrow for it and the status beside it.
     fn banner(&self, width: u16) -> Option<&Protocol> {
         self.banner.as_ref().filter(|banner| {
-            self.icons
-                && self.theme != Theme::Compatible
-                && banner.size().width + 2 + STATUS_WIDTH <= width
+            self.icons && self.theme.colourful() && banner.size().width + 2 + STATUS_WIDTH <= width
         })
     }
 
@@ -433,7 +440,7 @@ impl App {
             return;
         };
         let look = Look {
-            theme: self.theme,
+            theme: self.saved_theme,
             icons: self.icons,
             keep_going: self.keep_going,
             snapshots: self.snapshots,
@@ -828,7 +835,7 @@ impl App {
             frame,
             tile,
             self.theme.selected_line(),
-            Style::default().bg(self.theme.selected()),
+            self.theme.selected_fill(),
         );
         frame.render_widget(
             Paragraph::new(Line::styled(
@@ -958,7 +965,7 @@ impl App {
                         _ => self.theme.line(),
                     };
                     let fill = if current {
-                        Style::default().bg(self.theme.selected())
+                        self.theme.selected_fill()
                     } else {
                         self.theme.card()
                     };
@@ -983,7 +990,7 @@ impl App {
                     let mut spans = vec![edge, Span::raw(" ")];
                     spans.extend(label.spans);
                     let style = if current {
-                        Style::default().bg(self.theme.selected())
+                        self.theme.selected_fill()
                     } else {
                         Style::default()
                     };
@@ -1162,7 +1169,7 @@ impl App {
             _ => self.theme.line(),
         };
         let fill = if selected {
-            Style::default().bg(self.theme.selected())
+            self.theme.selected_fill()
         } else {
             self.theme.card()
         };
@@ -2013,6 +2020,7 @@ impl App {
             }
             KeyCode::Char('t') | KeyCode::Char('T') => {
                 self.theme = self.theme.next();
+                self.saved_theme = self.theme;
                 self.save_look();
             }
             KeyCode::Char('g') | KeyCode::Char('G') if matches!(self.screen, Screen::Area(_)) => {
@@ -2850,6 +2858,7 @@ impl App {
         match self.main_state.selected().unwrap_or(0) {
             0 => {
                 self.theme = self.theme.next();
+                self.saved_theme = self.theme;
                 self.save_look();
             }
             1 => {
@@ -3932,7 +3941,12 @@ mod tests {
     fn the_dashboard_draws_cards_and_icons_in_every_theme() {
         let mut app = app();
         app.icons = true;
-        for theme in [Theme::Solid, Theme::Transparent, Theme::Compatible] {
+        for theme in [
+            Theme::Solid,
+            Theme::Transparent,
+            Theme::Compatible,
+            Theme::Monochrome,
+        ] {
             app.theme = theme;
             let text = screen(&mut app, 120, 40);
             assert!(text.contains("\u{f0e4}  Dashboard"), "{text}");
@@ -3947,6 +3961,62 @@ mod tests {
         assert!(text.contains("Install Plan"), "{text}");
         app.icons = false;
         assert!(!screen(&mut app, 120, 40).contains('\u{f0e4}'));
+    }
+
+    #[test]
+    fn monochrome_draws_no_colour_and_still_shows_the_selection() {
+        use ratatui::style::{Color, Modifier};
+        let mut app = app();
+        app.theme = Theme::Monochrome;
+        app.open_screen(Screen::Area(0));
+        app.focus = Focus::Main;
+        for (width, height) in [(120, 40), (100, 25)] {
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal.draw(|frame| app.draw(frame)).unwrap();
+            let buffer = terminal.backend().buffer();
+            let mut reversed = 0;
+            for cell in buffer.content() {
+                assert_eq!(cell.fg, Color::Reset, "{cell:?}");
+                assert_eq!(cell.bg, Color::Reset, "{cell:?}");
+                if cell.modifier.contains(Modifier::REVERSED) {
+                    reversed += 1;
+                }
+            }
+            assert!(reversed > 0, "the selection shows in reverse video");
+        }
+        // The confirmation's buttons too.
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "System Report (script)");
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        assert!(
+            terminal
+                .backend()
+                .buffer()
+                .content()
+                .iter()
+                .all(|cell| cell.fg == Color::Reset && cell.bg == Color::Reset)
+        );
+    }
+
+    #[test]
+    fn no_color_is_for_one_run_and_the_chosen_theme_is_remembered() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.toml");
+        let mut app = app();
+        app.saved_theme = Theme::Transparent;
+        app.theme = Theme::Monochrome;
+        app.settings_path = Some(path.clone());
+        app.icons = false;
+        app.save_look();
+        assert_eq!(settings::load(&path).theme, Theme::Transparent);
+        // Choosing a theme remembers it.
+        press(&mut app, KeyCode::Char('t'));
+        assert_eq!(app.theme, Theme::Solid);
+        assert_eq!(settings::load(&path).theme, Theme::Solid);
     }
 
     #[test]

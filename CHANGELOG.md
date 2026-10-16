@@ -4,6 +4,25 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.0.0
+
+The first stable release. What stays the same across 1.x is written down in
+[STABILITY.md](docs/STABILITY.md).
+
+- Tested on openSUSE Tumbleweed and Ubuntu 22.04 as well as Arch, Debian,
+  Ubuntu 24.04 and Fedora, on every change; HelixForge's own packages are
+  installed, used and removed on each.
+- 37 more entries know their openSUSE package (first in v0.7.1), each checked
+  against the openSUSE repositories.
+- A **monochrome** theme, with no colour, used for the run when `NO_COLOR`
+  is set.
+- Settings are read one by one: a setting or value from a later version is
+  ignored instead of resetting the others.
+- Damaged settings, favourites, profiles and history are skipped or replaced
+  by defaults, and never stop the menu or the commands.
+- The release workflows pin every action to a commit.
+- docs/BETA.md became docs/REPORTING.md.
+
 ## v0.7.0
 
 Beta release: packaging, documentation and testing.
@@ -16,7 +35,7 @@ Beta release: packaging, documentation and testing.
 - `helixforge report` prints what a bug report needs, for pasting into an
   issue, with `--json`.
 - A user guide ([GUIDE.md](docs/GUIDE.md)), a beta testing guide
-  ([BETA.md](docs/BETA.md)), issue forms and this changelog.
+  ([REPORTING.md](docs/REPORTING.md)), issue forms and this changelog.
 - Fixed: unpacking the built-in catalog could fail on some file systems,
   depending on the order the build machine listed the scripts folder.
 

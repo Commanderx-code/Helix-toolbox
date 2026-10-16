@@ -10,7 +10,7 @@
 | v0.5.0 | Workstation profiles, favourites and search | 4 (profiles 2.0), 7 (search and favourites) (done) |
 | v0.6.0 | Unified update overview and JSON command line | 6 (update manager), 9 (JSON output) (done) |
 | v0.7.0 | Packaging, usability, documentation and beta testing | 10 (native packaging) (done) |
-| v1.0.0 | Stable, validated public TUI release | |
+| v1.0.0 | Stable, validated public TUI release | (done) |
 
 The items:
 
@@ -182,7 +182,13 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] The Install Plan screen keeps its plan for a few seconds and drops it
       after a run, since planning now asks the package manager
 
-## v1.0.0: stable, validated public release
+## After 1.0
+
+- ARM64 builds and packages, once there is an ARM64 machine to test them on
+- The graphical interface (Milestone 5 below), on the same engine
+- What testers report (docs/REPORTING.md)
+
+## v1.0.0: stable, validated public release (done)
 
 - [x] Validated on more systems: openSUSE Tumbleweed and Ubuntu 22.04 (the
       oldest glibc the packages support) join the Distributions containers;
@@ -190,9 +196,12 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       repositories there, which every openSUSE name in the catalog now is
 - [x] Damaged settings, favourites, profiles and history never stop the
       menu or the commands
-- [ ] A written compatibility promise for 1.x: commands, JSON, files, ids
-- [ ] `NO_COLOR`, a final security review, documentation for a stable
-      release
+- [x] A written compatibility promise for 1.x (docs/STABILITY.md):
+      commands, exit status, JSON schema 1, your files, entry ids; settings
+      read one by one, so a later version's settings cost nothing
+- [x] A monochrome theme, chosen for the run when `NO_COLOR` is set
+- [x] Security review: every action in the workflows pinned to a commit
+- [x] Documentation for a stable release
 
 ## v0.7.0: packaging, usability, documentation and beta testing (done)
 
@@ -207,7 +216,7 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       tools, terminal, settings, recent runs and health checks, for an
       issue, with the home folder shown as `~`; `--json` too
 - [x] Issue forms for problems and ideas, asking for the report
-- [x] A user guide (docs/GUIDE.md), a beta testing guide (docs/BETA.md) and
+- [x] A user guide (docs/GUIDE.md), a beta testing guide (docs/REPORTING.md) and
       a changelog
 - [ ] ARM64 builds: moved to after v1.0, when there is a tester with an
       ARM64 machine

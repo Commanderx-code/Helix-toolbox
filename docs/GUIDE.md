@@ -14,6 +14,8 @@ the system ask for your password inside the run, when they need it. The
 terminal should be at least 100 columns by 25 rows; a Nerd Font shows the
 icons (Settings turns them off otherwise). In Ghostty, Kitty, WezTerm, foot
 and other terminals that show pictures, the header is the HelixForge banner.
+`t` cycles the themes: solid, transparent, compatible (sixteen colours) and
+monochrome (no colour, the theme `NO_COLOR` selects for a run).
 
 ## Finding your way
 
@@ -103,7 +105,8 @@ promises to roll back packages itself.
 **History** lists every run with its result; `Enter` opens its saved log.
 
 To report a problem, run `helixforge report` and paste its output into an
-issue; [BETA.md](BETA.md) says what helps.
+issue; [REPORTING.md](REPORTING.md) says what helps, and
+[STABILITY.md](STABILITY.md) what stays the same across 1.x releases.
 
 ## The command line
 

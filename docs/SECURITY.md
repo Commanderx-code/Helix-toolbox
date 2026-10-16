@@ -48,6 +48,11 @@
   against the PATH, the package manager's own list and Flatpak's directories.
   The check reads; it changes nothing. It shows a package is present or gone,
   not that the package is genuine or works.
+- **Releases.** Every published file has a SHA-256 sum and a signed build
+  provenance attestation from the release workflow
+  ([INSTALL.md](INSTALL.md) shows how to check both). The workflows pin
+  every third-party action to a commit, and the packaging tool nfpm to a
+  checksum, so a moved tag cannot change what builds a release.
 - **Not provided.** Rollback, verification of scripts, commands and Nix
   entries beyond their exit status, and isolation of what an entry's script
   does once it runs.

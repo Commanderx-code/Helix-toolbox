@@ -1,10 +1,10 @@
-# Beta testing
+# Testing and reporting problems
 
-HelixForge v0.7 is the beta before v1.0, the first release meant for
-everyone. Before then it needs to have run on more machines than its
-developer's: other distributions, other terminals, other hardware, and
-people who use it differently. This page says what to try, how to try it
-without risking a machine you depend on, and what makes a report useful.
+HelixForge is tested in containers of six distributions on every change, but
+real machines differ: other derivatives, terminals, hardware, and people who
+use it differently. Reports from them are what make it better. This page
+says what to try, how to try it without risking a machine you depend on, and
+what makes a report useful.
 
 ## Testing safely
 
@@ -40,8 +40,8 @@ Anything is welcome. These need the most eyes:
 5. **Helix Doctor.** Do the checks describe your machine correctly? Did a
    check call something a problem that is not one, or miss one that is?
 6. **Your terminal.** Does the menu draw correctly in it: colours, icons,
-   the banner, resizing, small windows? Try the themes (`t`) and Settings'
-   icons switch.
+   the banner, resizing, small windows? Try the themes (`t`), Settings'
+   icons switch, and `NO_COLOR=1 helixforge`.
 7. **The command line and JSON**, if you script things
    ([JSON.md](JSON.md)).
 
@@ -69,8 +69,8 @@ A run that went wrong is easier to fix with the exact entry, its log and the
 report than with any description. Ideas and missing entries are welcome too:
 the second issue form asks for package names and install instructions.
 
-## Before v1.0
+## What is promised
 
-v1.0 follows when the beta has run on several distributions and terminals
-with no open problems that lose data or leave a machine half-configured, and
-the documentation answers the questions testers asked.
+[STABILITY.md](STABILITY.md) lists what stays the same across 1.x: the
+commands, the JSON, your files and entry ids. Something that breaks one of
+those is a bug worth reporting even when nothing else went wrong.
