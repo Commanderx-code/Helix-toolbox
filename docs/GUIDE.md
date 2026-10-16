@@ -3,9 +3,9 @@
 HelixForge sets up and looks after a Linux machine from one menu in the
 terminal. Everything it changes is planned first and shown to you, runs only
 after you confirm it, and is recorded in History. This guide walks through
-the menu and the common jobs; [INSTALL.md](INSTALL.md) covers installing it
-and the [README](../README.md) the catalog format and the command line in
-full.
+the menu and the common jobs; [INSTALL.md](INSTALL.md) covers installing it,
+[REFERENCE.md](REFERENCE.md) every screen and command in full, and
+[CATALOG.md](CATALOG.md) the catalog format and how runs are planned.
 
 ## Starting
 

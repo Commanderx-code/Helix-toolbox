@@ -1,4 +1,19 @@
-# Security notes
+# Security
+
+## Reporting a vulnerability
+
+Please report security problems privately, not in a public issue: use
+[**Report a vulnerability**](https://github.com/Commanderx-code/Helix-Forge/security/advisories/new)
+on the repository's Security tab, which only the maintainer can read.
+Include what an attacker could do, the HelixForge version
+(`helixforge --version`), and how to reproduce it. A fix goes into the next
+release, and the advisory is published with it, crediting you unless you
+would rather not be named.
+
+Fixes go into the latest release only ([STABILITY.md](STABILITY.md)), so
+update before reporting.
+
+## How HelixForge keeps runs safe
 
 - **Trust boundary.** Only the catalog embedded in the binary runs. There is
   no remote catalog, no plugin loading and no downloaded script. Entries that

@@ -1,6 +1,8 @@
 # Working on HelixForge
 
 Guidance for anyone, person or coding agent, changing this repository.
+[CONTRIBUTING.md](CONTRIBUTING.md) is the same for people, with how to get
+started and open a pull request.
 
 ## What this is
 
@@ -44,8 +46,8 @@ end of its output. `docs/TESTING.md` explains the test layers.
 
 - Commits are plain messages in the repository owner's name, with no
   attribution lines for tools or assistants.
-- Catalog entries are one TOML file per entry; see `README.md` for the
-  format. Scripts referenced by id live in `scripts/installers/`; the
+- Catalog entries are one TOML file per entry; see `docs/CATALOG.md` for
+  the format. Scripts referenced by id live in `scripts/installers/`; the
   installers from the previous toolbox are under `scripts/installers/commander/`
   with their tests in `tests/installers/`, and `scripts/verify.sh` runs both.
 - Documentation does not say that something was written by an AI tool.

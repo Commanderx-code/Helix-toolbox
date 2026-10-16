@@ -6,13 +6,22 @@ dotfiles or Myfish sources raises the patch number and is not listed here.
 
 ## Unreleased
 
-- `cargo install --locked helixforge` builds HelixForge on your machine:
-  the crates are ready for crates.io, and each release publishes them once
-  a crates.io token is set up ([RELEASING.md](docs/RELEASING.md));
-  `cargo install --git` works meanwhile ([INSTALL.md](docs/INSTALL.md)).
-- Helix Doctor: a failed service whose unit file was removed (its package
-  uninstalled) is a notice, "removed, but its last failure is still
-  remembered", with `systemctl reset-failed` as the repair instead of a
+- A new README with screenshots, an install table and a documentation index;
+  the detail it held moved to docs/REFERENCE.md, docs/CATALOG.md and
+  CONTRIBUTING.md. A code of conduct, a pull request template and a security
+  policy for private vulnerability reports.
+
+## v1.0.1 to v1.0.3
+
+- v1.0.3: HelixForge is on [crates.io](https://crates.io/crates/helixforge):
+  `cargo install --locked helixforge` builds it on any machine with Rust,
+  and every release publishes the crates at its own version
+  ([RELEASING.md](docs/RELEASING.md)).
+- v1.0.2: `cargo install --git` works ([INSTALL.md](docs/INSTALL.md)), and
+  the crates are ready for crates.io.
+- v1.0.1: Helix Doctor treats a failed service whose unit file was removed
+  (its package uninstalled) as a notice, "removed, but its last failure is
+  still remembered", with `systemctl reset-failed` as the repair instead of a
   restart that cannot work.
 
 ## v1.0.0
