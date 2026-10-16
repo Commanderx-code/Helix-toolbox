@@ -87,6 +87,11 @@ command; on Arch that is the whole system, as Arch requires. Nix cannot count
 its updates beforehand, so its row shows how old its locked packages are, and
 updates with `u`.
 
+The **HelixForge** row updates HelixForge itself, the way it was installed:
+the new package for your distribution (downloaded and checked first), `cargo
+install` again, or a fresh build of your checkout. Copies run through the
+launcher or `start.sh` are always the latest release already.
+
 ## When something is wrong
 
 **Helix Doctor** checks the network and name resolution, failed services,

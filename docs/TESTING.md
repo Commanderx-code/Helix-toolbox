@@ -30,7 +30,10 @@ emulator and types keys. It checks:
 - sidebar navigation, the help popup, search and clearing it
 - pinning an entry, `favourites.toml`, and the entry under Favourites after a
   restart
-- the Updates screen between the catalog areas and History
+- the Updates screen between the catalog areas and History; HelixForge's
+  own row for each way of installing it, and `fetch-release` keeping a file
+  that matches the release's SHA256SUMS and deleting one that does not
+  (from a release folder served over `file://`)
 - completions for bash, zsh and fish, and the manual pages, naming the
   commands and leaving out hidden ones
 - unreadable settings, favourites, profiles and history lines: skipped or

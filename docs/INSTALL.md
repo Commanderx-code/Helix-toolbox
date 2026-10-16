@@ -26,7 +26,9 @@ sudo zypper install --allow-unsigned-rpm ./helixforge-1.0.0-1.x86_64.rpm   # ope
 The packages are not signed with a distribution key; zypper needs
 `--allow-unsigned-rpm` to accept that. Check the file first instead (below).
 
-A newer release is installed the same way, over the old one. Remove it with
+A newer release is installed the same way, over the old one, or from inside
+HelixForge: the **HelixForge** row of the Updates screen downloads it, checks
+it and installs it for you (`helixforge updates --online --apply helixforge`). Remove it with
 `sudo pacman -R helixforge`, `sudo apt remove helixforge`, `sudo dnf remove
 helixforge` or `sudo zypper remove helixforge`; your settings, profiles and
 history in `~/.config/helixforge` and `~/.local/state/helixforge` stay.
@@ -81,7 +83,8 @@ cargo install --locked --git https://github.com/Commanderx-code/Helix-Forge --ta
 cargo install --locked --git https://github.com/Commanderx-code/Helix-Forge helixforge
 ```
 
-`cargo install` again updates it; `cargo uninstall helixforge` removes it.
+`cargo install` again updates it (the Updates screen's HelixForge row runs it
+for you); `cargo uninstall helixforge` removes it.
 A copy built this way has no manual pages or menu entry (the packages have
 those); `helixforge completions bash|zsh|fish` prints its shell completions.
 A build from GitHub reports the version in `Cargo.toml`, which can be a

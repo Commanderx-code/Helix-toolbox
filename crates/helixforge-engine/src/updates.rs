@@ -74,6 +74,67 @@ pub struct Places {
     pub home: PathBuf,
     /// Seconds since 1970, for how old the Nix inputs are.
     pub now: u64,
+    /// The HelixForge asking, for its own update; none leaves it out.
+    pub this: Option<ThisCopy>,
+}
+
+/// The running HelixForge: its version, where it runs from, and so how it
+/// was installed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ThisCopy {
+    pub version: String,
+    pub exe: PathBuf,
+    pub install: Install,
+    /// Where a downloaded package waits to be installed.
+    pub cache: PathBuf,
+}
+
+/// How this copy of HelixForge was installed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Install {
+    /// A distribution package, in /usr/bin.
+    Package,
+    /// `cargo install`, in Cargo's bin directory.
+    Cargo,
+    /// Built in a checkout of the repository, whose root this is.
+    Source(PathBuf),
+    /// The launcher's copy, which it replaces with the latest release when
+    /// it starts.
+    Launcher,
+    /// Downloaded by start.sh into a temporary directory for one run.
+    Download,
+    /// Somewhere else.
+    Other,
+}
+
+/// The directories that say how a copy was installed.
+pub struct Homes {
+    pub cargo: PathBuf,
+    pub data: PathBuf,
+    pub temp: PathBuf,
+}
+
+/// How the copy at `exe` was installed; `checkout` says whether a directory
+/// is the root of a HelixForge checkout.
+pub fn install_of(exe: &Path, homes: &Homes, checkout: &dyn Fn(&Path) -> bool) -> Install {
+    if exe.starts_with("/usr/bin") || exe.starts_with("/usr/sbin") {
+        Install::Package
+    } else if exe.starts_with(homes.cargo.join("bin")) {
+        Install::Cargo
+    } else if exe.starts_with(homes.data.join("helixforge")) {
+        Install::Launcher
+    } else if let Some(root) = exe
+        .ancestors()
+        .find(|dir| dir.file_name().is_some_and(|name| name == "target"))
+        .and_then(Path::parent)
+        .filter(|root| checkout(root))
+    {
+        Install::Source(root.to_path_buf())
+    } else if exe.starts_with(&homes.temp) {
+        Install::Download
+    } else {
+        Install::Other
+    }
 }
 
 impl Places {
@@ -89,8 +150,233 @@ impl Places {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|elapsed| elapsed.as_secs())
             .unwrap_or(0);
-        Places { config, home, now }
+        Places {
+            config,
+            home,
+            now,
+            this: None,
+        }
     }
+
+    /// The same, with the running HelixForge, `version` and at `exe`, for
+    /// its own update.
+    pub fn with_this(mut self, version: &str, exe: PathBuf) -> Self {
+        let variable = |name: &str| {
+            std::env::var_os(name)
+                .map(PathBuf::from)
+                .filter(|path| path.is_absolute())
+        };
+        let homes = Homes {
+            cargo: variable("CARGO_HOME").unwrap_or_else(|| self.home.join(".cargo")),
+            data: variable("XDG_DATA_HOME").unwrap_or_else(|| self.home.join(".local/share")),
+            temp: std::env::temp_dir(),
+        };
+        let checkout =
+            |root: &Path| root.join("Cargo.toml").is_file() && root.join(".git").exists();
+        let cache = variable("XDG_CACHE_HOME").unwrap_or_else(|| self.home.join(".cache"));
+        self.this = Some(ThisCopy {
+            version: version.to_string(),
+            install: install_of(&exe, &homes, &checkout),
+            exe,
+            cache: cache.join("helixforge/release"),
+        });
+        self
+    }
+}
+
+/// Where HelixForge's releases are.
+pub const RELEASES: &str = "https://github.com/Commanderx-code/Helix-Forge";
+const LATEST: &str = "https://api.github.com/repos/Commanderx-code/Helix-Forge/releases/latest";
+
+/// A release version's parts, for comparing.
+fn release(version: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = version.trim_start_matches('v').split('.');
+    let part = |part: Option<&str>| part?.parse::<u64>().ok();
+    let found = (
+        part(parts.next())?,
+        part(parts.next())?,
+        part(parts.next())?,
+    );
+    parts.next().is_none().then_some(found)
+}
+
+/// The release file a family's package manager installs.
+pub fn package_asset(manager: PackageManager, version: &str) -> Option<String> {
+    release(version)?;
+    match manager {
+        PackageManager::Arch => Some(format!("helixforge-{version}-1-x86_64.pkg.tar.zst")),
+        PackageManager::Debian => Some(format!("helixforge_{version}-1_amd64.deb")),
+        PackageManager::Fedora | PackageManager::Suse => {
+            Some(format!("helixforge-{version}-1.x86_64.rpm"))
+        }
+        _ => None,
+    }
+}
+
+/// HelixForge itself, updated the way it was installed.
+fn this_channel(
+    system: &dyn System,
+    platform: &LinuxInfo,
+    this: &ThisCopy,
+    online: bool,
+) -> Channel {
+    let mut channel = Channel {
+        id: "helixforge".into(),
+        name: "HelixForge".into(),
+        pending: None,
+        note: String::new(),
+        commands: Vec::new(),
+        requires: Vec::new(),
+        caveat: None,
+    };
+    // The latest release, asked of GitHub only in an online check.
+    let latest = || -> Option<String> {
+        let text = read(
+            system,
+            &[
+                "curl",
+                "-fsSL",
+                "--max-time",
+                "15",
+                "--proto",
+                "=https",
+                LATEST,
+            ],
+        )?;
+        let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+        let tag = json["tag_name"].as_str()?;
+        release(tag)?;
+        Some(tag.trim_start_matches('v').to_string())
+    };
+    let behind = |latest: &str| {
+        let pending = match (release(&this.version), release(latest)) {
+            (Some(current), Some(newest)) if newest > current => vec![Pending {
+                name: "helixforge".into(),
+                from: Some(this.version.clone()),
+                to: Some(latest.to_string()),
+            }],
+            _ => Vec::new(),
+        };
+        Some(pending)
+    };
+    let exe = this.exe.to_string_lossy().into_owned();
+    match &this.install {
+        Install::Launcher | Install::Download => {
+            channel.pending = Some(Vec::new());
+            channel.note = format!(
+                "{}; it fetches the latest release each time it starts",
+                this.version
+            );
+        }
+        Install::Other => {
+            channel.note = format!(
+                "{} at {}, installed in a way HelixForge cannot update; update it the way you installed it",
+                this.version,
+                this.exe.display()
+            );
+        }
+        Install::Package | Install::Cargo if !online => {
+            channel.note = format!("{}; r checks GitHub for a newer release", this.version);
+        }
+        Install::Package | Install::Cargo => match latest() {
+            None => {
+                channel.note = format!(
+                    "{}; GitHub could not be asked for the latest release",
+                    this.version
+                );
+            }
+            Some(newest) => {
+                channel.pending = behind(&newest);
+                channel.note = format!("{}, the latest release is {newest}", this.version);
+                let waiting = channel.count().unwrap_or(0) > 0;
+                if this.install == Install::Cargo {
+                    if waiting && system.on_path("cargo") {
+                        channel.commands =
+                            vec![words(&["cargo", "install", "--locked", "helixforge"])];
+                        channel.requires = strings(&["cargo"]);
+                    }
+                } else if waiting
+                    && let Some(manager) = platform.manager
+                    && let Some(asset) = package_asset(manager, &newest)
+                {
+                    let cache = this.cache.to_string_lossy().into_owned();
+                    let file = this.cache.join(&asset).to_string_lossy().into_owned();
+                    let install: &[&str] = match manager {
+                        PackageManager::Arch => &["sudo", "pacman", "-U"],
+                        PackageManager::Debian => &["sudo", "apt-get", "install"],
+                        PackageManager::Fedora => &["sudo", "dnf", "install"],
+                        _ => &["sudo", "zypper", "install", "--allow-unsigned-rpm"],
+                    };
+                    let mut install = words(install);
+                    install.push(file);
+                    channel.commands = vec![
+                        vec![exe, "fetch-release".into(), newest.clone(), asset, cache],
+                        install,
+                    ];
+                    channel.requires = strings(&["curl", "sha256sum", "sudo"]);
+                    channel.caveat = Some(format!(
+                        "downloads the {newest} package from {RELEASES}/releases and checks it against the release's SHA256SUMS before installing it"
+                    ));
+                }
+            }
+        },
+        Install::Source(root) => {
+            let git = |args: &[&str]| {
+                let directory = root.to_string_lossy();
+                let mut command = vec!["git", "-C", directory.as_ref()];
+                command.extend(args);
+                read(system, &command)
+            };
+            let head = git(&["rev-parse", "HEAD"]).map(|text| text.trim().to_string());
+            let short = |hash: &str| hash.chars().take(12).collect::<String>();
+            channel.note = format!(
+                "a checkout at {}, {}",
+                root.display(),
+                head.as_deref()
+                    .map(short)
+                    .unwrap_or_else(|| "unknown".into())
+            );
+            if online {
+                let remote = git(&["ls-remote", "origin", "refs/heads/main"])
+                    .and_then(|text| text.split_whitespace().next().map(String::from));
+                if let (Some(head), Some(remote)) = (&head, remote) {
+                    channel.pending = Some(if *head == remote {
+                        Vec::new()
+                    } else {
+                        vec![Pending {
+                            name: "main".into(),
+                            from: Some(short(head)),
+                            to: Some(short(&remote)),
+                        }]
+                    });
+                }
+            } else {
+                channel.note.push_str("; r compares it with GitHub");
+            }
+            let directory = root.to_string_lossy().into_owned();
+            let manifest = root.join("Cargo.toml").to_string_lossy().into_owned();
+            channel.commands = vec![
+                // A checkout with local changes is left alone.
+                words(&["git", "-C", &directory, "diff", "--quiet", "HEAD"]),
+                words(&["git", "-C", &directory, "pull", "--ff-only"]),
+                words(&[
+                    "cargo",
+                    "build",
+                    "--release",
+                    "--locked",
+                    "--manifest-path",
+                    &manifest,
+                    "-p",
+                    "helixforge",
+                ]),
+            ];
+            channel.requires = strings(&["git", "cargo"]);
+            channel.caveat = Some(
+                "fast-forwards the checkout and builds it; a checkout with local changes or other commits is left alone".into(),
+            );
+        }
+    }
+    channel
 }
 
 fn words(command: &[&str]) -> Vec<String> {
@@ -321,6 +607,9 @@ pub fn overview(
             });
         }
     }
+    if let Some(this) = &places.this {
+        channels.push(this_channel(system, platform, this, online));
+    }
     // Package names, versions, flake input names and paths come from outside
     // HelixForge: keep terminal control characters out of what is shown.
     channels.into_iter().map(cleaned).collect()
@@ -499,6 +788,13 @@ pub fn columns(text: &str) -> Vec<Pending> {
 pub fn plan(channels: &[&Channel]) -> Plan {
     let mut plan = Plan::default();
     for channel in channels {
+        if channel.commands.is_empty() {
+            plan.notes.push(format!(
+                "{}: nothing to run ({})",
+                channel.name, channel.note
+            ));
+            continue;
+        }
         plan.privileged |= channel.requires.iter().any(|tool| tool == "sudo");
         plan.risk = plan.risk.max(match channel.id.as_str() {
             "pacman" | "apt" | "dnf" | "zypper" | "nixos" => Risk::High,
@@ -555,6 +851,7 @@ mod tests {
             home: PathBuf::from("/home/me"),
             // 2026-10-15
             now: 1_792_022_400,
+            this: None,
         }
     }
 
@@ -687,6 +984,136 @@ mod tests {
         odd.commands = vec![vec!["nix".into(), "/home/\x1b[2Jme".into()]];
         let plan = plan(&[&odd]);
         assert_eq!(plan.steps[0].display(), "nix /home/?[2Jme");
+    }
+
+    fn this(install: Install) -> ThisCopy {
+        ThisCopy {
+            version: "1.0.3".into(),
+            exe: PathBuf::from("/usr/bin/helixforge"),
+            install,
+            cache: PathBuf::from("/home/me/.cache/helixforge/release"),
+        }
+    }
+
+    fn latest(fake: &mut Fake, tag: &str) {
+        fake.commands.insert(
+            format!("curl -fsSL --max-time 15 --proto =https {LATEST}"),
+            (true, format!(r#"{{"tag_name": "{tag}", "name": "x"}}"#)),
+        );
+    }
+
+    fn only_this(fake: &Fake, install: Install, online: bool) -> Channel {
+        let mut places = places();
+        places.this = Some(this(install));
+        overview(fake, &arch(), &places, online)
+            .into_iter()
+            .find(|channel| channel.id == "helixforge")
+            .unwrap()
+    }
+
+    #[test]
+    fn where_it_runs_from_says_how_it_was_installed() {
+        let homes = Homes {
+            cargo: PathBuf::from("/home/me/.cargo"),
+            data: PathBuf::from("/home/me/.local/share"),
+            temp: PathBuf::from("/tmp"),
+        };
+        let checkout = |root: &Path| root == Path::new("/home/me/Helix-Forge");
+        let of = |path: &str| install_of(Path::new(path), &homes, &checkout);
+        assert_eq!(of("/usr/bin/helixforge"), Install::Package);
+        assert_eq!(of("/home/me/.cargo/bin/helixforge"), Install::Cargo);
+        assert_eq!(
+            of("/home/me/.local/share/helixforge/helixforge-linux-x86_64"),
+            Install::Launcher
+        );
+        assert_eq!(
+            of("/home/me/Helix-Forge/target/release/helixforge"),
+            Install::Source(PathBuf::from("/home/me/Helix-Forge"))
+        );
+        assert_eq!(
+            of("/tmp/tmp.abc/helixforge-linux-x86_64"),
+            Install::Download
+        );
+        assert_eq!(
+            of("/tmp/other/target/release/helixforge"),
+            Install::Download
+        );
+        assert_eq!(of("/opt/hf/helixforge"), Install::Other);
+    }
+
+    #[test]
+    fn a_package_install_downloads_checks_and_installs_the_newer_package() {
+        let mut fake = machine();
+        latest(&mut fake, "v1.0.4");
+        let offline = only_this(&fake, Install::Package, false);
+        assert_eq!(offline.pending, None);
+        assert!(offline.note.contains("r checks GitHub"), "{}", offline.note);
+        let channel = only_this(&fake, Install::Package, true);
+        assert_eq!(channel.summary(), "1 update");
+        assert_eq!(channel.note, "1.0.3, the latest release is 1.0.4");
+        assert_eq!(
+            channel.command_line(),
+            "/usr/bin/helixforge fetch-release 1.0.4 helixforge-1.0.4-1-x86_64.pkg.tar.zst /home/me/.cache/helixforge/release && sudo pacman -U /home/me/.cache/helixforge/release/helixforge-1.0.4-1-x86_64.pkg.tar.zst"
+        );
+        // Up to date: nothing to run.
+        latest(&mut fake, "v1.0.3");
+        let current = only_this(&fake, Install::Package, true);
+        assert_eq!(current.summary(), "up to date");
+        assert!(current.commands.is_empty());
+        let plan = plan(&[&current]);
+        assert!(plan.steps.is_empty());
+        assert!(plan.notes[0].contains("nothing to run"), "{:?}", plan.notes);
+        // A tag that is not a release version is not believed.
+        latest(&mut fake, "v1.0.4; rm -rf /");
+        assert_eq!(only_this(&fake, Install::Package, true).pending, None);
+    }
+
+    #[test]
+    fn package_files_follow_each_family() {
+        assert_eq!(
+            package_asset(PackageManager::Debian, "1.2.3").as_deref(),
+            Some("helixforge_1.2.3-1_amd64.deb")
+        );
+        assert_eq!(
+            package_asset(PackageManager::Suse, "1.2.3").as_deref(),
+            Some("helixforge-1.2.3-1.x86_64.rpm")
+        );
+        assert_eq!(package_asset(PackageManager::Alpine, "1.2.3"), None);
+        assert_eq!(package_asset(PackageManager::Arch, "1.2.3/../x"), None);
+    }
+
+    #[test]
+    fn cargo_launcher_source_and_unknown_copies_each_say_how_they_update() {
+        let mut fake = machine();
+        fake.tools.push("cargo".into());
+        latest(&mut fake, "v2.0.0");
+        let cargo = only_this(&fake, Install::Cargo, true);
+        assert_eq!(cargo.command_line(), "cargo install --locked helixforge");
+
+        let launcher = only_this(&fake, Install::Launcher, true);
+        assert_eq!(launcher.summary(), "up to date");
+        assert!(launcher.commands.is_empty());
+        assert!(launcher.note.contains("each time it starts"));
+
+        let other = only_this(&fake, Install::Other, true);
+        assert_eq!(other.pending, None);
+        assert!(other.note.contains("cannot update"), "{}", other.note);
+
+        let root = PathBuf::from("/home/me/Helix-Forge");
+        fake.commands.insert(
+            "git -C /home/me/Helix-Forge rev-parse HEAD".into(),
+            (true, "aaaaaaaaaaaaaaaaaaaa\n".into()),
+        );
+        fake.commands.insert(
+            "git -C /home/me/Helix-Forge ls-remote origin refs/heads/main".into(),
+            (true, "bbbbbbbbbbbbbbbbbbbb\trefs/heads/main\n".into()),
+        );
+        let source = only_this(&fake, Install::Source(root), true);
+        assert_eq!(source.summary(), "1 update");
+        assert_eq!(
+            source.command_line(),
+            "git -C /home/me/Helix-Forge diff --quiet HEAD && git -C /home/me/Helix-Forge pull --ff-only && cargo build --release --locked --manifest-path /home/me/Helix-Forge/Cargo.toml -p helixforge"
+        );
     }
 
     #[test]

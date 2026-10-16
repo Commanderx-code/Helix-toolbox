@@ -5,6 +5,7 @@ mod docgen;
 mod json;
 mod logging;
 mod report;
+mod selfupdate;
 mod tui;
 
 use anyhow::{Context, Result, bail};
@@ -199,6 +200,14 @@ enum Command {
     /// Write the manual pages into a directory; the packages are built with it.
     #[command(hide = true)]
     Manpages { directory: PathBuf },
+    /// Download one of a release's files and check it against the release's
+    /// SHA256SUMS; the HelixForge update channel runs it.
+    #[command(hide = true)]
+    FetchRelease {
+        version: String,
+        asset: String,
+        directory: PathBuf,
+    },
     /// Run a native operation; the engine calls this from a run.
     #[command(hide = true)]
     Native { action: String },
@@ -283,6 +292,7 @@ fn main() -> Result<()> {
         | Command::Native { .. }
         | Command::Completions { .. }
         | Command::Manpages { .. }
+        | Command::FetchRelease { .. }
             if as_json =>
         {
             bail!(
@@ -547,8 +557,7 @@ fn main() -> Result<()> {
             dry_run,
             yes,
         } => {
-            let found =
-                updates::overview(&doctor::Here, &platform, &updates::Places::here(), online);
+            let found = updates::overview(&doctor::Here, &platform, &this_places(), online);
             if !apply {
                 if !wanted.is_empty() {
                     bail!("name channels only with --apply");
@@ -578,7 +587,11 @@ fn main() -> Result<()> {
                         };
                         println!("    {} {}", printable(&pending.name), printable(&versions));
                     }
-                    println!("  Update: {}", channel.command_line());
+                    if channel.commands.is_empty() {
+                        println!("  Update: nothing to run");
+                    } else {
+                        println!("  Update: {}", channel.command_line());
+                    }
                     if let Some(caveat) = &channel.caveat {
                         println!("  Note: {}", printable(caveat));
                     }
@@ -589,6 +602,7 @@ fn main() -> Result<()> {
                 found
                     .iter()
                     .filter(|channel| channel.count().is_some_and(|count| count > 0))
+                    .filter(|channel| !channel.commands.is_empty())
                     .collect()
             } else {
                 wanted
@@ -842,6 +856,14 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        Command::FetchRelease {
+            version,
+            asset,
+            directory,
+        } => {
+            selfupdate::fetch(&version, &asset, &directory, &selfupdate::base(), "=https")?;
+            Ok(())
+        }
         Command::Completions { shell } => {
             clap_complete::generate(
                 shell,
@@ -1022,6 +1044,15 @@ fn plan_ids(catalog: &Catalog, platform: &LinuxInfo, ids: &[String]) -> Result<P
         entries.push(find(catalog, id)?);
     }
     Ok(plan(entries, platform, &|id| catalog.find(id))?)
+}
+
+/// Where the update overview looks, with this HelixForge for its own update.
+pub fn this_places() -> updates::Places {
+    let places = updates::Places::here();
+    match std::env::current_exe() {
+        Ok(exe) => places.with_this(VERSION, exe),
+        Err(_) => places,
+    }
 }
 
 /// Whether --json was given, for the commands that confirm and run plans.

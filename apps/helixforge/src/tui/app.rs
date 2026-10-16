@@ -2180,11 +2180,17 @@ impl App {
             },
             Screen::Updates => match key.code {
                 KeyCode::Enter | KeyCode::Char('d') => self.describe_channel(),
-                KeyCode::Char('u') => {
-                    if let Some(channel) = self.selected_channel().cloned() {
-                        self.confirm_plan(Ok(updates::plan(&[&channel])));
+                KeyCode::Char('u') => match self.selected_channel().cloned() {
+                    Some(channel) if channel.commands.is_empty() => {
+                        self.popup = Some(Popup::Text(TextPopup::new(
+                            "Nothing to run",
+                            format!("{}: {}", channel.name, channel.note),
+                            true,
+                        )));
                     }
-                }
+                    Some(channel) => self.confirm_plan(Ok(updates::plan(&[&channel]))),
+                    None => {}
+                },
                 KeyCode::Char('U') => self.update_every_channel(),
                 KeyCode::Char('r') => self.gather_updates(true),
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
@@ -2673,7 +2679,7 @@ impl App {
         let (sender, receiver) = mpsc::channel();
         std::thread::spawn(move || {
             let channels =
-                updates::overview(&doctor::Here, &platform, &updates::Places::here(), online);
+                updates::overview(&doctor::Here, &platform, &crate::this_places(), online);
             let _ = sender.send((channels, online));
         });
         self.gathering = Some(receiver);
@@ -2712,7 +2718,11 @@ impl App {
                 ));
             }
         }
-        text.push_str(&format!("\nu runs: {}\n", channel.command_line()));
+        if channel.commands.is_empty() {
+            text.push_str("\nThere is nothing to run here.\n");
+        } else {
+            text.push_str(&format!("\nu runs: {}\n", channel.command_line()));
+        }
         if let Some(caveat) = &channel.caveat {
             text.push_str(&format!("Note: {caveat}\n"));
         }
@@ -2725,6 +2735,7 @@ impl App {
             .channels
             .iter()
             .filter(|channel| channel.count().is_some_and(|count| count > 0))
+            .filter(|channel| !channel.commands.is_empty())
             .collect();
         if chosen.is_empty() {
             self.popup = Some(Popup::Text(TextPopup::new(
@@ -3878,6 +3889,18 @@ mod tests {
         press(&mut app, KeyCode::Char('u'));
         assert!(screen(&mut app, 120, 40).contains("Update Home Manager"));
         press(&mut app, KeyCode::Char('n'));
+        // A copy that updates itself has nothing to run.
+        let mut launcher = channel("helixforge", "HelixForge", Some(Vec::new()));
+        launcher.commands.clear();
+        launcher.note = "1.0.4; it fetches the latest release each time it starts".into();
+        app.channels.push(launcher);
+        app.main_state.select(Some(2));
+        press(&mut app, KeyCode::Char('u'));
+        let text = screen(&mut app, 120, 40);
+        assert!(text.contains("Nothing to run"), "{text}");
+        assert!(text.contains("each time it starts"), "{text}");
+        press(&mut app, KeyCode::Esc);
+        app.popup = None;
         app.channels.truncate(1);
         app.channels[0].pending = Some(Vec::new());
         app.clamp_main();

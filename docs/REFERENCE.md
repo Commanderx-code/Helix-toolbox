@@ -78,6 +78,19 @@ another and the AUR after the repositories, through the tools themselves
 changes the flake's `flake.lock`, in your dotfiles checkout when the
 configuration is a link to one.
 
+The **HelixForge** row is HelixForge itself, updated the way it was
+installed, which it tells from where it runs. `r` asks GitHub for the latest
+release. A package in `/usr/bin` is updated by downloading the new release's
+package for this distribution into `~/.cache/helixforge/release`, checking it
+against the release's `SHA256SUMS` (the hidden `helixforge fetch-release`
+command, which takes only a release version and one of the release's own file
+names), then installing it with `pacman -U`, `apt-get install`, `dnf install`
+or `zypper install`. A copy from `cargo install` runs `cargo install --locked
+helixforge` again. A build in a checkout fast-forwards it from GitHub and
+builds it, and leaves a checkout with local changes alone. The launcher and
+`start.sh` fetch the latest release every time they start, so there is
+nothing to run for them.
+
 Script entries such as Steam, VS Code or Firefox show the same status when
 they say what they install (most application scripts do), and `u` updates
 that package; a script entry without it shows only its flags and is updated

@@ -6,6 +6,11 @@ dotfiles or Myfish sources raises the patch number and is not listed here.
 
 ## Unreleased
 
+- The Updates screen has a **HelixForge** row that updates HelixForge
+  itself, the way it was installed: a package is downloaded, checked against
+  the release's SHA256SUMS and installed with the package manager; a Cargo
+  install runs `cargo install` again; a checkout is fast-forwarded and
+  rebuilt. The launcher and `start.sh` already run the latest release.
 - A new README with screenshots, an install table and a documentation index;
   the detail it held moved to docs/REFERENCE.md, docs/CATALOG.md and
   CONTRIBUTING.md. A code of conduct, a pull request template and a security
