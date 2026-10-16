@@ -12,6 +12,7 @@ use super::{
     settings::{self, Look},
     sysinfo::Overview,
     theme::{self, Theme},
+    wizard::{Outcome as WizardOutcome, Pick, Wizard},
 };
 use crate::TuiArgs;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -78,9 +79,10 @@ Install Plan
   Enter             run the plan                 x / Delete  remove the selected entry
   c                 clear the plan               s           save it as a profile;  e  what it changes
 
-History, Backups, Helix Doctor, Hardware, Updates, Drift, Reliability, Settings
+History, Backups, Doctor, Hardware, Desktop, Updates, Drift, Reliability, Settings
   Enter             log / restore / details / change   r   reload or check again; f repair; u / U update
   Hardware: f       update firmware (type FIRMWARE)    s   SMART check;  Backups: e  side by side
+  Desktop: s        save the look; Enter puts a saved one back      Settings: the setup wizard
   Drift: b          compare with another         s   save this machine; Space / a plan what is missing
   Reliability: i    critical or untested only    v   where the entry comes from
 
@@ -108,6 +110,8 @@ enum Screen {
     Reliability,
     /// Firmware, disks, temperatures, batteries and devices.
     Hardware,
+    /// The desktop environment, its look and the entries for it.
+    Desktop,
     Settings,
 }
 
@@ -132,6 +136,19 @@ enum Popup {
     Effects(EffectsPopup),
     /// The word that confirms a firmware update, before its plan is shown.
     FirmwareWord(InputPopup),
+    /// The setup wizard.
+    Wizard(Box<Wizard>),
+    /// The name to save the desktop's look under.
+    LookName(InputPopup),
+}
+
+/// A line of the Desktop screen.
+#[derive(Clone, Debug)]
+enum DesktopRow {
+    Heading(String),
+    Info { text: String, details: String },
+    Entry { id: String, text: String },
+    Look { slug: String, text: String },
 }
 
 /// A confirmation's header and its steps with their commands.
@@ -170,6 +187,7 @@ enum Act {
     /// Open Helix Doctor, and the details of the check with this id.
     Doctor(Option<&'static str>),
     SaveBaseline,
+    Wizard,
     RunPlan,
     ClearPlan,
     SaveProfile,
@@ -419,6 +437,15 @@ pub struct App {
     reading_hardware: Option<mpsc::Receiver<helixforge_engine::hardware::Hardware>>,
     /// The firmware update waiting for its confirming word.
     firmware_pending: Option<Plan>,
+    /// The desktop as last read, and the Desktop screen's rows.
+    desktop: Option<helixforge_engine::desktop::Desktop>,
+    desktop_rows: Vec<DesktopRow>,
+    /// Where looks are saved; the user's configuration unless a test says.
+    looks_dir: Option<std::path::PathBuf>,
+    /// Whether the wizard has been offered, remembered in the settings.
+    set_up: bool,
+    /// The wizard's workstations, by index, while it is open.
+    wizard_ids: Vec<String>,
 }
 
 /// A plan of the queue as it was, from when it was made, with what the
@@ -500,6 +527,11 @@ impl App {
             hardware_rows: Vec::new(),
             reading_hardware: None,
             firmware_pending: None,
+            desktop: None,
+            desktop_rows: Vec::new(),
+            looks_dir: None,
+            set_up: true,
+            wizard_ids: Vec::new(),
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -535,6 +567,7 @@ impl App {
             self.favorites_path = Some(favorites);
         }
         self.snapshots = look.snapshots;
+        self.set_up = look.set_up || path.is_none();
         self.snapshot_tool = backups::Snapshots::here();
         self.settings_path = path;
         self
@@ -602,6 +635,7 @@ impl App {
             icons: self.icons,
             keep_going: self.keep_going,
             snapshots: self.snapshots,
+            set_up: self.set_up,
         };
         if let Err(error) = settings::save(path, &look) {
             tracing::warn!(%error, "the settings were not saved");
@@ -737,6 +771,7 @@ impl App {
                 .map_or(0, |(_, report)| report.differences.len()),
             Screen::Reliability => self.reliability_rows.len(),
             Screen::Hardware => self.hardware_rows.len(),
+            Screen::Desktop => self.desktop_rows.len(),
             Screen::Doctor => self.diagnoses.len() + self.doctor_entries().len(),
             Screen::Settings => self.settings().len(),
         }
@@ -802,6 +837,9 @@ impl App {
         }
         if screen == Screen::Hardware && self.hardware.is_none() {
             self.read_hardware();
+        }
+        if screen == Screen::Desktop {
+            self.reload_desktop();
         }
         self.update_rows();
     }
@@ -903,6 +941,7 @@ impl App {
             Screen::Drift => Icon::Drift,
             Screen::Reliability => Icon::Reliability,
             Screen::Hardware => Icon::Hardware,
+            Screen::Desktop => Icon::Desktop,
             Screen::Favorites => Icon::Favorites,
             Screen::Doctor => Icon::Doctor,
             Screen::Settings => Icon::Settings,
@@ -978,17 +1017,22 @@ impl App {
             Screen::Drift => self.draw_drift(frame, main),
             Screen::Reliability => self.draw_reliability(frame, main),
             Screen::Hardware => self.draw_hardware(frame, main),
+            Screen::Desktop => self.draw_desktop(frame, main),
             Screen::Doctor => self.draw_doctor(frame, main),
             Screen::Settings => self.draw_settings(frame, main),
         }
         match &mut self.popup {
             Some(Popup::Text(popup)) => popup.draw(frame, centered(main, 95, 95), self.theme),
             Some(
-                Popup::ProfileName(popup) | Popup::BaselineName(popup) | Popup::FirmwareWord(popup),
+                Popup::ProfileName(popup)
+                | Popup::BaselineName(popup)
+                | Popup::FirmwareWord(popup)
+                | Popup::LookName(popup),
             ) => {
                 let area = popup.fitted(centered(main, 80, 70));
                 popup.draw(frame, area, self.theme)
             }
+            Some(Popup::Wizard(popup)) => popup.draw(frame, centered(main, 92, 90), self.theme),
             Some(Popup::Palette(popup)) => {
                 let area = popup.fitted(main);
                 popup.draw(frame, area, self.theme)
@@ -1118,71 +1162,50 @@ impl App {
             }
         }
         // The first section's items are cards when there is room for them.
-        let compact = sections.len() * 3 + self.menu.len();
-        let cards = inner.height as usize >= compact + 2 * sections[0].1.len();
+        // The main menu's items are cards when they fit with a few lines of
+        // the other sections below them, which scroll when they must.
+        let first = sections[0].1.len();
+        let cards = inner.height as usize >= 1 + 3 * first + 1 + 2 + 1 + 6;
         if !cards {
             self.draw_sidebar_rows(frame, inner, &sections, focused);
             return;
         }
-        let bottom = inner.bottom();
-        let mut y = inner.y;
-        for (number, (name, items)) in sections.iter().enumerate() {
-            if number > 0 {
-                self.rule(frame, inner.x, y, inner.width);
-                y += 2;
-            }
-            if y >= bottom {
-                break;
-            }
+        let (name, items) = &sections[0];
+        frame.render_widget(
+            Paragraph::new(Line::styled(
+                *name,
+                Style::default().fg(self.theme.faint()).bold(),
+            )),
+            Rect::new(inner.x, inner.y, inner.width, 1),
+        );
+        let mut y = inner.y + 1;
+        for &index in items {
+            let item = &self.menu[index];
+            let current = item.screen == self.screen;
+            let label = self.menu_label(item, current);
+            let border = match (current, focused) {
+                (true, true) => self.theme.focused(),
+                (true, false) => self.theme.selected_line(),
+                _ => self.theme.line(),
+            };
+            let fill = if current {
+                self.theme.selected_fill()
+            } else {
+                self.theme.card()
+            };
+            let inside = self.framed(frame, Rect::new(inner.x, y, inner.width, 3), border, fill);
             frame.render_widget(
-                Paragraph::new(Line::styled(
-                    *name,
-                    Style::default().fg(self.theme.faint()).bold(),
-                )),
-                Rect::new(inner.x, y, inner.width, 1),
+                Paragraph::new(label).block(Block::default().padding(Padding::horizontal(1))),
+                inside,
             );
+            y += 3;
+        }
+        if sections.len() > 1 {
             y += 1;
-            for &index in items {
-                let item = &self.menu[index];
-                let current = item.screen == self.screen;
-                let label = self.menu_label(item, current);
-                if number == 0 {
-                    if y + 3 > bottom {
-                        break;
-                    }
-                    let border = match (current, focused) {
-                        (true, true) => self.theme.focused(),
-                        (true, false) => self.theme.selected_line(),
-                        _ => self.theme.line(),
-                    };
-                    let fill = if current {
-                        self.theme.selected_fill()
-                    } else {
-                        self.theme.card()
-                    };
-                    let inside =
-                        self.framed(frame, Rect::new(inner.x, y, inner.width, 3), border, fill);
-                    frame.render_widget(
-                        Paragraph::new(label)
-                            .block(Block::default().padding(Padding::horizontal(1))),
-                        inside,
-                    );
-                    y += 3;
-                } else {
-                    if y >= bottom {
-                        break;
-                    }
-                    self.menu_row(
-                        frame,
-                        Rect::new(inner.x, y, inner.width, 1),
-                        label,
-                        current,
-                        focused,
-                    );
-                    y += 1;
-                }
-            }
-            y += 1;
+            self.rule(frame, inner.x, y, inner.width);
+            y += 2;
+            let rest = Rect::new(inner.x, y, inner.width, inner.bottom().saturating_sub(y));
+            self.draw_sidebar_rows(frame, rest, &sections[1..], focused);
         }
     }
 
@@ -2037,6 +2060,7 @@ impl App {
                     (Some(_), false) => "no".to_string(),
                 },
             ),
+            ("Setup wizard".to_string(), "Enter opens it".to_string()),
             (
                 "Log level (HELIXFORGE_LOG)".to_string(),
                 std::env::var("HELIXFORGE_LOG").unwrap_or_else(|_| "info".to_string()),
@@ -2122,8 +2146,12 @@ impl App {
         match &self.popup {
             Some(Popup::Text(popup)) => return popup.hints(),
             Some(
-                Popup::ProfileName(popup) | Popup::BaselineName(popup) | Popup::FirmwareWord(popup),
+                Popup::ProfileName(popup)
+                | Popup::BaselineName(popup)
+                | Popup::FirmwareWord(popup)
+                | Popup::LookName(popup),
             ) => return popup.hints(),
+            Some(Popup::Wizard(popup)) => return popup.hints(),
             Some(Popup::Palette(popup)) => return popup.hints(),
             Some(Popup::Effects(popup)) => return popup.hints(),
             Some(Popup::Confirm(popup)) => return popup.hints(),
@@ -2234,6 +2262,22 @@ impl App {
                     list.push(Hint::new(&["s"], "Save baseline"));
                     list.push(Hint::new(&["r"], "Check again"));
                 }
+                Screen::Desktop => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    match self.selected_desktop_row() {
+                        Some(DesktopRow::Entry { .. }) => {
+                            list.push(Hint::new(&["Enter"], "Run"));
+                            list.push(Hint::new(&["Space"], "Plan"));
+                        }
+                        Some(DesktopRow::Look { .. }) => list.push(Hint::new(&["Enter"], "Apply")),
+                        Some(DesktopRow::Info { .. }) => {
+                            list.push(Hint::new(&["Enter"], "Details"))
+                        }
+                        _ => {}
+                    }
+                    list.push(Hint::new(&["s"], "Save this look"));
+                    list.push(Hint::new(&["r"], "Read again"));
+                }
                 Screen::Hardware => {
                     list.push(Hint::new(&["↑↓"], "Navigate"));
                     if let Some(HardwareRow::Item { act, .. }) = self.selected_hardware() {
@@ -2305,6 +2349,37 @@ impl App {
                     Answer::Typing => {}
                     Answer::Cancelled => self.popup = None,
                     Answer::Given(name) => self.save_profile(&name),
+                }
+                return true;
+            }
+            Some(Popup::Wizard(popup)) => {
+                if control_c {
+                    return false;
+                }
+                match popup.handle_key(key) {
+                    WizardOutcome::Open => {}
+                    WizardOutcome::Closed => self.close_wizard(),
+                    WizardOutcome::Chosen(index) => {
+                        let picks = self.wizard_picks(index);
+                        if let Some(Popup::Wizard(popup)) = &mut self.popup {
+                            popup.pick(picks);
+                        }
+                    }
+                    WizardOutcome::Queue(ids) => {
+                        self.close_wizard();
+                        self.queue_from_wizard(&ids);
+                    }
+                }
+                return true;
+            }
+            Some(Popup::LookName(popup)) => {
+                if control_c {
+                    return false;
+                }
+                match popup.handle_key(key) {
+                    Answer::Typing => {}
+                    Answer::Cancelled => self.popup = None,
+                    Answer::Given(name) => self.save_look_as(&name),
                 }
                 return true;
             }
@@ -2661,6 +2736,37 @@ impl App {
                 },
                 KeyCode::Char('U') => self.update_every_channel(),
                 KeyCode::Char('r') => self.gather_updates(true),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::Desktop => match key.code {
+                KeyCode::Enter | KeyCode::Char('d') => match self.selected_desktop_row().cloned() {
+                    Some(DesktopRow::Info { text, details }) => {
+                        self.popup = Some(Popup::Text(TextPopup::new(text, details, true)));
+                    }
+                    Some(DesktopRow::Entry { id, .. }) => {
+                        if let Some(entry) = self.catalog.find(&id).cloned() {
+                            self.confirm(vec![entry]);
+                        }
+                    }
+                    Some(DesktopRow::Look { slug, .. }) => self.apply_look(&slug),
+                    _ => {}
+                },
+                KeyCode::Char(' ') => {
+                    if let Some(DesktopRow::Entry { id, .. }) = self.selected_desktop_row().cloned()
+                        && let Some(entry) = self.catalog.find(&id).cloned()
+                    {
+                        self.toggle_queued(entry);
+                        self.reload_desktop();
+                    }
+                }
+                KeyCode::Char('s') => {
+                    self.popup = Some(Popup::LookName(InputPopup::new(
+                        "Save this look",
+                        "A name for the desktop's look (it is saved in ~/.config/helixforge/looks):",
+                    )));
+                }
+                KeyCode::Char('r') => self.reload_desktop(),
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
@@ -3408,7 +3514,7 @@ impl App {
                 Act::Open(item.screen),
             );
         }
-        let actions: [(&str, &str, Act); 13] = [
+        let actions: [(&str, &str, Act); 14] = [
             (
                 "Check updates online",
                 "updates refresh",
@@ -3457,6 +3563,11 @@ impl App {
                 Act::UpdateEntries,
             ),
             ("Change the theme", "colours colors look", Act::Theme),
+            (
+                "Set up this machine",
+                "wizard first run workstation",
+                Act::Wizard,
+            ),
             (
                 if self.icons {
                     "Turn icons off"
@@ -3558,6 +3669,7 @@ impl App {
                     "A name for the baseline (it is saved in ~/.config/helixforge/baselines):",
                 )));
             }
+            Act::Wizard => self.open_wizard(false),
             Act::RunPlan => {
                 self.open_screen(Screen::Plan);
                 self.focus = Focus::Main;
@@ -4065,6 +4177,388 @@ impl App {
         self.popup = Some(Popup::Effects(EffectsPopup::new(steps, from_confirmation)));
     }
 
+    // ----- The setup wizard -----
+
+    /// Open the wizard; on the first run it says welcome.
+    pub fn open_wizard(&mut self, first_run: bool) {
+        let setup = match helixforge_engine::setup::load(self.catalog.root()) {
+            Ok(setup) => setup,
+            // A catalog without workstations (a test's) has nothing to offer at the start.
+            Err(_) if first_run => return,
+            Err(error) => {
+                self.popup = Some(Popup::Text(TextPopup::new("No setup wizard", error, true)));
+                return;
+            }
+        };
+        let desktop = self.desktop_here();
+        let survey = if self.examine_here {
+            crate::setup::survey_here(&self.platform, &desktop)
+        } else {
+            helixforge_engine::setup::survey(&self.platform, &desktop, Vec::new(), false, &|_| {
+                false
+            })
+        };
+        self.wizard_ids = setup
+            .workstations
+            .iter()
+            .map(|known| known.id.clone())
+            .collect();
+        let workstations = setup
+            .workstations
+            .iter()
+            .map(|known| (known.name.clone(), known.description.clone()))
+            .collect();
+        self.popup = Some(Popup::Wizard(Box::new(Wizard::new(
+            crate::setup::survey_lines(&survey),
+            workstations,
+            first_run,
+        ))));
+    }
+
+    /// Whether this is the first run, when the wizard opens by itself.
+    pub fn first_run(&self) -> bool {
+        !self.set_up
+    }
+
+    fn close_wizard(&mut self) {
+        self.popup = None;
+        if !self.set_up {
+            self.set_up = true;
+            self.save_look();
+        }
+    }
+
+    /// The chosen workstation's entries for this machine, ticked where they
+    /// can run and are not installed.
+    fn wizard_picks(&mut self, index: usize) -> Vec<Pick> {
+        let Ok(setup) = helixforge_engine::setup::load(self.catalog.root()) else {
+            return Vec::new();
+        };
+        let desktop = self.desktop_here();
+        let survey = if self.examine_here {
+            crate::setup::survey_here(&self.platform, &desktop)
+        } else {
+            helixforge_engine::setup::survey(&self.platform, &desktop, Vec::new(), false, &|_| {
+                false
+            })
+        };
+        let Some(chosen) = self
+            .wizard_ids
+            .get(index)
+            .and_then(|id| setup.workstations.iter().find(|known| known.id == *id))
+        else {
+            return Vec::new();
+        };
+        let custom = chosen.entries.is_empty() && chosen.when.is_empty();
+        let ids = if custom {
+            setup.everything(&survey)
+        } else {
+            chosen.entries_for(&survey)
+        };
+        helixforge_engine::setup::suggestions(&ids, &self.catalog, &self.platform)
+            .into_iter()
+            .map(|suggestion| {
+                let status = self.statuses.get(&suggestion.id);
+                let installed = matches!(
+                    status,
+                    Some(
+                        Status::Installed { .. }
+                            | Status::Update { .. }
+                            | Status::Managed { .. }
+                            | Status::Elsewhere { .. }
+                    )
+                );
+                let note = if installed {
+                    Some(format!(
+                        "installed ({})",
+                        status.map(Status::detail).unwrap_or_default()
+                    ))
+                } else {
+                    suggestion.note.clone()
+                };
+                Pick {
+                    ticked: suggestion.available && !installed && !custom,
+                    id: suggestion.id,
+                    name: suggestion.name,
+                    available: suggestion.available,
+                    note,
+                }
+            })
+            .collect()
+    }
+
+    /// Put the wizard's choices in the Install Plan and show it.
+    fn queue_from_wizard(&mut self, ids: &[String]) {
+        let mut added = Vec::new();
+        let mut alone = Vec::new();
+        for id in ids {
+            let Some(entry) = self.catalog.find(id).cloned() else {
+                continue;
+            };
+            if !entry.multi_select {
+                alone.push(entry.name.clone());
+            } else if !self.is_queued(&entry) {
+                added.push(entry.name.clone());
+                self.queue.push(entry);
+            }
+        }
+        let mut text = if added.is_empty() {
+            "Nothing was added to the Install Plan.".to_string()
+        } else {
+            format!(
+                "Added to the Install Plan: {}.\n\nNothing has run. Review the plan, e shows what it would change, and Enter runs it.",
+                added.join(", ")
+            )
+        };
+        if !alone.is_empty() {
+            text.push_str(&format!(
+                "\n\nThese run on their own; run each from its area: {}.",
+                alone.join(", ")
+            ));
+        }
+        self.open_screen(Screen::Plan);
+        self.focus = Focus::Main;
+        self.popup = Some(Popup::Text(TextPopup::new("Install Plan", text, true)));
+    }
+
+    // ----- Desktop -----
+
+    fn desktop_here(&self) -> helixforge_engine::desktop::Desktop {
+        if self.examine_here {
+            crate::setup::desktop_here()
+        } else {
+            self.desktop.clone().unwrap_or_default()
+        }
+    }
+
+    fn selected_desktop_row(&self) -> Option<&DesktopRow> {
+        self.desktop_rows.get(self.main_state.selected()?)
+    }
+
+    fn looks_directory(&self) -> Option<std::path::PathBuf> {
+        self.looks_dir
+            .clone()
+            .or_else(helixforge_engine::desktop::dir)
+    }
+
+    fn reload_desktop(&mut self) {
+        let found = self.desktop_here();
+        let mut rows = vec![DesktopRow::Heading("This desktop".to_string())];
+        let name = match (&found.name, &found.session) {
+            (Some(name), Some(session)) => format!("{name}, {session} session"),
+            (Some(name), None) => name.clone(),
+            (None, _) => "No desktop environment found".to_string(),
+        };
+        rows.push(DesktopRow::Info {
+            details: crate::setup::desktop_text(&found),
+            text: name,
+        });
+        if let Some(manager) = &found.display_manager {
+            rows.push(DesktopRow::Info {
+                text: format!(
+                    "Login screen: {}{}",
+                    manager.name,
+                    manager
+                        .theme
+                        .as_deref()
+                        .map(|theme| format!(", theme {theme}"))
+                        .unwrap_or_default()
+                ),
+                details: format!(
+                    "The display manager {} runs the login screen.\n\nIts configuration:\n{}",
+                    manager.name,
+                    if manager.files.is_empty() {
+                        "  none found".to_string()
+                    } else {
+                        manager
+                            .files
+                            .iter()
+                            .map(|file| format!("  {file}"))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    }
+                ),
+            });
+        }
+        if !found.appearance.is_empty() {
+            rows.push(DesktopRow::Heading("Appearance".to_string()));
+        }
+        for value in &found.appearance {
+            rows.push(DesktopRow::Info {
+                text: format!(
+                    "{:<16}{}",
+                    value.label,
+                    value.value.as_deref().unwrap_or("not set")
+                ),
+                details: format!(
+                    "{}: {}\n\ns saves the whole look, to put back later from this screen.",
+                    value.label,
+                    value.value.as_deref().unwrap_or("not set")
+                ),
+            });
+        }
+        for owner in &found.owners {
+            rows.push(DesktopRow::Info {
+                text: format!("Note: {owner}"),
+                details: owner.clone(),
+            });
+        }
+        if let Some(blocked) = &found.blocked {
+            rows.push(DesktopRow::Info {
+                text: format!("Not changed here: {blocked}"),
+                details: blocked.clone(),
+            });
+        }
+        let looks = self
+            .looks_directory()
+            .map(|directory| helixforge_engine::desktop::load_all(&directory).0)
+            .unwrap_or_default();
+        if !looks.is_empty() {
+            rows.push(DesktopRow::Heading("Saved looks".to_string()));
+        }
+        for (slug, look) in looks {
+            let other = found.kind.map(|kind| kind.id()) != Some(look.desktop.as_str());
+            rows.push(DesktopRow::Look {
+                text: format!(
+                    "{}{}",
+                    helixforge_core::printable(&look.name),
+                    if other {
+                        format!("  (saved on {})", helixforge_core::printable(&look.desktop))
+                    } else {
+                        format!("  ({} settings)", look.settings.len())
+                    }
+                ),
+                slug,
+            });
+        }
+        let offered = helixforge_engine::setup::load(self.catalog.root())
+            .map(|setup| setup.for_desktop(found.kind))
+            .unwrap_or_default();
+        let offered: Vec<_> =
+            helixforge_engine::setup::suggestions(&offered, &self.catalog, &self.platform)
+                .into_iter()
+                .filter(|suggestion| suggestion.available)
+                .collect();
+        if !offered.is_empty() {
+            rows.push(DesktopRow::Heading("For this desktop".to_string()));
+        }
+        for suggestion in offered {
+            let queued = self.queue.iter().any(|entry| entry.id == suggestion.id);
+            rows.push(DesktopRow::Entry {
+                text: format!(
+                    "{}{}",
+                    suggestion.name,
+                    if queued { "  · planned" } else { "" }
+                ),
+                id: suggestion.id,
+            });
+        }
+        self.desktop = Some(found);
+        self.desktop_rows = rows;
+        self.clamp_main();
+    }
+
+    fn save_look_as(&mut self, name: &str) {
+        let found = self.desktop_here();
+        let saved = helixforge_engine::desktop::capture(name, &found)
+            .ok_or_else(|| {
+                "no desktop whose appearance HelixForge can read is running here".to_string()
+            })
+            .and_then(|look| {
+                let directory = self
+                    .looks_directory()
+                    .ok_or_else(|| "cannot find the configuration folder".to_string())?;
+                helixforge_engine::desktop::save(&directory, &look)
+                    .map(|path| (look, path))
+                    .map_err(|error| error.to_string())
+            });
+        self.popup = Some(Popup::Text(match saved {
+            Ok((look, path)) => TextPopup::new(
+                "Look saved",
+                format!(
+                    "{} ({} settings) is saved as {}. Enter on it under Saved looks puts it back.",
+                    look.name,
+                    look.settings.len(),
+                    path.display()
+                ),
+                true,
+            ),
+            Err(error) => TextPopup::new("Look not saved", error, true),
+        }));
+        self.reload_desktop();
+    }
+
+    fn apply_look(&mut self, slug: &str) {
+        let Some(directory) = self.looks_directory() else {
+            return;
+        };
+        let Some((_, look)) = helixforge_engine::desktop::load_all(&directory)
+            .0
+            .into_iter()
+            .find(|(known, _)| known == slug)
+        else {
+            return;
+        };
+        let found = self.desktop_here();
+        match helixforge_engine::desktop::plan_apply(&look, &found) {
+            Ok(planned) => self.confirm_plan(Ok(planned)),
+            Err(why) => {
+                self.popup = Some(Popup::Text(TextPopup::new(
+                    "Cannot apply this look",
+                    why,
+                    true,
+                )));
+            }
+        }
+    }
+
+    fn draw_desktop(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Desktop",
+            "The desktop, its login screen and look, and the entries for it; who else sets the look.",
+        );
+        self.fill(frame, inner);
+        let focused = self.focus == Focus::Main;
+        let items: Vec<Line> = self
+            .desktop_rows
+            .iter()
+            .map(|row| match row {
+                DesktopRow::Heading(title) => Line::styled(
+                    title.clone(),
+                    Style::default().fg(self.theme.group()).bold(),
+                ),
+                DesktopRow::Info { text, .. } => Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(
+                        text.clone(),
+                        Style::default().fg(
+                            if text.starts_with("Note:") || text.starts_with("Not changed") {
+                                self.theme.warning()
+                            } else {
+                                self.theme.entry()
+                            },
+                        ),
+                    ),
+                ]),
+                DesktopRow::Entry { text, .. } | DesktopRow::Look { text, .. } => Line::from(vec![
+                    Span::styled(
+                        format!("  {} ", self.glyph(Icon::Entry)),
+                        Style::default().fg(self.theme.muted()),
+                    ),
+                    Span::styled(text.clone(), Style::default().fg(self.theme.entry())),
+                ]),
+            })
+            .collect();
+        let list = List::new(items)
+            .block(self.card("This machine"))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused))
+            .scroll_padding(1);
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
+    }
+
     // ----- Hardware -----
 
     /// Read the hardware in the background; fwupd can take a moment.
@@ -4446,6 +4940,7 @@ impl App {
                 self.snapshots = !self.snapshots;
                 self.save_look();
             }
+            6 => self.open_wizard(false),
             _ => {}
         }
     }
@@ -4877,6 +5372,13 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
                 } else {
                     Screen::Area(index)
                 },
+                section: "MORE TOOLS",
+            });
+        }
+        if tab.id == "configurations" {
+            menu.push(MenuItem {
+                label: "Desktop".into(),
+                screen: Screen::Desktop,
                 section: "MORE TOOLS",
             });
         }
@@ -6140,6 +6642,112 @@ mod tests {
         assert!(
             screen(&mut app, 140, 40).contains("sudo smartctl --health --attributes /dev/nvme0n1")
         );
+    }
+
+    #[test]
+    fn the_wizard_suggests_a_workstation_and_queues_it_for_review() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut app = app();
+        app.settings_path = Some(directory.path().join("settings.toml"));
+        app.set_up = false;
+        assert!(app.first_run());
+        app.open_wizard(true);
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("SET UP THIS MACHINE"), "{text}");
+        assert!(text.contains("Welcome to HelixForge"), "{text}");
+        assert!(text.contains("Garuda Linux"), "{text}");
+        press(&mut app, KeyCode::Enter);
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("Developer"), "{text}");
+        assert!(text.contains("Privacy"), "{text}");
+        press(&mut app, KeyCode::Enter);
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("WHAT IT ADDS"), "{text}");
+        assert!(text.contains("[x] Git"), "{text}");
+        // Untick the first, then queue the rest.
+        press(&mut app, KeyCode::Char(' '));
+        assert!(screen(&mut app, 140, 40).contains("[ ] Git"));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.screen, Screen::Plan);
+        assert!(!app.queue.iter().any(|entry| entry.id == "git"));
+        assert!(app.queue.iter().any(|entry| entry.id == "ripgrep"));
+        assert!(screen(&mut app, 140, 40).contains("Nothing has run"));
+        // Offered once: it is remembered.
+        assert!(!app.first_run());
+        assert!(settings::load(&directory.path().join("settings.toml")).set_up);
+        // Custom starts with nothing ticked.
+        app.popup = None;
+        app.open_wizard(false);
+        press(&mut app, KeyCode::Enter);
+        for _ in 0..4 {
+            press(&mut app, KeyCode::Char('j'));
+        }
+        press(&mut app, KeyCode::Enter);
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("Custom"), "{text}");
+        assert!(!text.contains("[x]"), "{text}");
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Esc);
+        assert!(app.popup.is_none());
+    }
+
+    #[test]
+    fn the_desktop_screen_offers_its_entries_and_puts_a_saved_look_back() {
+        use helixforge_engine::desktop::{Desktop, Kind, Value};
+        let directory = tempfile::tempdir().unwrap();
+        let mut app = app();
+        app.looks_dir = Some(directory.path().to_path_buf());
+        app.desktop = Some(Desktop {
+            kind: Some(Kind::Kde),
+            name: Some("KDE Plasma 6.8.0".into()),
+            session: Some("wayland".into()),
+            appearance: vec![Value {
+                key: "color-scheme".into(),
+                label: "Colour scheme".into(),
+                value: Some("BreezeDark".into()),
+            }],
+            owners: vec!["Home Manager runs a Plasma configuration step at every switch".into()],
+            ..Desktop::default()
+        });
+        app.open_screen(Screen::Desktop);
+        app.focus = Focus::Main;
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("KDE Plasma 6.8.0, wayland session"), "{text}");
+        assert!(text.contains("Colour scheme   BreezeDark"), "{text}");
+        assert!(text.contains("Note: Home Manager"), "{text}");
+        assert!(text.contains("Commander Konsole Config"), "{text}");
+        press(&mut app, KeyCode::Char('s'));
+        type_text(&mut app, "Dark");
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 140, 40).contains("Look saved"));
+        app.popup = None;
+        // The look now differs from the desktop: applying it plans the change.
+        let mut changed = app.desktop.clone().unwrap();
+        changed.appearance[0].value = Some("Sweet".into());
+        app.desktop = Some(changed);
+        app.reload_desktop();
+        let look = app
+            .desktop_rows
+            .iter()
+            .position(|row| matches!(row, DesktopRow::Look { .. }))
+            .unwrap();
+        app.main_state.select(Some(look));
+        press(&mut app, KeyCode::Enter);
+        let text = screen(&mut app, 140, 40);
+        assert!(
+            text.contains("plasma-apply-colorscheme BreezeDark"),
+            "{text}"
+        );
+        press(&mut app, KeyCode::Char('n'));
+        let entry = app
+            .desktop_rows
+            .iter()
+            .position(|row| matches!(row, DesktopRow::Entry { id, .. } if id == "plymouth-on"))
+            .unwrap();
+        app.main_state.select(Some(entry));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
     }
 
     #[test]

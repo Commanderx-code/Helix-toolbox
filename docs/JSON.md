@@ -4,7 +4,8 @@
 of text, for scripts, other tools and the graphical interface to come. It
 works with the commands that read (`system`, `list`, `search`, `info`,
 `status`, `plan`, `history`, `updates`, `doctor`, `backups`, `drift check`,
-`drift list`, `reliability`, `trust`, `hardware`, `profile list`)
+`drift list`, `reliability`, `trust`, `hardware`, `setup`, `desktop`,
+`profile list`)
 and with `--dry-run` plans (`run`, `remove`, `update`, `updates --apply`,
 `restore`, `doctor --repair`). Anything that would change the machine is
 refused with `--json` unless it is a dry run: a script cannot start a run by
@@ -187,6 +188,23 @@ A disk is `{name, model, bytes, kind, firmware, celsius}` (`kind` `NVMe`,
 battery `{name, status, capacity, health, cycles, model, technology}`
 (`capacity` and `health` in percent); a device `{address, class, name,
 driver}`. Unknown values are `null`.
+
+## setup
+
+`{machine, workstations, chosen, suggestions}`. `machine` is
+`{distribution, family, package_manager, tools, desktop, desktop_name, gpus,
+laptop}`; each workstation `{id, name, description, entries, when}`;
+`chosen` the workstation named, or `null`; each suggestion `{id, name,
+available, note}`.
+
+## desktop
+
+`{desktop, entries}`. `desktop` is `{kind, name, session, display_manager,
+appearance, owners, blocked}`: `kind` is `kde`, `gnome`, `xfce`, `cinnamon`,
+`mate`, `hyprland`, `sway`, `other` or `null`; `display_manager` is `{name,
+files, theme}` or `null`; each appearance value `{key, label, value}`;
+`owners` says what else sets the look; `blocked` why HelixForge would not
+change it, or `null`. `entries` are the suggestions for this desktop.
 
 ## profile list
 

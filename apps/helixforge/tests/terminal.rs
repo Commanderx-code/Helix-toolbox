@@ -478,10 +478,19 @@ fn a_killed_menu_leaves_a_copy_that_the_next_start_removes() {
     assert!(listed.status.success());
     assert_eq!(copies(), 0, "the stale copy was not removed");
 
-    // A clean quit removes its own copy.
+    // A clean quit removes its own copy. The first start offers the setup
+    // wizard (the killed one never got to remember it); Escape declines.
     let mut tui = Terminal::start(&["tui", "--bypass-root"], home.path(), 40, 120);
-    tui.wait_for(&["SYSTEM READY"]);
+    tui.wait_for(&[
+        "SYSTEM READY",
+        "SET UP THIS MACHINE",
+        "Welcome to HelixForge",
+    ]);
     assert_eq!(copies(), 1);
+    tui.keys(ESC);
+    tui.wait_until("the wizard to close", |screen| {
+        !screen.contains("SET UP THIS MACHINE")
+    });
     tui.keys("q");
     assert_eq!(tui.wait_for_exit(), 0);
     assert_eq!(copies(), 0);

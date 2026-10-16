@@ -13,6 +13,7 @@ mod running;
 pub mod settings;
 mod sysinfo;
 pub mod theme;
+mod wizard;
 
 use crate::TuiArgs;
 use anyhow::Result;
@@ -33,6 +34,10 @@ pub fn run(catalog: Catalog, platform: LinuxInfo, args: TuiArgs) -> Result<()> {
     // After the terminal is set up and before the first key is read.
     let banner = banner::detect().and_then(|picker| banner::encode(&picker));
     let mut app = app.with_banner(banner);
+    // The first time HelixForge starts, it offers the setup wizard.
+    if app.first_run() {
+        app.open_wizard(true);
+    }
     let result = event_loop(&mut terminal, &mut app);
     ratatui::restore();
     result

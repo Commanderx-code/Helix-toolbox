@@ -17,6 +17,15 @@ and other terminals that show pictures, the header is the HelixForge banner.
 `t` cycles the themes: solid, transparent, compatible (sixteen colours) and
 monochrome (no colour, the theme `NO_COLOR` selects for a run).
 
+## The first start
+
+The first time it starts, HelixForge offers to set the machine up: it shows
+what it found (distribution, desktop, graphics, package tools), asks which
+kind of workstation this is (Developer, Gaming, Privacy, Minimal or Custom)
+and lists what that would add, ticked where it is not installed yet. `Enter`
+puts the ticked entries in the Install Plan to review; nothing runs until you
+confirm it there. `Esc` skips it; Settings, **Setup wizard**, opens it later.
+
 ## Finding your way
 
 The sidebar on the left lists the screens. `Tab` and `Shift-Tab` move
@@ -34,6 +43,7 @@ and press `Enter`.
 | Favorites | Entries you pinned with `*`, then the ones you ran recently |
 | Install Plan | What you queued, checked and ready to run together |
 | Configurations | Shell, dotfiles and desktop configuration |
+| Desktop | The desktop, its login screen and look, saved looks |
 | Helix Doctor | Health checks that only read the system, with repairs |
 | Hardware | Firmware updates, disks, temperatures, batteries, devices |
 | Maintenance, Security | Clean-ups, system tweaks and hardening |
@@ -136,6 +146,14 @@ the new package for your distribution (downloaded and checked first), `cargo
 install` again, or a fresh build of your checkout. Copies run through the
 launcher or `start.sh` are always the latest release already.
 
+## The desktop
+
+**Desktop** shows the desktop and its login screen, the theme, icons,
+cursor and font in use, and the entries made for this desktop. `s` saves
+the look under a name, and `Enter` on it later puts it back after a
+confirmation. If Home Manager or Stylix sets the desktop's look, the screen
+says so: their next switch may undo a change made here.
+
 ## The hardware
 
 **Hardware** lists firmware updates fwupd knows of, the disks with their
@@ -189,6 +207,7 @@ helixforge report                 # for a bug report
 | `~/.config/helixforge/favourites.toml` | Pinned entries |
 | `~/.config/helixforge/profiles/` | Your profiles |
 | `~/.config/helixforge/baselines/` | Your baselines, for Drift |
+| `~/.config/helixforge/looks/` | Your saved desktop looks |
 | `~/.local/state/helixforge/` | History and saved logs |
 
 Removing HelixForge leaves them; delete them to start afresh.

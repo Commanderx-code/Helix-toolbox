@@ -18,6 +18,8 @@ pub struct Look {
     pub keep_going: bool,
     /// Take a snapshot before system changes, where the machine can.
     pub snapshots: bool,
+    /// The setup wizard has been offered: false only on the very first run.
+    pub set_up: bool,
 }
 
 impl Default for Look {
@@ -27,6 +29,7 @@ impl Default for Look {
             icons: true,
             keep_going: false,
             snapshots: true,
+            set_up: false,
         }
     }
 }
@@ -51,7 +54,11 @@ pub fn load(path: &Path) -> Look {
     else {
         return Look::default();
     };
-    let mut look = Look::default();
+    // Settings saved before the wizard existed belong to a machine already set up.
+    let mut look = Look {
+        set_up: true,
+        ..Look::default()
+    };
     let get = |name: &str| table.get(name).cloned();
     if let Some(theme) = get("theme").and_then(|value| value.try_into().ok()) {
         look.theme = theme;
@@ -60,6 +67,7 @@ pub fn load(path: &Path) -> Look {
         ("icons", &mut look.icons),
         ("keep_going", &mut look.keep_going),
         ("snapshots", &mut look.snapshots),
+        ("set_up", &mut look.set_up),
     ] {
         if let Some(value) = get(name).and_then(|value| value.as_bool()) {
             *field = value;
@@ -134,6 +142,7 @@ mod tests {
             icons: false,
             keep_going: true,
             snapshots: false,
+            set_up: false,
         };
         save(&path, &look).unwrap();
         assert_eq!(load(&path), look);
@@ -146,7 +155,18 @@ mod tests {
         fs::write(&path, "theme = \"default\"\n").unwrap();
         assert_eq!(load(&path).theme, Theme::Transparent);
         fs::write(&path, "theme = 3\n").unwrap();
-        assert_eq!(load(&path), Look::default());
+        // Settings from before the setup wizard mean the machine was set up.
+        assert_eq!(
+            load(&path),
+            Look {
+                set_up: true,
+                ..Look::default()
+            }
+        );
+        assert!(
+            !Look::default().set_up,
+            "with no settings at all, it is the first run"
+        );
         // A later version's theme and settings cost nothing else.
         fs::write(
             &path,
@@ -157,6 +177,7 @@ mod tests {
             load(&path),
             Look {
                 icons: false,
+                set_up: true,
                 ..Look::default()
             }
         );

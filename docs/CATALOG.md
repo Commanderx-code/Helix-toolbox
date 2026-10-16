@@ -122,6 +122,12 @@ print a file's new contents (`grub`, `grub-cmdline`, `sddm`,
 side. `{grub}` stands for `/boot/grub` (`/boot/grub2` on Fedora) and `{time}`
 for the date and time the installer puts in a name.
 
+`catalog/setup.toml` holds the setup wizard's workstations, each with
+entries and `[[workstation.when]]` additions for a graphics vendor
+(`gpu`), a distribution family (`family`, `not_family`) or a desktop, and
+the entries the Desktop screen offers for each desktop (`[[desktop]]`, `any`
+for all).
+
 `catalog/validation.toml` says how far entries are tested beyond the checks
 every entry gets: `[critical]` names the entries whose failure can stop a
 machine booting, logging in or showing a display; each `[[stand-ins]]`

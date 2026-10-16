@@ -205,6 +205,22 @@ jobs:
             echo "a disk name with a path was accepted" >&2
             exit 1
           fi
+      - name: The setup wizard's plans and the desktop, read-only
+        run: |
+          bin/helixforge setup | tee setup.txt
+          grep -qE '^Packages +(pacman|APT|DNF|zypper)' setup.txt
+          grep -q '^  developer ' setup.txt
+          # A workstation's plan only plans: nothing is installed.
+          bin/helixforge setup minimal | tee minimal.txt
+          grep -q 'The plan, which nothing has run' minimal.txt
+          grep -q 'To run it, after reading it: helixforge run ' minimal.txt
+          bin/helixforge setup developer --json | python3 -c 'import json, sys; d = json.load(sys.stdin)["data"]; assert d["chosen"] == "developer" and any(s["id"] == "git" for s in d["suggestions"]), d'
+          if bin/helixforge setup no-such-workstation; then
+            echo "an unknown workstation was accepted" >&2
+            exit 1
+          fi
+          # Containers run no desktop, and it says so.
+          bin/helixforge desktop | grep -q '^Desktop   none found'
       - name: WINE and gaming packages the catalog names exist here
         run: |
           bin/helixforge plan wine winetricks protontricks minigalaxy | tee gaming.txt

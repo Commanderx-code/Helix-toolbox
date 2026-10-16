@@ -14,6 +14,7 @@
 //! checks that each package step left its package installed, or removed.
 
 pub mod backups;
+pub mod desktop;
 pub mod doctor;
 pub mod drift;
 pub mod hardware;
@@ -24,6 +25,7 @@ pub mod preview;
 pub mod profiles;
 pub mod pty;
 pub mod reliability;
+pub mod setup;
 pub mod trust;
 pub mod updates;
 

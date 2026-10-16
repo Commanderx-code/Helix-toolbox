@@ -8,6 +8,7 @@ mod json;
 mod logging;
 mod report;
 mod selfupdate;
+mod setup;
 mod tui;
 
 use anyhow::{Context, Result, bail};
@@ -49,8 +50,8 @@ struct Cli {
     catalog_dir: Option<PathBuf>,
     /// Print the result as JSON, for other programs (see docs/JSON.md): for
     /// system, list, search, info, status, plan, history, updates, doctor,
-    /// backups, drift check, drift list, reliability, trust, hardware and
-    /// profile list, and for --dry-run plans.
+    /// backups, drift check, drift list, reliability, trust, hardware, setup,
+    /// desktop and profile list, and for --dry-run plans.
     #[arg(long, global = true)]
     json: bool,
     /// With plan, or a --dry-run: also show what the plan is expected to
@@ -191,6 +192,21 @@ enum Command {
     Drift {
         #[command(subcommand)]
         command: Option<drift::DriftCommand>,
+    },
+    /// The setup wizard: what this machine is, the workstations it offers
+    /// (developer, gaming, privacy, minimal, custom), and a named one's plan
+    /// for this machine, to review and run with helixforge run. It runs
+    /// nothing itself.
+    Setup {
+        /// The workstation to plan.
+        workstation: Option<String>,
+    },
+    /// The desktop: which one, its session and login screen, its appearance
+    /// settings and who else sets them (Home Manager, Stylix), and the
+    /// entries for it; save its look, or put a saved look back.
+    Desktop {
+        #[command(subcommand)]
+        command: Option<setup::DesktopCommand>,
     },
     /// The hardware and firmware: fwupd's devices and the firmware updates it
     /// knows of, disks, temperatures, batteries, PCI and USB devices. It only
@@ -348,7 +364,7 @@ fn main() -> Result<()> {
             if as_json =>
         {
             bail!(
-                "--json is for system, list, search, info, status, plan, history, updates, doctor, backups, report, drift check, drift list, reliability, trust, hardware and profile list, and for --dry-run plans"
+                "--json is for system, list, search, info, status, plan, history, updates, doctor, backups, report, drift check, drift list, reliability, trust, hardware, setup, desktop and profile list, and for --dry-run plans"
             )
         }
         Command::Tui(args) => {
@@ -811,6 +827,12 @@ fn main() -> Result<()> {
             confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "RESTORE")
         }
         Command::Drift { command } => drift::run(command, &load(false)?, &platform, as_json),
+        Command::Setup { workstation } => {
+            setup::run_setup(workstation, &load(true)?, &platform, as_json)
+        }
+        Command::Desktop { command } => {
+            setup::run_desktop(command, &load(true)?, &platform, as_json)
+        }
         Command::Hardware {
             smart,
             firmware,

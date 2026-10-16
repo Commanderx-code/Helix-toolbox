@@ -45,6 +45,11 @@ Debian, Ubuntu, Fedora and openSUSE.
   space, with repairs that run after their own confirmation.
 - **Backups and snapshots**: configuration backups can be restored from one
   screen, and a Snapper or Timeshift snapshot is taken before system changes.
+- **A setup wizard** on the first start: it looks at the machine and turns
+  a choice of Developer, Gaming, Privacy or Minimal into an Install Plan to
+  review.
+- **The desktop**: the desktop, login screen and look at a glance, saved
+  looks to put back, and a warning where Home Manager or Stylix sets them.
 - **HELIX Drift** saves how a machine is set up and shows what has moved
   since, or what a fresh installation still lacks, with the entries that put
   it back queued for review.

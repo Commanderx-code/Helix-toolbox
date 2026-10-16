@@ -1,0 +1,66 @@
+# The setup wizard's workstations, and the entries the Desktop screen offers
+# for each desktop. Each names catalog entries; the wizard queues those this
+# machine can run in the Install Plan for review, and runs nothing itself.
+# A [[workstation.when]] adds entries when its conditions hold: gpu (nvidia,
+# amd, intel), family (arch, debian, fedora, suse), not_family, desktop
+# (kde, gnome, xfce, cinnamon, mate, hyprland, sway).
+
+[[workstation]]
+id = "developer"
+name = "Developer"
+description = "Git, a fast search and fuzzy finder, Neovim and VS Code, Docker, a terminal and a diff tool"
+entries = ["git", "ripgrep", "fzf", "neovim", "btop", "vs-code", "docker", "meld", "ghostty"]
+
+[[workstation]]
+id = "gaming"
+name = "Gaming"
+description = "Steam, Lutris and Heroic, WINE and the Proton tools, Discord, and the drivers this machine's graphics need"
+entries = ["steam", "lutris", "heroic", "protonplus", "wine", "winetricks", "protontricks", "gaming-dependencies", "discord"]
+
+[[workstation.when]]
+gpu = "nvidia"
+family = "arch"
+entries = ["nvidia-drivers-hardware-acceleration"]
+
+[[workstation.when]]
+gpu = "nvidia"
+family = "fedora"
+entries = ["nvidia-proprietary-drivers"]
+
+[[workstation]]
+id = "privacy"
+name = "Privacy"
+description = "LibreWolf, the Tor Browser and Signal, a firewall baseline, mandatory access control and a security audit"
+entries = ["librewolf", "tor-browser", "signal", "lynis-security-audit"]
+
+[[workstation.when]]
+family = "fedora"
+entries = ["firewalld-firewall-baselines-ctt", "selinux"]
+
+[[workstation.when]]
+not_family = "fedora"
+entries = ["ufw-firewall-baselines-ctt", "apparmor"]
+
+[[workstation]]
+id = "minimal"
+name = "Minimal"
+description = "A few small command-line tools and nothing else"
+entries = ["git", "htop", "ripgrep", "fzf"]
+
+[[workstation]]
+id = "custom"
+name = "Custom"
+description = "Start with nothing ticked and choose from every suggestion"
+entries = []
+
+[[desktop]]
+id = "kde"
+entries = ["dotfiles-konsole", "sddm", "global-theme"]
+
+[[desktop]]
+id = "gnome"
+entries = ["global-theme"]
+
+[[desktop]]
+id = "any"
+entries = ["plymouth-on", "plymouth-theme", "ghostty", "kitty", "alacritty"]

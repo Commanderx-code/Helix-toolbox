@@ -25,7 +25,8 @@ gain fields: none is removed, renamed or given another meaning. A change that
 would break them raises `schema` and comes with a major version.
 
 **Your files.** `settings.toml`, `favourites.toml`, profiles in
-`profiles/`, baselines in `baselines/` (from 1.1) and `history.jsonl`
+`profiles/`, baselines in `baselines/` (from 1.1), looks in `looks/` (from
+1.4) and `history.jsonl`
 written by any 1.x release are read by every later 1.x release. Settings a release does not know are ignored rather than
 discarding the rest, so going back to an earlier 1.x keeps what it
 understands. A profile or baseline exported from one machine imports on another

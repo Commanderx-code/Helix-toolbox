@@ -24,7 +24,7 @@ import tempfile
 import time
 
 REPOSITORY = os.environ.get('GITHUB_REPOSITORY', 'Commanderx-code/Helix-Forge')
-SKIPPED = {'tabs.toml', 'tab.toml', 'group.toml', 'validation.toml'}
+SKIPPED = {'tabs.toml', 'tab.toml', 'group.toml', 'validation.toml', 'setup.toml'}
 
 
 def entry_ids(catalog):

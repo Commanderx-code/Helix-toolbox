@@ -18,6 +18,7 @@ pub enum Icon {
     Drift,
     Reliability,
     Hardware,
+    Desktop,
     Settings,
     Area,
     Group,
@@ -49,6 +50,7 @@ impl Icon {
                 Icon::Drift => "\u{f0ec}",          // exchange
                 Icon::Reliability => "\u{f0c3}",    // flask
                 Icon::Hardware => "\u{f2db}",       // microchip
+                Icon::Desktop => "\u{f108}",        // desktop
                 Icon::Settings => "\u{f013}",       // cog
                 Icon::Area => "\u{f07b}",           // folder
                 Icon::Group => "\u{f07b}",          // folder

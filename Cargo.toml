@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.3.0"
+version = "1.4.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
@@ -20,10 +20,10 @@ authors = ["Commanderx-code"]
 [workspace.dependencies]
 # The crates of this workspace, published together at the same version;
 # scripts/stamp-version.py keeps these in step with the version above.
-helixforge-catalog = { path = "crates/helixforge-catalog", version = "=1.3.0" }
-helixforge-core = { path = "crates/helixforge-core", version = "=1.3.0" }
-helixforge-engine = { path = "crates/helixforge-engine", version = "=1.3.0" }
-helixforge-platform = { path = "crates/helixforge-platform", version = "=1.3.0" }
+helixforge-catalog = { path = "crates/helixforge-catalog", version = "=1.4.0" }
+helixforge-core = { path = "crates/helixforge-core", version = "=1.4.0" }
+helixforge-engine = { path = "crates/helixforge-engine", version = "=1.4.0" }
+helixforge-platform = { path = "crates/helixforge-platform", version = "=1.4.0" }
 anyhow = "1"
 clap = { version = "4.5", features = ["derive"] }
 # The poll(2) event source: the default edge-triggered one can leave a key

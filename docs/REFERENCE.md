@@ -160,6 +160,40 @@ names what this distribution cannot install. `drift list`, `import` and
 `delete` manage the saved ones; `--exit-code` makes `check` exit with 1
 when anything differs.
 
+## The setup wizard
+
+The first time HelixForge starts, it offers the setup wizard (Settings,
+**Setup wizard**, and `Ctrl-K` "set up this machine" open it again). It shows
+what it found: the distribution and package manager, the other package
+tools (paru, yay, Flatpak, Nix, Home Manager, Snap), the desktop and session,
+the graphics and whether this is a laptop. Then it offers workstations from
+`catalog/setup.toml`: **Developer**, **Gaming** (with the NVIDIA driver entry
+for the distribution where there is an NVIDIA card), **Privacy** (a firewall
+baseline and AppArmor, or SELinux on Fedora), **Minimal** and **Custom**
+(every suggestion, none ticked). Its entries are listed with how they stand,
+ticked where they can run here and are not installed; `Enter` puts the
+ticked ones in the Install Plan, where they are planned, previewed and
+confirmed like anything else. The wizard runs nothing itself.
+`helixforge setup` lists the workstations; `helixforge setup gaming` prints
+what it would add and its plan, and the `helixforge run` that would run it.
+
+## The desktop
+
+**Desktop** shows the desktop environment and its version (KDE Plasma,
+GNOME, Xfce, Cinnamon, MATE, Hyprland, Sway), the session, the login screen
+with its configuration files and SDDM theme, and the appearance settings
+read with the desktop's own tools (`kreadconfig6`, `gsettings`,
+`xfconf-query`): colour scheme, style, icons, cursor, global theme, font.
+It warns when something else sets them: Home Manager's Plasma or dconf
+steps, or Stylix, which may set them again at the next switch, and refuses
+to change them where Home Manager links the settings file itself. `s`
+saves the look in `~/.config/helixforge/looks/`; `Enter` on a saved look
+puts back what differs with the desktop's own commands
+(`plasma-apply-colorscheme`, `gsettings set`, …), after confirmation. The
+entries for this desktop (its login screen theme, terminal configuration,
+boot splash) are listed below, to run or queue. `helixforge desktop`,
+`desktop save <name>`, `desktop apply <name>`, `list` and `delete`.
+
 ## What a change will do
 
 Before a plan runs, `e` (on the Install Plan, in the confirmation, or on a
@@ -292,6 +326,8 @@ helixforge remove ardour              # removes a package entry that offers it
 helixforge profile list               # your profiles; also export, import, delete
 helixforge drift save "Old laptop"    # record this machine as a baseline
 helixforge drift check                # how it differs now; --profile <name> for a profile
+helixforge setup gaming               # what the Gaming workstation would add here, as a plan
+helixforge desktop                    # the desktop, its look and who else sets it
 helixforge plan sddm --effects        # what it would change, files side by side
 helixforge hardware                   # firmware, disks, temperatures, batteries, devices
 helixforge reliability --critical     # how far the boot, login and driver entries are tested

@@ -4,6 +4,25 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.4.0
+
+- **Setup wizard**: on the first start (and from Settings or `Ctrl-K`),
+  HelixForge shows what it found on the machine (distribution, package
+  tools, desktop, graphics, laptop or not) and offers Developer, Gaming,
+  Privacy, Minimal and Custom workstations from `catalog/setup.toml`, fitted
+  to the machine (NVIDIA drivers for the distribution, SELinux or AppArmor).
+  The ticked entries go to the Install Plan for review; it runs nothing.
+  `helixforge setup [workstation]` prints the same as a plan.
+- **Desktop environment manager**: a Desktop screen and `helixforge desktop`
+  show the desktop and its version, the session, the login screen and its
+  configuration, and the appearance settings read with the desktop's own
+  tools; save a look and put it back with them, after confirmation. It warns
+  where Home Manager's Plasma or dconf steps or Stylix set the look, refuses
+  to change it where Home Manager links its files, and lists the entries for
+  that desktop.
+- The sidebar keeps its main menu cards and scrolls the rest when there are
+  more screens than room.
+
 ## v1.3.0
 
 - **System change preview**: `e` on the Install Plan, in the confirmation or

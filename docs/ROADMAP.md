@@ -7,7 +7,7 @@
 | v1.1.0 | Configuration drift and the command palette | 1 (HELIX Drift), 6 (command palette) (done) |
 | v1.2.0 | How far each installer can be trusted | 4 (reliability dashboard), 7 (trust inspector) (done) |
 | v1.3.0 | Seeing a change before it happens, and the hardware | 2 (system change preview), 5 (hardware and firmware center) (done) |
-| v1.4.0 | First-run setup and the desktop | 3 (setup wizard), 9 (desktop environment manager) |
+| v1.4.0 | First-run setup and the desktop | 3 (setup wizard), 9 (desktop environment manager) (done) |
 | v1.5.0 | Machines without reliable internet | 8 (offline installation bundles) |
 
 The items:
@@ -43,6 +43,17 @@ The items:
    and offer the settings, themes, display-manager configuration and
    customisation profiles that fit, warning where Home Manager or a
    desktop's own tools own a setting.
+
+## v1.4.0: first-run setup and the desktop (done)
+
+- [x] Setup wizard (item 3): the machine's distribution, package tools,
+      desktop, graphics and form; Developer, Gaming, Privacy, Minimal and
+      Custom workstations fitted to it; an ordinary Install Plan to review
+- [x] Desktop environment manager (item 9): KDE Plasma, GNOME, Xfce,
+      Cinnamon, MATE, Hyprland and Sway detected; login screen and its
+      configuration; appearance read and saved looks applied with the
+      desktop's own tools; Home Manager, plasma-manager, dconf and Stylix
+      named where they set the look
 
 ## v1.3.0: seeing a change before it happens, and the hardware (done)
 
