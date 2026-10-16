@@ -6479,6 +6479,11 @@ mod tests {
         assert!(text.contains("built from source"), "{text}");
         press(&mut app, KeyCode::Esc);
         app.popup = None;
+        // This build's own claims without a record, so a release build's
+        // record (where the theme may be VM Tested) does not change the test.
+        let mut evidence = reliability::Evidence::load(app.catalog.root());
+        evidence.results = None;
+        app.evidence = Some(evidence);
         let grub = app.catalog.find("grub-dracula").unwrap().clone();
         app.confirm(vec![grub]);
         assert!(matches!(app.popup, Some(Popup::Confirm(_))));

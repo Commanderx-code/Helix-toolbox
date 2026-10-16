@@ -31,7 +31,7 @@ jobs:
       - run: cargo test --workspace
       - name: The tests as a release build runs them, with a Distributions record
         run: |
-          printf '%s\n' '{"format": 1, "commit": "0000000000000000000000000000000000000000", "run": 1, "url": "https://example.invalid", "finished": 1792175066, "images": {"archlinux:latest": {"entries": {"htop": "verified", "system-report": "ran"}}}}' \
+          printf '%s\n' '{"format": 1, "commit": "0000000000000000000000000000000000000000", "run": 1, "url": "https://example.invalid", "finished": 1792175066, "images": {"archlinux:latest": {"entries": {"htop": "verified", "system-report": "ran"}}}, "vms": {"arch": {"entries": {"grub-dracula": "verified", "sddm": "verified", "apparmor": "verified", "plymouth-on": "verified"}}}}' \
             > catalog/validation-results.json
           # The catalog is embedded at build time; build it again with the record.
           touch crates/helixforge-catalog/src/lib.rs
