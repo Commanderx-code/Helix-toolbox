@@ -18,6 +18,7 @@ package installs happen only in the Distributions workflow's containers.
 | Shellcheck | `scripts/verify.sh` | every shared helper and installer, with errors gated for the general catalog |
 | Workflow lint | `scripts/verify.sh` | actionlint over every workflow, including the shell in each step |
 | Source render | `scripts/verify.sh` | rendering the dotfiles and Myfish exports again changes no catalog file |
+| Crates | Checks workflow | `cargo package --workspace`: every crate packaged and built from its package, as crates.io and `cargo install` would |
 | Distributions | `.github/workflows/distributions.yml` | Arch, Debian, Ubuntu 22.04 and 24.04, Fedora and openSUSE Tumbleweed containers with real package installs and removals, each verified, and the real package manager failing over to a stand-in Flathub; HelixForge's own package for each installed, used and removed |
 
 ## The program in a terminal

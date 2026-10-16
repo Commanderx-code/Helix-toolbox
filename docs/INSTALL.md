@@ -4,7 +4,8 @@ Every release on the
 [releases page](https://github.com/Commanderx-code/Helix-Forge/releases)
 has the same tested Linux x86_64 build in four forms: an Arch package, a
 Debian/Ubuntu package, an RPM package for Fedora and openSUSE, and the bare
-program. It needs glibc 2.35 or newer (Debian 12, Ubuntu 22.04, Fedora 36,
+program. With Rust installed, `cargo install` builds it on your machine
+instead (below). It needs glibc 2.35 or newer (Debian 12, Ubuntu 22.04, Fedora 36,
 current Arch and openSUSE Tumbleweed, or later).
 
 ## A package
@@ -62,6 +63,30 @@ gh attestation verify helixforge_1.0.0-1_amd64.deb --repo Commanderx-code/Helix-
 
 It succeeds only for a file built by this repository's release workflow,
 and says which workflow run built it.
+
+## With Cargo
+
+With Rust 1.89 or newer ([rustup](https://rustup.rs)), Cargo builds
+HelixForge on your machine and puts it in `~/.cargo/bin`:
+
+```sh
+cargo install --locked helixforge
+```
+
+That takes the latest release from [crates.io](https://crates.io/crates/helixforge).
+Straight from GitHub instead, a release by its tag or the newest code:
+
+```sh
+cargo install --locked --git https://github.com/Commanderx-code/Helix-Forge --tag v1.0.1 helixforge
+cargo install --locked --git https://github.com/Commanderx-code/Helix-Forge helixforge
+```
+
+`cargo install` again updates it; `cargo uninstall helixforge` removes it.
+A copy built this way has no manual pages or menu entry (the packages have
+those); `helixforge completions bash|zsh|fish` prints its shell completions.
+A build from GitHub reports the version in `Cargo.toml`, which can be a
+patch behind the tag it was built from; the crates.io and release builds
+report the release's own.
 
 ## From source
 

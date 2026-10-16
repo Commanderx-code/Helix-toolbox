@@ -4,10 +4,14 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "HelixForge's built-in catalog and scripts, and the reader that validates them. Part of the HelixForge application, not a general-purpose library."
 
 [dependencies]
-helixforge-core = { path = "../helixforge-core" }
-helixforge-platform = { path = "../helixforge-platform" }
+helixforge-core.workspace = true
+helixforge-platform.workspace = true
 include_dir = "0.7"
 serde.workspace = true
 tempfile = "3"

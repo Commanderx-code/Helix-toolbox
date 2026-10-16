@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "Linux distribution detection for HelixForge. Part of the HelixForge application, not a general-purpose library."
 
 [dependencies]
-helixforge-core = { path = "../helixforge-core" }
+helixforge-core.workspace = true
 thiserror.workspace = true

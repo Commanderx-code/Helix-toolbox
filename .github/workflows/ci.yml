@@ -29,6 +29,8 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - name: The crates package and build as crates.io would
+        run: cargo package --workspace --allow-dirty
       - name: Installer tests
         run: python3 -B -m unittest discover -s tests/installers -v
       - name: Shellcheck

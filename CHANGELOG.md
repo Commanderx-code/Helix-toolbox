@@ -6,6 +6,10 @@ dotfiles or Myfish sources raises the patch number and is not listed here.
 
 ## Unreleased
 
+- `cargo install --locked helixforge` builds HelixForge on your machine:
+  the crates are ready for crates.io, and each release publishes them once
+  a crates.io token is set up ([RELEASING.md](docs/RELEASING.md));
+  `cargo install --git` works meanwhile ([INSTALL.md](docs/INSTALL.md)).
 - Helix Doctor: a failed service whose unit file was removed (its package
   uninstalled) is a notice, "removed, but its last failure is still
   remembered", with `systemctl reset-failed` as the repair instead of a

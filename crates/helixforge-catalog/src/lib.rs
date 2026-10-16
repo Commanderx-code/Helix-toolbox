@@ -24,8 +24,8 @@ use std::{
 };
 use thiserror::Error;
 
-static EMBEDDED_CATALOG: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/../../catalog");
-static EMBEDDED_SCRIPTS: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/../../scripts");
+static EMBEDDED_CATALOG: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/catalog");
+static EMBEDDED_SCRIPTS: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/scripts");
 
 #[derive(Debug, Error)]
 pub enum CatalogError {

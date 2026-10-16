@@ -4,7 +4,13 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "HelixForge: build, configure and optimise a Linux machine from a terminal menu."
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "Build, configure and optimise a Linux machine from a terminal menu: installs, dotfiles, updates, backups and health checks, every change planned and confirmed first."
+readme = "../../README.md"
+keywords = ["linux", "setup", "tui", "installer", "dotfiles"]
+categories = ["command-line-utilities", "config"]
 
 [dependencies]
 anyhow.workspace = true
@@ -12,10 +18,10 @@ clap.workspace = true
 clap_complete = "4.5"
 clap_mangen = "0.2"
 crossterm.workspace = true
-helixforge-catalog = { path = "../../crates/helixforge-catalog" }
-helixforge-core = { path = "../../crates/helixforge-core" }
-helixforge-engine = { path = "../../crates/helixforge-engine" }
-helixforge-platform = { path = "../../crates/helixforge-platform" }
+helixforge-catalog.workspace = true
+helixforge-core.workspace = true
+helixforge-engine.workspace = true
+helixforge-platform.workspace = true
 image = { version = "0.25", default-features = false, features = ["png"] }
 nix = { version = "0.31", features = ["poll", "signal", "user"] }
 ratatui.workspace = true

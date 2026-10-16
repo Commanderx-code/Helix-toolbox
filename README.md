@@ -39,8 +39,9 @@ To keep it installed, each release also has an Arch package, a Debian/Ubuntu
 package and an RPM for Fedora and openSUSE, with shell completions, manual
 pages and a menu entry; each file has a SHA-256 sum and a signed build
 provenance attestation. [docs/INSTALL.md](docs/INSTALL.md) shows how to
-install and check them. `helixforge completions bash|zsh|fish` prints the
-completions for a copy that is not installed from a package.
+install and check them. With Rust, `cargo install --locked helixforge`
+builds it on your machine instead. `helixforge completions bash|zsh|fish`
+prints the completions for a copy that is not installed from a package.
 
 In the interface the sidebar is a menu of screens. `Tab` or `j`/`k` in the
 sidebar move between Dashboard, Applications, Favourites, Install Plan, and the other
@@ -401,6 +402,8 @@ Releases are numbered `vMAJOR.MINOR.PATCH`, starting at v0.1.0: each release
 adds one to the patch number, and `helixforge --version` reports it. To start
 a new series, set the version in `Cargo.toml` (`[workspace.package]`) to, say,
 `0.2.0` or `1.0.0`; the next release takes it.
+[docs/RELEASING.md](docs/RELEASING.md) walks through a release, including
+publishing the crates to crates.io.
 
 ## Checks
 
