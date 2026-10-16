@@ -1,6 +1,61 @@
 # Roadmap
 
-## Release plan
+## The 1.x release plan
+
+| Version | Main objective | Items |
+| :--- | :--- | :--- |
+| v1.1.0 | Configuration drift and the command palette | 1 (HELIX Drift), 6 (command palette) (done) |
+| v1.2.0 | How far each installer can be trusted | 4 (reliability dashboard), 7 (trust inspector) |
+| v1.3.0 | Seeing a change before it happens, and the hardware | 2 (system change preview), 5 (hardware and firmware center) |
+| v1.4.0 | First-run setup and the desktop | 3 (setup wizard), 9 (desktop environment manager) |
+| v1.5.0 | Machines without reliable internet | 8 (offline installation bundles) |
+
+The items:
+
+1. HELIX Drift: compare a machine with a saved baseline or a workstation
+   profile: missing applications, changed settings, replaced configuration
+   files and other differences, such as what a fresh installation still
+   lacks from the original setup.
+2. System change preview: before a change runs, the files it replaces
+   side by side, the services it restarts and the packages it may replace;
+   effects that cannot be known in advance (inside complex scripts) are
+   marked as such rather than claimed.
+3. Setup wizard: a first-run guide that detects the distribution, desktop,
+   hardware and package managers, offers Developer, Gaming, Privacy,
+   Minimal and Custom workstations, and makes a normal Install Plan to
+   review; nothing is applied by itself.
+4. Installer reliability: which installers passed automated tests, on
+   which distributions and when, labelled Container Tested, VM Tested,
+   Hardware Tested or Not Yet Validated; above all for bootloader and
+   graphics-driver entries.
+5. Hardware and firmware center: read-only fwupd, SMART and NVMe health,
+   temperatures, battery health and PCI and USB devices; firmware updates
+   listed apart, each with its own explicit confirmation.
+6. Command palette: `Ctrl-K` searches every screen, action and entry.
+7. Trust inspector: an installer's source repository, pinned revision,
+   checksums and signatures, licence, last validation and privileges,
+   telling verified release provenance from package integrity checks and
+   from unverified third-party scripts.
+8. Offline bundles: HelixForge, its catalog and predownloaded packages for
+   one distribution and architecture, with packages and signatures still
+   verifiable, and the actions that need the network named.
+9. Desktop environment manager: detect KDE Plasma, GNOME, XFCE and others,
+   and offer the settings, themes, display-manager configuration and
+   customisation profiles that fit, warning where Home Manager or a
+   desktop's own tools own a setting.
+
+## v1.1.0: configuration drift and the command palette (done)
+
+- [x] HELIX Drift (item 1): baselines of what is installed, the
+      configuration files entries write (by checksum), machine settings and
+      the entries HelixForge ran; saved, listed, exported and imported as
+      TOML; compared with this machine or a profile on the Drift screen and
+      with `helixforge drift check` (`--json`, `--exit-code`), with the
+      entries that restore what is missing queued for review
+- [x] Command palette (item 6): `Ctrl-K` over any screen, with every
+      screen, the common actions and every entry, ranked like search
+
+## Release plan to 1.0
 
 | Version | Main objective | Roadmap items |
 | :--- | :--- | :--- |

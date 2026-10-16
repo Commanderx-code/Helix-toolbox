@@ -15,6 +15,7 @@ pub enum Icon {
     Backups,
     Favorites,
     Updates,
+    Drift,
     Settings,
     Area,
     Group,
@@ -43,6 +44,7 @@ impl Icon {
                 Icon::Backups => "\u{f187}",        // archive
                 Icon::Favorites => "\u{f005}",      // star
                 Icon::Updates => "\u{f021}",        // refresh
+                Icon::Drift => "\u{f0ec}",          // exchange
                 Icon::Settings => "\u{f013}",       // cog
                 Icon::Area => "\u{f07b}",           // folder
                 Icon::Group => "\u{f07b}",          // folder

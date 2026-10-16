@@ -17,6 +17,7 @@ nix = { version = "0.31", features = ["fs", "signal", "user"] }
 portable-pty = "0.9"
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10"
 thiserror.workspace = true
 toml.workspace = true
 tracing = "0.1"

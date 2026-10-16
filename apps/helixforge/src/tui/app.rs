@@ -5,6 +5,7 @@ use super::{
     banner,
     hints::Hint,
     icons::Icon,
+    palette::{Choice, Outcome, Palette},
     popup::{Answer, ConfirmPopup, Decision, InputPopup, TextPopup, centered},
     running::RunningView,
     settings::{self, Look},
@@ -16,7 +17,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use helixforge_catalog::Catalog;
 use helixforge_core::{Action, Entry, Item};
 use helixforge_engine::{
-    EngineError, Plan, backups, doctor, history,
+    EngineError, Plan, backups, doctor, drift, history,
     inventory::{Inventory, Status, which},
     plan, plan_removal, preflight, profiles, updates,
 };
@@ -59,13 +60,10 @@ Risk in a plan: D, K and SI are high; installs, services and anything privileged
 const HELP: &str = "Everywhere
   Tab / Shift-Tab   next / previous screen       t   next theme (remembered)
   /                 search every area            ?   this help
-  q / Ctrl-C        quit
+  Ctrl-K            commands, by name            q / Ctrl-C  quit
 
-Sidebar
-  j / k             move                         Enter / l   open the screen
-
-Dashboard
-  j / k             move                         Enter       quick action
+Sidebar and Dashboard
+  j / k             move                         Enter / l   open the screen or quick action
 
 Areas (Applications and the other catalog screens)
   j / k             move                         Enter / l   open a group or run an entry
@@ -79,8 +77,9 @@ Install Plan
   Enter             run the plan                 x / Delete  remove the selected entry
   c                 clear the plan               s           save it as a profile
 
-History, Backups, Helix Doctor, Updates
+History, Backups, Helix Doctor, Updates, Drift
   Enter             log / restore / details      r   reload or check again; f repair; u / U update
+  Drift: b          compare with another         s   save this machine; Space / a plan what is missing
 
 Settings
   Enter / Space     change the selected setting
@@ -103,6 +102,8 @@ enum Screen {
     Doctor,
     /// Pending updates of each tool that keeps the machine.
     Updates,
+    /// How the machine differs from a baseline or a profile.
+    Drift,
     Settings,
 }
 
@@ -119,6 +120,53 @@ enum Popup {
     Running(Box<RunningView>),
     /// The name to save the Install Plan's queue under, as a profile.
     ProfileName(InputPopup),
+    /// The name to save this machine under, as a baseline.
+    BaselineName(InputPopup),
+    /// Every screen, action and entry, searchable (Ctrl-K).
+    Palette(Palette),
+}
+
+/// What a command palette choice does.
+#[derive(Clone, Debug)]
+enum Act {
+    Open(Screen),
+    /// Plan the entry and ask, as Enter on it does.
+    Entry(String),
+    UpdatesOnline,
+    /// Open Helix Doctor, and the details of the check with this id.
+    Doctor(Option<&'static str>),
+    SaveBaseline,
+    RunPlan,
+    ClearPlan,
+    SaveProfile,
+    UpdateEntries,
+    Theme,
+    Icons,
+    Help,
+    Quit,
+}
+
+/// What Drift compares the machine with.
+#[derive(Clone, Debug)]
+enum DriftTarget {
+    Baseline {
+        slug: String,
+        baseline: drift::Baseline,
+    },
+    Profile {
+        id: String,
+        name: String,
+        entries: Vec<String>,
+    },
+}
+
+impl DriftTarget {
+    fn key(&self) -> String {
+        match self {
+            DriftTarget::Baseline { slug, .. } => format!("baseline:{slug}"),
+            DriftTarget::Profile { id, .. } => format!("profile:{id}"),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -275,6 +323,18 @@ pub struct App {
     /// The check running in the background, if any; off in tests.
     checking: Option<mpsc::Receiver<(Inventory, HashMap<String, Status>)>>,
     check_statuses: bool,
+    /// What Drift can compare with: saved baselines, then profiles.
+    drift_targets: Vec<DriftTarget>,
+    /// The one chosen.
+    drift_target: usize,
+    /// The last comparison, with the target's key.
+    drift_report: Option<(String, drift::Report)>,
+    /// Where baselines are saved; the user's configuration unless a test says.
+    baselines_dir: Option<std::path::PathBuf>,
+    /// What the palette's choices do, by index.
+    palette_acts: Vec<Act>,
+    /// A health check to show once the checks finish, from the palette.
+    doctor_wanted: Option<&'static str>,
 }
 
 /// A plan of the queue as it was, from when it was made, with what the
@@ -342,6 +402,12 @@ impl App {
             inventory: None,
             checking: None,
             check_statuses: false,
+            drift_targets: Vec::new(),
+            drift_target: 0,
+            drift_report: None,
+            baselines_dir: None,
+            palette_acts: Vec::new(),
+            doctor_wanted: None,
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -573,6 +639,10 @@ impl App {
             Screen::History => self.records.len(),
             Screen::Backups => self.backups.len(),
             Screen::Updates => self.channels.len(),
+            Screen::Drift => self
+                .drift_report
+                .as_ref()
+                .map_or(0, |(_, report)| report.differences.len()),
             Screen::Doctor => self.diagnoses.len() + self.doctor_entries().len(),
             Screen::Settings => self.settings().len(),
         }
@@ -630,6 +700,9 @@ impl App {
         if screen == Screen::Updates && self.channels.is_empty() {
             self.gather_updates(false);
         }
+        if screen == Screen::Drift {
+            self.reload_drift();
+        }
         self.update_rows();
     }
 
@@ -646,6 +719,9 @@ impl App {
                     self.diagnoses = diagnoses;
                     self.examining = None;
                     self.clamp_main();
+                    if let Some(wanted) = self.doctor_wanted.take() {
+                        self.show_check(wanted);
+                    }
                     return true;
                 }
                 Err(mpsc::TryRecvError::Disconnected) => self.examining = None,
@@ -673,6 +749,9 @@ impl App {
                     self.inventory = Some(inventory);
                     self.statuses = statuses;
                     self.checking = None;
+                    if self.screen == Screen::Drift {
+                        self.check_drift();
+                    }
                     return true;
                 }
                 Err(mpsc::TryRecvError::Disconnected) => self.checking = None,
@@ -706,6 +785,7 @@ impl App {
             Screen::History => Icon::History,
             Screen::Backups => Icon::Backups,
             Screen::Updates => Icon::Updates,
+            Screen::Drift => Icon::Drift,
             Screen::Favorites => Icon::Favorites,
             Screen::Doctor => Icon::Doctor,
             Screen::Settings => Icon::Settings,
@@ -778,13 +858,18 @@ impl App {
             Screen::History => self.draw_history(frame, main),
             Screen::Backups => self.draw_backups(frame, main),
             Screen::Updates => self.draw_updates(frame, main),
+            Screen::Drift => self.draw_drift(frame, main),
             Screen::Doctor => self.draw_doctor(frame, main),
             Screen::Settings => self.draw_settings(frame, main),
         }
         match &mut self.popup {
             Some(Popup::Text(popup)) => popup.draw(frame, centered(main, 95, 95), self.theme),
-            Some(Popup::ProfileName(popup)) => {
+            Some(Popup::ProfileName(popup) | Popup::BaselineName(popup)) => {
                 let area = popup.fitted(centered(main, 80, 70));
+                popup.draw(frame, area, self.theme)
+            }
+            Some(Popup::Palette(popup)) => {
+                let area = popup.fitted(main);
                 popup.draw(frame, area, self.theme)
             }
             Some(Popup::Confirm(popup)) => {
@@ -913,6 +998,10 @@ impl App {
         // The first section's items are cards when there is room for them.
         let compact = sections.len() * 3 + self.menu.len();
         let cards = inner.height as usize >= compact + 2 * sections[0].1.len();
+        if !cards {
+            self.draw_sidebar_rows(frame, inner, &sections, focused);
+            return;
+        }
         let bottom = inner.bottom();
         let mut y = inner.y;
         for (number, (name, items)) in sections.iter().enumerate() {
@@ -934,24 +1023,8 @@ impl App {
             for &index in items {
                 let item = &self.menu[index];
                 let current = item.screen == self.screen;
-                let icon = self.icon_gap(self.menu_icon(item.screen));
-                let text_style = if current {
-                    Style::default().fg(self.theme.on_selected()).bold()
-                } else {
-                    Style::default().fg(self.theme.entry())
-                };
-                let label = Line::from(vec![
-                    Span::styled(
-                        icon,
-                        Style::default().fg(if current {
-                            self.theme.focused()
-                        } else {
-                            self.theme.muted()
-                        }),
-                    ),
-                    Span::styled(item.label.clone(), text_style),
-                ]);
-                if cards && number == 0 {
+                let label = self.menu_label(item, current);
+                if number == 0 {
                     if y + 3 > bottom {
                         break;
                     }
@@ -977,24 +1050,135 @@ impl App {
                     if y >= bottom {
                         break;
                     }
-                    let row = Rect::new(inner.x, y, inner.width, 1);
-                    let edge = if current && focused {
-                        Span::styled("▌", Style::default().fg(self.theme.focused()))
-                    } else {
-                        Span::raw(" ")
-                    };
-                    let mut spans = vec![edge, Span::raw(" ")];
-                    spans.extend(label.spans);
-                    let style = if current {
-                        self.theme.selected_fill()
-                    } else {
-                        Style::default()
-                    };
-                    frame.render_widget(Paragraph::new(Line::from(spans)).style(style), row);
+                    self.menu_row(
+                        frame,
+                        Rect::new(inner.x, y, inner.width, 1),
+                        label,
+                        current,
+                        focused,
+                    );
                     y += 1;
                 }
             }
             y += 1;
+        }
+    }
+
+    /// A menu item's icon and label.
+    fn menu_label(&self, item: &MenuItem, current: bool) -> Line<'static> {
+        let icon = self.icon_gap(self.menu_icon(item.screen));
+        let text_style = if current {
+            Style::default().fg(self.theme.on_selected()).bold()
+        } else {
+            Style::default().fg(self.theme.entry())
+        };
+        Line::from(vec![
+            Span::styled(
+                icon,
+                Style::default().fg(if current {
+                    self.theme.focused()
+                } else {
+                    self.theme.muted()
+                }),
+            ),
+            Span::styled(item.label.clone(), text_style),
+        ])
+    }
+
+    /// One menu item as a line, marked when it is the current screen.
+    fn menu_row(
+        &self,
+        frame: &mut Frame,
+        row: Rect,
+        label: Line<'static>,
+        current: bool,
+        focused: bool,
+    ) {
+        let edge = if current && focused {
+            Span::styled("▌", Style::default().fg(self.theme.focused()))
+        } else {
+            Span::raw(" ")
+        };
+        let mut spans = vec![edge, Span::raw(" ")];
+        spans.extend(label.spans);
+        let style = if current {
+            self.theme.selected_fill()
+        } else {
+            Style::default()
+        };
+        frame.render_widget(Paragraph::new(Line::from(spans)).style(style), row);
+    }
+
+    /// The menu as one line per item: with a rule and space between the
+    /// sections when they fit, without them when not, and scrolled to keep
+    /// the current screen in view when even that is too tall.
+    fn draw_sidebar_rows(
+        &self,
+        frame: &mut Frame,
+        inner: Rect,
+        sections: &[(&'static str, Vec<usize>)],
+        focused: bool,
+    ) {
+        enum Row {
+            Rule,
+            Blank,
+            Heading(&'static str),
+            Item(usize),
+        }
+        let build = |spaced: bool| {
+            let mut rows = Vec::new();
+            for (number, (name, items)) in sections.iter().enumerate() {
+                if number > 0 && spaced {
+                    rows.push(Row::Rule);
+                    rows.push(Row::Blank);
+                }
+                rows.push(Row::Heading(name));
+                rows.extend(items.iter().map(|&index| Row::Item(index)));
+                if spaced {
+                    rows.push(Row::Blank);
+                }
+            }
+            rows
+        };
+        let height = inner.height as usize;
+        let mut rows = build(true);
+        // The blank after the last section is not needed to fit.
+        if rows.len().saturating_sub(1) > height {
+            rows = build(false);
+        }
+        let current = rows
+            .iter()
+            .position(
+                |row| matches!(row, Row::Item(index) if self.menu[*index].screen == self.screen),
+            )
+            .unwrap_or(0);
+        let offset = (current + 1)
+            .saturating_sub(height)
+            .min(rows.len().saturating_sub(height));
+        for (line, row) in rows.iter().skip(offset).take(height).enumerate() {
+            let area = Rect::new(inner.x, inner.y + line as u16, inner.width, 1);
+            match row {
+                Row::Rule => self.rule(frame, area.x, area.y, area.width),
+                Row::Blank => {}
+                Row::Heading(name) => frame.render_widget(
+                    Paragraph::new(Line::styled(
+                        *name,
+                        Style::default().fg(self.theme.faint()).bold(),
+                    )),
+                    area,
+                ),
+                Row::Item(index) => {
+                    let item = &self.menu[*index];
+                    let current = item.screen == self.screen;
+                    self.menu_row(
+                        frame,
+                        area,
+                        self.menu_label(item, current),
+                        current,
+                        focused,
+                    );
+                }
+            }
         }
     }
 
@@ -1771,9 +1955,21 @@ impl App {
         self.rule(frame, area.x, area.y, area.width);
         let (_, hints) = self.hints();
         // Help and quit sit on the right, as in the design.
-        let (right, left): (Vec<&Hint>, Vec<&Hint>) = hints
+        let (right, mut left): (Vec<&Hint>, Vec<&Hint>) = hints
             .iter()
             .partition(|hint| matches!(hint.keys(), ["?"] | ["q"]));
+        // Hints that do not fit beside help and quit are left out, last first.
+        let width = |hints: &[&Hint]| -> usize {
+            hints
+                .iter()
+                .map(|hint| hint.keys().join("/").chars().count() + 1 + hint.text().chars().count())
+                .sum::<usize>()
+                + hints.len().saturating_sub(1) * 3
+        };
+        let room = area.width.saturating_sub(2) as usize;
+        while !left.is_empty() && width(&left) + width(&right) + 2 > room {
+            left.pop();
+        }
         let spans = |hints: &[&Hint]| {
             let mut spans: Vec<Span> = Vec::new();
             for (index, hint) in hints.iter().enumerate() {
@@ -1803,7 +1999,8 @@ impl App {
     fn hints(&self) -> (&'static str, Vec<Hint>) {
         match &self.popup {
             Some(Popup::Text(popup)) => return popup.hints(),
-            Some(Popup::ProfileName(popup)) => return popup.hints(),
+            Some(Popup::ProfileName(popup) | Popup::BaselineName(popup)) => return popup.hints(),
+            Some(Popup::Palette(popup)) => return popup.hints(),
             Some(Popup::Confirm(popup)) => return popup.hints(),
             Some(Popup::Running(popup)) => return popup.hints(),
             None => {}
@@ -1889,6 +2086,27 @@ impl App {
                     }
                     list.push(Hint::new(&["r"], "Check online"));
                 }
+                Screen::Drift => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    if let Some(difference) = self.selected_difference() {
+                        list.push(Hint::new(&["Enter"], "Details"));
+                        if difference.entry.is_some() && restorable(difference.kind) {
+                            list.push(Hint::new(&["Space"], "Plan"));
+                        }
+                    }
+                    if self
+                        .drift_report
+                        .as_ref()
+                        .is_some_and(|(_, report)| !report.restore().is_empty())
+                    {
+                        list.push(Hint::new(&["a"], "Plan all missing"));
+                    }
+                    if self.drift_targets.len() > 1 {
+                        list.push(Hint::new(&["b"], "Compare with"));
+                    }
+                    list.push(Hint::new(&["s"], "Save baseline"));
+                    list.push(Hint::new(&["r"], "Check again"));
+                }
                 Screen::Backups => {
                     list.push(Hint::new(&["↑↓"], "Navigate"));
                     if !self.backups.is_empty() {
@@ -1901,6 +2119,7 @@ impl App {
             },
         }
         list.push(Hint::new(&["/"], "Search"));
+        list.push(Hint::new(&["^K"], "Commands"));
         list.push(Hint::new(&["?"], "Help"));
         list.push(Hint::new(&["q"], "Quit"));
         ("HelixForge", list)
@@ -1927,6 +2146,30 @@ impl App {
                     Answer::Typing => {}
                     Answer::Cancelled => self.popup = None,
                     Answer::Given(name) => self.save_profile(&name),
+                }
+                return true;
+            }
+            Some(Popup::BaselineName(popup)) => {
+                if control_c {
+                    return false;
+                }
+                match popup.handle_key(key) {
+                    Answer::Typing => {}
+                    Answer::Cancelled => self.popup = None,
+                    Answer::Given(name) => self.save_baseline(&name),
+                }
+                return true;
+            }
+            Some(Popup::Palette(popup)) => {
+                match popup.handle_key(key) {
+                    Outcome::Open => {}
+                    Outcome::Closed => self.popup = None,
+                    Outcome::Chosen(index) => {
+                        self.popup = None;
+                        if let Some(act) = self.palette_acts.get(index).cloned() {
+                            return self.act(act);
+                        }
+                    }
                 }
                 return true;
             }
@@ -1989,6 +2232,10 @@ impl App {
                 return true;
             }
             None => {}
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('k') {
+            self.open_palette();
+            return true;
         }
         if self.focus == Focus::Search {
             self.handle_search_key(key);
@@ -2189,6 +2436,36 @@ impl App {
                 },
                 KeyCode::Char('U') => self.update_every_channel(),
                 KeyCode::Char('r') => self.gather_updates(true),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::Drift => match key.code {
+                KeyCode::Enter | KeyCode::Char('d') => self.describe_difference(),
+                KeyCode::Char(' ') => {
+                    if let Some(difference) = self.selected_difference()
+                        && restorable(difference.kind)
+                        && let Some(entry) = difference
+                            .entry
+                            .as_deref()
+                            .and_then(|id| self.catalog.find(id))
+                            .cloned()
+                    {
+                        self.toggle_queued(entry);
+                    }
+                }
+                KeyCode::Char('a') => self.queue_missing(),
+                KeyCode::Char('b') => self.next_drift_target(1),
+                KeyCode::Char('B') => self.next_drift_target(-1),
+                KeyCode::Char('s') => {
+                    self.popup = Some(Popup::BaselineName(InputPopup::new(
+                        "Save this machine as a baseline",
+                        "A name for the baseline (it is saved in ~/.config/helixforge/baselines):",
+                    )));
+                }
+                KeyCode::Char('r') => {
+                    self.reload_drift();
+                    self.refresh_statuses();
+                }
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
@@ -2397,6 +2674,11 @@ impl App {
         let Some(entry) = self.selected_entry().cloned() else {
             return;
         };
+        self.toggle_queued(entry);
+    }
+
+    /// Add an entry to the Install Plan, or take it out.
+    fn toggle_queued(&mut self, entry: Entry) {
         if !entry.multi_select {
             self.popup = Some(Popup::Text(TextPopup::new(
                 entry.name.clone(),
@@ -2805,6 +3087,661 @@ impl App {
         frame.render_stateful_widget(list, inner, &mut self.main_state);
     }
 
+    // ----- the command palette -----
+
+    /// Every screen, action and entry, with what each does.
+    fn palette_choices(&self) -> (Vec<Choice>, Vec<Act>) {
+        let mut choices = Vec::new();
+        let mut acts = Vec::new();
+        let mut add = |label: String, detail: &str, keywords: &str, listed: bool, act: Act| {
+            choices.push(Choice {
+                label,
+                detail: detail.to_string(),
+                keywords: keywords.to_string(),
+                listed,
+            });
+            acts.push(act);
+        };
+        for item in &self.menu {
+            add(
+                format!("Open {}", item.label),
+                "screen",
+                "go to show",
+                true,
+                Act::Open(item.screen),
+            );
+        }
+        let actions: [(&str, &str, Act); 13] = [
+            (
+                "Check updates online",
+                "updates refresh",
+                Act::UpdatesOnline,
+            ),
+            (
+                "Run the health checks",
+                "doctor diagnostics",
+                Act::Doctor(None),
+            ),
+            (
+                "Run DNS diagnostics",
+                "doctor dns name resolution",
+                Act::Doctor(Some("dns")),
+            ),
+            (
+                "Check the network",
+                "doctor internet connection route",
+                Act::Doctor(Some("network")),
+            ),
+            (
+                "Check disk space",
+                "doctor free storage",
+                Act::Doctor(Some("disk-space")),
+            ),
+            (
+                "Check failed services",
+                "doctor systemd units",
+                Act::Doctor(Some("services")),
+            ),
+            (
+                "Save this machine as a baseline",
+                "drift snapshot record",
+                Act::SaveBaseline,
+            ),
+            ("Run the Install Plan", "queue", Act::RunPlan),
+            ("Clear the Install Plan", "queue empty", Act::ClearPlan),
+            (
+                "Save the Install Plan as a profile",
+                "queue",
+                Act::SaveProfile,
+            ),
+            (
+                "Update every entry with an update",
+                "upgrade packages",
+                Act::UpdateEntries,
+            ),
+            ("Change the theme", "colours colors look", Act::Theme),
+            (
+                if self.icons {
+                    "Turn icons off"
+                } else {
+                    "Turn icons on"
+                },
+                "nerd font plain",
+                Act::Icons,
+            ),
+        ];
+        for (label, keywords, act) in actions {
+            add(label.to_string(), "action", keywords, true, act);
+        }
+        add(
+            "Show the keys".to_string(),
+            "action",
+            "help",
+            true,
+            Act::Help,
+        );
+        add(
+            "Quit HelixForge".to_string(),
+            "action",
+            "exit close",
+            true,
+            Act::Quit,
+        );
+        for tab in &self.catalog.tabs {
+            for entry in tab.entries() {
+                let verb = match (&entry.action, self.statuses.get(&entry.id)) {
+                    (_, Some(Status::Absent { .. })) => "Install",
+                    (Action::Package { .. }, None) => "Install",
+                    (Action::Profile { .. }, _) => "Run profile",
+                    _ => "Run",
+                };
+                add(
+                    format!("{verb} {}", entry.name),
+                    &tab.name,
+                    &entry.id,
+                    false,
+                    Act::Entry(entry.id.clone()),
+                );
+            }
+        }
+        (choices, acts)
+    }
+
+    fn open_palette(&mut self) {
+        let (choices, acts) = self.palette_choices();
+        self.palette_acts = acts;
+        self.popup = Some(Popup::Palette(Palette::new(choices)));
+    }
+
+    /// Do what a palette choice says; false quits.
+    fn act(&mut self, act: Act) -> bool {
+        match act {
+            Act::Open(screen) => {
+                self.open_screen(screen);
+                if screen != Screen::Dashboard {
+                    self.focus = Focus::Main;
+                }
+            }
+            Act::Entry(id) => {
+                if let Some(entry) = self.catalog.find(&id).cloned() {
+                    self.confirm(vec![entry]);
+                }
+            }
+            Act::UpdatesOnline => {
+                self.open_screen(Screen::Updates);
+                self.focus = Focus::Main;
+                self.gather_updates(true);
+            }
+            Act::Doctor(wanted) => {
+                self.open_screen(Screen::Doctor);
+                self.focus = Focus::Main;
+                if let Some(wanted) = wanted {
+                    if self.diagnoses.is_empty() || self.examining.is_some() {
+                        self.doctor_wanted = Some(wanted);
+                    } else {
+                        self.show_check(wanted);
+                    }
+                } else if !self.diagnoses.is_empty() {
+                    self.examine();
+                }
+            }
+            Act::SaveBaseline => {
+                self.open_screen(Screen::Drift);
+                self.focus = Focus::Main;
+                self.popup = Some(Popup::BaselineName(InputPopup::new(
+                    "Save this machine as a baseline",
+                    "A name for the baseline (it is saved in ~/.config/helixforge/baselines):",
+                )));
+            }
+            Act::RunPlan => {
+                self.open_screen(Screen::Plan);
+                self.focus = Focus::Main;
+                self.confirm(self.queue.clone());
+            }
+            Act::ClearPlan => {
+                self.queue.clear();
+                self.clamp_main();
+            }
+            Act::SaveProfile => {
+                self.open_screen(Screen::Plan);
+                self.focus = Focus::Main;
+                if !self.queue.is_empty() {
+                    self.popup = Some(Popup::ProfileName(InputPopup::new(
+                        "Save as a profile",
+                        "A name for this profile (it is saved in ~/.config/helixforge/profiles):",
+                    )));
+                }
+            }
+            Act::UpdateEntries => {
+                let waiting: Vec<Entry> = self
+                    .catalog
+                    .entries()
+                    .into_iter()
+                    .filter(|entry| {
+                        matches!(self.statuses.get(&entry.id), Some(Status::Update { .. }))
+                    })
+                    .cloned()
+                    .collect();
+                if waiting.is_empty() {
+                    self.popup = Some(Popup::Text(TextPopup::new(
+                        "Nothing to update",
+                        "No package entry has an update in the repository metadata on this machine.",
+                        true,
+                    )));
+                } else {
+                    self.update(waiting);
+                }
+            }
+            Act::Theme => {
+                self.theme = self.theme.next();
+                self.saved_theme = self.theme;
+                self.save_look();
+            }
+            Act::Icons => {
+                self.icons = !self.icons;
+                self.save_look();
+            }
+            Act::Help => {
+                self.popup = Some(Popup::Text(TextPopup::new("Keys", HELP, false)));
+            }
+            Act::Quit => return false,
+        }
+        true
+    }
+
+    /// Select a health check by id (or the first whose id starts with it)
+    /// and show its details.
+    fn show_check(&mut self, wanted: &str) {
+        let found = self
+            .diagnoses
+            .iter()
+            .position(|diagnosis| diagnosis.id == wanted)
+            .or_else(|| {
+                self.diagnoses
+                    .iter()
+                    .position(|diagnosis| diagnosis.id.starts_with(wanted))
+            });
+        if let Some(index) = found {
+            self.main_state.select(Some(index));
+            self.describe_diagnosis();
+        }
+    }
+
+    // ----- Drift -----
+
+    fn drift_dir(&self) -> Option<std::path::PathBuf> {
+        self.baselines_dir.clone().or_else(drift::dir)
+    }
+
+    /// Read the baselines and profiles again, keep the chosen one, compare.
+    fn reload_drift(&mut self) {
+        let chosen = self
+            .drift_targets
+            .get(self.drift_target)
+            .map(DriftTarget::key);
+        let mut targets: Vec<DriftTarget> = self
+            .drift_dir()
+            .map(|directory| drift::load_all(&directory).0)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(slug, baseline)| DriftTarget::Baseline { slug, baseline })
+            .collect();
+        if let Some(tab) = self.catalog.tabs.iter().find(|tab| tab.id == "profiles") {
+            for entry in tab.entries() {
+                if let Action::Profile { entries } = &entry.action {
+                    targets.push(DriftTarget::Profile {
+                        id: entry.id.clone(),
+                        name: entry.name.clone(),
+                        entries: entries.clone(),
+                    });
+                }
+            }
+        }
+        self.drift_target = chosen
+            .and_then(|key| targets.iter().position(|target| target.key() == key))
+            .unwrap_or(0);
+        self.drift_targets = targets;
+        self.check_drift();
+    }
+
+    /// Compare with the chosen target, from the last look at what is
+    /// installed; nothing is compared before that look ends.
+    fn check_drift(&mut self) {
+        let Some(target) = self.drift_targets.get(self.drift_target).cloned() else {
+            self.drift_report = None;
+            return;
+        };
+        let Some(inventory) = &self.inventory else {
+            self.drift_report = None;
+            return;
+        };
+        let home = std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_default();
+        let (records, settings) = if self.examine_here {
+            (
+                history::read(1000).unwrap_or_default(),
+                drift::settings_here(&doctor::Here),
+            )
+        } else {
+            (Vec::new(), Default::default())
+        };
+        let settings = move || settings.clone();
+        let sources = drift::Sources {
+            catalog: &self.catalog,
+            platform: &self.platform,
+            inventory,
+            on_path: if self.examine_here { &which } else { &|_| None },
+            system: &doctor::Here,
+            home: &home,
+            history: &records,
+            settings: &settings,
+        };
+        let report = match &target {
+            DriftTarget::Baseline { baseline, .. } => drift::compare(baseline, &sources),
+            DriftTarget::Profile { name, entries, .. } => {
+                drift::compare_profile(name, entries, &sources)
+            }
+        };
+        self.drift_report = Some((target.key(), report));
+        if self.screen == Screen::Drift {
+            self.clamp_main();
+        }
+    }
+
+    fn next_drift_target(&mut self, step: isize) {
+        if self.drift_targets.len() < 2 {
+            return;
+        }
+        let count = self.drift_targets.len() as isize;
+        self.drift_target = (self.drift_target as isize + step).rem_euclid(count) as usize;
+        self.main_state.select(Some(0));
+        self.check_drift();
+    }
+
+    fn selected_difference(&self) -> Option<&drift::Difference> {
+        let (_, report) = self.drift_report.as_ref()?;
+        report.differences.get(self.main_state.selected()?)
+    }
+
+    fn describe_difference(&mut self) {
+        let Some(difference) = self.selected_difference() else {
+            return;
+        };
+        let mut text = format!(
+            "{}: {}\n{}\n\n{}\n",
+            difference.kind.label(),
+            difference.subject,
+            difference.note,
+            difference.kind.explain()
+        );
+        if let Some(was) = &difference.was {
+            text.push_str(&format!("\nIn the baseline: {was}"));
+        }
+        if let Some(now) = &difference.now {
+            text.push_str(&format!("\nHere: {now}"));
+        }
+        if let Some(entry) = difference
+            .entry
+            .as_deref()
+            .and_then(|id| self.catalog.find(id))
+            && restorable(difference.kind)
+        {
+            text.push_str(&format!(
+                "\n\nThe {} entry puts it back: Space adds it to the Install Plan, where it is planned and confirmed before anything runs.",
+                entry.name
+            ));
+            if matches!(
+                difference.kind,
+                drift::Kind::FileChanged | drift::Kind::FileReplaced
+            ) {
+                text.push_str(" Running it replaces what is there now, keeping a backup.");
+            }
+        }
+        self.popup = Some(Popup::Text(TextPopup::new("Drift", text, true)));
+    }
+
+    /// Queue every entry that puts back something missing, and show the
+    /// Install Plan to review them.
+    fn queue_missing(&mut self) {
+        let Some((_, report)) = &self.drift_report else {
+            return;
+        };
+        let (restore, unavailable) =
+            crate::drift::available(&report.restore(), &self.catalog, &self.platform);
+        let mut added = Vec::new();
+        for id in &restore {
+            if let Some(entry) = self.catalog.find(id).cloned()
+                && entry.multi_select
+                && !self.is_queued(&entry)
+            {
+                added.push(entry.name.clone());
+                self.queue.push(entry);
+            }
+        }
+        let alone: Vec<String> = restore
+            .iter()
+            .filter_map(|id| self.catalog.find(id))
+            .filter(|entry| !entry.multi_select)
+            .map(|entry| entry.name.clone())
+            .collect();
+        let mut text = if added.is_empty() {
+            "Nothing new was added to the Install Plan.".to_string()
+        } else {
+            format!(
+                "Added to the Install Plan: {}.\n\nNothing has run: review the plan there and press Enter to run it.",
+                added.join(", ")
+            )
+        };
+        if !alone.is_empty() {
+            text.push_str(&format!(
+                "\n\nThese run on their own, so run each from its area: {}.",
+                alone.join(", ")
+            ));
+        }
+        if !unavailable.is_empty() {
+            text.push_str(&format!(
+                "\n\nNot available on {}: {}.",
+                self.platform.pretty_name,
+                unavailable.join(", ")
+            ));
+        }
+        if !added.is_empty() {
+            self.open_screen(Screen::Plan);
+            self.focus = Focus::Main;
+        }
+        self.popup = Some(Popup::Text(TextPopup::new("Install Plan", text, true)));
+    }
+
+    /// Record this machine as a baseline and compare with it.
+    fn save_baseline(&mut self, name: &str) {
+        let Some(inventory) = &self.inventory else {
+            self.popup = Some(Popup::Text(TextPopup::new(
+                "Still checking",
+                "HelixForge is still checking what is installed; try again in a moment.",
+                true,
+            )));
+            return;
+        };
+        let home = std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_default();
+        let (records, settings) = if self.examine_here {
+            (
+                history::read(1000).unwrap_or_default(),
+                drift::settings_here(&doctor::Here),
+            )
+        } else {
+            (Vec::new(), Default::default())
+        };
+        let settings = move || settings.clone();
+        let sources = drift::Sources {
+            catalog: &self.catalog,
+            platform: &self.platform,
+            inventory,
+            on_path: if self.examine_here { &which } else { &|_| None },
+            system: &doctor::Here,
+            home: &home,
+            history: &records,
+            settings: &settings,
+        };
+        let baseline = drift::capture(name, history::now(), &sources, &[]);
+        let saved = self
+            .drift_dir()
+            .ok_or_else(|| "cannot find the configuration folder".to_string())
+            .and_then(|directory| {
+                drift::save(&directory, &baseline).map_err(|error| error.to_string())
+            });
+        self.popup = Some(Popup::Text(match saved {
+            Ok(path) => {
+                let slug = path
+                    .file_stem()
+                    .map(|stem| stem.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                self.reload_drift();
+                if let Some(position) = self.drift_targets.iter().position(|target| {
+                    matches!(target, DriftTarget::Baseline { slug: known, .. } if *known == slug)
+                }) {
+                    self.drift_target = position;
+                    self.check_drift();
+                }
+                TextPopup::new(
+                    "Baseline saved",
+                    format!(
+                        "{} is saved as {}: {} entries, {} configuration paths, {} settings and {} runs.\n\nDrift compares with it from now on; b chooses another. To compare another machine with it: helixforge drift export \"{}\", then helixforge drift check <file> there.",
+                        baseline.name,
+                        path.display(),
+                        baseline.entries.len(),
+                        baseline.files.len(),
+                        baseline.settings.len(),
+                        baseline.applied.len(),
+                        baseline.name
+                    ),
+                    true,
+                )
+            }
+            Err(error) => TextPopup::new("Baseline not saved", error, true),
+        }));
+    }
+
+    fn draw_drift(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Drift",
+            "How this machine differs from a saved baseline or a profile. It only reads.",
+        );
+        let target = self.drift_targets.get(self.drift_target);
+        let mut lines: Vec<Line> = Vec::new();
+        match target {
+            None => lines.push(Line::from(
+                "No baseline saved yet, and no profile to compare with.",
+            )),
+            Some(DriftTarget::Baseline { baseline, .. }) => lines.push(Line::from(vec![
+                Span::styled("Baseline  ", Style::default().fg(self.theme.muted())),
+                Span::styled(
+                    helixforge_core::printable(&baseline.name),
+                    Style::default().fg(self.theme.entry()).bold(),
+                ),
+                Span::styled(
+                    format!(
+                        " · saved {} on {}",
+                        timestamp(baseline.taken),
+                        helixforge_core::printable(&baseline.system)
+                    ),
+                    Style::default().fg(self.theme.muted()),
+                ),
+            ])),
+            Some(DriftTarget::Profile { name, .. }) => lines.push(Line::from(vec![
+                Span::styled("Profile  ", Style::default().fg(self.theme.muted())),
+                Span::styled(name.clone(), Style::default().fg(self.theme.entry()).bold()),
+                Span::styled(
+                    " · is each of its entries here?",
+                    Style::default().fg(self.theme.muted()),
+                ),
+            ])),
+        }
+        let summary = match &self.drift_report {
+            _ if target.is_none() => None,
+            None => Some(Line::styled(
+                "Checking what is installed…",
+                Style::default().fg(self.theme.muted()),
+            )),
+            Some((_, report)) if report.differences.is_empty() => Some(Line::styled(
+                format!(
+                    "No differences: {} things are as they were.",
+                    report.matched
+                ),
+                Style::default().fg(self.theme.success()),
+            )),
+            Some((_, report)) => {
+                let counts: Vec<String> = report
+                    .counts()
+                    .into_iter()
+                    .map(|(label, count)| format!("{count} {}", label.to_lowercase()))
+                    .collect();
+                Some(Line::styled(
+                    format!("{} · {} the same", counts.join(" · "), report.matched),
+                    Style::default().fg(self.theme.warning()),
+                ))
+            }
+        };
+        lines.extend(summary);
+        lines.push(Line::styled(
+            match self.drift_targets.len() {
+                0 | 1 => "s saves this machine as a baseline".to_string(),
+                count => format!(
+                    "b: another baseline or profile ({} of {count}) · s: save this machine",
+                    self.drift_target + 1
+                ),
+            },
+            Style::default().fg(self.theme.faint()),
+        ));
+        let parts = Layout::vertical([
+            Constraint::Length(lines.len() as u16 + 2),
+            Constraint::Length(1),
+            Constraint::Min(1),
+        ])
+        .split(inner);
+        self.fill(frame, parts[0]);
+        frame.render_widget(
+            Paragraph::new(Text::from(lines))
+                .block(self.card("Compared with"))
+                .wrap(Wrap { trim: true }),
+            parts[0],
+        );
+        self.fill(frame, parts[2]);
+        let Some((_, report)) = &self.drift_report else {
+            return;
+        };
+        if report.differences.is_empty() {
+            let mut text = "Everything recorded is as it was.".to_string();
+            if !report.unknown.is_empty() {
+                text.push_str(&format!(
+                    " Not in this catalog, so not compared: {}.",
+                    report.unknown.join(", ")
+                ));
+            }
+            frame.render_widget(
+                Paragraph::new(text)
+                    .block(self.card("Differences"))
+                    .style(Style::default().fg(self.theme.muted()))
+                    .wrap(Wrap { trim: true }),
+                parts[2],
+            );
+            return;
+        }
+        let subject_width = report
+            .differences
+            .iter()
+            .map(|difference| difference.subject.chars().count())
+            .max()
+            .unwrap_or(0)
+            .min(36)
+            + 2;
+        let focused = self.focus == Focus::Main;
+        let items: Vec<Line> = report
+            .differences
+            .iter()
+            .map(|difference| {
+                let colour = match difference.kind {
+                    kind if kind.missing() => self.theme.failure(),
+                    drift::Kind::Added | drift::Kind::Version => self.theme.muted(),
+                    _ => self.theme.warning(),
+                };
+                let queued = difference
+                    .entry
+                    .as_deref()
+                    .is_some_and(|id| self.queue.iter().any(|entry| entry.id == id))
+                    && restorable(difference.kind);
+                let subject: String = difference.subject.chars().take(36).collect();
+                Line::from(vec![
+                    Span::styled(
+                        format!("{:<10}", difference.kind.label()),
+                        Style::default().fg(colour).bold(),
+                    ),
+                    Span::styled(
+                        format!("{subject:<subject_width$}"),
+                        Style::default().fg(self.theme.entry()),
+                    ),
+                    Span::styled(
+                        difference.note.clone(),
+                        Style::default().fg(self.theme.muted()),
+                    ),
+                    Span::styled(
+                        if queued { "  · planned" } else { "" },
+                        Style::default().fg(self.theme.success()),
+                    ),
+                ])
+            })
+            .collect();
+        let list = List::new(items)
+            .block(self.card("Differences"))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused));
+        frame.render_stateful_widget(list, parts[2], &mut self.main_state);
+    }
+
     fn reload_backups(&mut self) {
         self.backups = backups::discover(&backups::Roots::here());
         self.clamp_main();
@@ -3066,6 +4003,11 @@ impl App {
     }
 }
 
+/// Whether queueing a difference's entry would put back what it names.
+fn restorable(kind: drift::Kind) -> bool {
+    !matches!(kind, drift::Kind::Added | drift::Kind::Version)
+}
+
 fn removable(entry: &Entry) -> bool {
     matches!(
         entry.action,
@@ -3115,6 +4057,11 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
         }
     }
     menu.push(MenuItem {
+        label: "Drift".into(),
+        screen: Screen::Drift,
+        section: "MORE TOOLS",
+    });
+    menu.push(MenuItem {
         label: "Updates".into(),
         screen: Screen::Updates,
         section: "MORE TOOLS",
@@ -3137,26 +4084,9 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
     menu
 }
 
-/// A local date and time without pulling in a time library: UTC is fine for a list.
+/// A date and time for a list; UTC is fine there.
 fn timestamp(unix: u64) -> String {
-    let days = unix / 86_400;
-    let seconds = unix % 86_400;
-    // Civil-from-days (Howard Hinnant's algorithm).
-    let z = days as i64 + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let year = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = if month <= 2 { year + 1 } else { year };
-    format!(
-        "{year:04}-{month:02}-{day:02} {:02}:{:02} UTC",
-        seconds / 3600,
-        (seconds % 3600) / 60
-    )
+    crate::when(unix)
 }
 
 /// Terminal output without its escape sequences, for reading a saved log.
@@ -4036,6 +4966,137 @@ mod tests {
         press(&mut app, KeyCode::Char('t'));
         assert_eq!(app.theme, Theme::Solid);
         assert_eq!(settings::load(&path).theme, Theme::Solid);
+    }
+
+    fn arch_packages(names: &[&str]) -> Inventory {
+        Inventory::from_parts(
+            Some(helixforge_core::PackageManager::Arch),
+            Some(
+                names
+                    .iter()
+                    .map(|name| (name.to_string(), "1-1".to_string()))
+                    .collect(),
+            ),
+            HashMap::new(),
+            HashMap::new(),
+            Default::default(),
+        )
+    }
+
+    #[test]
+    fn drift_compares_with_a_saved_baseline_and_plans_what_is_missing() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut app = app();
+        app.baselines_dir = Some(directory.path().to_path_buf());
+        app.inventory = Some(arch_packages(&["git", "ripgrep"]));
+        app.open_screen(Screen::Drift);
+        app.focus = Focus::Main;
+        // Before any baseline, the profiles are there to compare with.
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("Profile  Developer Basics"), "{text}");
+        assert!(text.contains("Missing"), "{text}");
+        press(&mut app, KeyCode::Char('s'));
+        type_text(&mut app, "Old box");
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 140, 40).contains("Baseline saved"));
+        assert!(directory.path().join("old-box.toml").is_file());
+        press(&mut app, KeyCode::Esc);
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("Baseline  Old box"), "{text}");
+        assert!(text.contains("No differences"), "{text}");
+        assert!(text.contains("b: another baseline or profile (1 of"));
+
+        // Ripgrep goes away; Drift names it and plans it back.
+        app.inventory = Some(arch_packages(&["git"]));
+        press(&mut app, KeyCode::Char('r'));
+        let text = screen(&mut app, 140, 40);
+        assert!(text.contains("Missing   Ripgrep"), "{text}");
+        assert!(text.contains("a Plan all missing"), "{text}");
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 140, 40).contains("The Ripgrep entry puts it back"));
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Char(' '));
+        assert!(screen(&mut app, 140, 40).contains("· planned"));
+        press(&mut app, KeyCode::Char(' '));
+        assert!(app.queue.is_empty());
+        press(&mut app, KeyCode::Char('a'));
+        assert_eq!(app.screen, Screen::Plan);
+        let ids: Vec<&str> = app.queue.iter().map(|entry| entry.id.as_str()).collect();
+        assert_eq!(ids, ["ripgrep"]);
+        assert!(screen(&mut app, 140, 40).contains("Nothing has run"));
+        // b moves on to the profiles.
+        app.popup = None;
+        app.open_screen(Screen::Drift);
+        app.focus = Focus::Main;
+        press(&mut app, KeyCode::Char('b'));
+        assert!(screen(&mut app, 140, 40).contains("Profile  "));
+    }
+
+    #[test]
+    fn ctrl_k_finds_screens_actions_and_entries() {
+        let mut app = app();
+        let control_k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+        app.handle_key(&control_k);
+        assert!(matches!(app.popup, Some(Popup::Palette(_))));
+        let text = screen(&mut app, 120, 40);
+        assert!(text.contains("COMMANDS"), "{text}");
+        assert!(text.contains("Check updates online"), "{text}");
+        type_text(&mut app, "drift");
+        press(&mut app, KeyCode::Enter);
+        assert!(app.popup.is_none());
+        assert_eq!(app.screen, Screen::Drift);
+        assert_eq!(app.focus, Focus::Main);
+
+        app.handle_key(&control_k);
+        type_text(&mut app, "run ghostty");
+        assert!(screen(&mut app, 120, 40).contains("Run Ghostty"));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        press(&mut app, KeyCode::Char('n'));
+
+        app.handle_key(&control_k);
+        type_text(&mut app, "dns");
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.screen, Screen::Doctor);
+        assert_eq!(app.doctor_wanted, Some("dns"));
+        // The check's details open once the checks have run.
+        app.diagnoses = vec![doctor::Diagnosis {
+            id: "dns".into(),
+            title: "Name resolution".into(),
+            health: doctor::Health::Good,
+            summary: "github.com resolves".into(),
+            evidence: Vec::new(),
+            advice: None,
+            repair: None,
+            entry: None,
+        }];
+        let wanted = app.doctor_wanted.take().unwrap();
+        app.show_check(wanted);
+        assert!(screen(&mut app, 120, 40).contains("github.com resolves"));
+
+        // Escape closes the palette without doing anything; so does Ctrl-K.
+        app.popup = None;
+        app.handle_key(&control_k);
+        press(&mut app, KeyCode::Esc);
+        assert!(app.popup.is_none());
+        app.handle_key(&control_k);
+        app.handle_key(&control_k);
+        assert!(app.popup.is_none());
+    }
+
+    #[test]
+    fn the_sidebar_keeps_every_screen_reachable_in_a_small_terminal() {
+        let mut app = app();
+        let text = screen(&mut app, 100, 25);
+        assert!(text.contains("Dashboard"), "{text}");
+        assert!(text.contains("MORE TOOLS"), "{text}");
+        app.open_screen(Screen::Settings);
+        let text = screen(&mut app, 100, 25);
+        assert!(text.contains("Settings"), "{text}");
+        assert!(text.contains("Backups"), "{text}");
+        // With room, the main menu keeps its cards.
+        app.open_screen(Screen::Dashboard);
+        assert!(screen(&mut app, 120, 40).contains("╭"));
     }
 
     #[test]

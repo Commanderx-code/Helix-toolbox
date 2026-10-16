@@ -15,6 +15,7 @@
 
 pub mod backups;
 pub mod doctor;
+pub mod drift;
 pub mod history;
 pub mod inventory;
 pub mod preflight;

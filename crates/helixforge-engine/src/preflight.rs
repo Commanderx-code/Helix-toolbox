@@ -313,14 +313,16 @@ pub fn gpus_in(devices: &Path) -> Vec<String> {
 
 /// The repositories a pacman.conf enables: its sections other than options.
 pub fn pacman_repositories(conf: &Path) -> Option<Vec<String>> {
-    let text = std::fs::read_to_string(conf).ok()?;
-    Some(
-        text.lines()
-            .filter_map(|line| line.trim().strip_prefix('[')?.strip_suffix(']'))
-            .filter(|name| *name != "options")
-            .map(String::from)
-            .collect(),
-    )
+    Some(repositories_in(&std::fs::read_to_string(conf).ok()?))
+}
+
+/// The repositories a pacman.conf's text enables.
+pub fn repositories_in(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| line.trim().strip_prefix('[')?.strip_suffix(']'))
+        .filter(|name| *name != "options")
+        .map(String::from)
+        .collect()
 }
 
 /// The installed size of packages from the repository metadata, summed;

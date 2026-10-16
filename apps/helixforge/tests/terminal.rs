@@ -373,9 +373,15 @@ fn the_menu_runs_fixture_entries_from_the_keyboard() {
     tui.keys("\r");
     tui.keys(ESC);
 
-    // Updates comes next, then the history screen, which lists the four
-    // runs, newest first.
+    // Drift comes next. Ctrl-K's command palette opens Updates by name,
+    // and the history screen after it lists the four runs, newest first.
     tui.keys("\t");
+    tui.wait_for(&["How this machine differs", "No baseline saved yet"]);
+    tui.keys("\x0b");
+    tui.wait_for(&["COMMANDS", "Type a command"]);
+    tui.keys("open updates");
+    tui.wait_for(&["Open Updates"]);
+    tui.keys("\r");
     tui.wait_for(&["What each tool has waiting"]);
     tui.keys("\t");
     tui.wait_for(&["Past runs, newest first"]);

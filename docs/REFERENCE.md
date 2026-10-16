@@ -20,6 +20,13 @@ second `Ctrl-C` kills it), `l` saves its output, and History lists every run.
 `?` shows all keys and `q` quits. The menu needs a terminal; the commands
 below also work without one.
 
+`Ctrl-K` opens the command palette from any screen: type part of what you
+want and `Enter` does it. It finds every screen (`open updates`), actions
+(`check updates online`, `run DNS diagnostics`, which opens Helix Doctor
+at that check, `save this machine as a baseline`, `clear the install plan`,
+`change the theme`) and every entry (`install ghostty`), loose spellings
+included. An entry chosen there is planned and confirmed like any other.
+
 Search ranks what it finds: names that match exactly or start with the
 text first, then names containing it, ids, loose spellings (`rpgrp` finds
 Ripgrep) and descriptions. `Escape` clears it and goes back to the row you
@@ -125,6 +132,34 @@ description = "Terminal tools and editor configuration"
 entries = ["git", "ripgrep", "myfish-fish", "dotfiles-nvim", "ghostty"]
 ```
 
+## Drift
+
+**Drift** shows how this machine differs from a saved **baseline** or from
+a profile, without changing anything. A baseline records what is installed
+(each package entry's source and version), the configuration files and
+folders catalog entries write (by SHA-256 checksum, never their contents),
+the login shell, display manager, Arch repositories, Flatpak remotes and
+desktop, and the entries without a package HelixForge has run successfully.
+`s` on the Drift screen, or `helixforge drift save <name>`, saves one in
+`~/.config/helixforge/baselines/`; `--path` adds files of your own.
+
+Comparing lists, most important first: **Missing** applications and
+configuration files, entries that ran there and are **Not run** here,
+**Replaced** paths (a file that became a Home Manager link), **Changed**
+files and settings, then what was **Added** since and other **Versions**.
+`b` compares with another baseline or with a profile instead, which checks
+each of its entries: installed, its files present, or run here. `Enter`
+explains a difference; `Space` adds the entry that puts it back to the
+Install Plan and `a` adds all of them, to be reviewed and confirmed there.
+
+To set up a new machine like an old one: `helixforge drift save "Old
+laptop"` and `helixforge drift export "Old laptop"` there, then `helixforge
+drift check old-laptop.toml` on the new one; it ends with the `helixforge
+run` that would restore what is missing (planned and confirmed first), and
+names what this distribution cannot install. `drift list`, `import` and
+`delete` manage the saved ones; `--exit-code` makes `check` exit with 1
+when anything differs.
+
 ## Helix Doctor, backups and snapshots
 
 **Helix Doctor** checks the machine, read-only, and shows what it found:
@@ -175,6 +210,8 @@ helixforge run git --dry-run          # the plan, nothing changed
 helixforge run git                    # runs after you type RUN, asked on the terminal even when piped
 helixforge remove ardour              # removes a package entry that offers it
 helixforge profile list               # your profiles; also export, import, delete
+helixforge drift save "Old laptop"    # record this machine as a baseline
+helixforge drift check                # how it differs now; --profile <name> for a profile
 helixforge doctor                     # health checks, read-only
 helixforge doctor --repair permissions  # one repair, after confirmation
 helixforge backups                    # configuration backups, newest first

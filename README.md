@@ -45,6 +45,11 @@ Debian, Ubuntu, Fedora and openSUSE.
   space, with repairs that run after their own confirmation.
 - **Backups and snapshots**: configuration backups can be restored from one
   screen, and a Snapper or Timeshift snapshot is taken before system changes.
+- **HELIX Drift** saves how a machine is set up and shows what has moved
+  since, or what a fresh installation still lacks, with the entries that put
+  it back queued for review.
+- **A command palette** (`Ctrl-K`) reaches every screen, action and entry by
+  name.
 - **Scriptable**: everything is also a command, with `--dry-run` and stable
   `--json` output.
 
@@ -109,6 +114,7 @@ password when they run.
 | `d` / `p` | Describe the entry / show exactly what it runs |
 | `u` / `U` | Update the entry / every entry with an update |
 | `*` | Pin to Favorites |
+| `Ctrl-K` | Find any screen, action or entry by name |
 | `t` | Change the theme |
 | `?` | Every key |
 

@@ -2,6 +2,7 @@
 //! menu, or from the command line.
 
 mod docgen;
+mod drift;
 mod json;
 mod logging;
 mod report;
@@ -47,7 +48,8 @@ struct Cli {
     catalog_dir: Option<PathBuf>,
     /// Print the result as JSON, for other programs (see docs/JSON.md): for
     /// system, list, search, info, status, plan, history, updates, doctor,
-    /// backups and profile list, and for --dry-run plans.
+    /// backups, drift check, drift list and profile list, and for --dry-run
+    /// plans.
     #[arg(long, global = true)]
     json: bool,
 }
@@ -175,6 +177,14 @@ enum Command {
         #[arg(long)]
         yes: bool,
     },
+    /// HELIX Drift: save this machine as a baseline, and see how it, or
+    /// another machine, differs from one or from a profile: missing
+    /// applications, changed configuration files and settings. It only
+    /// reads; what would restore the missing parts is printed as a run.
+    Drift {
+        #[command(subcommand)]
+        command: Option<drift::DriftCommand>,
+    },
     /// Your workstation profiles: list, export, import or delete them. Run one
     /// like any entry: helixforge run profile-<name>.
     #[command(subcommand)]
@@ -296,7 +306,7 @@ fn main() -> Result<()> {
             if as_json =>
         {
             bail!(
-                "--json is for system, list, search, info, status, plan, history, updates, doctor, backups, report and profile list, and for --dry-run plans"
+                "--json is for system, list, search, info, status, plan, history, updates, doctor, backups, report, drift check, drift list and profile list, and for --dry-run plans"
             )
         }
         Command::Tui(args) => {
@@ -758,6 +768,7 @@ fn main() -> Result<()> {
             let planned = backups::plan_restore(&found);
             confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "RESTORE")
         }
+        Command::Drift { command } => drift::run(command, &load(false)?, &platform, as_json),
         Command::Profile(command) => {
             let catalog = load(false)?;
             let directory = profiles::dir().context("cannot find the configuration folder")?;
@@ -1053,6 +1064,28 @@ pub fn this_places() -> updates::Places {
         Ok(exe) => places.with_this(VERSION, exe),
         Err(_) => places,
     }
+}
+
+/// A moment as a date and time in UTC, without a time library.
+pub fn when(unix: u64) -> String {
+    let days = unix / 86_400;
+    let seconds = unix % 86_400;
+    // Civil-from-days (Howard Hinnant's algorithm).
+    let z = days as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if month <= 2 { year + 1 } else { year };
+    format!(
+        "{year:04}-{month:02}-{day:02} {:02}:{:02} UTC",
+        seconds / 3600,
+        (seconds % 3600) / 60
+    )
 }
 
 /// Whether --json was given, for the commands that confirm and run plans.

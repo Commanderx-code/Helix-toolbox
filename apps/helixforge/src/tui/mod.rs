@@ -6,6 +6,7 @@ mod app;
 mod banner;
 mod hints;
 pub mod icons;
+mod palette;
 mod popup;
 mod running;
 pub mod settings;

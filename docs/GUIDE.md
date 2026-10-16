@@ -23,6 +23,9 @@ The sidebar on the left lists the screens. `Tab` and `Shift-Tab` move
 between them from anywhere; in the sidebar, `j`/`k` or the arrows move and
 `Enter` opens the screen. `h` or `←` comes back to the sidebar. `?` shows
 every key, `/` searches every area, `t` changes the theme and `q` quits.
+`Ctrl-K` opens the command palette: type what you want, a screen (`updates`),
+an action (`dns`, `check updates online`) or an entry (`install ghostty`),
+and press `Enter`.
 
 | Screen | What it is for |
 |---|---|
@@ -34,6 +37,7 @@ every key, `/` searches every area, `t` changes the theme and `q` quits.
 | Helix Doctor | Health checks that only read the system, with repairs |
 | Maintenance, Security | Clean-ups, system tweaks and hardening |
 | Profiles | Ready-made sets of entries, and your own |
+| Drift | How the machine differs from a saved baseline or a profile |
 | Updates | What every package tool has waiting |
 | History | Every run, its result and its saved log |
 | Backups | Configuration backups entries left, to restore |
@@ -75,6 +79,22 @@ configurations, tweaks) and press `s` on the Install Plan to name it. It is
 saved in `~/.config/helixforge/profiles/` and appears under Profiles, **Your
 profiles**. `helixforge profile export` and `import` move it to another
 machine.
+
+## Moving to a new machine
+
+**Drift** compares a machine with a **baseline**, a record of how a machine
+was set up. On the machine you have set up, open Drift and press `s` to save
+one (or run `helixforge drift save "My laptop"`). Later, Drift lists what
+has moved: applications that are missing, configuration files that are gone
+or changed, a different login shell or display manager, entries HelixForge
+ran there and not since.
+
+To bring a fresh installation up to the old one, export the baseline there
+(`helixforge drift export "My laptop"`), copy the file over, and on the new
+machine run `helixforge drift check my-laptop.toml`, or import it and open
+Drift. `a` puts everything that restores the missing parts in the Install
+Plan; nothing runs until you review and confirm it there. `b` compares with
+a profile instead.
 
 ## Keeping the machine up to date
 
@@ -136,6 +156,7 @@ helixforge report                 # for a bug report
 | `~/.config/helixforge/settings.toml` | Theme, icons and the other settings |
 | `~/.config/helixforge/favourites.toml` | Pinned entries |
 | `~/.config/helixforge/profiles/` | Your profiles |
+| `~/.config/helixforge/baselines/` | Your baselines, for Drift |
 | `~/.local/state/helixforge/` | History and saved logs |
 
 Removing HelixForge leaves them; delete them to start afresh.

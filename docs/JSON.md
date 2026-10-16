@@ -3,7 +3,8 @@
 `--json` makes a command print one JSON document on standard output instead
 of text, for scripts, other tools and the graphical interface to come. It
 works with the commands that read (`system`, `list`, `search`, `info`,
-`status`, `plan`, `history`, `updates`, `doctor`, `backups`, `profile list`)
+`status`, `plan`, `history`, `updates`, `doctor`, `backups`, `drift check`,
+`drift list`, `profile list`)
 and with `--dry-run` plans (`run`, `remove`, `update`, `updates --apply`,
 `restore`, `doctor --repair`). Anything that would change the machine is
 refused with `--json` unless it is a dry run: a script cannot start a run by
@@ -113,6 +114,36 @@ commands}` or `null`, run with `helixforge doctor --repair <id>`.
 `{snapshots, backups}`: `snapshots` is `{tool, restore}` when Snapper or
 Timeshift is set up, else `null`; each backup is `{original, backup, taken,
 system, directory}`.
+
+## drift
+
+`helixforge drift check --json` prints `{against, baseline, profile,
+matched, differences, unknown, restore}`. `against` is `baseline` or
+`profile`; `baseline` is `{name, taken, system}` (`taken` in Unix seconds)
+or `null`, and `profile` the profile's id or `null`. Each difference is
+`{kind, label, subject, was, now, entry, note}`:
+
+| `kind` | |
+|---|---|
+| `missing` | an application the baseline had, or the profile names, is not installed |
+| `file-missing` | a configuration file or folder is gone |
+| `not-applied` | an entry ran on the baseline machine and has no successful run here |
+| `file-replaced` | a path is another kind of thing now, such as a file that became a link |
+| `file-changed` | a file or folder has other contents |
+| `setting` | the login shell, display manager, repositories, Flatpak remotes or desktop differ |
+| `added` | installed here and not in the baseline |
+| `version` | installed in both, at another version or from another source |
+
+`entry` is the entry that installs or writes it, or `null`. `matched` counts
+what is the same, `unknown` lists ids this catalog does not have, and
+`restore` the entries that would put back what is missing and can run on this
+machine, in order, for `helixforge run`.
+
+## baselines
+
+`helixforge drift list --json`: `{baselines: [{id, name, taken, system,
+entries, files, settings, applied}]}`, newest first; the last four are
+counts, `id` the name `drift check` takes.
 
 ## profile list
 

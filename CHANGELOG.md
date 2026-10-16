@@ -4,7 +4,23 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
-## Unreleased
+## v1.1.0
+
+- **HELIX Drift**: `helixforge drift save <name>` (or `s` on the new Drift
+  screen) records a baseline of the machine: what is installed and from
+  where, the configuration files entries write (by checksum), the login
+  shell, display manager, repositories and Flatpak remotes, and what
+  HelixForge ran. Drift then lists what is missing, changed, replaced or new
+  compared with it, or with a profile, and queues the entries that put the
+  missing parts back for review. Baselines export and import, so a fresh
+  installation can be checked against the old machine.
+- **Command palette**: `Ctrl-K` finds any screen, action (check updates
+  online, DNS diagnostics, save a baseline, change the theme) or entry by
+  name, from anywhere in the menu.
+- The sidebar drops its spacing, then scrolls, when the terminal is too
+  short for every screen, and the hint line leaves out what does not fit.
+
+## v1.0.4 to v1.0.6
 
 - The Favourites screen is now spelled **Favorites**; pins stay in
   `favourites.toml`, so nothing needs moving.

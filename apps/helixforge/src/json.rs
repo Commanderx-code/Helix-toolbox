@@ -352,6 +352,66 @@ pub fn profiles(found: &[(String, helixforge_engine::profiles::Profile)]) -> Val
     })
 }
 
+/// A drift comparison: what was compared, each difference, and the entries
+/// that would put back what is missing.
+pub fn drift(
+    report: &helixforge_engine::drift::Report,
+    against: &crate::drift::Against,
+    restore: &[String],
+) -> Value {
+    let (kind, baseline, profile) = match against {
+        crate::drift::Against::Baseline(baseline) => (
+            "baseline",
+            json!({
+                "name": baseline.name,
+                "taken": baseline.taken,
+                "system": baseline.system,
+            }),
+            Value::Null,
+        ),
+        crate::drift::Against::Profile(id) => ("profile", Value::Null, json!(id)),
+    };
+    json!({
+        "against": kind,
+        "baseline": baseline,
+        "profile": profile,
+        "matched": report.matched,
+        "differences": report
+            .differences
+            .iter()
+            .map(|difference| json!({
+                "kind": difference.kind,
+                "label": difference.kind.label(),
+                "subject": difference.subject,
+                "was": difference.was,
+                "now": difference.now,
+                "entry": difference.entry,
+                "note": difference.note,
+            }))
+            .collect::<Vec<_>>(),
+        "unknown": report.unknown,
+        "restore": restore,
+    })
+}
+
+pub fn baselines(found: &[(String, helixforge_engine::drift::Baseline)]) -> Value {
+    json!({
+        "baselines": found
+            .iter()
+            .map(|(slug, baseline)| json!({
+                "id": slug,
+                "name": baseline.name,
+                "taken": baseline.taken,
+                "system": baseline.system,
+                "entries": baseline.entries.len(),
+                "files": baseline.files.len(),
+                "settings": baseline.settings.len(),
+                "applied": baseline.applied.len(),
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
