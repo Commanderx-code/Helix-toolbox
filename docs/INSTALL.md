@@ -19,8 +19,11 @@ then:
 sudo pacman -U helixforge-0.7.0-1-x86_64.pkg.tar.zst     # Arch, Garuda, CachyOS, Manjaro
 sudo apt install ./helixforge_0.7.0-1_amd64.deb          # Debian, Ubuntu, Mint, Pop!_OS
 sudo dnf install ./helixforge-0.7.0-1.x86_64.rpm         # Fedora
-sudo zypper install ./helixforge-0.7.0-1.x86_64.rpm      # openSUSE
+sudo zypper install --allow-unsigned-rpm ./helixforge-0.7.0-1.x86_64.rpm   # openSUSE
 ```
+
+The packages are not signed with a distribution key; zypper needs
+`--allow-unsigned-rpm` to accept that. Check the file first instead (below).
 
 A newer release is installed the same way, over the old one. Remove it with
 `sudo pacman -R helixforge`, `sudo apt remove helixforge`, `sudo dnf remove

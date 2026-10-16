@@ -16,7 +16,10 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python before 3.11: the same parser, as tomli
+    import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 TAG = re.compile(r'^v(\d+)\.(\d+)\.(\d+)$')

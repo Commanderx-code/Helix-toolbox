@@ -11,7 +11,8 @@ written in Rust and built so a graphical interface can share the same engine
 later.
 
 > HelixForge is in beta (v0.7): it carries every entry of Commander Toolbox,
-> which it replaces, and is tested on Arch, Debian, Ubuntu and Fedora. The
+> which it replaces, and is tested on Arch, Debian, Ubuntu, Fedora and
+> openSUSE Tumbleweed. The
 > [user guide](docs/GUIDE.md) walks through it, the
 > [beta testing guide](docs/BETA.md) says how to help before v1.0, and the
 > [changelog](CHANGELOG.md) lists what each release brought. See

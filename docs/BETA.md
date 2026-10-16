@@ -45,9 +45,10 @@ Anything is welcome. These need the most eyes:
 7. **The command line and JSON**, if you script things
    ([JSON.md](JSON.md)).
 
-Distributions it is tested on in CI: Arch, Debian, Ubuntu and Fedora.
-Reports from derivatives (Garuda, CachyOS, EndeavourOS, Manjaro, Mint,
-Pop!_OS), openSUSE and NixOS with Home Manager are especially useful.
+Distributions it is tested on in CI: Arch, Debian, Ubuntu 22.04 and 24.04,
+Fedora and openSUSE Tumbleweed. Reports from derivatives (Garuda, CachyOS,
+EndeavourOS, Manjaro, Mint, Pop!_OS), openSUSE Leap and NixOS with Home
+Manager are especially useful.
 
 ## Reporting
 

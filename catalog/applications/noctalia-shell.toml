@@ -9,4 +9,5 @@ id = "applications-setup/noctalia-shell"
 # What the script installs, so its status can be shown.
 [detect]
 fedora = "noctalia-shell"
+suse = "noctalia-shell"
 aur = "noctalia-shell"

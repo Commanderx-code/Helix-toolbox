@@ -6,6 +6,7 @@ order = 105
 [package]
 binary = "telegram-desktop"
 arch = "telegram-desktop"
+suse = "telegram-desktop"
 alpine = "telegram-desktop"
 void = "telegram-desktop"
 solus = "telegram"

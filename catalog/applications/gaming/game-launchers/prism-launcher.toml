@@ -6,5 +6,6 @@ order = 106
 [package]
 binary = "prismlauncher"
 arch = "prismlauncher"
+suse = "prismlauncher"
 flatpak = "org.prismlauncher.PrismLauncher"
 removable = true

@@ -6,7 +6,10 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python before 3.11: the same parser, as tomli
+    import tomli as tomllib
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]

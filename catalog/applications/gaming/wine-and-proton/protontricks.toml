@@ -8,5 +8,6 @@ binary = "protontricks"
 arch = "protontricks"
 debian = "protontricks"
 fedora = "protontricks"
+suse = "protontricks"
 flatpak = "com.github.Matoking.protontricks"
 removable = true

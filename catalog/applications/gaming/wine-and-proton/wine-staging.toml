@@ -10,5 +10,6 @@ values = ["pacman"]
 
 [package]
 arch = "wine-staging"
+suse = "wine-staging"
 conflicts = ["wine"]
 removable = true

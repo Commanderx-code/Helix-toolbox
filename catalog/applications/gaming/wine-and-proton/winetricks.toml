@@ -8,4 +8,5 @@ binary = "winetricks"
 arch = "winetricks"
 debian = "winetricks"
 fedora = "winetricks"
+suse = "winetricks"
 removable = true

@@ -18,7 +18,7 @@ package installs happen only in the Distributions workflow's containers.
 | Shellcheck | `scripts/verify.sh` | every shared helper and installer, with errors gated for the general catalog |
 | Workflow lint | `scripts/verify.sh` | actionlint over every workflow, including the shell in each step |
 | Source render | `scripts/verify.sh` | rendering the dotfiles and Myfish exports again changes no catalog file |
-| Distributions | `.github/workflows/distributions.yml` | Arch, Debian, Ubuntu and Fedora containers with real package installs and removals, each verified, and the real package manager failing over to a stand-in Flathub; HelixForge's own package for each installed, used and removed |
+| Distributions | `.github/workflows/distributions.yml` | Arch, Debian, Ubuntu 22.04 and 24.04, Fedora and openSUSE Tumbleweed containers with real package installs and removals, each verified, and the real package manager failing over to a stand-in Flathub; HelixForge's own package for each installed, used and removed |
 
 ## The program in a terminal
 
@@ -32,6 +32,8 @@ emulator and types keys. It checks:
 - the Updates screen between the catalog areas and History
 - completions for bash, zsh and fish, and the manual pages, naming the
   commands and leaving out hidden ones
+- unreadable settings, favourites, profiles and history lines: skipped or
+  replaced by defaults, with the menu and commands still working
 - `--json` from list, search, info, plan, a dry run, history, profile list
   and system parsing as JSON with schema 1, and a real run or `docgen`
   refused with it

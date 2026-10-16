@@ -141,7 +141,8 @@ jobs:
             printf '```sh\n'
             printf 'sudo pacman -U helixforge-%s-1-x86_64.pkg.tar.zst   # Arch and derivatives\n' "$VERSION"
             printf 'sudo apt install ./helixforge_%s-1_amd64.deb        # Debian, Ubuntu\n' "$VERSION"
-            printf 'sudo dnf install ./helixforge-%s-1.x86_64.rpm       # Fedora (zypper on openSUSE)\n' "$VERSION"
+            printf 'sudo dnf install ./helixforge-%s-1.x86_64.rpm       # Fedora\n' "$VERSION"
+            printf 'sudo zypper install --allow-unsigned-rpm ./helixforge-%s-1.x86_64.rpm   # openSUSE\n' "$VERSION"
             printf '```\n\n'
             printf 'Check a download with %s, and where it was built with %s. See docs/INSTALL.md.\n' \
               "\`sha256sum --check --ignore-missing SHA256SUMS\`" \

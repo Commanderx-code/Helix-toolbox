@@ -59,9 +59,21 @@ jobs:
             group: Ubuntu
             removable: mypaint
             program: mypaint
+          # The oldest release the packages are built for (glibc 2.35).
+          - image: ubuntu:22.04
+            family: Debian
+            # The Ubuntu group's entries need 24.04.
+            group: Debian / Ubuntu
+            removable: mypaint
+            program: mypaint
           - image: fedora:latest
             family: Fedora
             group: Fedora
+            removable: mupen-64-plus
+            program: mupen64plus
+          - image: opensuse/tumbleweed:latest
+            family: openSUSE
+            group: ''
             removable: mupen-64-plus
             program: mupen64plus
     container: ${{ matrix.image }}
@@ -71,8 +83,19 @@ jobs:
         run: |
           case "${{ matrix.family }}" in
             Arch) pacman -Syu --noconfirm --needed sudo git python which ;;
-            Debian) apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y sudo git python3 curl ca-certificates ;;
+            Debian)
+              apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y sudo git python3 curl ca-certificates
+              # The installer tests read TOML; Python before 3.11 needs tomli.
+              python3 -c 'import tomllib' 2>/dev/null || apt-get install -y python3-tomli ;;
             Fedora) dnf install -y sudo git python3 which findutils ;;
+            openSUSE)
+              zypper --non-interactive install sudo git python3 which findutils curl tar gzip gawk
+              # zypper takes answers only from a terminal; the other package
+              # managers read the "yes" piped into each run below. Answer for
+              # it the same way, where sudo's secure path finds it.
+              mv /usr/bin/zypper /usr/bin/zypper.real
+              printf '#!/bin/sh\nexec /usr/bin/zypper.real --non-interactive "$@"\n' > /usr/bin/zypper
+              chmod +x /usr/bin/zypper ;;
           esac
       - uses: actions/checkout@v4
         with:
@@ -95,7 +118,9 @@ jobs:
           echo "Visible entries: $visible of $total"
           test "$total" -ge 230
           test "$visible" -ge 100
-          grep -q "^    ${{ matrix.group }}/$" visible.txt
+          if [ -n "${{ matrix.group }}" ]; then
+            grep -q "^    ${{ matrix.group }}/$" visible.txt
+          fi
       - name: Real package installs through the engine
         run: |
           bin/helixforge plan htop
@@ -103,15 +128,15 @@ jobs:
           command -v htop
           command -v rg
           # Verified by the package manager, not by the command on the PATH.
-          grep -qE '^Verified: htop: (pacman|dpkg|dnf) lists htop' run.txt
-          grep -qE '^Verified: Ripgrep: (pacman|dpkg|dnf) lists ripgrep' run.txt
+          grep -qE '^Verified: htop: (pacman|dpkg|dnf|zypper) lists htop' run.txt
+          grep -qE '^Verified: Ripgrep: (pacman|dpkg|dnf|zypper) lists ripgrep' run.txt
           bin/helixforge plan developer-basics | tee plan.txt
-          grep -qE 'Ripgrep: already installed \((pacman|dpkg|dnf) lists ripgrep\)' plan.txt
+          grep -qE 'Ripgrep: already installed \((pacman|dpkg|dnf|zypper) lists ripgrep\)' plan.txt
           bin/helixforge history --limit 1 | grep -q 'ok .*exit 0, verified'
           # Their status: installed, from the family's package manager, with a version.
           bin/helixforge status htop ripgrep | tee status.txt
-          grep -qE '^htop +Installed +(pacman|apt|dnf) [0-9]' status.txt
-          grep -qE '^Ripgrep +Installed +(pacman|apt|dnf) [0-9]' status.txt
+          grep -qE '^htop +Installed +(pacman|apt|dnf|zypper) [0-9]' status.txt
+          grep -qE '^Ripgrep +Installed +(pacman|apt|dnf|zypper) [0-9]' status.txt
           # The health checks run read-only on each distribution.
           bin/helixforge doctor | tee doctor.txt
           grep -qE '^(OK|Notice|Problem) +Disk space: ' doctor.txt
@@ -122,7 +147,7 @@ jobs:
           fi
           # Freshly installed, so nothing to update; on Arch it would be the whole system.
           bin/helixforge update htop --dry-run | tee update.txt
-          grep -qE '^htop: up to date \((pacman|apt|dnf) [0-9]' update.txt
+          grep -qE '^htop: up to date \((pacman|apt|dnf|zypper) [0-9]' update.txt
       - name: WINE and gaming packages the catalog names exist here
         run: |
           bin/helixforge plan wine winetricks protontricks minigalaxy | tee gaming.txt
@@ -139,6 +164,18 @@ jobs:
             debian:*) apt-cache show wine minigalaxy > /dev/null ;;
             ubuntu:*) apt-cache show wine winetricks protontricks minigalaxy > /dev/null ;;
             fedora:*) dnf info -q wine winetricks protontricks minigalaxy > /dev/null ;;
+            opensuse/*)
+              # Every openSUSE package the catalog names exists in the
+              # distribution's repositories.
+              grep -rhE '^suse = ' catalog | sed 's/^suse = "\(.*\)"$/\1/' | sort -u > suse-names.txt
+              missing=0
+              while read -r name; do
+                if ! zypper --non-interactive --quiet search --match-exact --type package "$name" > /dev/null; then
+                  echo "openSUSE has no package $name" >&2
+                  missing=1
+                fi
+              done < suse-names.txt
+              test "$missing" = 0 ;;
           esac
           # The Arch-only entries show only on Arch; Garuda's meta-package
           # nowhere here. A bare "! grep" never fails a step, so test it.
@@ -242,6 +279,10 @@ jobs:
             Fedora)
               dnf install -y ./packages/helixforge-*.x86_64.rpm
               rpm -ql helixforge > files.txt ;;
+            openSUSE)
+              # nfpm's packages are not signed with a key zypper knows.
+              zypper --non-interactive install --allow-unsigned-rpm ./packages/helixforge-*.x86_64.rpm
+              rpm -ql helixforge > files.txt ;;
           esac
           # Arch and Fedora link /usr/sbin to /usr/bin, which comes first on PATH.
           test "$(readlink -f "$(command -v helixforge)")" = /usr/bin/helixforge
@@ -266,6 +307,7 @@ jobs:
             Arch) pacman -R --noconfirm helixforge ;;
             Debian) apt-get remove -y helixforge ;;
             Fedora) dnf remove -y helixforge ;;
+            openSUSE) zypper --non-interactive remove helixforge ;;
           esac
           hash -r
           test ! -e /usr/bin/helixforge

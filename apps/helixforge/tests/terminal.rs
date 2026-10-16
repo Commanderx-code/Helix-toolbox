@@ -564,6 +564,76 @@ fn the_menu_refuses_to_start_without_a_terminal() {
 }
 
 #[test]
+fn damaged_settings_profiles_and_history_never_stop_it() {
+    let home = tempfile::tempdir().unwrap();
+    let catalog = fixtures();
+    let config = home.path().join("config/helixforge");
+    let state = home.path().join("state/helixforge");
+    fs::create_dir_all(config.join("profiles")).unwrap();
+    fs::create_dir_all(&state).unwrap();
+    fs::write(config.join("settings.toml"), b"theme = 42\n\x00\xff[[[").unwrap();
+    fs::write(config.join("favourites.toml"), b"\xff\xfe entries = ").unwrap();
+    fs::write(config.join("profiles/broken.toml"), "name = [").unwrap();
+    fs::write(
+        config.join("profiles/unknown.toml"),
+        "name = \"Unknown\"\nentries = [\"no-such-entry\"]\n",
+    )
+    .unwrap();
+    fs::write(
+        state.join("history.jsonl"),
+        "not json\n{\"unix_timestamp\":1,\"entries\":[\"marker\"],\"names\":[\"Marker\"],\"success\":true,\"result\":\"exit 0\",\"log\":null}\n{\"unix_timestamp\":",
+    )
+    .unwrap();
+    let helixforge = |args: &[&str]| {
+        Command::new(PROGRAM)
+            .arg("--catalog-dir")
+            .arg(&catalog)
+            .args(args)
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path().join("config"))
+            .env("XDG_STATE_HOME", home.path().join("state"))
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap()
+    };
+
+    // The readable record is kept; the rest is skipped.
+    let history = helixforge(&["history"]);
+    assert!(history.status.success(), "{history:?}");
+    let text = String::from_utf8_lossy(&history.stdout);
+    assert_eq!(text.lines().count(), 1, "{text}");
+    assert!(text.contains("Marker"), "{text}");
+
+    // Broken profiles are named and skipped.
+    let profiles = helixforge(&["profile", "list"]);
+    assert!(profiles.status.success(), "{profiles:?}");
+    let problems = String::from_utf8_lossy(&profiles.stderr);
+    assert!(problems.contains("broken"), "{problems}");
+    assert!(problems.contains("no-such-entry"), "{problems}");
+
+    // The menu opens with the default settings, and a pin replaces the
+    // unreadable favourites.
+    let args = [
+        "--catalog-dir",
+        catalog.to_str().unwrap(),
+        "tui",
+        "--bypass-root",
+    ];
+    let mut tui = Terminal::start(&args, home.path(), 40, 120);
+    tui.wait_for(&["SYSTEM READY", "Favourites"]);
+    tui.keys("/");
+    tui.keys("mark");
+    tui.wait_for(&["Marker"]);
+    tui.keys("\r");
+    tui.keys("*");
+    tui.wait_for(&["Marker ★"]);
+    tui.keys("q");
+    assert_eq!(tui.wait_for_exit(), 0);
+    let favourites = fs::read_to_string(config.join("favourites.toml")).unwrap();
+    assert!(favourites.contains("\"marker\""), "{favourites}");
+}
+
+#[test]
 fn completions_and_manual_pages_describe_the_commands() {
     for shell in ["bash", "zsh", "fish"] {
         let output = Command::new(PROGRAM)

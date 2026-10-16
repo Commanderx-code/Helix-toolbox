@@ -12,6 +12,7 @@ binary = "steam"
 arch = "steam"
 debian = "steam-installer"
 fedora = "steam"
+suse = "steam"
 flatpak = "com.valvesoftware.Steam"
 
 # Checked before a run.

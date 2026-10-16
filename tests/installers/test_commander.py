@@ -2,7 +2,10 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python before 3.11: the same parser, as tomli
+    import tomli as tomllib
 import unittest
 from unittest.mock import patch
 

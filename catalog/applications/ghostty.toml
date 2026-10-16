@@ -10,3 +10,4 @@ id = "applications-setup/ghostty-setup"
 [detect]
 binary = "ghostty"
 arch = "ghostty"
+suse = "ghostty"

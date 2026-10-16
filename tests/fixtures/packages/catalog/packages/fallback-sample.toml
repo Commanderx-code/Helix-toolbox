@@ -7,5 +7,6 @@ binary = "helixforge-fallback-sample"
 arch = "helixforge-no-such-package"
 debian = "helixforge-no-such-package"
 fedora = "helixforge-no-such-package"
+suse = "helixforge-no-such-package"
 flatpak = "org.helixforge.FallbackSample"
 removable = true

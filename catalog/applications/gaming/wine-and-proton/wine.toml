@@ -9,4 +9,5 @@ arch = "wine"
 conflicts = ["wine-staging"]
 debian = "wine"
 fedora = "wine"
+suse = "wine"
 removable = true

@@ -7,5 +7,6 @@ order = 106
 binary = "mupen64plus"
 debian = "mupen64plus-qt"
 fedora = "mupen64plus"
+suse = "mupen64plus-ui-console"
 aur = "mupen64plus"
 removable = true
