@@ -4,6 +4,28 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.5.2
+
+- **More virtual machines**: the Distributions workflow adds a Fedora cloud
+  image, the Arch image on UEFI firmware, the Arch live ISO with an empty
+  disk, and an Arch machine whose firmware says it is a Steam Deck; the
+  cloud images' disks take TRIM, and the Arch one has a USB stick. Newly VM
+  Tested: the CachyOS and Garuda Limine boot menus (on a machine made to
+  boot through Limine), Fedora SELinux Tools, Enable SSD TRIM, Bootable USB
+  Creator (the stick boots on BIOS and UEFI), Arch Server Setup (the
+  installed system boots and reports a clean start) and Linux Neptune for
+  SteamDeck; the GRUB, boot splash and SDDM entries on Fedora and UEFI too.
+- Found by them and fixed: switching from one Limine look to another kept
+  the previous look's settings the new one does not set (the CachyOS
+  palette stayed on the Garuda menu). Arch Server Setup asked to confirm an
+  empty timezone forever when its lookup service did not answer; it offers
+  UTC then. Linux Neptune for SteamDeck installed Valve's 5.13 kernel from
+  2021, which cannot mount today's btrfs file systems and which GRUB lists
+  first, so the machine did not boot; it installs the newest released
+  Neptune kernel now. It also failed copying speaker firmware that Valve no
+  longer ships there, and installs linux-firmware-cirrus, which has it,
+  instead.
+
 ## v1.5.1
 
 - **Virtual machine tests**: the Distributions workflow boots Arch and

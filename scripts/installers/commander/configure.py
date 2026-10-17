@@ -172,9 +172,18 @@ def render_limine_appearance(current, fragment):
     lines = current.splitlines()
     end = next((index for index, line in enumerate(lines) if line.lstrip().startswith('/')), len(lines))
     kept = []
+    # A previous look's block, from the marker to the first blank line, goes
+    # whole: settings the new look does not set must not stay behind.
+    previous = False
     for line in lines[:end]:
+        if line.strip() == LIMINE_MARKER:
+            previous = True
+            continue
+        if previous and line.strip():
+            continue
+        previous = False
         match = LIMINE_KEY.match(line)
-        if (match and match.group(1) in keys) or line.strip() == LIMINE_MARKER:
+        if match and match.group(1) in keys:
             continue
         kept.append(line)
     while kept and not kept[-1].strip():

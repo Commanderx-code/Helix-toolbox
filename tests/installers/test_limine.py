@@ -31,6 +31,14 @@ class LimineRenderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             configure.render_limine_appearance(MACHINE, '/evil\n')
 
+    def test_a_new_look_leaves_nothing_of_the_previous_one(self):
+        # The CachyOS look sets a palette the Garuda one does not: after
+        # switching, the menu has none of the CachyOS settings.
+        previous = FRAGMENT + 'term_palette: 1e1e2e;f38ba8\nterm_palette_bright: 585b70;f38ba8\n'
+        switched = configure.render_limine_appearance(configure.render_limine_appearance(MACHINE, previous), FRAGMENT)
+        self.assertNotIn('term_palette', switched)
+        self.assertEqual(switched, configure.render_limine_appearance(MACHINE, FRAGMENT))
+
     def test_cmdline_edits_the_last_default_assignment(self):
         original = 'ESP_PATH="/boot"\nKERNEL_CMDLINE[default]="quiet lsm=yama"\nKERNEL_CMDLINE["linux-lts"]="quiet"\n'
         rendered = configure.render_limine_cmdline(original, 'set', ['lsm=landlock,apparmor'])

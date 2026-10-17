@@ -158,6 +158,11 @@ filesystem () {
 # @description Detects and sets timezone.
 timezone () {
     time_zone="$(curl -sfm 5 https://ipapi.co/timezone)"
+    # Without an answer from the lookup (no network, or its rate limit), UTC
+    # is offered: an empty timezone is never accepted, so it asked forever.
+    if [[ -z "${time_zone}" || ! -f "/usr/share/zoneinfo/${time_zone}" ]]; then
+        time_zone=UTC
+    fi
     while true; do
         read -r -p "Detected timezone: '$time_zone'. Is this correct? (Y/n) "
         case "${REPLY:-Y}" in

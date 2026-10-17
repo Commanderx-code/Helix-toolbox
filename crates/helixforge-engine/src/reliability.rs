@@ -43,7 +43,7 @@ impl Level {
         match self {
             Level::HardwareTested => "A tester ran it on a real machine and reported the result.",
             Level::VmTested => {
-                "It ran for real in a virtual machine: the Distributions workflow boots the distribution's cloud image, runs the entry, reboots into the result and checks it (the configuration, the kernel command line, the boot images, the services, a graphical boot menu or login screen). Real graphics hardware is not covered."
+                "It ran for real in a virtual machine: the Distributions workflow boots a distribution's cloud image or live ISO, runs the entry, reboots into the result and checks it (the configuration, the kernel command line, the boot images, the services, a graphical boot menu or login screen). Real graphics hardware and firmware are not covered."
             }
             Level::ContainerTested => {
                 "The Distributions workflow ran it in distribution containers and HelixForge verified the result there. Containers have no boot loader, login screen or desktop, so those parts are not covered."
@@ -158,6 +158,9 @@ pub fn vm_label(name: &str) -> String {
         "arch" => "Arch VM".to_string(),
         "debian" => "Debian VM".to_string(),
         "fedora" => "Fedora VM".to_string(),
+        "arch-uefi" => "Arch UEFI VM".to_string(),
+        "arch-iso" => "Arch live ISO VM".to_string(),
+        "steamdeck" => "Steam Deck stand-in VM".to_string(),
         other => format!("{} VM", helixforge_core::printable(other)),
     }
 }
@@ -393,6 +396,7 @@ impl Evidence {
                 results.images.len(),
                 match results.vms.len() {
                     0 => String::new(),
+                    1 => " and 1 virtual machine".to_string(),
                     count => format!(" and {count} virtual machines"),
                 }
             ),
@@ -491,7 +495,7 @@ mod tests {
         );
         assert!(sddm.evidence.iter().any(|line| line.contains("test_sddm")));
         assert!(
-            found.summary().contains("1 virtual machines"),
+            found.summary().contains(" and 1 virtual machine."),
             "{}",
             found.summary()
         );

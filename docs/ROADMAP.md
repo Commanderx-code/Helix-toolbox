@@ -91,7 +91,10 @@ The items:
 - [x] Releases wait for Distributions on their commit
 - [x] VM tests of the boot and login entries (v1.5.1): Arch and Debian
       virtual machines run them for real, reboot and check
-- [ ] More hardware reports, Limine and UEFI in the virtual machines
+- [x] More virtual machines (v1.5.2): Fedora, UEFI firmware with GRUB and
+      Limine, the Arch live ISO for Arch Server Setup, a Steam Deck
+      stand-in, a USB stick and disks that take TRIM
+- [ ] Hardware reports: the NVIDIA entries and a real Steam Deck
 
 ## v1.1.0: configuration drift and the command palette (done)
 

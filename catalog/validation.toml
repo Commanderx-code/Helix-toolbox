@@ -100,6 +100,16 @@ tests = ["test_workstation"]
 covers = "a fresh clone or a fast-forward of the dotfiles checkout before its setup runs, and other folders and package managers refused"
 
 [[stand-ins]]
+entries = ["arch-server-setup"]
+tests = ["test_server_setup"]
+covers = "the timezone it offers, UTC when the lookup gives none"
+
+[[stand-ins]]
+entries = ["linux-neptune-for-steamdeck"]
+tests = ["test_neptune"]
+covers = "the newest released Neptune kernel chosen from Valve's repository, not the 2021 one"
+
+[[stand-ins]]
 entries = ["zellij"]
 tests = ["test_zellij"]
 covers = "the package and its configuration, a repeat install, and Home Manager's links preserved"

@@ -17,11 +17,24 @@ setUpRepos() {
     fi
 }
 
+# The newest Neptune kernel that is not a release candidate. Plain
+# linux-neptune is Valve's 5.13 from 2021: it cannot mount the btrfs file
+# systems made today, and GRUB lists it first, so the machine did not boot.
+latestKernel() {
+    "$PACKAGER" -Sl jupiter-staging | awk '$2 ~ /^linux-neptune-[0-9]+$/ && $3 !~ /rc/ { print $3, $2 }' \
+        | sort -V | tail -n 1 | cut -d ' ' -f 2
+}
+
 installKernel() {
     if ! "$PACKAGER" -Q | grep -q "\blinux-neptune"; then
-        printf "%b\n" "${CYAN}Installing linux-neptune..."
         "$ESCALATION_TOOL" "$PACKAGER" -Syyu --noconfirm
-        "$ESCALATION_TOOL" "$PACKAGER" -S --noconfirm linux-neptune linux-neptune-headers steamdeck-dsp jupiter-staging/alsa-ucm-conf
+        kernel=$(latestKernel)
+        if [ -z "$kernel" ]; then
+            printf "%b\n" "${RED}jupiter-staging offers no linux-neptune kernel.${RC}"
+            exit 1
+        fi
+        printf "%b\n" "${CYAN}Installing $kernel...${RC}"
+        "$ESCALATION_TOOL" "$PACKAGER" -S --noconfirm "$kernel" "$kernel-headers" steamdeck-dsp jupiter-staging/alsa-ucm-conf
         "$ESCALATION_TOOL" mkinitcpio -P
     else
         printf "%b\n" "${GREEN}linux-neptune detected. Skipping installation.${RC}"
@@ -44,13 +57,22 @@ installKernel() {
     fi
 }
 
+# The speaker amplifier's firmware. Valve's old firmware package put it at
+# the top of the firmware folder, where the driver does not look; that
+# package is gone, and linux-firmware-cirrus has it in cirrus/ already.
 copyFirmwareFiles() {
-    printf "%b\n" "${CYAN}Copying firmware files...${RC}"
-    "$ESCALATION_TOOL" mkdir -p /usr/lib/firmware/cirrus
-    "$ESCALATION_TOOL" cp /usr/lib/firmware/cs35l41-dsp1-spk-cali.bin /usr/lib/firmware/cirrus/
-    "$ESCALATION_TOOL" cp /usr/lib/firmware/cs35l41-dsp1-spk-cali.wmfw  /usr/lib/firmware/cirrus/
-    "$ESCALATION_TOOL" cp /usr/lib/firmware/cs35l41-dsp1-spk-prot.bin  /usr/lib/firmware/cirrus/
-    "$ESCALATION_TOOL" cp /usr/lib/firmware/cs35l41-dsp1-spk-prot.wmfw  /usr/lib/firmware/cirrus/
+    if [ -f /usr/lib/firmware/cs35l41-dsp1-spk-prot.bin ]; then
+        printf "%b\n" "${CYAN}Copying firmware files...${RC}"
+        "$ESCALATION_TOOL" mkdir -p /usr/lib/firmware/cirrus
+        for file in cs35l41-dsp1-spk-cali.bin cs35l41-dsp1-spk-cali.wmfw cs35l41-dsp1-spk-prot.bin cs35l41-dsp1-spk-prot.wmfw; do
+            if [ -f "/usr/lib/firmware/$file" ]; then
+                "$ESCALATION_TOOL" cp "/usr/lib/firmware/$file" /usr/lib/firmware/cirrus/
+            fi
+        done
+    elif ! ls /usr/lib/firmware/cirrus/cs35l41-dsp1-spk-prot.* >/dev/null 2>&1; then
+        printf "%b\n" "${CYAN}Installing the speaker firmware...${RC}"
+        "$ESCALATION_TOOL" "$PACKAGER" -S --needed --noconfirm linux-firmware-cirrus
+    fi
 }
 
 checkEnv

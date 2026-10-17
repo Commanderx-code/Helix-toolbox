@@ -422,9 +422,11 @@ jobs:
           name: validation-${{ strategy.job-index }}
           path: validation-${{ strategy.job-index }}.json
 
-  # The boot, login-screen and kernel entries for real, in virtual machines:
-  # each is run, rebooted into and checked (scripts/vm-tests.py). The screens
-  # captured while they boot are kept for a person to look at.
+  # The boot, login-screen, disk and kernel entries for real, in virtual
+  # machines: each is run, rebooted into and checked (scripts/vm-tests.py).
+  # Cloud images on BIOS and UEFI firmware, the Arch live ISO for the
+  # installer, and an Arch machine whose firmware says it is a Steam Deck.
+  # The screens captured while they boot are kept for a person to look at.
   vm:
     needs: build
     runs-on: ubuntu-latest
@@ -432,7 +434,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: [arch, debian]
+        distro: [arch, debian, fedora, arch-uefi, arch-iso, steamdeck]
     name: vm ${{ matrix.distro }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -448,7 +450,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 qemu-utils genisoimage python3-pil
+          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf genisoimage python3-pil
           ls -l /dev/kvm
       - name: The entries, run and rebooted into
         run: |
@@ -485,7 +487,7 @@ jobs:
         run: |
           python3 -B scripts/validation-record.py merge validation.json "$GITHUB_RUN_ID" \
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$GITHUB_SHA" parts/*.json
-          python3 -c 'import json; d = json.load(open("validation.json")); assert len(d["images"]) == 6, d; assert all(i["entries"].get("htop") == "verified" for i in d["images"].values()), d; assert sorted(d["vms"]) == ["arch", "debian"], d'
+          python3 -c 'import json; d = json.load(open("validation.json")); assert len(d["images"]) == 6, d; assert all(i["entries"].get("htop") == "verified" for i in d["images"].values()), d; assert sorted(d["vms"]) == ["arch", "arch-iso", "arch-uefi", "debian", "fedora", "steamdeck"], d'
           cat validation.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
