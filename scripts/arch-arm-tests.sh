@@ -1,0 +1,75 @@
+#!/bin/bash -e
+
+# HelixForge in Arch Linux ARM, which has no image on Docker Hub: the
+# Distributions workflow imports its own root file system, checked against
+# its build key, and runs this in it as root from the repository, with the
+# aarch64 program in bin/ and its packages in packages/.
+# usage: scripts/arch-arm-tests.sh RECORD
+
+record=${1:?usage: scripts/arch-arm-tests.sh RECORD}
+
+# Its keyring, then the tools the tests need. The kernel and firmware are
+# not upgraded: nothing boots here. pacman's download sandbox needs system
+# calls a container does not allow.
+sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+pacman-key --init
+pacman-key --populate archlinuxarm
+pacman -Syu --noconfirm --needed --ignore linux-aarch64,linux-firmware sudo git python which
+
+chmod +x bin/helixforge
+bin/helixforge system | tee system.txt
+grep -q 'Package manager: .*(Arch family)' system.txt
+
+# The catalog on this distribution, without the entries for x86_64 only.
+bin/helixforge list > visible.txt
+bin/helixforge list --all > all.txt
+visible=$(grep -vE '/$' visible.txt | grep -cE '^\s')
+total=$(grep -vE '/$' all.txt | grep -cE '^\s')
+echo "Visible entries: $visible of $total"
+test "$total" -ge 230
+test "$visible" -ge 100
+grep -q '^    Arch/$' visible.txt
+for id in steam install-chaotic-aur-repository install-cachyos-repository-and-kernel proton-cachyos; do
+    if grep -q "^ *$id " visible.txt; then
+        echo "$id, for x86_64 only, shows on Arch Linux ARM" >&2
+        exit 1
+    fi
+    grep -q "^ *$id " all.txt
+done
+bin/helixforge plan steam | grep -q '^Blocked: Steam is for x86_64 only, and this machine is aarch64$'
+
+# Real package installs through the engine, verified by pacman.
+bin/helixforge plan htop
+yes | bin/helixforge run htop ripgrep --yes | tee run.txt
+command -v htop
+command -v rg
+grep -q '^Verified: htop: pacman lists htop' run.txt
+grep -q '^Verified: Ripgrep: pacman lists ripgrep' run.txt
+bin/helixforge history --limit 1 | grep -q 'ok .*exit 0, verified'
+bin/helixforge status htop ripgrep | tee status.txt
+grep -qE '^htop +Installed +pacman [0-9]' status.txt
+bin/helixforge run system-report machine-summary --yes | grep -q '^Distribution:'
+
+# The installer tests under this distribution's shell.
+python3 -B -m unittest discover -s tests/installers -t tests/installers
+
+# The Arch package installs, works and removes cleanly.
+pacman -U --noconfirm packages/helixforge-*-aarch64.pkg.tar.zst
+test "$(readlink -f "$(command -v helixforge)")" = /usr/bin/helixforge
+helixforge --version | grep -qE '^helixforge [0-9]+\.[0-9]+\.[0-9]+$'
+helixforge system | grep -q '(Arch family)'
+helixforge report --no-checks | grep -q '^- Installed from: package$'
+pacman -Ql helixforge > files.txt
+for file in /usr/bin/helixforge /usr/share/man/man1/helixforge.1.gz \
+    /usr/share/bash-completion/completions/helixforge \
+    /usr/share/applications/helixforge.desktop; do
+    grep -qE "^helixforge $file\$" files.txt
+done
+pacman -R --noconfirm helixforge
+hash -r
+test ! -e /usr/bin/helixforge
+
+# What HelixForge verified here, for the record.
+bin/helixforge history --json --limit 1000 > history.json
+python3 -B scripts/validation-record.py record 'archlinuxarm on aarch64' history.json catalog > "$record"
+cat "$record"

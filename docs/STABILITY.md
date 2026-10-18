@@ -60,8 +60,8 @@ confirmation setting). Package-manager steps run one at a time.
 
 Linux on x86_64 or aarch64 (ARM64) with glibc 2.35 or newer. Every release
 is tested in containers of Arch, Debian stable, Ubuntu 22.04 and 24.04, Fedora
-and openSUSE Tumbleweed, and on ARM64 machines in the same containers but
-Arch, which has no official ARM image; derivatives of those (Garuda, CachyOS, EndeavourOS, Manjaro,
+and openSUSE Tumbleweed, and on ARM64 machines in the same containers, with
+Arch Linux ARM for Arch; derivatives of those (Garuda, CachyOS, EndeavourOS, Manjaro,
 Mint, Pop!_OS and others) use the same package managers and are expected to
 work. Other systems may run it with fewer entries shown.
 

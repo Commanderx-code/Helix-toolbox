@@ -102,6 +102,7 @@ then:
 | Debian, Ubuntu, Mint, Pop!_OS | `sudo apt install ./helixforge_*_amd64.deb` |
 | Fedora | `sudo dnf install ./helixforge-*.x86_64.rpm` |
 | openSUSE | `sudo zypper install --allow-unsigned-rpm ./helixforge-*.x86_64.rpm` |
+| Arch Linux ARM | `sudo pacman -U helixforge-*-aarch64.pkg.tar.zst` |
 | Debian, Ubuntu, Raspberry Pi OS on ARM64 | `sudo apt install ./helixforge_*_arm64.deb` |
 | Fedora, Fedora Asahi Remix on ARM64 | `sudo dnf install ./helixforge-*.aarch64.rpm` |
 | openSUSE on ARM64 | `sudo zypper install --allow-unsigned-rpm ./helixforge-*.aarch64.rpm` |

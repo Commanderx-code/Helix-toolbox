@@ -172,8 +172,6 @@ jobs:
           cp target/release/helixforge "$RUNNER_TEMP/release/helixforge-linux-aarch64"
           scripts/install-nfpm.sh "$RUNNER_TEMP/bin"
           PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$VERSION" target/release/helixforge "$RUNNER_TEMP/release"
-          # No Arch package: Arch Linux has no official ARM image to test one in.
-          rm "$RUNNER_TEMP/release"/*.pkg.tar.zst
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-aarch64
@@ -238,7 +236,8 @@ jobs:
             printf 'sudo apt install ./helixforge_%s-1_amd64.deb        # Debian, Ubuntu\n' "$VERSION"
             printf 'sudo dnf install ./helixforge-%s-1.x86_64.rpm       # Fedora\n' "$VERSION"
             printf 'sudo zypper install --allow-unsigned-rpm ./helixforge-%s-1.x86_64.rpm   # openSUSE\n\n' "$VERSION"
-            printf '# aarch64 (ARM64); on Arch Linux ARM, run helixforge-linux-aarch64 directly\n'
+            printf '# aarch64 (ARM64)\n'
+            printf 'sudo pacman -U helixforge-%s-1-aarch64.pkg.tar.zst  # Arch Linux ARM\n' "$VERSION"
             printf 'sudo apt install ./helixforge_%s-1_arm64.deb        # Debian, Ubuntu, Raspberry Pi OS\n' "$VERSION"
             printf 'sudo dnf install ./helixforge-%s-1.aarch64.rpm      # Fedora, Fedora Asahi Remix\n' "$VERSION"
             printf 'sudo zypper install --allow-unsigned-rpm ./helixforge-%s-1.aarch64.rpm   # openSUSE\n' "$VERSION"

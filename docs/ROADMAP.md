@@ -54,9 +54,9 @@ The items:
 - [x] Entries for programs built only for x86_64 (`[needs] architectures`)
       left out on ARM64, and blocked when named anyway
 - [x] Updates, `fetch-release` and `start.sh` choose this machine's files
-- [ ] An Arch package for Arch Linux ARM, once there is an image to test it
-      in, and the virtual machines on ARM64, once a runner offers hardware
-      virtualization
+- [x] An Arch package for Arch Linux ARM, tested in Arch Linux ARM's own
+      root file system, checked against its build key (v1.6.1)
+- [ ] The virtual machines on ARM64
 
 ## v1.5.0: machines without reliable internet (done)
 

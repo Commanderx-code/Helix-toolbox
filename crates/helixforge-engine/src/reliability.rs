@@ -174,6 +174,7 @@ pub fn image_label(image: &str) -> String {
     }
     match image {
         "archlinux:latest" => "Arch".to_string(),
+        "archlinuxarm" => "Arch Linux ARM".to_string(),
         "debian:stable" => "Debian".to_string(),
         "fedora:latest" => "Fedora".to_string(),
         "opensuse/tumbleweed:latest" => "openSUSE Tumbleweed".to_string(),
@@ -466,6 +467,10 @@ mod tests {
         assert_eq!(
             image_label("opensuse/tumbleweed:latest on aarch64"),
             "openSUSE Tumbleweed on ARM64"
+        );
+        assert_eq!(
+            image_label("archlinuxarm on aarch64"),
+            "Arch Linux ARM on ARM64"
         );
     }
 

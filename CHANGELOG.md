@@ -4,6 +4,14 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.6.1
+
+- **Arch Linux ARM**: releases have an Arch package for aarch64
+  (`helixforge-*-aarch64.pkg.tar.zst`). The Distributions workflow tests it
+  in Arch Linux ARM's own root file system, checked against the project's
+  build key, since there is no Arch Linux ARM image on Docker Hub; the
+  Reliability screen shows those results as "Arch Linux ARM on ARM64".
+
 ## v1.6.0
 
 - **ARM64**: every release has a build for Linux on aarch64 beside the

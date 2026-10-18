@@ -56,17 +56,56 @@ jobs:
         with:
           name: helixforge-aarch64
           path: target/release/helixforge
-      - name: Debian and RPM packages of the build
+      - name: Arch, Debian and RPM packages of the build
         run: |
           scripts/install-nfpm.sh "$RUNNER_TEMP/bin"
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
           PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$version" target/release/helixforge dist
-          # No Arch package: Arch Linux has no official ARM image to test one in.
-          rm dist/*.pkg.tar.zst
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: packages-aarch64
           path: dist/
+
+  # Arch Linux ARM has no image on Docker Hub: its own root file system,
+  # checked against its build key, becomes one here
+  # (scripts/arch-arm-tests.sh).
+  arch-arm64:
+    needs: build-arm64
+    runs-on: ubuntu-24.04-arm
+    name: archlinuxarm on aarch64
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: helixforge-aarch64
+          path: bin
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: packages-aarch64
+          path: packages
+      - name: The Arch Linux ARM root file system, checked against its build key
+        run: |
+          url=http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/root.tar.gz" "$url"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/root.tar.gz.sig" "$url.sig"
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          gpg --batch --import scripts/keys/archlinuxarm-build.asc
+          # Signed by that key and no other; plain HTTP is safe only so.
+          gpg --batch --status-fd 1 --verify "$RUNNER_TEMP/root.tar.gz.sig" "$RUNNER_TEMP/root.tar.gz" |
+            grep -q '^\[GNUPG:\] VALIDSIG 68B3537F39A313B3E574D06777193F152BDBE6A6 '
+          docker import "$RUNNER_TEMP/root.tar.gz" archlinuxarm:checked
+          rm "$RUNNER_TEMP/root.tar.gz"
+      - name: HelixForge in Arch Linux ARM
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo archlinuxarm:checked \
+            /bin/bash -e scripts/arch-arm-tests.sh validation-arch-arm64.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validation-arch-arm64
+          path: validation-arch-arm64.json
 
   distribution:
     needs: [build, build-arm64]
@@ -559,7 +598,7 @@ jobs:
   # release builds carry for the reliability screen
   # (scripts/validation-record.py).
   record:
-    needs: [distribution, vm]
+    needs: [distribution, arch-arm64, vm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -574,7 +613,7 @@ jobs:
         run: |
           python3 -B scripts/validation-record.py merge validation.json "$GITHUB_RUN_ID" \
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$GITHUB_SHA" parts/*.json
-          python3 -c 'import json; d = json.load(open("validation.json")); assert len(d["images"]) == 11, d; assert all(i["entries"].get("htop") == "verified" for i in d["images"].values()), d; assert sorted(d["vms"]) == ["arch", "arch-iso", "arch-themes", "arch-uefi", "debian", "fedora", "opensuse", "steamdeck"], d'
+          python3 -c 'import json; d = json.load(open("validation.json")); assert len(d["images"]) == 12, d; assert all(i["entries"].get("htop") == "verified" for i in d["images"].values()), d; assert sorted(d["vms"]) == ["arch", "arch-iso", "arch-themes", "arch-uefi", "debian", "fedora", "opensuse", "steamdeck"], d'
           cat validation.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
