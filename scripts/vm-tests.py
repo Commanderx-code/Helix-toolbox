@@ -192,6 +192,7 @@ class Machine:
 
     def launch(self, drives, serial='serial.log', network=True):
         self.monitor.unlink(missing_ok=True)
+        self.serial = self.work / serial
         # q35: no floppy drive, which the installer's disk menu would list first.
         command = ['qemu-system-x86_64', '-enable-kvm', '-machine', self.spec.get('chipset', 'pc'), '-cpu', 'host',
                    '-m', '4096', '-smp', '2',
@@ -294,7 +295,11 @@ class Machine:
             except OSError:
                 pass
             time.sleep(2)
-        raise RuntimeError('the machine did not come back')
+        # What it printed on its serial line, to say where it stopped.
+        serial = getattr(self, 'serial', None)
+        printed = serial.read_text(errors='replace') if serial and serial.exists() else ''
+        tail = '\n'.join(ANSI.sub('', printed).splitlines()[-40:])
+        raise RuntimeError('the machine did not come back' + (f'; its serial line ended:\n{tail}' if tail else ''))
 
     def copy(self, source, target):
         subprocess.run(['scp', *ssh_options(self.key), '-P', str(self.port), str(source),
@@ -746,6 +751,10 @@ MENU = re.compile(r'arrow keys and Enter:(?:\n[> ] [^\n]*)+')
 
 def server_setup(machine, shots):
     """Install Arch from the live ISO on the empty disk, then boot it."""
+    # The live ISO fills pacman's keyring at boot, in pacman-init; SSH can
+    # answer before that ends, and a package checked before then has no
+    # trusted signature. Starting the service again waits for it.
+    machine.ssh('systemctl start pacman-init.service')
     output = machine.run('arch-server-setup', answers=[
         ('Please enter username:', 'forge'), ('Please enter password:', 'helix-forge-test'),
         ('Please re-enter password:', 'helix-forge-test'), ('Please name your machine:', 'forge-server'),
