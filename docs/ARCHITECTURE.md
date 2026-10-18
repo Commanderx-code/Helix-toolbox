@@ -178,7 +178,7 @@ upgrade`, `zypper update`), and on Arch one `sudo pacman -Syu` for all of them
 with a note that pacman does not support updating one package alone (risk
 high). Each step carries `UpdateTarget`s: the entry, the probe that finds its
 package and its version before. The shell program fails if a target is gone
-afterwards; `verify()` gathers a fresh inventory and passes a target only when
+afterward; `verify()` gathers a fresh inventory and passes a target only when
 its version changed. Entries that are up to date, managed by Nix, installed
 elsewhere, absent or scripts become notes.
 
@@ -214,7 +214,7 @@ screens in two sections; the current screen; a hint line. The screens are
 the Dashboard (system overview and quick actions), one screen per catalog
 area (search bar and entry list with the flags column, groups opened in
 place, an installed or updates filter), Favorites (pinned entries from
-`favourites.toml` beside the settings, then recent ones from the history),
+`favorites.toml` beside the settings, then recent ones from the history),
 the Install Plan (the queue, planned live), Updates (the channels, gathered
 on a background thread), History (the records,
 with saved logs) and Settings. Popups over the current screen show text, the

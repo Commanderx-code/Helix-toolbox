@@ -150,7 +150,7 @@ pub struct ShellChange {
 pub struct UpdateTarget {
     /// The entry's name, for the checks.
     pub name: String,
-    /// How to find the package, and its version, afterwards.
+    /// How to find the package, and its version, afterward.
     pub probe: Probe,
     /// Its version before the update, when known.
     pub from: Option<String>,

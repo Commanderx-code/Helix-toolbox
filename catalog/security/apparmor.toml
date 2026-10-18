@@ -1,5 +1,5 @@
 name = "AppArmor Setup and Status"
-description = "Install AppArmor tools/profiles and enable its service on Arch or Debian/Ubuntu. On an Arch-family system that boots with GRUB, or with Limine and its entry tool as on CachyOS, and has not enabled AppArmor yet, first offers to add the lsm= kernel parameter from the dotfiles boot settings and regenerate the boot menu, with backups; reboot and rerun afterwards. Does not replace SELinux."
+description = "Install AppArmor tools/profiles and enable its service on Arch or Debian/Ubuntu. On an Arch-family system that boots with GRUB, or with Limine and its entry tool as on CachyOS, and has not enabled AppArmor yet, first offers to add the lsm= kernel parameter from the dotfiles boot settings and regenerate the boot menu, with backups; reboot and rerun afterward. Does not replace SELinux."
 flags = "I PFM MP SS"
 multi_select = false
 order = 1

@@ -1,5 +1,5 @@
 //! The change preview window: each step's expected changes, marked by how
-//! they are known, and a side-by-side view of a file now and afterwards.
+//! they are known, and a side-by-side view of a file now and afterward.
 
 use super::{hints::Hint, theme::Theme};
 use crossterm::event::{KeyCode, KeyEvent};
@@ -283,7 +283,7 @@ impl EffectsPopup {
     }
 }
 
-/// A file now on the left and afterwards on the right, the differing rows
+/// A file now on the left and afterward on the right, the differing rows
 /// with a few around them.
 fn draw_diff(frame: &mut Frame, area: Rect, diff: &Diff, scroll: u16, theme: Theme) {
     let half = area.width.saturating_sub(3) / 2;

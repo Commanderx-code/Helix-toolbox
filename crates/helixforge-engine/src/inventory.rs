@@ -1141,7 +1141,7 @@ mod tests {
             "a family without versions: installed is enough"
         );
         assert!(!check(None, false).passed);
-        // The run itself also stops if the package is gone afterwards.
+        // The run itself also stops if the package is gone afterward.
         let program = crate::shell_program(&plan, Path::new("/lib"), Path::new("/hf"));
         assert!(program.contains("'sudo' 'pacman' '-Syu'"), "{program}");
         assert!(program.contains("'pacman' '-Q' 'ripgrep'"));

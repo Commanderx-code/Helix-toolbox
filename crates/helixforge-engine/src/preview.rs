@@ -59,7 +59,7 @@ pub struct Change {
     pub certainty: Certainty,
     pub area: Area,
     pub text: String,
-    /// The file's contents now and afterwards, when both are known.
+    /// The file's contents now and afterward, when both are known.
     pub diff: Option<Diff>,
 }
 

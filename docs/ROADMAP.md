@@ -231,9 +231,9 @@ Defects found and fixed:
 - A key pressed together with a terminal resize stayed unread until the next
   key, so a `Ctrl-C` right after a resize did nothing. crossterm's default
   event source is edge-triggered; HelixForge now uses its `poll(2)` source.
-- `Ctrl-C` signalled only the run's shell: a child ignoring the hangup kept
+- `Ctrl-C` signaled only the run's shell: a child ignoring the hangup kept
   running while the window said INTERRUPTED. The whole process group is
-  signalled now, survivors are shown and recorded, and a second `Ctrl-C`
+  signaled now, survivors are shown and recorded, and a second `Ctrl-C`
   kills them.
 - A killed HelixForge left its unpacked catalog in `/tmp` for good. Copies
   hold a lock now, and the next start removes copies nobody holds.

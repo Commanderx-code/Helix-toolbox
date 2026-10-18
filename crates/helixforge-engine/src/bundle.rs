@@ -1045,7 +1045,7 @@ fn plain_manifest(manifest: &Manifest) -> bool {
 /// entries named (all of the bundle's when none). The files are copied into
 /// a new private folder and checked there against the checksums of the
 /// manifest verified here, which are written into the plan itself, so
-/// nothing changed in the bundle afterwards is installed. Then each
+/// nothing changed in the bundle afterward is installed. Then each
 /// package's signature is checked (pacman's with pacman-key, rpm's with rpm
 /// -K), and the package manager installs them from the files.
 ///

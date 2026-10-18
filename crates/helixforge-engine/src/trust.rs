@@ -88,9 +88,9 @@ pub struct Inspection {
     pub file: Option<String>,
     pub sha256: Option<String>,
     /// The installer's license.
-    pub license: Option<String>,
+    pub installer_license: Option<String>,
     /// The software's license, as its package manager reports it.
-    pub software_license: Option<String>,
+    pub package_license: Option<String>,
     /// The release HelixForge build the installer ships in.
     pub provenance: Vec<Fact>,
     /// What checks the packages it installs.
@@ -119,8 +119,8 @@ pub fn inspect(
         origin: "the HelixForge catalog".to_string(),
         file: None,
         sha256: None,
-        license: Some("MIT (HelixForge)".to_string()),
-        software_license: None,
+        installer_license: Some("MIT (HelixForge)".to_string()),
+        package_license: None,
         provenance: provenance(build),
         integrity: Vec::new(),
         downloads: Vec::new(),
@@ -144,7 +144,7 @@ pub fn inspect(
             inspection.sha256 = sum(file);
             let (origin, license) = script_origin(&relative);
             inspection.origin = origin;
-            inspection.license = Some(license);
+            inspection.installer_license = Some(license);
             inspection.file = Some(printable(&relative));
             let texts = script_texts(file);
             inspection.downloads = downloads(&texts, &scripts);
@@ -199,7 +199,7 @@ pub fn inspect(
             platform,
             system,
         ));
-        inspection.software_license = software_license(
+        inspection.package_license = package_license(
             identity.packages.for_manager_any(platform.manager),
             identity.flatpak,
             platform,
@@ -619,7 +619,7 @@ fn sig_level(text: &str) -> Option<String> {
 }
 
 /// The software's license from its package manager's metadata, read-only.
-fn software_license(
+fn package_license(
     native: Option<(PackageManager, &str)>,
     flatpak: Option<&str>,
     _platform: &LinuxInfo,
@@ -770,7 +770,7 @@ mod tests {
             &[],
         );
         assert_eq!(found.kind, "packages");
-        assert_eq!(found.software_license.as_deref(), Some("MIT  Unlicense"));
+        assert_eq!(found.package_license.as_deref(), Some("MIT  Unlicense"));
         assert_eq!(found.integrity[0].standing, Standing::Checked);
         assert!(found.integrity[0].text.contains("SigLevel = Required"));
         assert_eq!(found.provenance[0].standing, Standing::Provenance);

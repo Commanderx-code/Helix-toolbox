@@ -15,7 +15,7 @@
 **HelixForge** sets up and looks after a Linux machine from one menu in the
 terminal: applications, dotfiles and shell configuration, system tweaks,
 updates, backups and health checks. Every change is planned first, shown to
-you with its risk, run only after you confirm it, verified afterwards and
+you with its risk, run only after you confirm it, verified afterward and
 recorded in a history. It is written in Rust and works the same way on Arch,
 Debian, Ubuntu, Fedora and openSUSE.
 
@@ -36,7 +36,7 @@ Debian, Ubuntu, Fedora and openSUSE.
   password, and checks for conflicts, missing repositories, wrong hardware
   and disk space before anything runs.
 - **Verified runs.** Installs and removals are checked against the package
-  manager afterwards; a failing source falls back to the next (the AUR,
+  manager afterward; a failing source falls back to the next (the AUR,
   then Flathub); every run, its output and its result are kept in History.
 - **One place for updates** from every package tool on the machine,
   delegated to those tools.

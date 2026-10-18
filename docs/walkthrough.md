@@ -30,7 +30,7 @@
 - **Inkscape**: Inkscape is a free and open-source software vector graphics editor.
 - **Krita**: Krita is a free and open-source raster graphics editor designed primarily for digital art and 2D animation.
 - **MyPaint**: MyPaint is a free and open-source raster graphics editor for digital painting.
-- **Natron**: Natron is a powerful, free, and open-source VFX compositing application geared towards digital post-production work.
+- **Natron**: Natron is a powerful, free, and open-source VFX compositing application geared toward digital post-production work.
 - **OBS Studio**: OBS Studio is a free and open-source, cross-platform screencasting and live streaming software application.
 - **Olive**: Olive is a free and open-source cross-platform non-linear video editing application.
 - **OpenShot**: OpenShot Video Editor is a free and open-source video editor.
@@ -356,7 +356,7 @@ https://github.com/ChrisTitusTech/dwm-titus
 
 ## Security
 
-- **AppArmor Setup and Status**: Install AppArmor tools/profiles and enable its service on Arch or Debian/Ubuntu. On an Arch-family system that boots with GRUB, or with Limine and its entry tool as on CachyOS, and has not enabled AppArmor yet, first offers to add the lsm= kernel parameter from the dotfiles boot settings and regenerate the boot menu, with backups; reboot and rerun afterwards. Does not replace SELinux.
+- **AppArmor Setup and Status**: Install AppArmor tools/profiles and enable its service on Arch or Debian/Ubuntu. On an Arch-family system that boots with GRUB, or with Limine and its entry tool as on CachyOS, and has not enabled AppArmor yet, first offers to add the lsm= kernel parameter from the dotfiles boot settings and regenerate the boot menu, with backups; reboot and rerun afterward. Does not replace SELinux.
 - **Fedora SELinux Tools and Status**: Install Fedora SELinux policy, management and diagnostic tools and show status. Preserves enforcement mode and existing local policy.
 - **FirewallD Firewall Baselines (CTT)**: Configure FirewallD with CTT's recommended baseline rules for improved system security. For more information visit: https://christitus.com/linux-security-mistakes
 - **Lynis Security Audit**: Install Lynis when needed, run an elevated system security audit with live results, then optionally remove Lynis.

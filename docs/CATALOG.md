@@ -175,7 +175,7 @@ before a Flatpak, an AUR helper before an AUR package), or one it names in
 is not reported as missing. When a step fails the run stops, or with **After a
 failed step: continue** in Settings (`--keep-going` on the command line)
 goes on with the steps that do not depend on it, skipping those that do; a
-`Ctrl-C` always stops. Each step's result is shown afterwards (done, failed
+`Ctrl-C` always stops. Each step's result is shown afterward (done, failed
 with its exit status, skipped, not run), the history records "1 of 3 steps
 done", what did not finish stays in the Install Plan to run again, and the
 command line prints the `helixforge run …` that retries it.

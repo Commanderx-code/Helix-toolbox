@@ -168,12 +168,12 @@ system.
 
 ## trust
 
-`{id, name, kind, origin, file, sha256, license, software_license,
-provenance, integrity, downloads, privileges, validation}`. `file` and
-`sha256` are the installer script's, relative to the scripts folder;
-`software_license` is what the package manager reports, or `null`;
-`licence` and `software_licence`, the names they had before 1.5.8, carry the
-same values, and stay for programs that read them. Each of
+`{id, name, kind, origin, file, sha256, installer_license,
+package_license, provenance, integrity, downloads, privileges, validation}`.
+`file` is the installer script, relative to the scripts folder, and
+`sha256` and `installer_license` are its checksum and license;
+`package_license` is the license of the software it installs, as the package
+manager reports it, or `null`. Each of
 `provenance`, `integrity` and `downloads` is a list of `{standing, label,
 subject, text}`, `standing` being `provenance` (signed build provenance),
 `checked` (a checksum or signature a tool checks), `pinned` (fixed to a

@@ -1366,7 +1366,7 @@ impl App {
     }
 
     /// Fill a card's inside, so the fill never reaches past its rounded
-    /// border; draw the card's widget over it afterwards.
+    /// border; draw the card's widget over it afterward.
     fn fill(&self, frame: &mut Frame, area: Rect) {
         let inside = Block::bordered().inner(area);
         frame.render_widget(Block::default().style(self.theme.card()), inside);
@@ -6128,7 +6128,7 @@ mod tests {
     #[test]
     fn pinned_and_recent_entries_are_listed_as_favorites() {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("favourites.toml");
+        let path = directory.path().join("favorites.toml");
         let mut app = app();
         app.favorites_path = Some(path.clone());
         assert!(screen(&mut app, 120, 40).contains("Favorites"));

@@ -24,8 +24,8 @@ interrupted or failed is 1. `--dry-run` never changes the machine, and
 gain fields: none is removed, renamed or given another meaning. A change that
 would break them raises `schema` and comes with a major version.
 
-**Your files.** `settings.toml`, `favourites.toml`, profiles in
-`profiles/`, baselines in `baselines/` (from 1.1), looks in `looks/` (from
+**Your files.** `settings.toml`, `favorites.toml` (`favourites.toml`
+before 1.5.9), profiles in `profiles/`, baselines in `baselines/` (from 1.1), looks in `looks/` (from
 1.4) and `history.jsonl`
 written by any 1.x release are read by every later 1.x release. Settings a release does not know are ignored rather than
 discarding the rest, so going back to an earlier 1.x keeps what it

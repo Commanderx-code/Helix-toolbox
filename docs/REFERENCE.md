@@ -34,7 +34,7 @@ were on. `i` cycles the list between all entries, installed ones (including
 those managed by Nix) and ones with an update, flattening the groups of the
 area. `*` pins the selected entry; **Favorites** lists pinned entries, then
 the ones run recently, from History, and is also a quick action on the
-Dashboard. Pins are kept in `~/.config/helixforge/favourites.toml`. Each area
+Dashboard. Pins are kept in `~/.config/helixforge/favorites.toml`. Each area
 remembers its group and row when you move to another.
 
 The menu follows the HelixForge dashboard design: cards for the main screens
@@ -66,7 +66,7 @@ description.
 the same confirmation as a run: `flatpak update` for its installation, `apt-get
 install --only-upgrade`, `dnf upgrade` or `zypper update` for that package,
 and on Arch `pacman -Syu`, the whole system, since updating one package alone
-is a partial upgrade, which Arch does not support. Afterwards each package's
+is a partial upgrade, which Arch does not support. Afterward each package's
 version is compared with its version before; one that did not change is not
 verified. Entries managed by Nix say to update them there.
 
@@ -269,7 +269,7 @@ marked by how it is known:
   it asks you for, a boot menu regenerated from the installed kernels, or the
   dependencies dnf and zypper list only with root.
 
-`Enter` on a file shows it now and afterwards, side by side; on any other
+`Enter` on a file shows it now and afterward, side by side; on any other
 change, the whole line. The boot loader, boot splash, login screen and
 AppArmor entries declare their effects; other scripts are previewed by the
 paths they write and the services their script names, and say plainly that

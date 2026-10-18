@@ -29,7 +29,7 @@ package installs happen only in the Distributions workflow's containers.
 emulator and types keys. It checks:
 
 - sidebar navigation, the help popup, search and clearing it
-- pinning an entry, `favourites.toml`, and the entry under Favorites after a
+- pinning an entry, `favorites.toml`, and the entry under Favorites after a
   restart
 - the Updates screen between the catalog areas and History; HelixForge's
   own row for each way of installing it, and `fetch-release` keeping a file

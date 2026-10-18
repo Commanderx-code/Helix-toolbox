@@ -22,7 +22,7 @@ class ReleaseVersionTests(unittest.TestCase):
     def test_a_higher_workspace_version_starts_the_next_series(self):
         self.assertEqual(release.next_version('0.2.0', ['v0.1.14']), '0.2.0')
         self.assertEqual(release.next_version('1.0.0', ['v0.2.3']), '1.0.0')
-        # A lower one does not go backwards.
+        # A lower one does not go backward.
         self.assertEqual(release.next_version('0.1.0', ['v0.2.3']), '0.2.4')
 
     def test_a_commit_with_a_version_keeps_it_unless_a_commit_is_added(self):

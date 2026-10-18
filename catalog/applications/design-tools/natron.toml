@@ -1,5 +1,5 @@
 name = "Natron"
-description = "Natron is a powerful, free, and open-source VFX compositing application geared towards digital post-production work."
+description = "Natron is a powerful, free, and open-source VFX compositing application geared toward digital post-production work."
 flags = "I"
 order = 113
 

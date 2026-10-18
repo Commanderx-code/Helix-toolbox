@@ -37,7 +37,7 @@ covers = "the initramfs hook and kernel arguments added and removed once, the th
 [[stand-ins]]
 entries = ["cachyos-gaming-applications", "cachyos-gaming-meta"]
 tests = ["test_cachyos_gaming"]
-covers = "the packages chosen on CachyOS and other Arch systems, WINE Staging kept, multilib and an AUR helper required, and every package verified afterwards"
+covers = "the packages chosen on CachyOS and other Arch systems, WINE Staging kept, multilib and an AUR helper required, and every package verified afterward"
 
 [[stand-ins]]
 entries = ["grub", "grub-cachyos", "grub-catppuccin", "grub-ctt-bsol", "grub-ctt-cyberpunk", "grub-ctt-cyberre", "grub-ctt-dedsec", "grub-ctt-fallout", "grub-ctt-minegrub", "grub-ctt-shodan", "grub-default", "grub-dracula", "grub-tela", "grub-vimix"]

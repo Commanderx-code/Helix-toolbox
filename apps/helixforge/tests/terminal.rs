@@ -227,7 +227,7 @@ fn pinned_entries_are_kept_and_listed_under_favorites() {
     tui.keys("\r");
     tui.keys("*");
     tui.wait_for(&["Marker ★"]);
-    let saved = home.path().join("config/helixforge/favourites.toml");
+    let saved = home.path().join("config/helixforge/favorites.toml");
     tui.wait_until("the favorites to be saved", |_| {
         fs::read_to_string(&saved).is_ok_and(|text| text.contains("\"marker\""))
     });
@@ -587,7 +587,7 @@ fn damaged_settings_profiles_and_history_never_stop_it() {
     fs::create_dir_all(config.join("profiles")).unwrap();
     fs::create_dir_all(&state).unwrap();
     fs::write(config.join("settings.toml"), b"theme = 42\n\x00\xff[[[").unwrap();
-    fs::write(config.join("favourites.toml"), b"\xff\xfe entries = ").unwrap();
+    fs::write(config.join("favorites.toml"), b"\xff\xfe entries = ").unwrap();
     fs::write(config.join("profiles/broken.toml"), "name = [").unwrap();
     fs::write(
         config.join("profiles/unknown.toml"),
@@ -644,7 +644,7 @@ fn damaged_settings_profiles_and_history_never_stop_it() {
     tui.wait_for(&["Marker ★"]);
     tui.keys("q");
     assert_eq!(tui.wait_for_exit(), 0);
-    let favorites = fs::read_to_string(config.join("favourites.toml")).unwrap();
+    let favorites = fs::read_to_string(config.join("favorites.toml")).unwrap();
     assert!(favorites.contains("\"marker\""), "{favorites}");
 }
 

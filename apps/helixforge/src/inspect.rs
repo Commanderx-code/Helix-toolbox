@@ -188,11 +188,8 @@ pub fn trust(catalog: &Catalog, platform: &LinuxInfo, id: &str, as_json: bool) -
                 "origin": found.origin,
                 "file": found.file,
                 "sha256": found.sha256,
-                "license": found.license,
-                "software_license": found.software_license,
-                // The same, under the names HelixForge 1.2 gave them.
-                "licence": found.license,
-                "software_licence": found.software_license,
+                "installer_license": found.installer_license,
+                "package_license": found.package_license,
                 "provenance": facts(&found.provenance),
                 "integrity": facts(&found.integrity),
                 "downloads": facts(&found.downloads),
@@ -216,9 +213,9 @@ pub fn text(found: &Inspection) -> String {
     if let Some(sum) = &found.sha256 {
         text.push_str(&format!("SHA-256     {sum}\n"));
     }
-    if let Some(license) = &found.license {
+    if let Some(license) = &found.installer_license {
         text.push_str(&format!("License     {license} for the installer"));
-        match &found.software_license {
+        match &found.package_license {
             Some(software) => text.push_str(&format!("; {software} for the software\n")),
             None => text.push('\n'),
         }

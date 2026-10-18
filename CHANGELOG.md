@@ -4,6 +4,21 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.5.9
+
+- **The last British spellings go**: pinned entries are kept in
+  `favorites.toml`. Pins in `favourites.toml` are read and moved on the
+  next pin, and the old name is left as a link to the new file, so an
+  earlier 1.x still finds them.
+- **Clearer license fields**: `trust --json` names whose license each one
+  is: `installer_license` for HelixForge's installer script and
+  `package_license` for the software it installs. They replace `license`
+  and `software_license` (1.5.8) and `licence` and `software_licence`
+  (before it), which are gone. This is the one exception to the promise
+  that schema 1 fields are never removed.
+- **US forms**: toward, afterward and backward replace towards, afterwards
+  and backwards in the interface, catalog and documentation.
+
 ## v1.5.8
 
 - **US English**: the interface, messages, catalog, installers' messages and
