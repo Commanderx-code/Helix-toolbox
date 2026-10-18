@@ -66,6 +66,7 @@ MACHINES = {
     'arch': {'image': 'arch', 'family': 'arch', 'firmware': 'bios', 'usb': True},
     'debian': {'image': 'debian', 'family': 'debian', 'firmware': 'bios'},
     'fedora': {'image': 'fedora', 'family': 'fedora', 'firmware': 'bios'},
+    'arch-themes': {'image': 'arch', 'family': 'arch', 'firmware': 'bios'},
     'arch-uefi': {'image': 'arch', 'family': 'arch', 'firmware': 'uefi'},
     # The live ISO, as root, with an empty disk to install on.
     'arch-iso': {'image': 'archiso', 'family': 'arch', 'firmware': 'uefi', 'live': True, 'chipset': 'q35'},
@@ -419,10 +420,11 @@ def covered(path):
 
 def keep_frames(frames, shots, name, firmware='bios'):
     """Keep the most colourful graphical frame and the last one as PNGs;
-    return that frame's colour count. Graphical: mostly covered by a
-    picture, and on BIOS neither VGA text mode (720x400) nor the kernel's
-    own console, which the last frame shows, so coloured boot messages never
-    count as a boot menu. UEFI shows the menu and the console at one size."""
+    return that frame's colour count. Graphical, on BIOS: neither VGA text
+    mode (720x400) nor the kernel's own console, which the last frame shows,
+    so coloured boot messages never count as a boot menu. UEFI shows the menu
+    and the console at one size: there, mostly covered by a picture, which
+    dark themes are not."""
     from PIL import Image
     measured = []
     for frame in frames:
@@ -434,8 +436,8 @@ def keep_frames(frames, shots, name, firmware='bios'):
     if not measured:
         return 0
     console = measured[-1][0]
-    graphical = [item for item in measured if item[2] >= 0.5
-                 and (firmware == 'uefi' or item[0] not in ((720, 400), console))]
+    graphical = [item for item in measured
+                 if (item[2] >= 0.5 if firmware == 'uefi' else item[0] not in ((720, 400), console))]
     best = max(graphical or measured, key=lambda item: item[1])
     if shots:
         shots.mkdir(parents=True, exist_ok=True)
@@ -448,16 +450,42 @@ def keep_frames(frames, shots, name, firmware='bios'):
 
 # ----- the cases -----
 
-def grub_theme(machine, shots):
-    machine.run('grub-dracula')
+def garuda_repository(machine):
+    """Garuda's own repository, as a Garuda machine has it: its packages are
+    signed with the key chaotic-keyring carries, installed as Chaotic-AUR
+    documents."""
+    if machine.ok('grep -q "^\\[garuda\\]" /etc/pacman.conf'):
+        return
+    machine.ssh('sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com >/dev/null 2>&1 && '
+                'sudo pacman-key --lsign-key 3056513887B78AEB >/dev/null && '
+                "sudo pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' "
+                '>/dev/null')
+    machine.ssh("printf '\\n[garuda]\\nServer = https://builds.garudalinux.org/repos/$repo/$arch\\n' "
+                '| sudo tee -a /etc/pacman.conf >/dev/null && sudo pacman -Sy >/dev/null')
+
+
+def grub_theme(machine, shots, entry='grub-dracula'):
+    """A GRUB theme entry: grub-NAME installs the NAME theme as
+    commander-NAME-*; grub, the Garuda theme from its package."""
+    if entry == 'grub':
+        garuda_repository(machine)
+        wanted = '/usr/share/grub/themes/garuda-dr460nized/theme.txt'
+    else:
+        wanted = f'/themes/commander-{entry.removeprefix("grub-")}-'
+    # Tela and Vimix ask for the size of their pictures: the default.
+    machine.run(entry, answers=[(re.compile(r'3\) 4K'), '')])
     theme = machine.ssh("sed -n 's/^GRUB_THEME=\"\\(.*\\)\"/\\1/p' /etc/default/grub").stdout.strip()
-    if 'commander-dracula-' not in theme or not machine.ok(f'sudo test -f {shlex.quote(theme)}'):
+    if wanted not in theme or not machine.ok(f'sudo test -f {shlex.quote(theme)}'):
         raise RuntimeError(f'GRUB_THEME does not name the installed theme: {theme!r}')
     if not machine.ok('grep -q "^GRUB_TERMINAL_OUTPUT=\\"gfxterm\\"" /etc/default/grub'):
         raise RuntimeError('graphical output was not selected')
-    shown = machine.reboot(shots, 'grub-dracula')
+    shown = machine.reboot(shots, entry)
     if shown < 60:
         raise RuntimeError(f'no graphical boot menu was seen ({shown} colours at most)')
+
+
+def grub_theme_case(entry):
+    return lambda machine, shots: grub_theme(machine, shots, entry)
 
 
 def grub_default(machine, shots):
@@ -486,6 +514,58 @@ def plymouth_off(machine, shots):
     machine.reboot(shots, 'plymouth-off')
     if machine.ok('grep -qw splash /proc/cmdline'):
         raise RuntimeError('splash is still on the kernel command line')
+
+
+def splash_in_boot_image(machine, theme):
+    """The theme is selected, in the boot image, and Plymouth started at the
+    next boot."""
+    if machine.ssh('plymouth-set-default-theme').stdout.strip() != theme:
+        raise RuntimeError(f'{theme} is not the selected boot splash')
+    images = {'arch': 'lsinitcpio /boot/initramfs-linux.img', 'debian': 'lsinitramfs /boot/initrd.img-$(uname -r)',
+              'fedora': 'lsinitrd'}
+    if not machine.ok(f'sudo {images[machine.distro]} | grep -q "plymouth/themes/{theme}/"'):
+        raise RuntimeError(f'the boot image does not have the {theme} theme')
+
+
+def plymouth_theme(machine, shots):
+    # The splash is on (plymouth-on ran before); pick another installed theme.
+    themes = machine.ssh('plymouth-set-default-theme --list').stdout.split()
+    current = machine.ssh('plymouth-set-default-theme').stdout.strip()
+    choice = next((theme for theme in ('spinfinity', 'solar', 'glow', 'fade-in', 'tribar', 'spinner')
+                   if theme in themes and theme != current), None)
+    if not choice:
+        raise RuntimeError(f'no other graphical theme is installed: {themes}')
+    machine.run('plymouth-theme', answers=[('Theme number:', str(themes.index(choice) + 1))])
+    splash_in_boot_image(machine, choice)
+    machine.reboot(shots, 'plymouth-theme')
+    if not machine.ok('test -n "$(systemctl show -P InvocationID plymouth-start.service)"'):
+        raise RuntimeError('Plymouth did not start during the boot')
+
+
+def plymouth_dotfiles(machine, shots):
+    """The theme dotfiles names comes from the KDE Store: without it the entry
+    says where to get it and changes nothing; with a theme of that name
+    installed, as the store's Get New would, it selects it."""
+    theme = 'garuda-mac-style-purple'
+    before = machine.ssh('plymouth-set-default-theme').stdout.strip()
+    try:
+        machine.run('plymouth-dotfiles')
+    except RuntimeError as error:
+        if 'KDE Store' not in str(error):
+            raise
+    else:
+        raise RuntimeError(f'it ran without the {theme} theme installed')
+    if machine.ssh('plymouth-set-default-theme').stdout.strip() != before:
+        raise RuntimeError('the boot splash changed although the theme was missing')
+    # A copy of the spinner theme under that name.
+    themes = '/usr/share/plymouth/themes'
+    machine.ssh(f'sudo cp -r {themes}/spinner {themes}/{theme} && cd {themes}/{theme} && '
+                f'sudo mv spinner.plymouth {theme}.plymouth && sudo sed -i "s/spinner/{theme}/g" {theme}.plymouth')
+    machine.run('plymouth-dotfiles')
+    splash_in_boot_image(machine, theme)
+    machine.reboot(shots, 'plymouth-dotfiles')
+    if not machine.ok('test -n "$(systemctl show -P InvocationID plymouth-start.service)"'):
+        raise RuntimeError('Plymouth did not start during the boot')
 
 
 def apparmor(machine, shots):
@@ -791,8 +871,13 @@ def limine_garuda(machine, shots):
 
 CASES = {
     'arch': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('plymouth-on', plymouth_on),
+             ('plymouth-theme', plymouth_theme), ('plymouth-dotfiles', plymouth_dotfiles),
              ('plymouth-off', plymouth_off), ('apparmor', apparmor), ('sddm', sddm), ('enable-ssd-trim', ssd_trim),
              ('bootable-usb-creator', bootable_usb)],
+    # Every other GRUB theme, Garuda's from its own repository.
+    'arch-themes': [(entry, grub_theme_case(entry)) for entry in (
+        'grub-cachyos', 'grub-catppuccin', 'grub-tela', 'grub-vimix', 'grub-ctt-bsol', 'grub-ctt-cyberpunk',
+        'grub-ctt-cyberre', 'grub-ctt-dedsec', 'grub-ctt-fallout', 'grub-ctt-minegrub', 'grub-ctt-shodan', 'grub')],
     'debian': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('plymouth-on', plymouth_on),
                ('plymouth-off', plymouth_off), ('apparmor', apparmor), ('sddm', sddm), ('enable-ssd-trim', ssd_trim)],
     'fedora': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('plymouth-on', plymouth_on),

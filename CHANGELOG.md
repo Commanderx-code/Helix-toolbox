@@ -4,6 +4,16 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.5.3
+
+- **Every boot entry but NVIDIA's in a virtual machine**: a machine of its
+  own runs the other eleven GRUB themes (CachyOS, Catppuccin, Tela, Vimix and
+  the six CTT themes) and the Garuda theme, from Garuda's repository added
+  as a Garuda machine has it; each boot menu is checked on the screen. The
+  Arch machine also runs Boot Splash Theme and Dotfiles Boot Splash, which
+  says where to get the KDE Store theme dotfiles names when it is missing
+  and selects it once installed. All of them are VM Tested.
+
 ## v1.5.2
 
 - **More virtual machines**: the Distributions workflow adds a Fedora cloud

@@ -135,6 +135,7 @@ KVM, each image checked against its published checksum:
 | Machine | What it is |
 |---|---|
 | `arch`, `debian`, `fedora` | the distribution's cloud image on BIOS firmware, with a USB stick plugged into the Arch one |
+| `arch-themes` | the Arch cloud image on BIOS firmware, for the GRUB themes, with Garuda's repository added for its theme |
 | `arch-uefi` | the Arch cloud image on UEFI firmware (OVMF) |
 | `arch-iso` | the Arch live ISO on UEFI firmware, as root, with an empty disk |
 | `steamdeck` | the Arch cloud image with firmware that names Valve as the board's maker, as a Steam Deck's does |
@@ -151,8 +152,11 @@ every half second while the machine boots, and checks the result:
 | Entry | Machines | Checked |
 |---|---|---|
 | Dracula GRUB Theme | Arch, Debian, Fedora, Arch UEFI | `GRUB_THEME` names the installed theme, graphical output is selected, and a graphical boot menu was on the screen |
+| The other GRUB themes (CachyOS, Catppuccin, Tela, Vimix, the six CTT themes, and Garuda's from its repository) | Arch themes | the same as Dracula's |
 | Restore Default GRUB Appearance | Arch, Debian, Fedora, Arch UEFI | no theme is selected, and the machine boots |
 | Enable Boot Splash | Arch, Debian, Fedora | `splash` is on the kernel command line, Plymouth is in the boot image and started |
+| Boot Splash Theme | Arch | another installed theme chosen by its number is selected, in the boot image, and Plymouth started at the next boot |
+| Dotfiles Boot Splash | Arch | without the KDE Store theme dotfiles names, it says where to get it and changes nothing; with a theme of that name installed, as the store's Get New would, it is selected, in the boot image, and Plymouth started at the next boot |
 | Disable Boot Splash | Arch, Debian, Fedora | `splash` is gone from the kernel command line |
 | AppArmor Setup and Status | Arch, Debian | AppArmor is enabled in the kernel (on Arch after the first phase's reboot), and its service is enabled and running |
 | Fedora SELinux Tools and Status | Fedora | the tools are installed, `semanage` works, and SELinux still enforces after the reboot |

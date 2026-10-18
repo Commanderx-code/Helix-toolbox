@@ -94,6 +94,8 @@ The items:
 - [x] More virtual machines (v1.5.2): Fedora, UEFI firmware with GRUB and
       Limine, the Arch live ISO for Arch Server Setup, a Steam Deck
       stand-in, a USB stick and disks that take TRIM
+- [x] Every GRUB theme and both Plymouth theme entries in the virtual
+      machines (v1.5.3)
 - [ ] Hardware reports: the NVIDIA entries and a real Steam Deck
 
 ## v1.1.0: configuration drift and the command palette (done)

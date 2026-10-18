@@ -155,7 +155,7 @@ pub struct Assessment {
 /// A virtual machine as people name it: "Arch VM".
 pub fn vm_label(name: &str) -> String {
     match name {
-        "arch" => "Arch VM".to_string(),
+        "arch" | "arch-themes" => "Arch VM".to_string(),
         "debian" => "Debian VM".to_string(),
         "fedora" => "Fedora VM".to_string(),
         "arch-uefi" => "Arch UEFI VM".to_string(),

@@ -424,8 +424,9 @@ jobs:
 
   # The boot, login-screen, disk and kernel entries for real, in virtual
   # machines: each is run, rebooted into and checked (scripts/vm-tests.py).
-  # Cloud images on BIOS and UEFI firmware, the Arch live ISO for the
-  # installer, and an Arch machine whose firmware says it is a Steam Deck.
+  # Cloud images on BIOS and UEFI firmware (the GRUB themes in a machine of
+  # their own), the Arch live ISO for the installer, and an Arch machine
+  # whose firmware says it is a Steam Deck.
   # The screens captured while they boot are kept for a person to look at.
   vm:
     needs: build
@@ -434,7 +435,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: [arch, debian, fedora, arch-uefi, arch-iso, steamdeck]
+        distro: [arch, arch-themes, debian, fedora, arch-uefi, arch-iso, steamdeck]
     name: vm ${{ matrix.distro }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -487,7 +488,7 @@ jobs:
         run: |
           python3 -B scripts/validation-record.py merge validation.json "$GITHUB_RUN_ID" \
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$GITHUB_SHA" parts/*.json
-          python3 -c 'import json; d = json.load(open("validation.json")); assert len(d["images"]) == 6, d; assert all(i["entries"].get("htop") == "verified" for i in d["images"].values()), d; assert sorted(d["vms"]) == ["arch", "arch-iso", "arch-uefi", "debian", "fedora", "steamdeck"], d'
+          python3 -c 'import json; d = json.load(open("validation.json")); assert len(d["images"]) == 6, d; assert all(i["entries"].get("htop") == "verified" for i in d["images"].values()), d; assert sorted(d["vms"]) == ["arch", "arch-iso", "arch-themes", "arch-uefi", "debian", "fedora", "steamdeck"], d'
           cat validation.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
