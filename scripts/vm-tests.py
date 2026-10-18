@@ -357,6 +357,9 @@ class Machine:
         elif self.distro == 'fedora':
             self.ssh('sudo dnf install -y -q git python3 >/dev/null')
             regenerate = 'sudo grub2-mkconfig -o /boot/grub2/grub.cfg'
+        elif self.distro == 'opensuse':
+            self.ssh('sudo zypper -n -q install git python3 >/dev/null')
+            regenerate = 'sudo grub2-mkconfig -o /boot/grub2/grub.cfg'
         else:
             self.ssh('sudo apt-get update -q >/dev/null && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q git python3 >/dev/null')
             regenerate = 'sudo update-grub'
@@ -878,6 +881,27 @@ def flatpak_bundle(machine, shots):
         machine.relaunch()
 
 
+def zypper_bundle(machine, shots):
+    """zypper downloads a bundle as the user, without root, and it installs
+    with no network."""
+    machine.ssh('sudo zypper -n -q rm -u htop >/dev/null 2>&1 || true')
+    made = machine.ssh('./helixforge bundle create bundle htop && ./helixforge bundle create complete htop --complete'
+                       ' && ./helixforge bundle verify complete').stdout
+    if 'zypper downloads htop with the dependencies this machine lacks, as you, without root.' not in made:
+        raise RuntimeError(f'zypper did not make the bundle:\n{made[-1500:]}')
+    files = lambda folder: int(machine.ssh(f'ls {folder}/packages | wc -l').stdout)
+    if not files('complete') > files('bundle') >= 1:
+        raise RuntimeError('a complete bundle does not hold more than one for this machine')
+    machine.relaunch(network='restricted')
+    try:
+        if machine.ok('curl -fsS --max-time 10 -o /dev/null https://download.opensuse.org/'):
+            raise RuntimeError('the machine still reaches openSUSE')
+        machine.ssh('./helixforge bundle install complete --yes < /dev/null')
+        machine.ssh('rpm -q htop && htop --version')
+    finally:
+        machine.relaunch()
+
+
 def boot_with_limine(machine):
     """Boot with Limine instead of GRUB, as CachyOS installs it: Limine as
     the EFI partition's boot loader, and the kernel and its boot image beside
@@ -951,6 +975,7 @@ CASES = {
                ('plymouth-off', plymouth_off), ('selinux', selinux), ('sddm', sddm), ('enable-ssd-trim', ssd_trim)],
     'arch-uefi': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('limine-cachyos', limine_cachyos),
                   ('limine-garuda', limine_garuda)],
+    'opensuse': [('bundle-zypper', zypper_bundle)],
     'arch-iso': [('arch-server-setup', server_setup)],
     'steamdeck': [('linux-neptune-for-steamdeck', linux_neptune)],
 }

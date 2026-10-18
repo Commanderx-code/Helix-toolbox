@@ -4,6 +4,17 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.5.6
+
+- **openSUSE bundles**: `bundle create` works with zypper, which downloads
+  the packages as you, without root, into a scratch root of its own that
+  shares the machine's repositories: with an empty package database for
+  `--complete`, with the machine's own for the dependencies it lacks. The
+  install checks each package's signature with `rpm -K`, then installs them
+  with zypper's remote repositories set aside. An openSUSE Tumbleweed
+  virtual machine makes both kinds of bundle as its user and installs one
+  with no network.
+
 ## v1.5.5
 
 - **Flatpaks in offline bundles**: an entry with no package for the

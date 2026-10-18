@@ -158,6 +158,7 @@ pub fn vm_label(name: &str) -> String {
         "arch" | "arch-themes" => "Arch VM".to_string(),
         "debian" => "Debian VM".to_string(),
         "fedora" => "Fedora VM".to_string(),
+        "opensuse" => "openSUSE VM".to_string(),
         "arch-uefi" => "Arch UEFI VM".to_string(),
         "arch-iso" => "Arch live ISO VM".to_string(),
         "steamdeck" => "Steam Deck stand-in VM".to_string(),

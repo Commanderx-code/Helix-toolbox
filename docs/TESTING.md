@@ -135,6 +135,7 @@ KVM, each image checked against its published checksum:
 | Machine | What it is |
 |---|---|
 | `arch`, `debian`, `fedora` | the distribution's cloud image on BIOS firmware, with a USB stick plugged into the Arch one |
+| `opensuse` | the openSUSE Tumbleweed cloud image on BIOS firmware, for offline bundles |
 | `arch-themes` | the Arch cloud image on BIOS firmware, for the GRUB themes, with Garuda's repository added for its theme |
 | `arch-uefi` | the Arch cloud image on UEFI firmware (OVMF) |
 | `arch-iso` | the Arch live ISO on UEFI firmware, as root, with an empty disk |
@@ -175,6 +176,9 @@ and the machine restarted with no way out to the network, `bundle install`
 gives the remote its collection ID and installs Flycast from the bundle,
 which then runs. With the remote removed too, the install is refused, and
 with `--trust-bundle` the remote is added with the bundle's copy of its key.
+The openSUSE machine has zypper download a bundle of htop as the user,
+without root, one with the dependencies the machine lacks and one with all
+of them; restarted with no network, it installs the complete one.
 
 The captured screens (the boot menus, the splash, the login screen, the
 preview) are kept as the job's artifact, for a person to look at. Entries

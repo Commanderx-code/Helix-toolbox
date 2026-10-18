@@ -51,7 +51,7 @@ The items:
       or the repository's checksums kept verifiable, a manifest and sums;
       verified before use and installed without downloading; what needs the
       network named
-- [ ] zypper bundles, which need a way to download without root
+- [x] zypper bundles, which need a way to download without root (v1.5.6)
 - [x] Flatpak bundles (`flatpak create-usb`), for installed applications
       (v1.5.5)
 

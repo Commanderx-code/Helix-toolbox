@@ -205,10 +205,13 @@ machine lacks, which suits a machine set up like it; `--complete` takes every
 dependency. pacman's packages come with their signatures, which `pacman -U`
 checks against its keyring when it installs them; apt's are checked against
 the checksums in the repository's signed index as they are downloaded; dnf's
-are signed, and `rpm -K` checks them before they install. Entries that need
-the network (AUR builds, scripts, Nix, Flatpaks not installed here) are
-listed as such and left out. zypper cannot download without root, so
-openSUSE is not supported yet.
+are signed, and `rpm -K` checks them before they install; so are zypper's,
+which zypper downloads as you, without root, into a scratch root that
+shares this machine's repositories (an empty package database for
+`--complete`, this machine's own otherwise), checking each against the
+repository's signed metadata. Entries that need the network (AUR builds,
+scripts, Nix, Flatpaks not installed here) are listed as such and left
+out.
 
 An entry with no package for this distribution whose Flatpak is installed
 here goes in as that Flatpak: `flatpak create-usb` copies it, with the
@@ -225,7 +228,8 @@ its checksum. `./helixforge bundle install .`, after confirmation, copies the
 packages into a new private folder, checks the copies against the checksums
 it verified (written into the plan, not read from the bundle again), checks
 each signature (`pacman-key --verify`, `rpm -K`), and installs them from the
-files (dnf without its repositories). Debian packages have no
+files (dnf and zypper without their repositories; zypper asks its own
+question only in a terminal, as it reads answers from nowhere else). Debian packages have no
 signature of their own: each must be in this machine's signed repository
 index with the same checksum, or the install is refused unless
 `--trust-bundle` takes the bundle's word, for a bundle you made yourself.

@@ -151,6 +151,68 @@ fn folder_bytes(path: &Path) -> u64 {
         .sum()
 }
 
+/// zypper downloads as you, not as root, into a scratch root of its own
+/// that shares this machine's repositories: with an empty package database
+/// it takes every dependency, with this machine's own only those it lacks.
+/// Each package is checked against the repository's signed metadata as it
+/// downloads.
+fn zypper_download(names: &[String], complete: bool, into: &Path) -> bool {
+    let Ok(scratch) = tempfile_dir() else {
+        return false;
+    };
+    let root = scratch.join("root");
+    let cache = scratch.join("packages");
+    let prepared = if complete {
+        std::fs::create_dir_all(&root).is_ok()
+    } else {
+        Command::new("rpm")
+            .args(["--eval", "%_dbpath"])
+            .output()
+            .ok()
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+            .filter(|database| database.starts_with('/') && Path::new(database).is_dir())
+            .is_some_and(|database| {
+                let link = root.join(database.trim_start_matches('/'));
+                link.parent()
+                    .is_some_and(|parent| std::fs::create_dir_all(parent).is_ok())
+                    && std::os::unix::fs::symlink(&database, &link).is_ok()
+            })
+    };
+    let downloaded = prepared
+        && Command::new("zypper")
+            .arg("--non-interactive")
+            .arg("--installroot")
+            .arg(&root)
+            .arg("--pkg-cache-dir")
+            .arg(&cache)
+            .args(["install", "--download-only"])
+            .args(names)
+            .status()
+            .is_ok_and(|status| status.success());
+    let moved = downloaded && move_rpms(&cache, into);
+    let _ = std::fs::remove_dir_all(&scratch);
+    moved
+}
+
+/// Move every package under a folder, which zypper sorts by repository and
+/// architecture, into one folder.
+fn move_rpms(from: &Path, into: &Path) -> bool {
+    let Ok(listing) = std::fs::read_dir(from) else {
+        return false;
+    };
+    listing.flatten().all(|item| {
+        let path = item.path();
+        if path.is_dir() {
+            move_rpms(&path, into)
+        } else if path.extension().is_some_and(|extension| extension == "rpm") {
+            std::fs::rename(&path, into.join(item.file_name())).is_ok()
+                || std::fs::copy(&path, into.join(item.file_name())).is_ok()
+        } else {
+            true
+        }
+    })
+}
+
 fn dnf_download(names: &[String], complete: bool, into: &Path) -> bool {
     let mut command = Command::new("dnf");
     command.args(["download", "--resolve"]);
@@ -195,6 +257,7 @@ pub fn run(
                             "checksum": download.checksum,
                         })).collect::<Vec<_>>(),
                         "dnf": found.dnf,
+                        "zypper": found.zypper,
                         "flatpaks": found.flatpaks,
                         "complete": complete,
                     }),
@@ -221,6 +284,16 @@ pub fn run(
                 println!(
                     "dnf downloads {} with their dependencies.",
                     found.dnf.join(", ")
+                );
+            } else if !found.zypper.is_empty() {
+                println!(
+                    "zypper downloads {} with {}, as you, without root.",
+                    found.zypper.join(", "),
+                    if complete {
+                        "every dependency"
+                    } else {
+                        "the dependencies this machine lacks"
+                    }
                 );
             } else if files > 0 || found.flatpaks.is_empty() {
                 println!(
@@ -257,6 +330,7 @@ pub fn run(
                 system: &doctor::Here,
                 download: &curl,
                 dnf_download: &dnf_download,
+                zypper_download: &zypper_download,
                 create_usb: &create_usb,
                 flatpak_key: &flatpak_key,
             };

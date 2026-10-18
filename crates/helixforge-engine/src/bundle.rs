@@ -39,7 +39,7 @@ pub struct Manifest {
     #[serde(default)]
     pub release: bool,
     pub distribution: String,
-    /// arch, debian or fedora.
+    /// arch, debian, fedora or opensuse.
     pub family: String,
     /// x86_64, aarch64.
     pub architecture: String,
@@ -122,6 +122,8 @@ pub struct Contents {
     pub downloads: Vec<Download>,
     /// Fedora's dnf downloads the packages itself: these names.
     pub dnf: Vec<String>,
+    /// So does openSUSE's zypper, into a scratch root of its own.
+    pub zypper: Vec<String>,
     /// Flatpak applications installed here, to copy.
     pub flatpaks: Vec<BundledFlatpak>,
 }
@@ -129,7 +131,7 @@ pub struct Contents {
 /// Why a bundle cannot be made, read or used.
 #[derive(Debug, thiserror::Error)]
 pub enum BundleError {
-    #[error("bundles are made with pacman, apt or dnf; {0} is not supported yet")]
+    #[error("bundles are made with pacman, apt, dnf or zypper; {0} is not supported yet")]
     Unsupported(String),
     #[error("{0} already exists and is not empty; choose a new folder")]
     NotEmpty(PathBuf),
@@ -165,6 +167,7 @@ fn family(manager: Option<PackageManager>) -> Result<(PackageManager, &'static s
         Some(PackageManager::Arch) => Ok((PackageManager::Arch, "arch")),
         Some(PackageManager::Debian) => Ok((PackageManager::Debian, "debian")),
         Some(PackageManager::Fedora) => Ok((PackageManager::Fedora, "fedora")),
+        Some(PackageManager::Suse) => Ok((PackageManager::Suse, "opensuse")),
         Some(other) => Err(BundleError::Unsupported(other.executable().to_string())),
         None => Err(BundleError::Unsupported("this system".to_string())),
     }
@@ -333,6 +336,7 @@ pub fn contents(
                 });
             }
         }
+        PackageManager::Suse => found.zypper = names,
         _ => found.dnf = names,
     }
     for download in &found.downloads {
@@ -565,6 +569,10 @@ fn matches(path: &Path, checksum: &str) -> Result<bool, BundleError> {
     Ok(have == want)
 }
 
+/// A package manager downloading packages, with their dependencies (all
+/// of them, when asked), into a folder.
+type Downloader<'a> = dyn Fn(&[String], bool, &Path) -> bool + 'a;
+
 /// What making a bundle asks the machine; tests answer instead.
 pub struct Tools<'a> {
     pub system: &'a dyn System,
@@ -572,6 +580,8 @@ pub struct Tools<'a> {
     pub download: &'a dyn Fn(&str, &Path) -> bool,
     /// Have dnf download packages with their dependencies into a folder.
     pub dnf_download: &'a dyn Fn(&[String], bool, &Path) -> bool,
+    /// The same with zypper, which needs no root for it.
+    pub zypper_download: &'a dyn Fn(&[String], bool, &Path) -> bool,
     /// Have `flatpak create-usb` copy refs, with the runtimes they need,
     /// from the system installation (or the user's) into the bundle's
     /// FLATPAKS folder.
@@ -637,11 +647,22 @@ pub fn create(
             assurance,
         });
     }
-    if !contents.dnf.is_empty() {
-        if !(tools.dnf_download)(&contents.dnf, complete, &packages) {
-            return Err(BundleError::Download(
-                "the packages, through dnf download".to_string(),
-            ));
+    let downloaders: [(&[String], &Downloader, &str); 2] = [
+        (&contents.dnf, tools.dnf_download, "dnf download"),
+        (
+            &contents.zypper,
+            tools.zypper_download,
+            "zypper install --download-only",
+        ),
+    ];
+    for (names, download, label) in downloaders {
+        if names.is_empty() {
+            continue;
+        }
+        if !download(names, complete, &packages) {
+            return Err(BundleError::Download(format!(
+                "the packages, through {label}"
+            )));
         }
         let mut names: Vec<String> = std::fs::read_dir(&packages)
             .map_err(|error| BundleError::Io(error.to_string()))?
@@ -656,7 +677,7 @@ pub fn create(
                 path: format!("packages/{name}"),
                 sha256,
                 bytes,
-                source: Some("dnf download".to_string()),
+                source: Some(label.to_string()),
                 assurance: Some("signed: rpm -K checks it before it installs".to_string()),
             });
         }
@@ -1168,7 +1189,7 @@ fn native_step(
             }
             requires.push("pacman-key".to_string());
         }
-        PackageManager::Fedora => {
+        PackageManager::Fedora | PackageManager::Suse => {
             let files: Vec<String> = installable.iter().map(|file| staged(file)).collect();
             lines.push(format!("rpm -K {} || exit 1", files.join(" ")));
             requires.push("rpm".to_string());
@@ -1181,9 +1202,23 @@ fn native_step(
         // apt's --no-download refuses the local files too; with everything
         // in the bundle, nothing is downloaded.
         PackageManager::Debian => ("sudo apt-get install", "apt-get"),
+        // The remote repositories set aside, as dnf's are.
+        PackageManager::Suse => ("sudo zypper --no-refresh --no-remote install", "zypper"),
         _ => ("sudo dnf install --disablerepo='*'", "dnf"),
     };
-    lines.push(format!("{install} {}", files.join(" ")));
+    if manager == PackageManager::Suse {
+        // zypper reads its answer only from a terminal; with none attached,
+        // the confirmation already given stands, and its defaults refuse
+        // anything unsigned.
+        lines
+            .push("if [ -t 0 ]; then hf_answer=; else hf_answer=--non-interactive; fi".to_string());
+        lines.push(format!(
+            "sudo zypper $hf_answer --no-refresh --no-remote install {}",
+            files.join(" ")
+        ));
+    } else {
+        lines.push(format!("{install} {}", files.join(" ")));
+    }
     requires.push(tool.to_string());
     let names: Vec<String> = offline
         .iter()
@@ -1200,7 +1235,9 @@ fn native_step(
             directory.display(),
             match manager {
                 PackageManager::Arch => " and their signatures (pacman-key --verify)",
-                PackageManager::Fedora => " and their signatures (rpm -K)",
+                PackageManager::Fedora | PackageManager::Suse => {
+                    " and their signatures (rpm -K)"
+                }
                 _ => "",
             },
             shown.join(" ")
@@ -1509,6 +1546,7 @@ mod tests {
             system: &fake,
             download: &download,
             dnf_download: &|_, _, _| false,
+            zypper_download: &|_, _, _| false,
             create_usb: &|_, _, _| false,
             flatpak_key: &|_, _| PathBuf::new(),
         };
@@ -1606,6 +1644,7 @@ mod tests {
             system: &fake,
             download: &download,
             dnf_download: &|_, _, _| false,
+            zypper_download: &|_, _, _| false,
             create_usb: &|_, _, _| false,
             flatpak_key: &|_, _| PathBuf::new(),
         };
@@ -1727,6 +1766,7 @@ mod tests {
             system: &fake,
             download: &honest,
             dnf_download: &|_, _, _| false,
+            zypper_download: &|_, _, _| false,
             create_usb: &|_, _, _| false,
             flatpak_key: &|_, _| PathBuf::new(),
         };
@@ -1762,6 +1802,7 @@ mod tests {
             system: &fake,
             download: &lying,
             dnf_download: &|_, _, _| false,
+            zypper_download: &|_, _, _| false,
             create_usb: &|_, _, _| false,
             flatpak_key: &|_, _| PathBuf::new(),
         };
@@ -1804,7 +1845,7 @@ mod tests {
             contents(
                 &[],
                 &Catalog::builtin(false).unwrap(),
-                &platform(PackageManager::Suse, "opensuse"),
+                &platform(PackageManager::Alpine, "alpine"),
                 false,
                 &Fake::default(),
                 directory.path()
@@ -1899,6 +1940,7 @@ mod tests {
             system: &fake,
             download: &|_, _| false,
             dnf_download: &|_, _, _| false,
+            zypper_download: &|_, _, _| false,
             create_usb: &copied,
             flatpak_key: &|remote, _| {
                 assert_eq!(remote, "flathub");
@@ -2030,5 +2072,64 @@ mod tests {
             manifest.flatpaks = vec![bad.clone()];
             assert!(!plain_manifest(&manifest), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn zypper_downloads_without_root_and_installs_from_the_files() {
+        let catalog = Catalog::builtin(false).unwrap();
+        let suse = platform(PackageManager::Suse, "opensuse-tumbleweed");
+        let scratch = tempfile::tempdir().unwrap();
+        let found = contents(
+            &["htop".to_string()],
+            &catalog,
+            &suse,
+            true,
+            &Fake::default(),
+            scratch.path(),
+        )
+        .unwrap();
+        assert_eq!(found.zypper, ["htop"]);
+        assert!(found.downloads.is_empty() && found.dnf.is_empty());
+        let downloaded = |names: &[String], complete: bool, into: &Path| {
+            assert_eq!(names, ["htop"]);
+            assert!(complete);
+            std::fs::write(into.join("htop-3.5.3-1.1.x86_64.rpm"), b"rpm").is_ok()
+                && std::fs::write(into.join("libhwloc15-2.13.0-1.3.x86_64.rpm"), b"rpm").is_ok()
+        };
+        let tools = Tools {
+            system: &Fake::default(),
+            download: &|_, _| false,
+            dnf_download: &|_, _, _| panic!("not dnf"),
+            zypper_download: &downloaded,
+            create_usb: &|_, _, _| false,
+            flatpak_key: &|_, _| PathBuf::new(),
+        };
+        let bundle = scratch.path().join("bundle");
+        let made = create(&bundle, &found, &suse, true, None, 1, &tools).unwrap();
+        assert_eq!(made.family, "opensuse");
+        assert_eq!(made.files.len(), 2);
+        assert_eq!(
+            made.files[0].source.as_deref(),
+            Some("zypper install --download-only")
+        );
+        let read = verify(&bundle, &suse).unwrap();
+        let planned = plan_install(&bundle, &read, &[], &suse, &Fake::default(), false).unwrap();
+        let Step::Shell { program, .. } = &planned.steps[0] else {
+            panic!("a shell step");
+        };
+        assert!(program.contains("rpm -K"), "{program}");
+        assert!(
+            program.contains("sudo zypper $hf_answer --no-refresh --no-remote install"),
+            "{program}"
+        );
+        assert!(
+            program.contains("if [ -t 0 ]; then hf_answer=; else hf_answer=--non-interactive; fi")
+        );
+        assert!(planned.requirements.contains(&"zypper".to_string()));
+        // A Fedora bundle is not an openSUSE one, though both are RPMs.
+        assert!(matches!(
+            verify(&bundle, &platform(PackageManager::Fedora, "fedora")),
+            Err(BundleError::Machine(..))
+        ));
     }
 }
