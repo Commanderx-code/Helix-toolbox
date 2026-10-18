@@ -76,6 +76,7 @@ impl Here {
         catalog: &'a Catalog,
         platform: &'a LinuxInfo,
         settings: &'a dyn Fn() -> std::collections::BTreeMap<String, String>,
+        render: &'a dyn Fn(&[String]) -> Result<String, String>,
     ) -> drift::Sources<'a> {
         drift::Sources {
             catalog,
@@ -86,6 +87,7 @@ impl Here {
             home: &self.home,
             history: &self.history,
             settings,
+            render,
         }
     }
 }
@@ -113,7 +115,10 @@ pub fn run(
             exit_code,
         } => {
             let here = Here::gather(platform);
-            let sources = here.sources(catalog, platform, &settings);
+            let scripts = catalog.root().join("scripts");
+            let render =
+                |arguments: &[String]| helixforge_engine::preview::render_with(&scripts, arguments);
+            let sources = here.sources(catalog, platform, &settings, &render);
             let (report, against) = match profile {
                 Some(name) => {
                     let (id, title, entries) = find_profile(catalog, &name)?;
@@ -180,7 +185,10 @@ pub fn run(
         }
         DriftCommand::Save { name, paths } => {
             let here = Here::gather(platform);
-            let sources = here.sources(catalog, platform, &settings);
+            let scripts = catalog.root().join("scripts");
+            let render =
+                |arguments: &[String]| helixforge_engine::preview::render_with(&scripts, arguments);
+            let sources = here.sources(catalog, platform, &settings, &render);
             let current = std::env::current_dir().unwrap_or_default();
             let extra: Vec<String> = paths
                 .iter()

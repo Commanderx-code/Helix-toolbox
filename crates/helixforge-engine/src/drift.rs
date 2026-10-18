@@ -157,7 +157,7 @@ impl Kind {
             }
             Kind::FileMissing => "The configuration file or folder was there, and is not here.",
             Kind::NotApplied => {
-                "HelixForge ran this entry successfully on the baseline machine, and its history here has no successful run. It leaves no package to look for, so it may still have been set up another way."
+                "HelixForge ran this entry successfully on the baseline machine (or the profile names it), and its history here has no successful run. It leaves no package to look for. Where the files it writes, or the settings its installer renders, show it in place, it counts as set up; otherwise it may still have been set up another way, or before HelixForge 1.1 recorded runs."
             }
             Kind::FileReplaced => {
                 "The path is another kind of thing now: a file became a link or a folder. A link into the Nix store means Home Manager manages it."
@@ -270,6 +270,9 @@ pub struct Sources<'a> {
     pub history: &'a [history::Record],
     /// The machine's settings, as a capture records them.
     pub settings: &'a dyn Fn() -> BTreeMap<String, String>,
+    /// The installers' renderers (`configure.py`), which only print: how an
+    /// entry that ran before its runs were recorded is seen to be in place.
+    pub render: &'a dyn Fn(&[String]) -> Result<String, String>,
 }
 
 /// `$XDG_CONFIG_HOME/helixforge/baselines`, or under `~/.config`.
@@ -379,6 +382,23 @@ fn applied_here(sources: &Sources) -> Vec<Applied> {
     applied
 }
 
+/// Whether what an entry sets up is here, though no run of it is recorded:
+/// it ran before HelixForge recorded runs (v1.1.0), or was set up by hand.
+/// The files it writes are all there, or the installer's own renderer finds
+/// its settings in place. `None` when nothing tells.
+fn set_up_here(entry: &Entry, sources: &Sources) -> Option<bool> {
+    if let Some(rendered) = crate::preview::rendered_in_place(entry, sources.system, sources.render)
+    {
+        return Some(rendered);
+    }
+    if entry.writes.is_empty() {
+        return None;
+    }
+    Some(entry.writes.iter().all(|path| {
+        expand(sources.home, path).is_some_and(|full| look(&full).0 != FileKind::Missing)
+    }))
+}
+
 /// Whether an entry changes the machine without a package to show for it.
 fn leaves_no_package(catalog: &Catalog, entry: &Entry) -> bool {
     let report = catalog
@@ -479,13 +499,21 @@ pub fn compare(baseline: &Baseline, sources: &Sources) -> Report {
             report.matched += 1;
             continue;
         }
+        let evidence = sources
+            .catalog
+            .find(&applied.id)
+            .and_then(|entry| set_up_here(entry, sources));
+        if evidence == Some(true) {
+            report.matched += 1;
+            continue;
+        }
         report.differences.push(Difference {
             kind: Kind::NotApplied,
             subject: name(&applied.id),
             was: Some("ran".to_string()),
             now: None,
             entry: Some(applied.id.clone()),
-            note: "ran on the baseline machine; no run of it here".to_string(),
+            note: not_run_note("ran on the baseline machine", evidence),
         });
     }
     // Configuration files.
@@ -656,7 +684,8 @@ pub fn compare_profile(name: &str, ids: &[String], sources: &Sources) -> Report 
             }
             continue;
         }
-        if here.iter().any(|known| known.id == entry.id) {
+        let evidence = set_up_here(entry, sources);
+        if here.iter().any(|known| known.id == entry.id) || evidence == Some(true) {
             report.matched += 1;
         } else {
             report.differences.push(Difference {
@@ -665,7 +694,7 @@ pub fn compare_profile(name: &str, ids: &[String], sources: &Sources) -> Report 
                 was: None,
                 now: None,
                 entry: Some(entry.id.clone()),
-                note: "no run of it here, and nothing to check it by".to_string(),
+                note: not_run_note("the profile names it", evidence),
             });
         }
     }
@@ -673,6 +702,16 @@ pub fn compare_profile(name: &str, ids: &[String], sources: &Sources) -> Report 
     report.unknown.sort();
     report.unknown.dedup();
     report
+}
+
+/// Why an entry counts as not run here.
+fn not_run_note(there: &str, evidence: Option<bool>) -> String {
+    match evidence {
+        Some(_) => format!("{there}; no run of it here, and what it sets is not in place"),
+        None => format!(
+            "{there}; no run of it recorded here, and nothing to check it by (runs before HelixForge 1.1 were not recorded)"
+        ),
+    }
 }
 
 /// The settings a baseline records, read from this machine.
@@ -1054,14 +1093,18 @@ mod tests {
     struct Fake {
         home: PathBuf,
         passwd: String,
+        files: HashMap<PathBuf, String>,
     }
 
     impl System for Fake {
         fn read(&self, path: &Path) -> Option<String> {
-            (path == Path::new("/etc/passwd")).then(|| self.passwd.clone())
+            if path == Path::new("/etc/passwd") {
+                return Some(self.passwd.clone());
+            }
+            self.files.get(path).cloned()
         }
-        fn exists(&self, _: &Path) -> bool {
-            false
+        fn exists(&self, path: &Path) -> bool {
+            self.files.contains_key(path)
         }
         fn list(&self, _: &Path) -> Vec<String> {
             Vec::new()
@@ -1151,6 +1194,7 @@ mod tests {
             home: &fake.home,
             history,
             settings,
+            render: &|_| Err("no renderer in these tests".to_string()),
         }
     }
 
@@ -1166,6 +1210,7 @@ mod tests {
         let old = Fake {
             home: old_home.path().to_path_buf(),
             passwd: "me:x:1000:1000::/home/me:/usr/bin/fish\n".into(),
+            files: HashMap::new(),
         };
         let had = inventory(&[("git", "2.47.0-1"), ("ripgrep", "14.1.1-1")]);
         let ran = [
@@ -1216,6 +1261,7 @@ mod tests {
         let new = Fake {
             home: new_home.path().to_path_buf(),
             passwd: "me:x:1000:1000::/home/me:/bin/bash\n".into(),
+            files: HashMap::new(),
         };
         let has = inventory(&[("git", "2.48.0-1"), ("neovim", "0.11.0-1")]);
         let new_settings = || settings_here(&new);
@@ -1261,6 +1307,7 @@ mod tests {
         let fake = Fake {
             home: home.path().to_path_buf(),
             passwd: String::new(),
+            files: HashMap::new(),
         };
         let empty = inventory(&[]);
         let none = BTreeMap::new;
@@ -1317,6 +1364,7 @@ mod tests {
         let fake = Fake {
             home: home.path().to_path_buf(),
             passwd: String::new(),
+            files: HashMap::new(),
         };
         let has = inventory(&[("git", "1")]);
         let none = BTreeMap::new;
@@ -1432,5 +1480,72 @@ mod tests {
         // Fields a later version adds are ignored.
         std::fs::write(&fine, "name = \"x\"\nunknown = 1\n").unwrap();
         assert_eq!(read(&fine).unwrap().name, "x");
+    }
+
+    #[test]
+    fn an_entry_whose_settings_are_in_place_counts_without_a_recorded_run() {
+        let catalog = Catalog::builtin(false).unwrap();
+        let platform = arch();
+        let home = tempfile::tempdir().unwrap();
+        let grub =
+            "GRUB_TIMEOUT=5\nGRUB_THEME=\"/boot/grub/themes/commander-dracula-1080p/theme.txt\"\n";
+        let fake = Fake {
+            home: home.path().to_path_buf(),
+            passwd: String::new(),
+            files: HashMap::from([(PathBuf::from("/etc/default/grub"), grub.to_string())]),
+        };
+        let empty = inventory(&[]);
+        let none = BTreeMap::new;
+        let ids = ["grub-dracula".to_string(), "printer-driverless".to_string()];
+        let report_with = |render: &dyn Fn(&[String]) -> Result<String, String>| {
+            let sources = Sources {
+                render,
+                ..sources(&catalog, &platform, &empty, &fake, &[], &none)
+            };
+            compare_profile("Mine", &ids, &sources)
+        };
+        // The installer's renderer leaves the file as it is: the theme is in
+        // place, run from an older HelixForge or by hand.
+        let rendered_as_is = |arguments: &[String]| {
+            assert_eq!(arguments[0], "grub");
+            Ok(grub.to_string())
+        };
+        let report = report_with(&rendered_as_is);
+        assert!(
+            !report
+                .differences
+                .iter()
+                .any(|difference| difference.entry.as_deref() == Some("grub-dracula")),
+            "{report:?}"
+        );
+        assert_eq!(report.matched, 1);
+        // Nothing tells for an entry with nothing to render or write.
+        let other = report
+            .differences
+            .iter()
+            .find(|difference| difference.entry.as_deref() == Some("printer-driverless"))
+            .unwrap();
+        assert_eq!(other.kind, Kind::NotApplied);
+        assert!(
+            other
+                .note
+                .contains("runs before HelixForge 1.1 were not recorded"),
+            "{}",
+            other.note
+        );
+        // A renderer that would change the file: not in place.
+        let rendered_otherwise =
+            |_: &[String]| Ok("GRUB_TIMEOUT=5\nGRUB_THEME=\"elsewhere\"\n".to_string());
+        let report = report_with(&rendered_otherwise);
+        let dracula = report
+            .differences
+            .iter()
+            .find(|difference| difference.entry.as_deref() == Some("grub-dracula"))
+            .unwrap();
+        assert!(
+            dracula.note.contains("what it sets is not in place"),
+            "{}",
+            dracula.note
+        );
     }
 }

@@ -529,15 +529,7 @@ fn declared(entry: &Entry, look: &Look) -> Vec<Change> {
     for service in &effects.services {
         changes.push(change(Certainty::Expected, Area::Service, service.clone()));
     }
-    let grub = if look.system.exists(Path::new("/boot/grub2")) {
-        "/boot/grub2"
-    } else {
-        "/boot/grub"
-    };
-    let expand = |text: &str| {
-        text.replace("{grub}", grub)
-            .replace("{time}", "<date and time of the run>")
-    };
+    let expand = expander(look.system);
     for file in &effects.files {
         let path = expand(&file.path);
         let when = file
@@ -591,6 +583,52 @@ fn declared(entry: &Entry, look: &Look) -> Vec<Change> {
         changes.push(change(Certainty::Unknown, Area::Other, unknown.clone()));
     }
     changes
+}
+
+/// Fill in a declared path's placeholders for this machine.
+fn expander(system: &dyn System) -> impl Fn(&str) -> String {
+    let grub = if system.exists(Path::new("/boot/grub2")) {
+        "/boot/grub2"
+    } else {
+        "/boot/grub"
+    };
+    move |text: &str| {
+        text.replace("{grub}", grub)
+            .replace("{time}", "<date and time of the run>")
+    }
+}
+
+/// Whether the files an entry's installer can render already say what it
+/// would write, however they came to: `Some(true)` when every one here
+/// does, `Some(false)` when one does not, `None` when there is none to
+/// render on this machine.
+pub(crate) fn rendered_in_place(
+    entry: &Entry,
+    system: &dyn System,
+    render: &dyn Fn(&[String]) -> Result<String, String>,
+) -> Option<bool> {
+    let expand = expander(system);
+    let mut found = None;
+    for file in entry
+        .effects
+        .files
+        .iter()
+        .filter(|file| !file.render.is_empty())
+    {
+        let path = PathBuf::from(expand(&file.path));
+        if !system.exists(&path) {
+            continue;
+        }
+        let arguments: Vec<String> = file.render.iter().map(|word| expand(word)).collect();
+        let (Some(now), Ok(after)) = (read_text(system, &path), render(&arguments)) else {
+            return None;
+        };
+        if now != after {
+            return Some(false);
+        }
+        found = Some(true);
+    }
+    found
 }
 
 /// The user paths an entry says it writes: file by file from its pinned

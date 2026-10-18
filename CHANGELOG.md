@@ -4,6 +4,16 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.5.7
+
+- **Drift counts what is in place**: an entry with no recorded run on this
+  machine is no longer reported **Not run** when what it sets is there: the
+  files it writes, or the GRUB, kernel command line, login screen or
+  mkinitcpio settings its installer's own renderer would write, already in
+  the file. Runs before HelixForge 1.1 were not recorded, so such entries
+  showed as not run though they had been. Where nothing tells, the note
+  says so.
+
 ## v1.5.6
 
 - **openSUSE bundles**: `bundle create` works with zypper, which downloads

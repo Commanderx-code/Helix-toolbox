@@ -148,7 +148,12 @@ configuration files, entries that ran there and are **Not run** here,
 **Replaced** paths (a file that became a Home Manager link), **Changed**
 files and settings, then what was **Added** since and other **Versions**.
 `b` compares with another baseline or with a profile instead, which checks
-each of its entries: installed, its files present, or run here. `Enter`
+each of its entries: installed, its files present, or run here. An entry
+with no recorded run here still counts as set up when what it sets is in
+place: the files it writes are all there, or its installer's own renderer
+(`configure.py`, which only prints) finds the boot or login-screen settings
+it would write already in the file, as after a run from before HelixForge
+1.1 recorded runs, or a change made by hand. `Enter`
 explains a difference; `Space` adds the entry that puts it back to the
 Install Plan and `a` adds all of them, to be reviewed and confirmed there.
 

@@ -3811,6 +3811,15 @@ impl App {
             (Vec::new(), Default::default())
         };
         let settings = move || settings.clone();
+        let scripts = self.catalog.root().join("scripts");
+        let examine_here = self.examine_here;
+        let render = move |arguments: &[String]| {
+            if examine_here {
+                helixforge_engine::preview::render_with(&scripts, arguments)
+            } else {
+                Err("not this machine".to_string())
+            }
+        };
         let sources = drift::Sources {
             catalog: &self.catalog,
             platform: &self.platform,
@@ -3820,6 +3829,7 @@ impl App {
             home: &home,
             history: &records,
             settings: &settings,
+            render: &render,
         };
         let report = match &target {
             DriftTarget::Baseline { baseline, .. } => drift::compare(baseline, &sources),
@@ -3959,6 +3969,15 @@ impl App {
             (Vec::new(), Default::default())
         };
         let settings = move || settings.clone();
+        let scripts = self.catalog.root().join("scripts");
+        let examine_here = self.examine_here;
+        let render = move |arguments: &[String]| {
+            if examine_here {
+                helixforge_engine::preview::render_with(&scripts, arguments)
+            } else {
+                Err("not this machine".to_string())
+            }
+        };
         let sources = drift::Sources {
             catalog: &self.catalog,
             platform: &self.platform,
@@ -3968,6 +3987,7 @@ impl App {
             home: &home,
             history: &records,
             settings: &settings,
+            render: &render,
         };
         let baseline = drift::capture(name, history::now(), &sources, &[]);
         let saved = self
