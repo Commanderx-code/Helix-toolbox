@@ -164,7 +164,7 @@ impl RunningView {
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, theme: Theme) {
         let finished = self.finished().cloned();
-        let (title, colour) = match &finished {
+        let (title, color) = match &finished {
             Some(finished) if finished.verified() => {
                 (" FINISHED · VERIFIED ".to_string(), theme.success())
             }
@@ -228,7 +228,7 @@ impl RunningView {
         };
         let block = Block::bordered()
             .border_set(border::ROUNDED)
-            .border_style(Style::default().fg(colour))
+            .border_style(Style::default().fg(color))
             .title(title)
             .title_alignment(Alignment::Center)
             .title_style(Style::default().fg(theme.title()).bold())

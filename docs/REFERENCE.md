@@ -42,8 +42,8 @@ and quick actions, with Nerd Font icons. `t` or Settings switches between
 four themes: **solid**, the default, paints the design's dark panels;
 **transparent** draws over your terminal's own background, so a wallpaper or
 transparency shows through (it was called **default** before, and that name
-still works); **compatible** keeps to sixteen colours; **monochrome** uses no
-colour at all, only bold and reverse video. With `NO_COLOR` set, HelixForge
+still works); **compatible** keeps to sixteen colors; **monochrome** uses no
+color at all, only bold and reverse video. With `NO_COLOR` set, HelixForge
 starts in monochrome without changing the theme it remembers. Settings also turns the icons
 off for terminals without a Nerd Font. Both choices are remembered in
 `~/.config/helixforge/settings.toml`; `--theme` and `--plain` override them
@@ -188,7 +188,7 @@ what it would add and its plan, and the `helixforge run` that would run it.
 GNOME, Xfce, Cinnamon, MATE, Hyprland, Sway), the session, the login screen
 with its configuration files and SDDM theme, and the appearance settings
 read with the desktop's own tools (`kreadconfig6`, `gsettings`,
-`xfconf-query`): colour scheme, style, icons, cursor, global theme, font.
+`xfconf-query`): color scheme, style, icons, cursor, global theme, font.
 It warns when something else sets them: Home Manager's Plasma or dconf
 steps, or Stylix, which may set them again at the next switch, and refuses
 to change them where Home Manager links the settings file itself. `s`
@@ -324,7 +324,7 @@ stand-in tests runs, its confirmation says so. `helixforge reliability
 
 `v` on any entry (or `helixforge trust <id>`) opens the **trust inspector**:
 the installer's origin (HelixForge's own installers, Linutil's, or commands
-built from package names), its file and SHA-256 checksum, its licence and
+built from package names), its file and SHA-256 checksum, its license and
 the software's (as the package manager reports it), and three kinds of
 assurance kept apart:
 

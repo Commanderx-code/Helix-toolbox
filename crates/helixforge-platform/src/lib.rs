@@ -140,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    fn the_other_families_are_recognised() {
+    fn the_other_families_are_recognized() {
         for (text, manager) in [
             (
                 "ID=opensuse-tumbleweed\nID_LIKE=\"opensuse suse\"\n",

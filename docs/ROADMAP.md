@@ -25,7 +25,7 @@ The items:
    Minimal and Custom workstations, and makes a normal Install Plan to
    review; nothing is applied by itself.
 4. Installer reliability: which installers passed automated tests, on
-   which distributions and when, labelled Container Tested, VM Tested,
+   which distributions and when, labeled Container Tested, VM Tested,
    Hardware Tested or Not Yet Validated; above all for bootloader and
    graphics-driver entries.
 5. Hardware and firmware center: read-only fwupd, SMART and NVMe health,
@@ -33,7 +33,7 @@ The items:
    listed apart, each with its own explicit confirmation.
 6. Command palette: `Ctrl-K` searches every screen, action and entry.
 7. Trust inspector: an installer's source repository, pinned revision,
-   checksums and signatures, licence, last validation and privileges,
+   checksums and signatures, license, last validation and privileges,
    telling verified release provenance from package integrity checks and
    from unverified third-party scripts.
 8. Offline bundles: HelixForge, its catalog and predownloaded packages for
@@ -41,7 +41,7 @@ The items:
    verifiable, and the actions that need the network named.
 9. Desktop environment manager: detect KDE Plasma, GNOME, XFCE and others,
    and offer the settings, themes, display-manager configuration and
-   customisation profiles that fit, warning where Home Manager or a
+   customization profiles that fit, warning where Home Manager or a
    desktop's own tools own a setting.
 
 ## v1.5.0: machines without reliable internet (done)
@@ -86,7 +86,7 @@ The items:
       tests listed in `catalog/validation.toml` and tester reports; the
       systems and date; this machine's runs; critical entries first and
       named in their confirmation
-- [x] Trust inspector (item 7): origin, checksum and licences; release
+- [x] Trust inspector (item 7): origin, checksum and licenses; release
       provenance, package integrity and unchecked downloads kept apart;
       privileges and validation
 - [x] Releases wait for Distributions on their commit
@@ -117,7 +117,7 @@ The items:
 | v0.2.0 | Smart application detection, ownership and installed-state accuracy | status, updates, package identity (done) |
 | v0.3.0 | Dependency and conflict handling, more robust installation planning | 2 (dependencies and conflicts), 8 (installation queue) (done) |
 | v0.4.0 | Unified backup and recovery, enhanced HELIX Doctor | 3 (backup and recovery center), 5 (HELIX Doctor 2.0) (done) |
-| v0.5.0 | Workstation profiles, favourites and search | 4 (profiles 2.0), 7 (search and favourites) (done) |
+| v0.5.0 | Workstation profiles, favorites and search | 4 (profiles 2.0), 7 (search and favorites) (done) |
 | v0.6.0 | Unified update overview and JSON command line | 6 (update manager), 9 (JSON output) (done) |
 | v0.7.0 | Packaging, usability, documentation and beta testing | 10 (native packaging) (done) |
 | v1.0.0 | Stable, validated public TUI release | (done) |
@@ -139,8 +139,8 @@ The items:
 6. Unified update manager: updates across the native package manager,
    Flatpak, AUR helpers and supported Nix workflows, delegated to those
    tools.
-7. Search and favourites: fuzzy search, an installed-only filter, recently
-   used entries, pinned favourites, quick actions, and selections kept when
+7. Search and favorites: fuzzy search, an installed-only filter, recently
+   used entries, pinned favorites, quick actions, and selections kept when
    moving between categories.
 8. Installation queue: dependency ordering, skip or continue policies,
    per-operation status and recovery instructions after a partial failure,
@@ -185,7 +185,7 @@ The items:
 - [x] Home Manager ownership protection as an engine check: entries declare
       what they write, and a Home Manager symlink there blocks the entry in
       the plan (the installers keep their own refusal as a second line)
-- [x] Port the dotfiles and Myfish source synchronisation to catalog files
+- [x] Port the dotfiles and Myfish source synchronization to catalog files
 - [x] Release workflow (Linux x86_64 build with a checksum) and `start.sh`
 - [x] First release published from the workflow
 
@@ -285,7 +285,7 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] `conflicts` names the packages an entry replaces: WINE Staging is no
       longer taken as installed because WINE's `wine` command is on the
       PATH, and the plan says WINE will be replaced
-- [x] `binary` is optional and only recognises installs made another way
+- [x] `binary` is optional and only recognizes installs made another way
       (Nix, Home Manager, a download); the seven Flatpak IDs became the real
       commands, and the compatibility tools and WINE Meta, which add none,
       have none
@@ -304,7 +304,7 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       oldest glibc the packages support) join the Distributions containers;
       37 more entries name their openSUSE package, each checked against the
       repositories there, which every openSUSE name in the catalog now is
-- [x] Damaged settings, favourites, profiles and history never stop the
+- [x] Damaged settings, favorites, profiles and history never stop the
       menu or the commands
 - [x] A written compatibility promise for 1.x (docs/STABILITY.md):
       commands, exit status, JSON schema 1, your files, entry ids; settings
@@ -346,16 +346,16 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] Command-line output piped into `head` ends quietly instead of with a
       broken pipe error
 
-## v0.5.0: workstation profiles, favourites and search (done)
+## v0.5.0: workstation profiles, favorites and search (done)
 
 - [x] Workstation profiles 2.0 (item 4): save the Install Plan as a named
       profile of applications, shell settings, dotfiles and tweaks; profiles
       as TOML in the user's configuration, shown under Profiles beside the
       built-in ones; export, import (checked against the catalog), list and
       delete from the command line
-- [x] Search and favourites (item 7): ranked search with loose spellings
+- [x] Search and favorites (item 7): ranked search with loose spellings
       (`helixforge search` too), an installed and an updates filter, pinned
-      favourites and recently run entries on a Favourites screen and
+      favorites and recently run entries on a Favorites screen and
       Dashboard quick action, and the row kept when a search is cleared
 
 ## v0.4.0: backup and recovery, HELIX Doctor 2.0 (done)

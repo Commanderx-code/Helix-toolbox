@@ -27,7 +27,7 @@ if [ -z "$conf" ]; then
     exit 1
 fi
 wallpaper=dotfiles-splash.png
-confirm "Install the $look_name boot menu look from dotfiles into $conf: its wallpaper, copied beside it as $wallpaper, with its colours and a two-second timeout merged into the global settings. Boot entries and kernel arguments are not changed; the previous file is backed up."
+confirm "Install the $look_name boot menu look from dotfiles into $conf: its wallpaper, copied beside it as $wallpaper, with its colors and a two-second timeout merged into the global settings. Boot entries and kernel arguments are not changed; the previous file is backed up."
 command_exists git || install_packages git
 fetch_source dotfiles
 look_dir="$source_dir/limine/themes/$look"

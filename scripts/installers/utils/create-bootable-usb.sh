@@ -238,7 +238,7 @@ write_iso(){
 
     CONFIRMATION="$(echo "$CONFIRMATION" | tr '[:upper:]' '[:lower:]')"
     if [ "${CONFIRMATION}" != "yes" ] && [ "${CONFIRMATION}" != "y" ]; then
-        printf "%b\n" "${YELLOW}Operation cancelled.${RC}"
+        printf "%b\n" "${YELLOW}Operation canceled.${RC}"
         exit 1
     fi
 

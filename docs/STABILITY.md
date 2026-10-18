@@ -44,7 +44,7 @@ confirmation setting). Package-manager steps run one at a time.
 
 ## Not part of the promise
 
-- **Text written for people**: the menu's layout, wording, colours and
+- **Text written for people**: the menu's layout, wording, colors and
   keys may improve, and so may the command line's text output and
   `helixforge report`. Scripts should use `--json`.
 - **The catalog's arrangement**: groups, order, descriptions and which

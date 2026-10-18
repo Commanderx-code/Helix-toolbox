@@ -240,7 +240,7 @@ class Machine:
     def relaunch(self, network=True):
         """Power off and start again, with the network or without."""
         # Arch starts SSH only after cloud-init's network stage and a clock
-        # synchronised over the network, neither of which comes without a
+        # synchronized over the network, neither of which comes without a
         # way out: neither while there is none.
         if network == 'restricted':
             self.ssh('sudo touch /etc/cloud/cloud-init.disabled && '
@@ -334,7 +334,7 @@ class Machine:
 
     def reboot(self, shots, name):
         """Reboot, capturing the screen every half second until it is back;
-        returns how many colours the most colourful early frame had."""
+        returns how many colors the most colorful early frame had."""
         before = self.boot_id()
         self.ssh('sudo systemctl reboot', check=False)
         frames = self.watch(lambda: self.ok('true'))
@@ -434,7 +434,7 @@ def pixels(image):
     return list(getattr(image, 'get_flattened_data', image.getdata)())
 
 
-def colours(path):
+def colors(path):
     from PIL import Image
     image = Image.open(path).convert('RGB')
     return image.size, len(set(pixels(image.resize((64, 48)))))
@@ -449,17 +449,17 @@ def covered(path):
 
 
 def keep_frames(frames, shots, name, firmware='bios'):
-    """Keep the most colourful graphical frame and the last one as PNGs;
-    return that frame's colour count. Graphical, on BIOS: neither VGA text
+    """Keep the most colorful graphical frame and the last one as PNGs;
+    return that frame's color count. Graphical, on BIOS: neither VGA text
     mode (720x400) nor the kernel's own console, which the last frame shows,
-    so coloured boot messages never count as a boot menu. UEFI shows the menu
+    so colored boot messages never count as a boot menu. UEFI shows the menu
     and the console at one size: there, mostly covered by a picture, which
     dark themes are not."""
     from PIL import Image
     measured = []
     for frame in frames:
         try:
-            size, count = colours(frame)
+            size, count = colors(frame)
             measured.append((size, count, covered(frame), frame))
         except Exception:
             continue
@@ -511,7 +511,7 @@ def grub_theme(machine, shots, entry='grub-dracula'):
         raise RuntimeError('graphical output was not selected')
     shown = machine.reboot(shots, entry)
     if shown < 60:
-        raise RuntimeError(f'no graphical boot menu was seen ({shown} colours at most)')
+        raise RuntimeError(f'no graphical boot menu was seen ({shown} colors at most)')
 
 
 def grub_theme_case(entry):
@@ -653,11 +653,11 @@ def sddm(machine, shots):
     time.sleep(10)
     if shots:
         machine.screen(machine.work / 'greeter.ppm')
-        size, count = colours(machine.work / 'greeter.ppm')
+        size, count = colors(machine.work / 'greeter.ppm')
         from PIL import Image
         Image.open(machine.work / 'greeter.ppm').save(shots / 'sddm-greeter.png')
         if count < 60:
-            raise RuntimeError(f'no graphical login screen was seen ({count} colours)')
+            raise RuntimeError(f'no graphical login screen was seen ({count} colors)')
 
 
 def ssd_trim(machine, shots):
@@ -949,7 +949,7 @@ def limine_look(machine, shots, entry):
     if not machine.ok('grep -qw hf_limine /proc/cmdline'):
         raise RuntimeError('the machine did not boot through Limine after the change')
     if shown < 60:
-        raise RuntimeError(f'no wallpaper was seen on the boot menu ({shown} colours at most)')
+        raise RuntimeError(f'no wallpaper was seen on the boot menu ({shown} colors at most)')
 
 
 def limine_cachyos(machine, shots):

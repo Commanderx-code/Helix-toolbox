@@ -259,7 +259,7 @@ def render_sddm(text):
 
 
 def load_palette(repo):
-    # rice.json names the palette in use; its JSON file holds every colour.
+    # rice.json names the palette in use; its JSON file holds every color.
     name = 'eldritch'
     selection = repo / 'home-manager/rice.json'
     if selection.is_file():

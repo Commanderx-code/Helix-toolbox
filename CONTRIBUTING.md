@@ -24,7 +24,7 @@ Running entries changes the machine you run them on. While developing, use
 `--dry-run`, `plan`, a virtual machine, or the fixture catalog the tests use
 (`--catalog-dir tests/fixtures/catalog`).
 
-## How the code is organised
+## How the code is organized
 
 ```text
 apps/helixforge/            the command line and the terminal interface
@@ -46,7 +46,7 @@ together, and [docs/CATALOG.md](docs/CATALOG.md) how an entry is written and
 how a run is planned.
 
 History lives in `~/.local/state/helixforge/history.jsonl` with saved output
-and the tracing log under `logs/` beside it; `XDG_STATE_HOME` is honoured and
+and the tracing log under `logs/` beside it; `XDG_STATE_HOME` is honored and
 `HELIXFORGE_LOG` sets the log level. A run in progress keeps a marker under
 `running/`; if HelixForge is closed or killed before the run is recorded, the
 next start lists it as not finished, or with its real result if it had ended.
@@ -113,7 +113,7 @@ a new series, set the version in `Cargo.toml` (`[workspace.package]`) to, say,
 [docs/RELEASING.md](docs/RELEASING.md) walks through a release, including
 publishing the crates to crates.io.
 
-## Licence
+## License
 
-Contributions are accepted under the MIT licence of the project
+Contributions are accepted under the MIT license of the project
 ([LICENSE](LICENSE)).

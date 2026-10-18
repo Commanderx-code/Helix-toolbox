@@ -4,6 +4,15 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.5.8
+
+- **US English**: the interface, messages, catalog, installers' messages and
+  documentation are spelled in US English (color, license, optimize,
+  canceled, favorites). `trust --json` gains `license` and
+  `software_license`, and keeps `licence` and `software_licence` with the
+  same values for programs that read them. Pinned entries stay in
+  `favourites.toml`, so an earlier 1.x still finds them.
+
 ## v1.5.7
 
 - **Drift counts what is in place**: an entry with no recorded run on this
@@ -164,8 +173,8 @@ dotfiles or Myfish sources raises the patch number and is not listed here.
   entries come first, and running one that has no more than stand-in tests
   says so in its confirmation.
 - **Trust inspector**: `v` on any entry, or `helixforge trust <id>`, shows
-  the installer's origin, file, checksum and licence, the software's
-  licence, and keeps release provenance, package integrity checks (pacman's
+  the installer's origin, file, checksum and license, the software's
+  license, and keeps release provenance, package integrity checks (pacman's
   SigLevel, apt, dnf's gpgcheck, Flathub, the unreviewed AUR) and the
   installer's own downloads (pinned, checked, or unverified) apart, with the
   privileges it uses.
@@ -192,7 +201,7 @@ dotfiles or Myfish sources raises the patch number and is not listed here.
 
 ## v1.0.4 to v1.0.6
 
-- The Favourites screen is now spelled **Favorites**; pins stay in
+- The Favorites screen is now spelled **Favorites**; pins stay in
   `favourites.toml`, so nothing needs moving.
 - The Updates screen has a **HelixForge** row that updates HelixForge
   itself, the way it was installed: a package is downloaded, checked against
@@ -227,11 +236,11 @@ The first stable release. What stays the same across 1.x is written down in
   installed, used and removed on each.
 - 37 more entries know their openSUSE package (first in v0.7.1), each checked
   against the openSUSE repositories.
-- A **monochrome** theme, with no colour, used for the run when `NO_COLOR`
+- A **monochrome** theme, with no color, used for the run when `NO_COLOR`
   is set.
 - Settings are read one by one: a setting or value from a later version is
   ignored instead of resetting the others.
-- Damaged settings, favourites, profiles and history are skipped or replaced
+- Damaged settings, favorites, profiles and history are skipped or replaced
   by defaults, and never stop the menu or the commands.
 - The release workflows pin every action to a commit.
 - docs/BETA.md became docs/REPORTING.md.
@@ -267,7 +276,7 @@ Beta release: packaging, documentation and testing.
 
 - Ranked search with loose spellings, and `helixforge search`.
 - `i` filters a list to installed entries or ones with an update.
-- `*` pins favourites; the **Favourites** screen lists them and recently run
+- `*` pins favorites; the **Favorites** screen lists them and recently run
   entries.
 - Clearing a search returns to the row you were on.
 - v0.4.1: your own profiles: `s` saves the Install Plan as a named profile;

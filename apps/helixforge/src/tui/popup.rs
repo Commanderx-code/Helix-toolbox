@@ -12,7 +12,7 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph, Wrap},
 };
 
-/// A centred rectangle covering the given percentages of `area`.
+/// A centered rectangle covering the given percentages of `area`.
 pub fn centered(area: Rect, width_percent: u16, height_percent: u16) -> Rect {
     let horizontal = Layout::horizontal([
         Constraint::Percentage((100 - width_percent) / 2),
@@ -146,7 +146,7 @@ impl ConfirmPopup {
         }
     }
 
-    /// `area` shrunk to the confirmation's height, centred in it.
+    /// `area` shrunk to the confirmation's height, centered in it.
     pub fn fitted(&self, area: Rect) -> Rect {
         // Borders, the lines, a blank line and the buttons with space around.
         let height = (self.lines.len() as u16 + 6).clamp(9, area.height.max(1));
@@ -202,7 +202,7 @@ impl ConfirmPopup {
             Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }),
             sections[0],
         );
-        let button = |label: &'static str, colour| Span::styled(label, theme.button(colour));
+        let button = |label: &'static str, color| Span::styled(label, theme.button(color));
         let actions = Text::from(Line::from(vec![
             button(" [Y] Run ", theme.success()),
             Span::raw("    "),
@@ -304,7 +304,7 @@ mod tests {
 pub enum Answer {
     Typing,
     Given(String),
-    Cancelled,
+    Canceled,
 }
 
 /// A one-line question, such as the name to save a profile under.
@@ -327,7 +327,7 @@ impl InputPopup {
     pub fn handle_key(&mut self, key: &KeyEvent) -> Answer {
         match key.code {
             KeyCode::Enter if !self.value.trim().is_empty() => Answer::Given(self.value.clone()),
-            KeyCode::Esc => Answer::Cancelled,
+            KeyCode::Esc => Answer::Canceled,
             KeyCode::Backspace => {
                 self.value.pop();
                 Answer::Typing
@@ -342,7 +342,7 @@ impl InputPopup {
         }
     }
 
-    /// `area` shrunk to the question's height, centred in it.
+    /// `area` shrunk to the question's height, centered in it.
     pub fn fitted(&self, area: Rect) -> Rect {
         let height = 7.min(area.height);
         Rect::new(

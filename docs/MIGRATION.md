@@ -4,7 +4,7 @@ HelixForge replaces Commander Toolbox, a Linutil fork, which is now archived;
 the dotfiles `toolbox` command opens HelixForge. This matrix records every
 entry of the old catalog and where it went. Status values:
 
-- **done**: available in HelixForge with the same behaviour
+- **done**: available in HelixForge with the same behavior
 - **partial**: available with a difference noted
 - **planned**: not yet available; the old toolbox remains the stable way to run it
 

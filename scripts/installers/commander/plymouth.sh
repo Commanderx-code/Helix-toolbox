@@ -52,10 +52,10 @@ if [ "$action" = theme ]; then
     printf 'Theme number: '
     read -r answer
     case "$answer" in
-        '' | *[!0-9]*) printf '%s\n' 'Cancelled.'; exit 1 ;;
+        '' | *[!0-9]*) printf '%s\n' 'Canceled.'; exit 1 ;;
     esac
     chosen=$(printf '%s\n' "$themes" | sed -n "${answer}p")
-    [ -n "$chosen" ] || { printf '%s\n' 'Cancelled.'; exit 1; }
+    [ -n "$chosen" ] || { printf '%s\n' 'Canceled.'; exit 1; }
     confirm "Select the '$chosen' boot splash and rebuild the boot images with '$tool'. Kernel arguments and packages are not changed."
     select_theme "$chosen"
     exit 0

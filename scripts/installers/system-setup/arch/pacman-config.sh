@@ -2,7 +2,7 @@
 
 . ../../common-script.sh
 
-# Turn on pacman's colour, Pac-Man progress bar, package lists in columns,
+# Turn on pacman's color, Pac-Man progress bar, package lists in columns,
 # parallel downloads and multilib, and set MAKEFLAGS to every core. Each
 # setting changes only when it is off, so running this again changes
 # nothing; repeated ILoveCandy lines that older versions added are removed.
@@ -143,4 +143,4 @@ printf '%s\n' "$MAKEPKG_CONF:"
 setMakeflags "$work/makepkg.conf"
 applyChanges "$MAKEPKG_CONF" "$work/makepkg.conf"
 
-printf "%b\n" "${GREEN}Done. The pacman settings show the next time pacman runs: colour, the Pac-Man progress bar and package lists in columns.${RC}"
+printf "%b\n" "${GREEN}Done. The pacman settings show the next time pacman runs: color, the Pac-Man progress bar and package lists in columns.${RC}"

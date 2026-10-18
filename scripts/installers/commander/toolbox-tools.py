@@ -21,7 +21,7 @@ def run(args, *, check=True, capture=False, cwd=None, timeout=None):
 def confirm(message, token='APPLY'):
     print(message)
     if input(f'Type {token} to continue: ').strip() != token:
-        raise ValueError('Cancelled; no further changes made.')
+        raise ValueError('Canceled; no further changes made.')
 
 
 def state_dir():

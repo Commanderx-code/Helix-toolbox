@@ -1,5 +1,5 @@
 name = "Garuda Limine Boot Menu"
-description = "Install the Garuda dr460nized look from dotfiles on a machine that boots with Limine: the dr460nized wallpaper and colours with a two-second timeout merged into the global settings of limine.conf. Boot entries and kernel arguments stay as they are; the previous file is backed up."
+description = "Install the Garuda dr460nized look from dotfiles on a machine that boots with Limine: the dr460nized wallpaper and colors with a two-second timeout merged into the global settings of limine.conf. Boot entries and kernel arguments stay as they are; the previous file is backed up."
 flags = "PFM"
 multi_select = false
 order = 2
@@ -15,11 +15,11 @@ id = "commander/limine-garuda"
 # What it changes, for the change preview.
 [effects]
 takes_effect = "the boot menu looks different from the next reboot"
-unknown = ["where limine.conf is: as /etc/default/limine's ESP_PATH says, or under /boot, /efi or /boot/efi", "the merged colours and timeout: they come from dotfiles at its pinned commit, read when it runs"]
+unknown = ["where limine.conf is: as /etc/default/limine's ESP_PATH says, or under /boot, /efi or /boot/efi", "the merged colors and timeout: they come from dotfiles at its pinned commit, read when it runs"]
 
 [[effects.files]]
 path = "/boot/limine.conf"
-change = "the look's colours and a two-second timeout merged into its global settings; boot entries and kernel arguments stay; backed up first"
+change = "the look's colors and a two-second timeout merged into its global settings; boot entries and kernel arguments stay; backed up first"
 when = "limine.conf is on /boot"
 
 [[effects.files]]

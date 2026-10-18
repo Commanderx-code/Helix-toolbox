@@ -1,5 +1,5 @@
 name = "Proton CachyOS"
-description = "CachyOS's Proton build for Steam, with extra fixes and optimisations (the Steam Linux Runtime build). Choose it under a game's Properties, Compatibility in Steam. Arch only, from Chaotic-AUR or the AUR (proton-cachyos-slr)."
+description = "CachyOS's Proton build for Steam, with extra fixes and optimizations (the Steam Linux Runtime build). Choose it under a game's Properties, Compatibility in Steam. Arch only, from Chaotic-AUR or the AUR (proton-cachyos-slr)."
 flags = "I"
 order = 103
 

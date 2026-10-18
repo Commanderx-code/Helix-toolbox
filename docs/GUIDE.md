@@ -14,8 +14,8 @@ the system ask for your password inside the run, when they need it. The
 terminal should be at least 100 columns by 25 rows; a Nerd Font shows the
 icons (Settings turns them off otherwise). In Ghostty, Kitty, WezTerm, foot
 and other terminals that show pictures, the header is the HelixForge banner.
-`t` cycles the themes: solid, transparent, compatible (sixteen colours) and
-monochrome (no colour, the theme `NO_COLOR` selects for a run).
+`t` cycles the themes: solid, transparent, compatible (sixteen colors) and
+monochrome (no color, the theme `NO_COLOR` selects for a run).
 
 ## The first start
 
@@ -109,7 +109,7 @@ those are the ones to have a snapshot or a live USB ready for. If you run
 one successfully, reporting it helps everyone ([REPORTING.md](REPORTING.md)).
 
 `v` on an entry opens the **trust inspector**: where its installer comes
-from, its checksum and licence, what checks the packages it installs (pacman
+from, its checksum and license, what checks the packages it installs (pacman
 or apt signatures, Flathub), what it downloads itself and whether anything
 checks that, and what it does as root. Signed release provenance, package
 integrity checks and unverified third-party downloads are listed apart.

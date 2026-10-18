@@ -214,7 +214,7 @@ impl EffectsPopup {
                     text,
                     diff,
                 } => {
-                    let colour = match certainty {
+                    let color = match certainty {
                         Certainty::Known => theme.success(),
                         Certainty::Expected => theme.warning(),
                         Certainty::Unknown => theme.muted(),
@@ -229,7 +229,7 @@ impl EffectsPopup {
                     Line::from(vec![
                         Span::styled(
                             format!("  {} ", certainty.mark()),
-                            Style::default().fg(colour).bold(),
+                            Style::default().fg(color).bold(),
                         ),
                         Span::styled(compare, Style::default().fg(theme.focused())),
                         Span::styled(text.clone(), Style::default().fg(theme.entry())),

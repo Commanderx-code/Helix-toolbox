@@ -17,7 +17,7 @@ python3 ../../commander/configure.py nala-check "$HOME" "$login_shell"
 printf '%s\n' 'Install Nala from your distribution repositories and make apt an interactive alias for nala in your login shell.' 'Existing shell configuration is backed up. APT stays installed. Use sudo nala for elevated commands.'
 printf '%s' 'Type APPLY to continue: '
 read -r answer
-[ "$answer" = APPLY ] || { printf '%s\n' 'Cancelled.'; exit 1; }
+[ "$answer" = APPLY ] || { printf '%s\n' 'Canceled.'; exit 1; }
 if ! command_exists nala; then
     "$ESCALATION_TOOL" apt-get update
     candidate=$(LC_ALL=C apt-cache policy nala | awk '/Candidate:/ {print $2; exit}')

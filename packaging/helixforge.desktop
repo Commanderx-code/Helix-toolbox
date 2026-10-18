@@ -2,7 +2,7 @@
 Type=Application
 Name=HelixForge
 GenericName=System setup
-Comment=Build, configure and optimise this machine from a terminal menu
+Comment=Build, configure and optimize this machine from a terminal menu
 Exec=helixforge
 Icon=helixforge
 Terminal=true

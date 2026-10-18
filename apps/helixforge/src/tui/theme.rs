@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 /// HelixForge's cyan and purple palette. `Solid`, the default, paints the dark
 /// panels of the dashboard design; `Transparent` draws over the terminal's own
 /// background, so a wallpaper or transparency shows through; `Compatible`
-/// keeps to the sixteen basic colours for terminals that render true colour
-/// poorly; `Monochrome` uses no colour at all, only bold and reverse video,
+/// keeps to the sixteen basic colors for terminals that render true color
+/// poorly; `Monochrome` uses no color at all, only bold and reverse video,
 /// and is what `NO_COLOR` asks for.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -151,16 +151,16 @@ impl Theme {
         }
     }
 
-    /// A button in a popup, in the colour that says what it does.
-    pub fn button(self, colour: Color) -> Style {
+    /// A button in a popup, in the color that says what it does.
+    pub fn button(self, color: Color) -> Style {
         match self {
             Theme::Monochrome => Style::default().reversed().bold(),
-            _ => Style::default().bg(colour).fg(self.on_highlight()).bold(),
+            _ => Style::default().bg(color).fg(self.on_highlight()).bold(),
         }
     }
 
-    /// Whether this theme draws colour; the banner picture needs it.
-    pub fn colourful(self) -> bool {
+    /// Whether this theme draws color; the banner picture needs it.
+    pub fn colorful(self) -> bool {
         matches!(self, Theme::Solid | Theme::Transparent)
     }
 
@@ -173,7 +173,7 @@ impl Theme {
     }
 }
 
-/// Whether `NO_COLOR` asks for no colour: set, and not empty
+/// Whether `NO_COLOR` asks for no color: set, and not empty
 /// (<https://no-color.org>).
 pub fn no_color() -> bool {
     std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty())

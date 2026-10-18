@@ -125,7 +125,7 @@ pub enum Action {
     Package {
         /// A command the package provides. Whether the entry is installed is
         /// asked of the package manager and Flatpak first; the command only
-        /// recognises an install made some other way (Nix, a download) when
+        /// recognizes an install made some other way (Nix, a download) when
         /// none of its packages, and none it conflicts with, is installed.
         binary: Option<String>,
         packages: PackageNames,

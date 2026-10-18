@@ -96,7 +96,7 @@ struct Setting {
 const KDE: &[Setting] = &[
     Setting {
         key: "color-scheme",
-        label: "Colour scheme",
+        label: "Color scheme",
         read: &[
             "kreadconfig6",
             "--file",
@@ -1007,7 +1007,7 @@ mod tests {
         let planned = plan_apply(&look, &desktop).unwrap();
         assert_eq!(planned.steps.len(), 1);
         assert_eq!(planned.steps[0].display(), "plasma-apply-colorscheme Sweet");
-        assert_eq!(planned.notes[0], "Colour scheme: BreezeDark → Sweet");
+        assert_eq!(planned.notes[0], "Color scheme: BreezeDark → Sweet");
         assert!(
             planned
                 .requirements

@@ -39,7 +39,7 @@ Anything is welcome. These need the most eyes:
    --updates`)?
 5. **Helix Doctor.** Do the checks describe your machine correctly? Did a
    check call something a problem that is not one, or miss one that is?
-6. **Your terminal.** Does the menu draw correctly in it: colours, icons,
+6. **Your terminal.** Does the menu draw correctly in it: colors, icons,
    the banner, resizing, small windows? Try the themes (`t`), Settings'
    icons switch, and `NO_COLOR=1 helixforge`.
 7. **The command line and JSON**, if you script things

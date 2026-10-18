@@ -114,7 +114,7 @@ checkGroups() {
 
 confirmAction() {
     if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
-        printf "%b\n" "${RED}Cancelled operation...${RC}" >&2
+        printf "%b\n" "${RED}Canceled operation...${RC}" >&2
         exit 1
     fi
 }

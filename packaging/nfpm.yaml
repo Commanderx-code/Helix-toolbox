@@ -10,7 +10,7 @@ section: admin
 priority: optional
 maintainer: Commanderx-code <Commanderx-code@users.noreply.github.com>
 description: |
-  Build, configure and optimise a Linux machine from a terminal menu.
+  Build, configure and optimize a Linux machine from a terminal menu.
   HelixForge plans every change before it runs it: packages through the
   distribution's package manager, Flatpak or Nix, configuration scripts,
   updates, backups and health checks, with a command line and JSON output.

@@ -10,7 +10,7 @@ notify HelixForge themselves.
 
 For each source it reads the current `main` commit, then checks that commit's
 `check.yml` push or dispatched workflow. Only a completed successful run is
-accepted. A failed, cancelled, missing or unfinished run leaves that source's
+accepted. A failed, canceled, missing or unfinished run leaves that source's
 previous pin in place; an API error fails the sync instead of selecting an
 unchecked version.
 

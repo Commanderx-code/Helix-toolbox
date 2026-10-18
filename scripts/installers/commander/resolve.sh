@@ -42,7 +42,7 @@ case "$gpu" in
         printf '%s\n' 'Install a compatible NVIDIA host driver, reboot, and retry.' >&2; exit 1;
     fi ;;
     2 | 3) ;;
-    *) printf '%s\n' 'Cancelled.'; exit 1 ;;
+    *) printf '%s\n' 'Canceled.'; exit 1 ;;
 esac
 if [ "$mode" = native ] && [ -e "/opt/resolve" ]; then
     printf '%s\n' 'An existing native Resolve installation was found. Back up projects and use its package manager/uninstaller before installing again.' >&2

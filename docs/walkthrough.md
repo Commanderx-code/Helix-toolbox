@@ -188,7 +188,7 @@ WINE for running Windows programs, and the Proton builds and compatibility tools
 
 - **Boxtron**: A Steam compatibility tool that runs DOS games through the native DOSBox. Choose it under a game's Properties, Compatibility in Steam. Arch only, from the AUR.
 - **Luxtorpeda**: A Steam compatibility tool that runs games with native Linux engines instead of their Windows builds. Choose it under a game's Properties, Compatibility in Steam. Arch only, from the AUR (luxtorpeda-bin).
-- **Proton CachyOS**: CachyOS's Proton build for Steam, with extra fixes and optimisations (the Steam Linux Runtime build). Choose it under a game's Properties, Compatibility in Steam. Arch only, from Chaotic-AUR or the AUR (proton-cachyos-slr).
+- **Proton CachyOS**: CachyOS's Proton build for Steam, with extra fixes and optimizations (the Steam Linux Runtime build). Choose it under a game's Properties, Compatibility in Steam. Arch only, from Chaotic-AUR or the AUR (proton-cachyos-slr).
 - **Protontricks**: Winetricks for Steam's Proton games: install Windows components and change settings in a game's prefix. Debian has it only in contrib; Flathub is the fallback.
 - **WINE**: Runs Windows programs on Linux. The distribution's own build; WINE Staging and WINE Meta are alternatives on Arch and Garuda.
 - **WINE Staging**: WINE with the staging patches, newer fixes that are not yet in WINE itself. It replaces WINE: when WINE is installed, pacman asks before removing it. Arch only.
@@ -241,8 +241,8 @@ WINE for running Windows programs, and the Proton builds and compatibility tools
 
 ### Limine Boot Menu
 
-- **CachyOS Limine Boot Menu**: Install the CachyOS look from dotfiles on a machine that boots with Limine: the CachyOS wallpaper, colours and a two-second timeout merged into the global settings of limine.conf. Boot entries and kernel arguments stay as they are; the previous file is backed up.
-- **Garuda Limine Boot Menu**: Install the Garuda dr460nized look from dotfiles on a machine that boots with Limine: the dr460nized wallpaper and colours with a two-second timeout merged into the global settings of limine.conf. Boot entries and kernel arguments stay as they are; the previous file is backed up.
+- **CachyOS Limine Boot Menu**: Install the CachyOS look from dotfiles on a machine that boots with Limine: the CachyOS wallpaper, colors and a two-second timeout merged into the global settings of limine.conf. Boot entries and kernel arguments stay as they are; the previous file is backed up.
+- **Garuda Limine Boot Menu**: Install the Garuda dr460nized look from dotfiles on a machine that boots with Limine: the dr460nized wallpaper and colors with a two-second timeout merged into the global settings of limine.conf. Boot entries and kernel arguments stay as they are; the previous file is backed up.
 
 ## Helix Doctor
 
@@ -276,7 +276,7 @@ WINE for running Windows programs, and the Proton builds and compatibility tools
 - **Arch Server Setup**: This command installs a minimal arch server setup under 5 minutes.
 - **DWM-Titus**: DWM is a dynamic window manager for X.
 It manages windows in tiled, monocle and floating layouts.
-All of the layouts can be applied dynamically, optimising the environment for the application in use and the task performed.
+All of the layouts can be applied dynamically, optimizing the environment for the application in use and the task performed.
 This command installs and configures DWM and a desktop manager.
 The list of patches applied can be found in CTT's DWM repository
 https://github.com/ChrisTitusTech/dwm-titus

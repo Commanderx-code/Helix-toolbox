@@ -1,4 +1,4 @@
-//! HelixForge: build, configure and optimise a Linux machine from a terminal
+//! HelixForge: build, configure and optimize a Linux machine from a terminal
 //! menu, or from the command line.
 
 mod bundle;
@@ -40,7 +40,7 @@ const VERSION: &str = match option_env!("HELIXFORGE_VERSION") {
 #[command(
     name = "helixforge",
     version = VERSION,
-    about = "HelixForge: build, configure and optimise"
+    about = "HelixForge: build, configure and optimize"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -253,7 +253,7 @@ enum Command {
         critical: bool,
     },
     /// Where an entry's installer comes from (repository, revision, checksum,
-    /// licence), what checks the packages it installs, what it downloads
+    /// license), what checks the packages it installs, what it downloads
     /// unchecked, the privileges it uses and how far it has been tested.
     Trust { id: String },
     /// Your workstation profiles: list, export, import or delete them. Run one
@@ -313,9 +313,9 @@ enum ProfileCommand {
 
 #[derive(clap::Args, Clone, Debug, Default)]
 pub struct TuiArgs {
-    /// Colour theme for this run: solid (dark panels, the default),
+    /// Color theme for this run: solid (dark panels, the default),
     /// transparent (over the terminal's background), or compatible (sixteen
-    /// colours). Settings in the menu changes the remembered one.
+    /// colors). Settings in the menu changes the remembered one.
     #[arg(short, long, value_enum)]
     pub theme: Option<Theme>,
     /// Draw plain text instead of Nerd Font icons for this run.
@@ -1095,7 +1095,7 @@ fn confirm_and_run(
         bail!("not run: fix what is blocked above first; nothing was changed");
     }
     if !yes && confirm(word)?.trim() != word {
-        bail!("cancelled; nothing was changed");
+        bail!("canceled; nothing was changed");
     }
     let this = std::env::current_exe().context("cannot find the HelixForge executable")?;
     let finished = execute(planned, &catalog.lib_dir(), &this, &mut InheritedRunner)?;

@@ -47,7 +47,7 @@ case "$variant" in
             '' | 1) resolution=1080p ;;
             2) resolution=2k ;;
             3) resolution=4k ;;
-            *) printf '%s\n' 'Cancelled.'; exit 1 ;;
+            *) printf '%s\n' 'Canceled.'; exit 1 ;;
         esac
         ;;
 esac

@@ -160,7 +160,7 @@ enum HardwareRow {
     Heading(String),
     Item {
         text: String,
-        /// Shown in a warning colour.
+        /// Shown in a warning color.
         attention: bool,
         details: String,
         act: Option<HardwareAct>,
@@ -617,11 +617,11 @@ impl App {
         self
     }
 
-    /// The banner, unless icons are off, a theme with few or no colours is in use,
+    /// The banner, unless icons are off, a theme with few or no colors is in use,
     /// or the terminal is too narrow for it and the status beside it.
     fn banner(&self, width: u16) -> Option<&Protocol> {
         self.banner.as_ref().filter(|banner| {
-            self.icons && self.theme.colourful() && banner.size().width + 2 + STATUS_WIDTH <= width
+            self.icons && self.theme.colorful() && banner.size().width + 2 + STATUS_WIDTH <= width
         })
     }
 
@@ -1049,7 +1049,7 @@ impl App {
     }
 
     fn draw_header(&self, frame: &mut Frame, area: Rect) {
-        let (status, colour) = match &self.popup {
+        let (status, color) = match &self.popup {
             Some(Popup::Running(running)) if !running.is_finished() => {
                 ("● RUNNING", self.theme.title())
             }
@@ -1069,7 +1069,7 @@ impl App {
             )
             .intersection(area);
             frame.render_widget(
-                Paragraph::new(Line::styled(status, Style::default().fg(colour).bold()))
+                Paragraph::new(Line::styled(status, Style::default().fg(color).bold()))
                     .alignment(Alignment::Right),
                 middle,
             );
@@ -1111,7 +1111,7 @@ impl App {
         ]);
         frame.render_widget(Paragraph::new(brand), text);
         frame.render_widget(
-            Paragraph::new(Line::styled(status, Style::default().fg(colour).bold()))
+            Paragraph::new(Line::styled(status, Style::default().fg(color).bold()))
                 .alignment(Alignment::Right),
             text,
         );
@@ -1610,14 +1610,14 @@ impl App {
                 ));
             }
         }
-        let colour = if searching {
+        let color = if searching {
             self.theme.focused()
         } else {
             self.theme.line()
         };
         let block = Block::bordered()
             .border_set(border::ROUNDED)
-            .border_style(Style::default().fg(colour))
+            .border_style(Style::default().fg(color))
             .padding(Padding::horizontal(1));
         self.fill(frame, area);
         if searching {
@@ -1658,7 +1658,7 @@ impl App {
                     .style(Style::default().fg(self.theme.group())),
                 Row::Entry(entry) => {
                     let queued = self.is_queued(entry);
-                    let (style, icon_colour) = if queued {
+                    let (style, icon_color) = if queued {
                         (
                             Style::default().fg(self.theme.focused()).bold(),
                             self.theme.success(),
@@ -1683,11 +1683,11 @@ impl App {
                     let left = format!("{icon}  {}{suffix}", entry.name);
                     let flags = format!("  {} ", entry.flags);
                     // The status word, then where from, dropped first when short of room.
-                    let (word, detail, colour) = match self.statuses.get(&entry.id) {
+                    let (word, detail, color) = match self.statuses.get(&entry.id) {
                         Some(status) => (
                             status.label().to_string(),
                             status.detail(),
-                            self.status_colour(status),
+                            self.status_color(status),
                         ),
                         None => (String::new(), String::new(), self.theme.muted()),
                     };
@@ -1713,10 +1713,10 @@ impl App {
                     let gap =
                         " ".repeat(content_width.saturating_sub(left.chars().count() + right));
                     Line::from(vec![
-                        Span::styled(icon.to_string(), Style::default().fg(icon_colour)),
+                        Span::styled(icon.to_string(), Style::default().fg(icon_color)),
                         Span::styled(format!("  {}{suffix}", entry.name), style),
                         Span::raw(gap),
-                        Span::styled(word, Style::default().fg(colour)),
+                        Span::styled(word, Style::default().fg(color)),
                         Span::styled(detail, Style::default().fg(self.theme.faint())),
                         Span::styled(flags, Style::default().fg(self.theme.muted())),
                     ])
@@ -1938,7 +1938,7 @@ impl App {
             .backups
             .iter()
             .map(|backup| {
-                let (scope, colour) = if backup.system {
+                let (scope, color) = if backup.system {
                     ("system", self.theme.warning())
                 } else {
                     ("user  ", self.theme.success())
@@ -1948,7 +1948,7 @@ impl App {
                         format!("{:<21}", backup.taken.as_deref().unwrap_or("unknown time")),
                         Style::default().fg(self.theme.muted()),
                     ),
-                    Span::styled(format!("{scope}  "), Style::default().fg(colour)),
+                    Span::styled(format!("{scope}  "), Style::default().fg(color)),
                     Span::styled(
                         shown(&backup.original),
                         Style::default().fg(self.theme.entry()),
@@ -1982,14 +1982,14 @@ impl App {
             .records
             .iter()
             .map(|record| {
-                let (status, colour) = if record.success {
+                let (status, color) = if record.success {
                     ("ok", self.theme.success())
                 } else {
                     ("failed", self.theme.failure())
                 };
                 Line::from(vec![
-                    Span::styled("● ", Style::default().fg(colour)),
-                    Span::styled(format!("{status:<8}"), Style::default().fg(colour).bold()),
+                    Span::styled("● ", Style::default().fg(color)),
+                    Span::styled(format!("{status:<8}"), Style::default().fg(color).bold()),
                     Span::styled(
                         format!("{:<22}", timestamp(record.unix_timestamp)),
                         Style::default().fg(self.theme.muted()),
@@ -2347,7 +2347,7 @@ impl App {
                 }
                 match popup.handle_key(key) {
                     Answer::Typing => {}
-                    Answer::Cancelled => self.popup = None,
+                    Answer::Canceled => self.popup = None,
                     Answer::Given(name) => self.save_profile(&name),
                 }
                 return true;
@@ -2378,7 +2378,7 @@ impl App {
                 }
                 match popup.handle_key(key) {
                     Answer::Typing => {}
-                    Answer::Cancelled => self.popup = None,
+                    Answer::Canceled => self.popup = None,
                     Answer::Given(name) => self.save_look_as(&name),
                 }
                 return true;
@@ -2389,7 +2389,7 @@ impl App {
                 }
                 match popup.handle_key(key) {
                     Answer::Typing => {}
-                    Answer::Cancelled => {
+                    Answer::Canceled => {
                         self.popup = None;
                         self.firmware_pending = None;
                     }
@@ -2417,7 +2417,7 @@ impl App {
                 }
                 match popup.handle_key(key) {
                     Answer::Typing => {}
-                    Answer::Cancelled => self.popup = None,
+                    Answer::Canceled => self.popup = None,
                     Answer::Given(name) => self.save_baseline(&name),
                 }
                 return true;
@@ -3131,8 +3131,8 @@ impl App {
         )));
     }
 
-    /// The colour of a status word.
-    fn status_colour(&self, status: &Status) -> Color {
+    /// The color of a status word.
+    fn status_color(&self, status: &Status) -> Color {
         match status {
             Status::Installed { .. } | Status::Elsewhere { .. } => self.theme.success(),
             Status::Update { .. } => self.theme.warning(),
@@ -3309,7 +3309,7 @@ impl App {
             .unwrap_or(0)
             + 2;
         for diagnosis in &self.diagnoses {
-            let colour = match diagnosis.health {
+            let color = match diagnosis.health {
                 doctor::Health::Good => self.theme.success(),
                 doctor::Health::Notice => self.theme.warning(),
                 doctor::Health::Problem => self.theme.failure(),
@@ -3324,7 +3324,7 @@ impl App {
             items.push(Line::from(vec![
                 Span::styled(
                     format!("{:<8}", diagnosis.health.label()),
-                    Style::default().fg(colour).bold(),
+                    Style::default().fg(color).bold(),
                 ),
                 Span::styled(
                     format!("{:<title_width$}", diagnosis.title),
@@ -3464,7 +3464,7 @@ impl App {
             .unwrap_or(0)
             + 2;
         for channel in &self.channels {
-            let colour = match channel.count() {
+            let color = match channel.count() {
                 Some(0) => self.theme.success(),
                 Some(_) => self.theme.warning(),
                 None => self.theme.muted(),
@@ -3476,7 +3476,7 @@ impl App {
                 ),
                 Span::styled(
                     format!("{:<14}", channel.summary()),
-                    Style::default().fg(colour).bold(),
+                    Style::default().fg(color).bold(),
                 ),
                 Span::styled(
                     channel.note.clone(),
@@ -3569,7 +3569,7 @@ impl App {
                 "upgrade packages",
                 Act::UpdateEntries,
             ),
-            ("Change the theme", "colours colors look", Act::Theme),
+            ("Change the theme", "colors colors look", Act::Theme),
             (
                 "Set up this machine",
                 "wizard first run workstation",
@@ -4148,7 +4148,7 @@ impl App {
             .differences
             .iter()
             .map(|difference| {
-                let colour = match difference.kind {
+                let color = match difference.kind {
                     kind if kind.missing() => self.theme.failure(),
                     drift::Kind::Added | drift::Kind::Version => self.theme.muted(),
                     _ => self.theme.warning(),
@@ -4162,7 +4162,7 @@ impl App {
                 Line::from(vec![
                     Span::styled(
                         format!("{:<10}", difference.kind.label()),
-                        Style::default().fg(colour).bold(),
+                        Style::default().fg(color).bold(),
                     ),
                     Span::styled(
                         format!("{subject:<subject_width$}"),
@@ -4842,7 +4842,7 @@ impl App {
             .reliability_rows
             .iter()
             .map(|(_, name, assessment)| {
-                let colour = match assessment.level {
+                let color = match assessment.level {
                     reliability::Level::NotYetValidated if assessment.critical => {
                         self.theme.failure()
                     }
@@ -4861,7 +4861,7 @@ impl App {
                 Line::from(vec![
                     Span::styled(
                         format!("{:<19}", assessment.level.label()),
-                        Style::default().fg(colour).bold(),
+                        Style::default().fg(color).bold(),
                     ),
                     Span::styled(
                         if assessment.critical { "! " } else { "  " },
@@ -5603,7 +5603,7 @@ mod tests {
     }
 
     #[test]
-    fn the_text_header_returns_without_icons_in_sixteen_colours_or_when_narrow() {
+    fn the_text_header_returns_without_icons_in_sixteen_colors_or_when_narrow() {
         let mut app = with_banner(app());
         app.icons = false;
         assert!(screen(&mut app, 120, 40).contains("BUILD • CONFIGURE"));
@@ -6310,7 +6310,7 @@ mod tests {
     }
 
     #[test]
-    fn monochrome_draws_no_colour_and_still_shows_the_selection() {
+    fn monochrome_draws_no_color_and_still_shows_the_selection() {
         use ratatui::style::{Color, Modifier};
         let mut app = app();
         app.theme = Theme::Monochrome;
@@ -6581,11 +6581,11 @@ mod tests {
         // A backup's restore, side by side with the file there now.
         let directory = tempfile::tempdir().unwrap();
         let original = directory.path().join("app.conf");
-        std::fs::write(&original, "colour = red\nsize = 2\n").unwrap();
+        std::fs::write(&original, "color = red\nsize = 2\n").unwrap();
         let copy = directory
             .path()
             .join("app.conf.helixforge-backup-20261016120000");
-        std::fs::write(&copy, "colour = blue\nsize = 2\n").unwrap();
+        std::fs::write(&copy, "color = blue\nsize = 2\n").unwrap();
         app.backups = vec![backups::Backup {
             backup: copy,
             original,
@@ -6602,8 +6602,8 @@ mod tests {
         press(&mut app, KeyCode::Enter);
         let text = screen(&mut app, 140, 40);
         assert!(text.contains("SIDE BY SIDE"), "{text}");
-        assert!(text.contains("colour = red"), "{text}");
-        assert!(text.contains("colour = blue"), "{text}");
+        assert!(text.contains("color = red"), "{text}");
+        assert!(text.contains("color = blue"), "{text}");
         press(&mut app, KeyCode::Esc);
         assert!(screen(&mut app, 140, 40).contains("CHANGES"));
     }
@@ -6767,7 +6767,7 @@ mod tests {
             session: Some("wayland".into()),
             appearance: vec![Value {
                 key: "color-scheme".into(),
-                label: "Colour scheme".into(),
+                label: "Color scheme".into(),
                 value: Some("BreezeDark".into()),
             }],
             owners: vec!["Home Manager runs a Plasma configuration step at every switch".into()],
@@ -6777,7 +6777,7 @@ mod tests {
         app.focus = Focus::Main;
         let text = screen(&mut app, 140, 40);
         assert!(text.contains("KDE Plasma 6.8.0, wayland session"), "{text}");
-        assert!(text.contains("Colour scheme   BreezeDark"), "{text}");
+        assert!(text.contains("Color scheme    BreezeDark"), "{text}");
         assert!(text.contains("Note: Home Manager"), "{text}");
         assert!(text.contains("Commander Konsole Config"), "{text}");
         press(&mut app, KeyCode::Char('s'));

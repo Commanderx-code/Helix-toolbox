@@ -136,7 +136,7 @@ delete_all_snapshots() {
             printf "%b\n" "${RED}Failed to delete snapshots.${RC}"
         fi
     else
-        printf "%b\n" "${RED}Operation cancelled.${RC}"
+        printf "%b\n" "${RED}Operation canceled.${RC}"
     fi
 }
 

@@ -25,7 +25,7 @@ commander_init() {
 confirm() {
     printf '\n%s\nType APPLY to continue: ' "$1"
     read -r answer
-    [ "$answer" = APPLY ] || { printf '%s\n' 'Cancelled.'; exit 1; }
+    [ "$answer" = APPLY ] || { printf '%s\n' 'Canceled.'; exit 1; }
 }
 
 install_packages() {

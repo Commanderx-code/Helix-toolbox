@@ -9,7 +9,7 @@
   <a href="https://github.com/Commanderx-code/Helix-Forge/actions/workflows/distributions.yml"><img src="https://github.com/Commanderx-code/Helix-Forge/actions/workflows/distributions.yml/badge.svg" alt="Distributions"></a>
   <a href="https://github.com/Commanderx-code/Helix-Forge/releases/latest"><img src="https://img.shields.io/github/v/release/Commanderx-code/Helix-Forge?label=release" alt="Latest release"></a>
   <a href="https://crates.io/crates/helixforge"><img src="https://img.shields.io/crates/v/helixforge" alt="crates.io"></a>
-  <a href="https://github.com/Commanderx-code/Helix-Forge/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Commanderx-code/Helix-Forge" alt="MIT licence"></a>
+  <a href="https://github.com/Commanderx-code/Helix-Forge/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Commanderx-code/Helix-Forge" alt="MIT license"></a>
 </p>
 
 **HelixForge** sets up and looks after a Linux machine from one menu in the
@@ -179,7 +179,7 @@ To change the code or the catalog, see
 everyone taking part follows the
 [code of conduct](https://github.com/Commanderx-code/Helix-Forge/blob/main/CODE_OF_CONDUCT.md).
 
-## Licence
+## License
 
 MIT; see [LICENSE](https://github.com/Commanderx-code/Helix-Forge/blob/main/LICENSE).
 The general catalog started as [Linutil](https://github.com/ChrisTitusTech/linutil)'s,

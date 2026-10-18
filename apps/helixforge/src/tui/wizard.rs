@@ -242,13 +242,13 @@ impl Wizard {
                     .picks
                     .iter()
                     .map(|pick| {
-                        let (mark, colour) = match (pick.available, pick.ticked) {
+                        let (mark, color) = match (pick.available, pick.ticked) {
                             (false, _) => ("[-]", theme.faint()),
                             (true, true) => ("[x]", theme.success()),
                             (true, false) => ("[ ]", theme.muted()),
                         };
                         Line::from(vec![
-                            Span::styled(format!("{mark} "), Style::default().fg(colour).bold()),
+                            Span::styled(format!("{mark} "), Style::default().fg(color).bold()),
                             Span::styled(
                                 pick.name.clone(),
                                 Style::default().fg(if pick.available {

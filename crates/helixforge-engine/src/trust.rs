@@ -87,10 +87,10 @@ pub struct Inspection {
     /// The installer file, relative to the scripts folder.
     pub file: Option<String>,
     pub sha256: Option<String>,
-    /// The installer's licence.
-    pub licence: Option<String>,
-    /// The software's licence, as its package manager reports it.
-    pub software_licence: Option<String>,
+    /// The installer's license.
+    pub license: Option<String>,
+    /// The software's license, as its package manager reports it.
+    pub software_license: Option<String>,
     /// The release HelixForge build the installer ships in.
     pub provenance: Vec<Fact>,
     /// What checks the packages it installs.
@@ -119,8 +119,8 @@ pub fn inspect(
         origin: "the HelixForge catalog".to_string(),
         file: None,
         sha256: None,
-        licence: Some("MIT (HelixForge)".to_string()),
-        software_licence: None,
+        license: Some("MIT (HelixForge)".to_string()),
+        software_license: None,
         provenance: provenance(build),
         integrity: Vec::new(),
         downloads: Vec::new(),
@@ -142,9 +142,9 @@ pub fn inspect(
                 .display()
                 .to_string();
             inspection.sha256 = sum(file);
-            let (origin, licence) = script_origin(&relative);
+            let (origin, license) = script_origin(&relative);
             inspection.origin = origin;
-            inspection.licence = Some(licence);
+            inspection.license = Some(license);
             inspection.file = Some(printable(&relative));
             let texts = script_texts(file);
             inspection.downloads = downloads(&texts, &scripts);
@@ -199,7 +199,7 @@ pub fn inspect(
             platform,
             system,
         ));
-        inspection.software_licence = software_licence(
+        inspection.software_license = software_license(
             identity.packages.for_manager_any(platform.manager),
             identity.flatpak,
             platform,
@@ -254,7 +254,7 @@ fn provenance(build: &Build) -> Vec<Fact> {
     facts
 }
 
-/// Where a script under `scripts/` comes from, and its licence.
+/// Where a script under `scripts/` comes from, and its license.
 fn script_origin(relative: &str) -> (String, String) {
     if relative.starts_with("installers/commander/") {
         (
@@ -618,8 +618,8 @@ fn sig_level(text: &str) -> Option<String> {
     None
 }
 
-/// The software's licence from its package manager's metadata, read-only.
-fn software_licence(
+/// The software's license from its package manager's metadata, read-only.
+fn software_license(
     native: Option<(PackageManager, &str)>,
     flatpak: Option<&str>,
     _platform: &LinuxInfo,
@@ -770,7 +770,7 @@ mod tests {
             &[],
         );
         assert_eq!(found.kind, "packages");
-        assert_eq!(found.software_licence.as_deref(), Some("MIT  Unlicense"));
+        assert_eq!(found.software_license.as_deref(), Some("MIT  Unlicense"));
         assert_eq!(found.integrity[0].standing, Standing::Checked);
         assert!(found.integrity[0].text.contains("SigLevel = Required"));
         assert_eq!(found.provenance[0].standing, Standing::Provenance);

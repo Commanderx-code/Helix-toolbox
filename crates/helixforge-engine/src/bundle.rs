@@ -1488,7 +1488,7 @@ mod tests {
         // Two signatures in a row.
         assert!(detached_signature(&[0xc2, 0x01, 0x04, 0x88, 0x01, 0x04]));
         // A literal data packet (tag 11), a one-pass signature (tag 4), a
-        // compressed packet (tag 8), armour, a short or empty file: no.
+        // compressed packet (tag 8), armor, a short or empty file: no.
         for bad in [
             &[0xcb, 0x01, 0x00][..],
             &[0xc4, 0x01, 0x00],

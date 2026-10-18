@@ -40,7 +40,7 @@ emulator and types keys. It checks:
 - unreadable settings, favorites, profiles and history lines: skipped or
   replaced by defaults, with the menu and commands still working; settings
   from a later version (unknown names and values) keep the ones understood
-- the monochrome theme drawing no colour anywhere, the selection in reverse
+- the monochrome theme drawing no color anywhere, the selection in reverse
   video, and `NO_COLOR` not replacing the remembered theme
 - `--json` from list, search, info, plan, a dry run, history, profile list
   and system parsing as JSON with schema 1, and a real run or `docgen`
@@ -70,7 +70,7 @@ emulator and types keys. It checks:
 - the menu or the command line killed during a run: the next history lists
   it once as not finished; killed after a run ended: its real result
 - the command line's confirmation asked on the terminal when standard input
-  is a pipe, and a wrong word cancelling
+  is a pipe, and a wrong word canceling
 - `helixforge status` after real installs of htop and ripgrep: Installed,
   from the family's package manager, with a version, and `update htop
   --dry-run` saying it is up to date (Distributions)
