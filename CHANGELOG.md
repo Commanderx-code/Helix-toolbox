@@ -4,6 +4,21 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.5.5
+
+- **Flatpaks in offline bundles**: an entry with no package for the
+  distribution whose Flatpak is installed goes into the bundle as
+  `flatpak create-usb` copies it, with its runtimes, and installs from that
+  copy with no network; flatpak checks each commit's signature against the
+  remote's key on the installing machine. `bundle create` names the
+  collection ID the remote needs (Flathub's, `org.flathub.Stable`) rather
+  than changing your remotes, and `bundle install` gives the installing
+  machine's remote that published ID when it has none. Any other ID, and a
+  remote that machine lacks, added with the bundle's copy of its key, need
+  `--trust-bundle`. A virtual
+  machine makes such a bundle, then installs from it cut off from the
+  network.
+
 ## v1.5.4
 
 - **The dotfiles entries' files before they are written**: the change

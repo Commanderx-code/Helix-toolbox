@@ -3,8 +3,11 @@
 //! distribution and architecture, and a manifest of every file's checksum.
 //! On a machine of the same distribution without reliable internet, the
 //! bundle is checked, then its packages are installed by the package manager
-//! from the files, without downloading. What needs the network (Flatpaks,
-//! AUR builds, scripts) is named, never pretended to be offline.
+//! from the files, without downloading. Flatpak applications installed here
+//! go in as `flatpak create-usb` copies them, with their runtimes, and are
+//! installed from that copy, their remote's signatures checked as from the
+//! remote itself. What needs the network (AUR builds, scripts, Flatpaks not
+//! installed here) is named, never pretended to be offline.
 
 use crate::{Plan, Step, doctor::System, quote};
 use helixforge_catalog::Catalog;
@@ -14,8 +17,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256, Sha512};
 use std::path::{Component, Path, PathBuf};
 
-/// The manifest format this version writes.
-pub const FORMAT: u32 = 1;
+/// The newest manifest format this version reads and writes: 2 holds
+/// Flatpaks, and bundles without them are still written as 1.
+pub const FORMAT: u32 = 2;
+/// The folder `flatpak create-usb` writes its repository into.
+pub const FLATPAKS: &str = "flatpak";
+/// The folder for the Flatpak remotes' signing keys.
+pub const KEYS: &str = "flatpak-keys";
 /// The manifest's file name in a bundle.
 pub const MANIFEST: &str = "bundle.toml";
 /// The checksums, for `sha256sum --check` by hand.
@@ -42,6 +50,8 @@ pub struct Manifest {
     pub entries: Vec<BundledEntry>,
     #[serde(default, rename = "file")]
     pub files: Vec<BundledFile>,
+    #[serde(default, rename = "flatpak", skip_serializing_if = "Vec::is_empty")]
+    pub flatpaks: Vec<BundledFlatpak>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -56,6 +66,28 @@ pub struct BundledEntry {
     /// Why it needs the network, when it does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network: Option<String>,
+    /// The Flatpak application it installs from the bundle, instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flatpak: Option<String>,
+}
+
+/// A Flatpak application in the bundle, as `flatpak create-usb` copied it
+/// from this machine's installation with the runtimes it needs.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BundledFlatpak {
+    /// The application's ID.
+    pub id: String,
+    /// Its ref: `app/ID/ARCH/BRANCH`.
+    pub reference: String,
+    /// The commit installed here, which the bundle's copy must be.
+    pub commit: String,
+    /// The remote it came from, the remote's address and collection ID.
+    pub remote: String,
+    pub url: String,
+    pub collection: String,
+    /// In the user's own installation rather than the system's.
+    #[serde(default)]
+    pub user: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -90,6 +122,8 @@ pub struct Contents {
     pub downloads: Vec<Download>,
     /// Fedora's dnf downloads the packages itself: these names.
     pub dnf: Vec<String>,
+    /// Flatpak applications installed here, to copy.
+    pub flatpaks: Vec<BundledFlatpak>,
 }
 
 /// Why a bundle cannot be made, read or used.
@@ -117,6 +151,12 @@ pub enum BundleError {
         "the bundle installs as a whole: its packages, shared between {0}, go in together; make a bundle of only the entries wanted"
     )]
     Partial(String),
+    #[error(
+        "the {0} Flatpak remote has no collection ID, which flatpak create-usb needs to copy its applications; {1}"
+    )]
+    Collection(String, String),
+    #[error("{0}")]
+    Untrusted(String),
 }
 
 /// The family a bundle is made for.
@@ -147,6 +187,7 @@ pub fn contents(
     let mut names: Vec<String> = Vec::new();
     let mut seen: Vec<String> = Vec::new();
     let mut queue: Vec<String> = ids.iter().rev().cloned().collect();
+    let mut installed: Option<Vec<BundledFlatpak>> = None;
     while let Some(id) = queue.pop() {
         if seen.contains(&id) {
             continue;
@@ -159,6 +200,7 @@ pub fn contents(
                 offline: false,
                 packages: Vec::new(),
                 network: Some("not in this catalog".to_string()),
+                flatpak: None,
             });
             continue;
         };
@@ -166,7 +208,40 @@ pub fn contents(
             queue.extend(entries.iter().rev().cloned());
             continue;
         }
-        let (offline, network) = classify(entry, manager);
+        let (offline, mut network) = classify(entry, manager);
+        if offline.is_none()
+            && let Action::Package {
+                flatpak: Some(id), ..
+            } = &entry.action
+        {
+            let installed = installed.get_or_insert_with(|| installed_flatpaks(system));
+            if let Some(flatpak) = installed.iter().find(|flatpak| flatpak.id == *id) {
+                if flatpak.collection.is_empty() {
+                    return Err(BundleError::Collection(
+                        printable(&flatpak.remote),
+                        collection_hint(&flatpak.remote, flatpak.user),
+                    ));
+                }
+                found.entries.push(BundledEntry {
+                    id: entry.id.clone(),
+                    name: entry.name.clone(),
+                    offline: true,
+                    packages: Vec::new(),
+                    network: None,
+                    flatpak: Some(id.clone()),
+                });
+                if !found
+                    .flatpaks
+                    .iter()
+                    .any(|other| other.reference == flatpak.reference)
+                {
+                    found.flatpaks.push(flatpak.clone());
+                }
+                continue;
+            }
+            network =
+                network.map(|why| format!("{why}; its Flatpak can be bundled once installed here"));
+        }
         let packages = offline.clone().into_iter().collect::<Vec<_>>();
         for name in &packages {
             if !names.contains(name) {
@@ -179,6 +254,7 @@ pub fn contents(
             offline: offline.is_some(),
             packages,
             network,
+            flatpak: None,
         });
     }
     if names.is_empty() {
@@ -298,6 +374,164 @@ fn classify(entry: &Entry, manager: PackageManager) -> (Option<String>, Option<S
     }
 }
 
+/// The Flatpak applications installed here, in the system installation or
+/// the user's, with their remotes; `collection` is empty when the remote
+/// has none.
+fn installed_flatpaks(system: &dyn System) -> Vec<BundledFlatpak> {
+    let Some((true, text)) = system.run(&[
+        "flatpak",
+        "list",
+        "--app",
+        "--columns=application,ref,origin,installation",
+    ]) else {
+        return Vec::new();
+    };
+    let mut remotes: Vec<(bool, Vec<Remote>)> = Vec::new();
+    let mut found = Vec::new();
+    for line in text.lines() {
+        let parts: Vec<&str> = line.trim_end().split('\t').collect();
+        let [id, reference, remote, installation] = parts[..] else {
+            continue;
+        };
+        let user = match installation {
+            "user" => true,
+            "system" => false,
+            _ => continue,
+        };
+        let reference = format!("app/{reference}");
+        if !plain_flatpak_ref(&reference, id) || !flatpak_name(remote) {
+            continue;
+        }
+        if !remotes.iter().any(|(scope, _)| *scope == user) {
+            remotes.push((user, flatpak_remotes(system, user)));
+        }
+        let Some((_, url, collection)) = remotes
+            .iter()
+            .find(|(scope, _)| *scope == user)
+            .and_then(|(_, known)| known.iter().find(|(name, _, _)| name == remote))
+        else {
+            continue;
+        };
+        let Some((true, commit)) =
+            system.run(&["flatpak", "info", scope(user), "--show-commit", &reference])
+        else {
+            continue;
+        };
+        found.push(BundledFlatpak {
+            id: id.to_string(),
+            reference,
+            commit: commit.trim().to_string(),
+            remote: remote.to_string(),
+            url: url.clone(),
+            collection: collection.clone(),
+            user,
+        });
+    }
+    found
+}
+
+/// A Flatpak remote: name, address and collection ID (empty when it has
+/// none).
+type Remote = (String, String, String);
+
+/// A machine's Flatpak remotes.
+fn flatpak_remotes(system: &dyn System, user: bool) -> Vec<Remote> {
+    let Some((true, text)) = system.run(&[
+        "flatpak",
+        "remotes",
+        scope(user),
+        "--columns=name,url,collection",
+    ]) else {
+        return Vec::new();
+    };
+    text.lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.trim_end().split('\t').collect();
+            let [name, url, collection] = parts[..] else {
+                return None;
+            };
+            let collection = if collection == "-" { "" } else { collection };
+            Some((name.to_string(), url.to_string(), collection.to_string()))
+        })
+        .collect()
+}
+
+fn scope(user: bool) -> &'static str {
+    if user { "--user" } else { "--system" }
+}
+
+/// The collection IDs publishers give their remotes, by address: the only
+/// ones a bundle may give a remote that has none, unless it is trusted.
+const PUBLISHED_COLLECTIONS: [(&str, &str); 2] = [
+    ("https://dl.flathub.org/repo/", "org.flathub.Stable"),
+    ("https://dl.flathub.org/beta-repo/", "org.flathub.Beta"),
+];
+
+fn published_collection(address: &str) -> Option<&'static str> {
+    let address = address.trim_end_matches('/');
+    PUBLISHED_COLLECTIONS
+        .iter()
+        .find(|(published, _)| published.trim_end_matches('/') == address)
+        .map(|(_, collection)| *collection)
+}
+
+/// How to give a remote its collection ID.
+fn collection_hint(remote: &str, user: bool) -> String {
+    let command = if user {
+        "flatpak --user remote-modify"
+    } else {
+        "sudo flatpak remote-modify"
+    };
+    match remote {
+        "flathub" => format!(
+            "Flathub's is org.flathub.Stable: {command} --collection-id=org.flathub.Stable flathub"
+        ),
+        "flathub-beta" => format!(
+            "Flathub Beta's is org.flathub.Beta: {command} --collection-id=org.flathub.Beta flathub-beta"
+        ),
+        _ => format!(
+            "set the one its publisher gives with {command} --collection-id=ID {}",
+            printable(remote)
+        ),
+    }
+}
+
+/// A Flatpak ID, remote, collection, architecture or branch: plain characters.
+fn flatpak_name(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 255
+        && !text.starts_with(['.', '-'])
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+}
+
+/// `app/ID/ARCH/BRANCH`, for this ID.
+fn plain_flatpak_ref(reference: &str, id: &str) -> bool {
+    let parts: Vec<&str> = reference.split('/').collect();
+    parts.len() == 4
+        && parts[0] == "app"
+        && parts[1] == id
+        && parts.iter().all(|part| flatpak_name(part))
+}
+
+/// Where a remote's key goes in the bundle.
+fn key_path(remote: &str, user: bool) -> String {
+    format!("{KEYS}/{}{remote}.gpg", if user { "user-" } else { "" })
+}
+
+/// The commit a Flatpak repository holds for a ref, where `create-usb`
+/// writes it: under the remote's collection ID.
+fn mirrored_commit(repository: &Path, flatpak: &BundledFlatpak) -> Option<String> {
+    let path = repository
+        .join("refs/mirrors")
+        .join(&flatpak.collection)
+        .join(&flatpak.reference);
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|text| text.trim().to_string())
+}
+
 /// A file name a bundle may hold: one name, no path, plain characters.
 fn plain_file(name: &str) -> bool {
     !name.is_empty()
@@ -338,6 +572,13 @@ pub struct Tools<'a> {
     pub download: &'a dyn Fn(&str, &Path) -> bool,
     /// Have dnf download packages with their dependencies into a folder.
     pub dnf_download: &'a dyn Fn(&[String], bool, &Path) -> bool,
+    /// Have `flatpak create-usb` copy refs, with the runtimes they need,
+    /// from the system installation (or the user's) into the bundle's
+    /// FLATPAKS folder.
+    pub create_usb: &'a dyn Fn(&[String], bool, &Path) -> bool,
+    /// Where a remote's signing key is kept, in the system installation or
+    /// the user's.
+    pub flatpak_key: &'a dyn Fn(&str, bool) -> PathBuf,
 }
 
 /// Make a bundle in `directory`, which must be new or empty: the packages,
@@ -420,6 +661,55 @@ pub fn create(
             });
         }
     }
+    for user in [false, true] {
+        let refs: Vec<String> = contents
+            .flatpaks
+            .iter()
+            .filter(|flatpak| flatpak.user == user)
+            .map(|flatpak| flatpak.reference.clone())
+            .collect();
+        if !refs.is_empty() && !(tools.create_usb)(&refs, user, directory) {
+            return Err(BundleError::Download(
+                "the Flatpaks, through flatpak create-usb".to_string(),
+            ));
+        }
+    }
+    let repository = directory.join(FLATPAKS);
+    for flatpak in &contents.flatpaks {
+        if mirrored_commit(&repository, flatpak).as_deref() != Some(flatpak.commit.as_str()) {
+            return Err(BundleError::Mismatch(format!(
+                "{}, as flatpak create-usb copied it,",
+                printable(&flatpak.reference)
+            )));
+        }
+    }
+    // The remotes' signing keys, for a machine that lacks the remote.
+    let mut keys: Vec<String> = Vec::new();
+    for flatpak in &contents.flatpaks {
+        let path = key_path(&flatpak.remote, flatpak.user);
+        if keys.contains(&path) {
+            continue;
+        }
+        let source = (tools.flatpak_key)(&flatpak.remote, flatpak.user);
+        let target = directory.join(&path);
+        std::fs::create_dir_all(directory.join(KEYS))
+            .map_err(|error| BundleError::Io(error.to_string()))?;
+        std::fs::copy(&source, &target).map_err(|error| {
+            BundleError::Io(format!("cannot copy {}: {error}", source.display()))
+        })?;
+        let (sha256, bytes) = sha256_file(&target)?;
+        files.push(BundledFile {
+            path: path.clone(),
+            sha256,
+            bytes,
+            source: Some(printable(&source.display().to_string())),
+            assurance: Some(format!(
+                "the {} remote's signing key, from the machine that made the bundle; used only where the remote is missing, with --trust-bundle",
+                printable(&flatpak.remote)
+            )),
+        });
+        keys.push(path);
+    }
     let (version, release) = match helixforge {
         Some((program, version, release)) => {
             let target = directory.join("helixforge");
@@ -441,7 +731,11 @@ pub fn create(
         None => (String::new(), false),
     };
     let manifest = Manifest {
-        format: FORMAT,
+        format: if contents.flatpaks.is_empty() {
+            1
+        } else {
+            FORMAT
+        },
         created: now,
         helixforge: version,
         release,
@@ -451,6 +745,7 @@ pub fn create(
         complete,
         entries: contents.entries.clone(),
         files,
+        flatpaks: contents.flatpaks.clone(),
     };
     let text = toml::to_string(&manifest).map_err(|error| BundleError::Io(error.to_string()))?;
     std::fs::write(
@@ -519,8 +814,10 @@ pub fn verify(directory: &Path, platform: &LinuxInfo) -> Result<Manifest, Bundle
         let name_ok = relative
             .file_name()
             .is_some_and(|name| plain_file(&name.to_string_lossy()));
-        if !inside || !name_ok || !(file.path == "helixforge" || file.path.starts_with("packages/"))
-        {
+        let place = file.path == "helixforge"
+            || file.path.starts_with("packages/")
+            || file.path.starts_with(&format!("{KEYS}/"));
+        if !inside || !name_ok || !place {
             return Err(BundleError::Damaged(format!(
                 "it names {}",
                 printable(&file.path)
@@ -536,9 +833,32 @@ pub fn verify(directory: &Path, platform: &LinuxInfo) -> Result<Manifest, Bundle
             )));
         }
     }
+    let repository = directory.join(FLATPAKS);
+    for flatpak in &manifest.flatpaks {
+        if mirrored_commit(&repository, flatpak).as_deref() != Some(flatpak.commit.as_str()) {
+            return Err(BundleError::Damaged(format!(
+                "its Flatpak repository does not hold {} at the commit it records",
+                printable(&flatpak.reference)
+            )));
+        }
+        if !manifest
+            .files
+            .iter()
+            .any(|file| file.path == key_path(&flatpak.remote, flatpak.user))
+        {
+            return Err(BundleError::Damaged(format!(
+                "the {} remote's key is missing",
+                printable(&flatpak.remote)
+            )));
+        }
+    }
     for entry in &manifest.entries {
         if !helixforge_core::valid_id(&entry.id)
             || !entry.packages.iter().all(|name| valid_package_name(name))
+            || entry
+                .flatpak
+                .as_deref()
+                .is_some_and(|id| !manifest.flatpaks.iter().any(|flatpak| flatpak.id == id))
         {
             return Err(BundleError::Damaged(format!(
                 "it names {}",
@@ -673,6 +993,7 @@ fn plain_manifest(manifest: &Manifest) -> bool {
         texts.push(&entry.id);
         texts.push(&entry.name);
         texts.extend(entry.network.as_deref());
+        texts.extend(entry.flatpak.as_deref());
         texts.extend(entry.packages.iter().map(String::as_str));
     }
     for file in &manifest.files {
@@ -680,7 +1001,18 @@ fn plain_manifest(manifest: &Manifest) -> bool {
         texts.extend(file.source.as_deref());
         texts.extend(file.assurance.as_deref());
     }
+    let flatpaks = manifest.flatpaks.iter().all(|flatpak| {
+        plain_flatpak_ref(&flatpak.reference, &flatpak.id)
+            && flatpak_name(&flatpak.remote)
+            && flatpak_name(&flatpak.collection)
+            && flatpak.commit.len() == 64
+            && flatpak.commit.bytes().all(|byte| byte.is_ascii_hexdigit())
+            && plain(&flatpak.url)
+            && !flatpak.url.contains(char::is_whitespace)
+    });
     texts.into_iter().all(plain)
+        && flatpaks
+        && manifest.flatpaks.len() <= 1_000
         && manifest.files.iter().all(|file| {
             file.sha256.len() == 64 && file.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
         })
@@ -745,6 +1077,37 @@ pub fn plan_install(
         .iter()
         .filter(|file| file.path.starts_with("packages/"))
         .collect();
+    let mut requirements: Vec<String> = Vec::new();
+    if !packages.is_empty() {
+        let (step, requires) =
+            native_step(&directory, manager, &packages, &offline, system, trust)?;
+        plan.steps.push(step);
+        requirements.extend(requires);
+    }
+    if !manifest.flatpaks.is_empty() {
+        let (step, requires, privileged) = flatpak_step(&directory, manifest, system, trust)?;
+        plan.steps.push(step);
+        requirements.extend(requires);
+        plan.privileged |= privileged;
+    }
+    requirements.sort();
+    requirements.dedup();
+    plan.requirements = requirements;
+    plan.privileged |= !packages.is_empty();
+    plan.risk = Risk::Medium;
+    plan.depends = vec![Vec::new(); plan.steps.len()];
+    Ok(plan)
+}
+
+/// The step that installs a bundle's packages from its files.
+fn native_step(
+    directory: &Path,
+    manager: PackageManager,
+    packages: &[&BundledFile],
+    offline: &[&&BundledEntry],
+    system: &dyn System,
+    trust: bool,
+) -> Result<(Step, Vec<String>), BundleError> {
     let name = |file: &BundledFile| {
         Path::new(&file.path)
             .file_name()
@@ -770,7 +1133,7 @@ pub fn plan_install(
         "hf_staging=$(mktemp -d) || exit 1".to_string(),
         "trap 'rm -rf \"$hf_staging\"' EXIT".to_string(),
     ];
-    for file in &packages {
+    for file in packages {
         lines.push(format!(
             "cp -- {} \"$hf_staging\"/ || exit 1",
             quote(&directory.join(&file.path).display().to_string())
@@ -822,9 +1185,13 @@ pub fn plan_install(
     };
     lines.push(format!("{install} {}", files.join(" ")));
     requires.push(tool.to_string());
-    let names: Vec<String> = offline.iter().map(|entry| printable(&entry.name)).collect();
+    let names: Vec<String> = offline
+        .iter()
+        .filter(|entry| entry.flatpak.is_none())
+        .map(|entry| printable(&entry.name))
+        .collect();
     let shown: Vec<String> = installable.iter().map(|file| name(file)).collect();
-    plan.steps.push(Step::Shell {
+    let step = Step::Shell {
         id: "bundle-install".to_string(),
         name: format!("Install {} from the bundle", names.join(", ")),
         program: lines.join("\n"),
@@ -840,14 +1207,141 @@ pub fn plan_install(
         )),
         requires: requires.clone(),
         changes: Vec::new(),
-    });
-    requires.sort();
-    requires.dedup();
-    plan.requirements = requires;
-    plan.privileged = true;
-    plan.risk = Risk::Medium;
-    plan.depends = vec![Vec::new()];
-    Ok(plan)
+    };
+    Ok((step, requires))
+}
+
+/// The step that installs a bundle's Flatpaks from its copy of their
+/// repository. flatpak checks each commit's signature against the remote's
+/// key on this machine. A remote this machine lacks is added with the
+/// bundle's copy of its key, which only `trust` allows, as nothing here
+/// vouches for that key; one without a collection ID is given the bundle's.
+fn flatpak_step(
+    directory: &Path,
+    manifest: &Manifest,
+    system: &dyn System,
+    trust: bool,
+) -> Result<(Step, Vec<String>, bool), BundleError> {
+    let repository = quote(&directory.join(FLATPAKS).display().to_string());
+    let mut lines: Vec<String> = Vec::new();
+    let mut shown: Vec<String> = Vec::new();
+    let mut requires = vec!["flatpak".to_string()];
+    let mut privileged = false;
+    for user in [false, true] {
+        let group: Vec<&BundledFlatpak> = manifest
+            .flatpaks
+            .iter()
+            .filter(|flatpak| flatpak.user == user)
+            .collect();
+        if group.is_empty() {
+            continue;
+        }
+        let sudo = if user { "" } else { "sudo " };
+        privileged |= !user;
+        let here = flatpak_remotes(system, user);
+        let mut remotes: Vec<&BundledFlatpak> = Vec::new();
+        for flatpak in &group {
+            if !remotes.iter().any(|seen| seen.remote == flatpak.remote) {
+                remotes.push(flatpak);
+            }
+        }
+        for flatpak in remotes {
+            let remote = &flatpak.remote;
+            let collection = &flatpak.collection;
+            match here.iter().find(|(name, _, _)| name == remote) {
+                None if !trust => {
+                    return Err(BundleError::Untrusted(format!(
+                        "this machine has no {remote} Flatpak remote, so only the bundle's copy of its key would vouch for the Flatpaks; add the remote first, or install with --trust-bundle only if you made the bundle yourself"
+                    )));
+                }
+                None => {
+                    let key = manifest
+                        .files
+                        .iter()
+                        .find(|file| file.path == key_path(remote, user))
+                        .ok_or_else(|| {
+                            BundleError::Damaged(format!("the {remote} remote's key is missing"))
+                        })?;
+                    // The checksum verified here, not the bundle's own file.
+                    lines.push(format!(
+                        "hf_key=$(mktemp) && cp -- {} \"$hf_key\" && printf '%s  %s\\n' {} \"$hf_key\" | sha256sum --quiet --check - || {{ echo 'HelixForge: the bundle changed after it was checked; nothing was installed' >&2; exit 1; }}",
+                        quote(&directory.join(&key.path).display().to_string()),
+                        key.sha256
+                    ));
+                    lines.push(format!(
+                        "{sudo}flatpak remote-add {} --gpg-import=\"$hf_key\" --collection-id={collection} {remote} {} || exit 1\nrm -f \"$hf_key\"",
+                        scope(user),
+                        quote(&flatpak.url)
+                    ));
+                    shown.push(format!(
+                        "add the {remote} remote ({}) with the bundle's copy of its key",
+                        flatpak.url
+                    ));
+                    requires.extend(["mktemp".to_string(), "sha256sum".to_string()]);
+                }
+                Some((_, address, here))
+                    if here.is_empty()
+                        && !trust
+                        && published_collection(address) != Some(collection.as_str()) =>
+                {
+                    return Err(BundleError::Untrusted(format!(
+                        "this machine's {remote} Flatpak remote has no collection ID, and {} is not the one published for {}; give the remote its own, or install with --trust-bundle only if you made the bundle yourself",
+                        printable(collection),
+                        printable(address)
+                    )));
+                }
+                Some((_, _, here)) if here.is_empty() => {
+                    lines.push(format!(
+                        "{sudo}flatpak remote-modify {} --collection-id={collection} {remote} || exit 1",
+                        scope(user)
+                    ));
+                    shown.push(format!(
+                        "give the {remote} remote its collection ID, {collection}"
+                    ));
+                }
+                Some((_, _, here)) if here != collection => {
+                    return Err(BundleError::Untrusted(format!(
+                        "this machine's {remote} Flatpak remote has the collection ID {}, and the bundle's Flatpaks {collection}",
+                        printable(here)
+                    )));
+                }
+                Some(_) => {}
+            }
+            let ids: Vec<&str> = group
+                .iter()
+                .filter(|other| other.remote == *remote)
+                .map(|other| other.id.as_str())
+                .collect();
+            let install = format!(
+                "{sudo}flatpak install {} --noninteractive --sideload-repo={repository} {remote} {}",
+                scope(user),
+                ids.join(" ")
+            );
+            lines.push(format!("{install} || exit 1"));
+            shown.push(install);
+        }
+    }
+    if privileged {
+        requires.push("sudo".to_string());
+    }
+    let names: Vec<String> = manifest
+        .entries
+        .iter()
+        .filter(|entry| entry.flatpak.is_some())
+        .map(|entry| printable(&entry.name))
+        .collect();
+    let step = Step::Shell {
+        id: "bundle-flatpak".to_string(),
+        name: format!("Install {} from the bundle's Flatpaks", names.join(", ")),
+        program: lines.join("\n"),
+        display: printable(&format!(
+            "{}, from the bundle's copy of the repository; flatpak checks each commit's signature against the remote's key",
+            shown.join("; then ")
+        )),
+        requires: requires.clone(),
+        changes: Vec::new(),
+    };
+    Ok((step, requires, privileged))
 }
 
 /// Whether this machine's apt index lists the package in this file, at its
@@ -1015,6 +1509,8 @@ mod tests {
             system: &fake,
             download: &download,
             dnf_download: &|_, _, _| false,
+            create_usb: &|_, _, _| false,
+            flatpak_key: &|_, _| PathBuf::new(),
         };
         let program = scratch.path().join("program");
         std::fs::write(&program, b"helixforge").unwrap();
@@ -1110,6 +1606,8 @@ mod tests {
             system: &fake,
             download: &download,
             dnf_download: &|_, _, _| false,
+            create_usb: &|_, _, _| false,
+            flatpak_key: &|_, _| PathBuf::new(),
         };
         let made = create(&at.join("bundle"), &found, &arch, false, None, 1, &tools).unwrap();
         (made, arch, fake)
@@ -1229,6 +1727,8 @@ mod tests {
             system: &fake,
             download: &honest,
             dnf_download: &|_, _, _| false,
+            create_usb: &|_, _, _| false,
+            flatpak_key: &|_, _| PathBuf::new(),
         };
         let bundle = scratch.path().join("good");
         create(&bundle, &found, &debian, false, None, 1, &tools).unwrap();
@@ -1262,6 +1762,8 @@ mod tests {
             system: &fake,
             download: &lying,
             dnf_download: &|_, _, _| false,
+            create_usb: &|_, _, _| false,
+            flatpak_key: &|_, _| PathBuf::new(),
         };
         let bad = scratch.path().join("bad");
         assert!(matches!(
@@ -1309,5 +1811,224 @@ mod tests {
             ),
             Err(BundleError::Unsupported(_))
         ));
+    }
+
+    /// What `flatpak` says on a machine with Flycast installed from Flathub.
+    fn flatpak_machine(collection: &str) -> Fake {
+        let mut fake = Fake::default();
+        fake.commands.insert(
+            "flatpak list --app --columns=application,ref,origin,installation".into(),
+            "org.flycast.Flycast\torg.flycast.Flycast/x86_64/stable\tflathub\tsystem\n".into(),
+        );
+        fake.commands.insert(
+            "flatpak remotes --system --columns=name,url,collection".into(),
+            format!("flathub\thttps://dl.flathub.org/repo/\t{collection}\n"),
+        );
+        fake.commands.insert(
+            "flatpak info --system --show-commit app/org.flycast.Flycast/x86_64/stable".into(),
+            format!("{}\n", "c".repeat(64)),
+        );
+        fake
+    }
+
+    #[test]
+    fn installed_flatpaks_are_copied_and_installed_from_the_copy() {
+        let catalog = Catalog::builtin(false).unwrap();
+        let arch = platform(PackageManager::Arch, "arch");
+        let scratch = tempfile::tempdir().unwrap();
+        // Without a collection ID, create-usb cannot copy it: say how to set one.
+        let error = contents(
+            &["flycast".to_string()],
+            &catalog,
+            &arch,
+            false,
+            &flatpak_machine("-"),
+            scratch.path(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("sudo flatpak remote-modify --collection-id=org.flathub.Stable flathub"),
+            "{error}"
+        );
+        let fake = flatpak_machine("org.flathub.Stable");
+        let found = contents(
+            &["flycast".to_string(), "zoom".to_string()],
+            &catalog,
+            &arch,
+            false,
+            &fake,
+            scratch.path(),
+        )
+        .unwrap();
+        assert_eq!(found.flatpaks.len(), 1);
+        assert_eq!(
+            found.flatpaks[0].reference,
+            "app/org.flycast.Flycast/x86_64/stable"
+        );
+        assert!(found.entries[0].offline);
+        assert_eq!(
+            found.entries[0].flatpak.as_deref(),
+            Some("org.flycast.Flycast")
+        );
+        // Zoom is not installed here: it needs the network, and says how not to.
+        assert!(!found.entries[1].offline);
+        assert!(
+            found.entries[1]
+                .network
+                .as_ref()
+                .unwrap()
+                .contains("its Flatpak can be bundled once installed here")
+        );
+        let key = scratch.path().join("flathub.trustedkeys.gpg");
+        std::fs::write(&key, b"key").unwrap();
+        let commit = "c".repeat(64);
+        let copied = |refs: &[String], user: bool, bundle: &Path| {
+            assert!(!user);
+            for reference in refs {
+                let path = bundle
+                    .join(FLATPAKS)
+                    .join("refs/mirrors/org.flathub.Stable")
+                    .join(reference);
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(path, format!("{commit}\n")).unwrap();
+            }
+            true
+        };
+        let tools = Tools {
+            system: &fake,
+            download: &|_, _| false,
+            dnf_download: &|_, _, _| false,
+            create_usb: &copied,
+            flatpak_key: &|remote, _| {
+                assert_eq!(remote, "flathub");
+                key.clone()
+            },
+        };
+        let bundle = scratch.path().join("bundle");
+        let made = create(&bundle, &found, &arch, false, None, 1, &tools).unwrap();
+        assert_eq!(made.format, 2);
+        assert_eq!(made.files.len(), 1, "the remote's key");
+        assert_eq!(made.files[0].path, "flatpak-keys/flathub.gpg");
+        let read = verify(&bundle, &arch).unwrap();
+        assert_eq!(read, made);
+
+        // A machine with the remote: installed from the copy, nothing added.
+        let planned = plan_install(&bundle, &read, &[], &arch, &fake, false).unwrap();
+        assert_eq!(planned.steps.len(), 1);
+        let Step::Shell { program, id, .. } = &planned.steps[0] else {
+            panic!("a shell step");
+        };
+        assert_eq!(id, "bundle-flatpak");
+        let repository = std::fs::canonicalize(&bundle).unwrap().join("flatpak");
+        assert!(
+            program.contains(&format!(
+                "sudo flatpak install --system --noninteractive --sideload-repo='{}' flathub org.flycast.Flycast",
+                repository.display()
+            )),
+            "{program}"
+        );
+        assert!(!program.contains("remote-add"), "{program}");
+        assert!(planned.privileged);
+        assert!(planned.requirements.contains(&"flatpak".to_string()));
+
+        // Its remote without a collection ID: given the bundle's, which is
+        // the one Flathub publishes for its address.
+        let planned =
+            plan_install(&bundle, &read, &[], &arch, &flatpak_machine("-"), false).unwrap();
+        assert!(
+            planned.steps[0]
+                .display()
+                .contains("give the flathub remote its collection ID, org.flathub.Stable")
+        );
+
+        // At another address, no collection ID is given on the bundle's word.
+        let mut elsewhere = flatpak_machine("-");
+        elsewhere.commands.insert(
+            "flatpak remotes --system --columns=name,url,collection".into(),
+            "flathub\thttps://mirror.example/flathub/\t-\n".into(),
+        );
+        assert!(matches!(
+            plan_install(&bundle, &read, &[], &arch, &elsewhere, false),
+            Err(BundleError::Untrusted(_))
+        ));
+        assert!(plan_install(&bundle, &read, &[], &arch, &elsewhere, true).is_ok());
+
+        // No remote: only the bundle's key would vouch, so only on trust.
+        let bare = Fake::default();
+        assert!(matches!(
+            plan_install(&bundle, &read, &[], &arch, &bare, false),
+            Err(BundleError::Untrusted(_))
+        ));
+        let planned = plan_install(&bundle, &read, &[], &arch, &bare, true).unwrap();
+        let Step::Shell { program, .. } = &planned.steps[0] else {
+            panic!("a shell step");
+        };
+        assert!(program.contains(&read.files[0].sha256), "{program}");
+        assert!(
+            program.contains("sudo flatpak remote-add --system --gpg-import=\"$hf_key\" --collection-id=org.flathub.Stable flathub 'https://dl.flathub.org/repo/'"),
+            "{program}"
+        );
+
+        // The copy at another commit, or no copy at all, is refused.
+        let mirrored = bundle
+            .join("flatpak/refs/mirrors/org.flathub.Stable/app/org.flycast.Flycast/x86_64/stable");
+        std::fs::write(&mirrored, "d".repeat(64)).unwrap();
+        assert!(matches!(
+            verify(&bundle, &arch),
+            Err(BundleError::Damaged(_))
+        ));
+        std::fs::remove_file(&mirrored).unwrap();
+        assert!(matches!(
+            verify(&bundle, &arch),
+            Err(BundleError::Damaged(_))
+        ));
+    }
+
+    #[test]
+    fn flatpak_records_are_plain() {
+        let flatpak = BundledFlatpak {
+            id: "org.example.App".into(),
+            reference: "app/org.example.App/x86_64/stable".into(),
+            commit: "a".repeat(64),
+            remote: "flathub".into(),
+            url: "https://dl.flathub.org/repo/".into(),
+            collection: "org.flathub.Stable".into(),
+            user: false,
+        };
+        let mut manifest = Manifest {
+            flatpaks: vec![flatpak.clone()],
+            ..Manifest::default()
+        };
+        assert!(plain_manifest(&manifest));
+        for bad in [
+            BundledFlatpak {
+                reference: "app/other.App/x86_64/stable".into(),
+                ..flatpak.clone()
+            },
+            BundledFlatpak {
+                reference: "runtime/org.example.App/x86_64/stable".into(),
+                ..flatpak.clone()
+            },
+            BundledFlatpak {
+                remote: "flathub; rm -rf ~".into(),
+                ..flatpak.clone()
+            },
+            BundledFlatpak {
+                collection: "../x".into(),
+                ..flatpak.clone()
+            },
+            BundledFlatpak {
+                commit: "short".into(),
+                ..flatpak.clone()
+            },
+            BundledFlatpak {
+                url: "https://x/ y".into(),
+                ..flatpak.clone()
+            },
+        ] {
+            manifest.flatpaks = vec![bad.clone()];
+            assert!(!plain_manifest(&manifest), "{bad:?}");
+        }
     }
 }

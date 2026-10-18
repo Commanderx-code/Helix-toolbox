@@ -25,8 +25,14 @@ itself, so a bundle changed after the check (on a shared drive, say) is not
 installed. Each pacman package's signature is checked with `pacman-key
 --verify` and each RPM's with `rpm -K` before the package manager runs; a
 Debian package must match this machine's signed repository index unless
-`--trust-bundle` is given. A bundle from someone else is only as trustworthy
-as the HelixForge copy inside it; prefer your own.
+`--trust-bundle` is given. Flatpaks install from the bundle's copy of their
+repository, and flatpak checks each commit's signature against the remote's
+key on the installing machine; the bundle's copy of that key is used only
+to add a remote the machine lacks, with `--trust-bundle`, and is checked
+against the sum verified first. A collection ID is given to a remote that
+has none only when it is the one published for the remote's address, or
+with `--trust-bundle`. A bundle from someone else is only as
+trustworthy as the HelixForge copy inside it; prefer your own.
 
 ## How HelixForge keeps runs safe
 

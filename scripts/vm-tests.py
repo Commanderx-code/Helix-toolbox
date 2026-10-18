@@ -53,6 +53,13 @@ IMAGES = {
         'hash': 'sha256',
         'admins': 'wheel',
     },
+    'opensuse': {
+        'url': 'https://download.opensuse.org/tumbleweed/appliances/openSUSE-Tumbleweed-Minimal-VM.x86_64-Cloud.qcow2',
+        'sums': 'https://download.opensuse.org/tumbleweed/appliances/'
+                'openSUSE-Tumbleweed-Minimal-VM.x86_64-Cloud.qcow2.sha256',
+        'hash': 'sha256',
+        'admins': 'wheel',
+    },
     'archiso': {
         'url': 'https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso',
         'sums': 'https://geo.mirror.pkgbuild.com/iso/latest/sha256sums.txt',
@@ -66,6 +73,7 @@ MACHINES = {
     'arch': {'image': 'arch', 'family': 'arch', 'firmware': 'bios', 'usb': True},
     'debian': {'image': 'debian', 'family': 'debian', 'firmware': 'bios'},
     'fedora': {'image': 'fedora', 'family': 'fedora', 'firmware': 'bios'},
+    'opensuse': {'image': 'opensuse', 'family': 'opensuse', 'firmware': 'bios'},
     'arch-themes': {'image': 'arch', 'family': 'arch', 'firmware': 'bios'},
     'arch-uefi': {'image': 'arch', 'family': 'arch', 'firmware': 'uefi'},
     # The live ISO, as root, with an empty disk to install on.
@@ -191,7 +199,9 @@ class Machine:
                    '-display', 'none', '-vga', 'std', '-monitor', f'unix:{self.monitor},server,nowait',
                    '-serial', f'file:{self.work / serial}', '-daemonize', '-pidfile', str(self.work / 'qemu.pid')]
         if network:
-            command += ['-nic', f'user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:{self.port}-:22']
+            # Restricted: SSH still reaches it, but it reaches nothing.
+            restrict = ',restrict=on' if network == 'restricted' else ''
+            command += ['-nic', f'user,model=virtio-net-pci{restrict},hostfwd=tcp:127.0.0.1:{self.port}-:22']
         else:
             command += ['-nic', 'none']
         if self.spec.get('smbios'):
@@ -222,9 +232,26 @@ class Machine:
             # discard=unmap: the disk takes TRIM, as an SSD does.
             drives = ['-drive', f'file={self.disk},if=virtio,discard=unmap',
                       '-drive', f'file={iso},if=virtio,format=raw,readonly=on']
+        self.drives = drives
         self.launch(drives)
         # The first boot runs cloud-init, which takes Debian about two minutes.
         self.wait(patience=600)
+
+    def relaunch(self, network=True):
+        """Power off and start again, with the network or without."""
+        # Arch starts SSH only after cloud-init's network stage and a clock
+        # synchronised over the network, neither of which comes without a
+        # way out: neither while there is none.
+        if network == 'restricted':
+            self.ssh('sudo touch /etc/cloud/cloud-init.disabled && '
+                     'sudo systemctl mask --quiet systemd-time-wait-sync.service')
+        else:
+            self.ssh('sudo rm -f /etc/cloud/cloud-init.disabled && '
+                     'sudo systemctl unmask --quiet systemd-time-wait-sync.service')
+        self.ssh('sudo systemctl poweroff', check=False)
+        self.gone()
+        self.launch(self.drives, network=network)
+        self.wait()
 
     def stop(self):
         pid = self.work / 'qemu.pid'
@@ -811,6 +838,46 @@ def linux_neptune(machine, shots):
     machine.reboot(None, 'linux-neptune-default')
 
 
+def flatpak_bundle(machine, shots):
+    """A Flatpak installed here goes into a bundle with its runtimes, and
+    installs from it with no network: through the Flathub remote the machine
+    has, and, only on trust, with the bundle's copy of its key."""
+    app = 'org.flycast.Flycast'
+    machine.ssh('sudo pacman -S --noconfirm --needed flatpak >/dev/null')
+    machine.ssh('curl -fsSLo flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo')
+    machine.ssh('sudo flatpak remote-add --if-not-exists flathub flathub.flatpakrepo')
+    machine.ssh(f'sudo flatpak install -y --noninteractive flathub {app} >/dev/null')
+    refused = machine.ssh('./helixforge bundle create bundle flycast', check=False)
+    if refused.returncode == 0 or '--collection-id=org.flathub.Stable flathub' not in refused.stderr:
+        raise RuntimeError(f'a remote without a collection ID was not named: {refused.stderr[-500:]}')
+    machine.ssh('sudo flatpak remote-modify --collection-id=org.flathub.Stable flathub')
+    made = machine.ssh('./helixforge bundle create bundle flycast').stdout
+    if f'Offline: Flycast (the Flatpak {app})' not in made:
+        raise RuntimeError(f'Flycast was not bundled as a Flatpak:\n{made}')
+    machine.ssh('./helixforge bundle verify bundle')
+    # The other machine: Flathub added as its file adds it, without a
+    # collection ID, and nothing installed; then no network.
+    machine.ssh('sudo flatpak uninstall -y --noninteractive --all >/dev/null && sudo flatpak remote-delete flathub'
+                ' && sudo flatpak remote-add flathub flathub.flatpakrepo')
+    machine.relaunch(network='restricted')
+    try:
+        if machine.ok('curl -fsS --max-time 10 -o /dev/null https://dl.flathub.org/repo/'):
+            raise RuntimeError('the machine still reaches Flathub')
+        machine.ssh('./helixforge bundle install bundle --yes')
+        machine.ssh(f'flatpak info {app} >/dev/null && flatpak run --command=true {app}')
+        if 'org.flathub.Stable' not in machine.ssh('flatpak remotes --columns=name,collection').stdout:
+            raise RuntimeError('the remote was not given its collection ID')
+        # No remote at all: the bundle's key, only when trusted.
+        machine.ssh('sudo flatpak uninstall -y --noninteractive --all >/dev/null && sudo flatpak remote-delete flathub')
+        refused = machine.ssh('./helixforge bundle install bundle --yes', check=False)
+        if refused.returncode == 0 or 'no flathub Flatpak remote' not in refused.stderr:
+            raise RuntimeError(f'a missing remote was added on the bundle\'s word: {refused.stderr[-500:]}')
+        machine.ssh('./helixforge bundle install bundle --trust-bundle --yes')
+        machine.ssh(f'flatpak info {app} >/dev/null && flatpak run --command=true {app}')
+    finally:
+        machine.relaunch()
+
+
 def boot_with_limine(machine):
     """Boot with Limine instead of GRUB, as CachyOS installs it: Limine as
     the EFI partition's boot loader, and the kernel and its boot image beside
@@ -873,7 +940,7 @@ CASES = {
     'arch': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('plymouth-on', plymouth_on),
              ('plymouth-theme', plymouth_theme), ('plymouth-dotfiles', plymouth_dotfiles),
              ('plymouth-off', plymouth_off), ('apparmor', apparmor), ('sddm', sddm), ('enable-ssd-trim', ssd_trim),
-             ('bootable-usb-creator', bootable_usb)],
+             ('bootable-usb-creator', bootable_usb), ('bundle-flatpak', flatpak_bundle)],
     # Every other GRUB theme, Garuda's from its own repository.
     'arch-themes': [(entry, grub_theme_case(entry)) for entry in (
         'grub-cachyos', 'grub-catppuccin', 'grub-tela', 'grub-vimix', 'grub-ctt-bsol', 'grub-ctt-cyberpunk',

@@ -167,6 +167,15 @@ every half second while the machine boots, and checks the result:
 | Arch Server Setup | Arch live ISO | it installs on the empty disk (btrfs, the first keyboard layout and locale); the installed system boots on its own and reports on the serial line that it started cleanly, with the user in `wheel`, NetworkManager running, root on the `@` subvolume, the swap file in use, the host name and the LTS kernel |
 | Linux Neptune for SteamDeck | Steam Deck stand-in | linux-neptune, its speaker firmware and a GRUB entry are installed, and the machine boots it |
 
+The Arch machine also makes an offline bundle of a Flatpak (Flycast) it
+installed from Flathub: `bundle create` first names the collection ID
+Flathub needs, then copies the application with its runtimes. With
+everything Flatpak uninstalled, Flathub added again without a collection ID
+and the machine restarted with no way out to the network, `bundle install`
+gives the remote its collection ID and installs Flycast from the bundle,
+which then runs. With the remote removed too, the install is refused, and
+with `--trust-bundle` the remote is added with the bundle's copy of its key.
+
 The captured screens (the boot menus, the splash, the login screen, the
 preview) are kept as the job's artifact, for a person to look at. Entries
 verified here are **VM Tested** on the Reliability screen. Real graphics

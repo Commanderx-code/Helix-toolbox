@@ -168,9 +168,10 @@ On a machine of the same distribution that is online, `helixforge bundle
 create ~/bundle git htop neovim` puts those entries' packages and HelixForge
 itself in a folder. Copy it to the other machine, and there, inside it, run
 `./helixforge bundle install .`: it checks every file, then installs from
-them; with everything in the bundle, nothing is downloaded. Entries that need
-the network are named so you can
-run them later.
+them; with everything in the bundle, nothing is downloaded. A Flatpak
+installed on the first machine goes in too, with its runtimes, once its
+remote has a collection ID (`bundle create` says how to give Flathub its
+own). Entries that need the network are named so you can run them later.
 
 ## When something is wrong
 

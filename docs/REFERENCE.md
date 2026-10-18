@@ -206,8 +206,18 @@ dependency. pacman's packages come with their signatures, which `pacman -U`
 checks against its keyring when it installs them; apt's are checked against
 the checksums in the repository's signed index as they are downloaded; dnf's
 are signed, and `rpm -K` checks them before they install. Entries that need
-the network (Flatpaks, AUR builds, scripts, Nix) are listed as such and left
-out. zypper cannot download without root, so openSUSE is not supported yet.
+the network (AUR builds, scripts, Nix, Flatpaks not installed here) are
+listed as such and left out. zypper cannot download without root, so
+openSUSE is not supported yet.
+
+An entry with no package for this distribution whose Flatpak is installed
+here goes in as that Flatpak: `flatpak create-usb` copies it, with the
+runtimes and extensions it needs, from this machine's installation into the
+bundle's `flatpak` folder, and the bundle keeps its remote's signing key.
+`create-usb` needs the remote to have a collection ID; Flathub, added from
+its `.flatpakrepo` file, has none until it is given its own:
+`sudo flatpak remote-modify --collection-id=org.flathub.Stable flathub`.
+`bundle create` says so rather than changing your remotes.
 
 On the other machine, `./helixforge bundle verify .` checks that the bundle
 was made for this distribution and architecture and that every file matches
@@ -222,6 +232,15 @@ index with the same checksum, or the install is refused unless
 A bundle installs as a whole, since its entries share their dependencies.
 pacman and apt fetch only a dependency the bundle lacks, and only when the
 network is there; a `--complete` bundle lacks none.
+
+Flatpaks install from the bundle's copy (`flatpak install --sideload-repo`),
+and flatpak checks each commit's signature against the remote's key on this
+machine, as it would from the remote itself. `verify` checks that the copy
+holds each application at the commit the manifest records. A remote without
+a collection ID is given the bundle's when it is the one published for the
+remote's address (Flathub's); any other, and a remote this machine lacks,
+which is added with the bundle's copy of its key, only with
+`--trust-bundle`, since nothing here vouches for them.
 
 ## What a change will do
 

@@ -52,7 +52,8 @@ The items:
       verified before use and installed without downloading; what needs the
       network named
 - [ ] zypper bundles, which need a way to download without root
-- [ ] Flatpak bundles (`flatpak create-usb`), for installed applications
+- [x] Flatpak bundles (`flatpak create-usb`), for installed applications
+      (v1.5.5)
 
 ## v1.4.0: first-run setup and the desktop (done)
 

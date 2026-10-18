@@ -208,11 +208,14 @@ change it, or `null`. `entries` are the suggestions for this desktop.
 
 ## bundle
 
-`bundle create --dry-run --json`: `{entries, downloads, dnf, complete}`,
-each entry `{id, name, offline, packages, network}`, each download `{url,
-file, checksum}`. `bundle verify --json`: the manifest, `{format, created,
-helixforge, release, distribution, family, architecture, complete, entries,
-files}`, each file `{path, sha256, bytes, source, assurance}`.
+`bundle create --dry-run --json`: `{entries, downloads, dnf, flatpaks,
+complete}`, each entry `{id, name, offline, packages, network, flatpak}`
+(`flatpak` and `network` only when they apply), each download `{url, file,
+checksum}`, each Flatpak `{id, reference, commit, remote, url, collection,
+user}`. `bundle verify --json`: the manifest, `{format, created, helixforge,
+release, distribution, family, architecture, complete, entries, files,
+flatpak}` (`flatpak`, the Flatpaks in the same form, only in format 2), each
+file `{path, sha256, bytes, source, assurance}`.
 
 ## profile list
 

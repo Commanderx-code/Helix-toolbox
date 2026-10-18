@@ -61,8 +61,8 @@ Debian, Ubuntu, Fedora and openSUSE.
 - **Hardware and firmware**: fwupd firmware updates, disk, temperature and
   battery health, PCI and USB devices, with SMART checks and firmware
   updates behind their own confirmation.
-- **Offline bundles**: packages and HelixForge in one checked folder, for a
-  machine without reliable internet.
+- **Offline bundles**: packages, installed Flatpaks and HelixForge in one
+  checked folder, for a machine without reliable internet.
 - **Know what you are running**: the Reliability screen shows how far each
   entry has been tested (in distribution containers, with stand-ins, on real
   machines), critical boot and driver entries first, and the trust inspector

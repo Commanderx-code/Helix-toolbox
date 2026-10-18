@@ -12,8 +12,9 @@ use std::{path::Path, path::PathBuf, process::Command};
 #[derive(Subcommand)]
 pub enum BundleCommand {
     /// Download the packages entries need, with HelixForge itself, into a new
-    /// folder, for a machine of this distribution without reliable internet.
-    /// Nothing is installed here.
+    /// folder, for a machine of this distribution without reliable internet;
+    /// Flatpak applications installed here are copied with their runtimes
+    /// (flatpak create-usb). Nothing is installed here.
     Create {
         /// The folder to make; it must be new or empty.
         directory: PathBuf,
@@ -37,7 +38,9 @@ pub enum BundleCommand {
     Install {
         directory: PathBuf,
         /// Install Debian packages this machine's repository index does not
-        /// know, on the bundle's word: only for a bundle you made yourself.
+        /// know, and add a Flatpak remote this machine lacks with the
+        /// bundle's copy of its key, on the bundle's word: only for a bundle
+        /// you made yourself.
         #[arg(long)]
         trust_bundle: bool,
         /// Show the plan and stop.
@@ -66,6 +69,86 @@ fn curl(url: &str, to: &Path) -> bool {
         .arg(url)
         .status()
         .is_ok_and(|status| status.success())
+}
+
+/// `flatpak create-usb`: the refs, with the runtimes they need, into the
+/// bundle's Flatpak folder. From the system installation it first updates
+/// that installation's summary, which needs root: through sudo, and the
+/// copy is then given back to you.
+fn create_usb(refs: &[String], user: bool, bundle: &Path) -> bool {
+    let elevate = !user && !nix::unistd::geteuid().is_root();
+    let mut command = if elevate {
+        println!(
+            "flatpak create-usb updates the system installation's summary first, which needs root; sudo may ask for your password."
+        );
+        let mut command = Command::new("sudo");
+        command.arg("flatpak");
+        command
+    } else {
+        Command::new("flatpak")
+    };
+    command
+        .arg("create-usb")
+        .arg(if user { "--user" } else { "--system" })
+        // Locale extensions are installed in part, for your languages.
+        .arg("--allow-partial")
+        .arg(format!("--destination-repo={}", bundle::FLATPAKS))
+        .arg(bundle)
+        .args(refs);
+    if !command.status().is_ok_and(|status| status.success()) {
+        return false;
+    }
+    !elevate
+        || Command::new("sudo")
+            .arg("chown")
+            .arg("-R")
+            .arg(format!(
+                "{}:{}",
+                nix::unistd::getuid(),
+                nix::unistd::getgid()
+            ))
+            .arg("--")
+            .arg(bundle.join(bundle::FLATPAKS))
+            .status()
+            .is_ok_and(|status| status.success())
+}
+
+/// Where flatpak keeps a remote's signing key.
+fn flatpak_key(remote: &str, user: bool) -> PathBuf {
+    let variable = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
+    let installation = if user {
+        variable("FLATPAK_USER_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                variable("XDG_DATA_HOME")
+                    .map(PathBuf::from)
+                    .or_else(|| {
+                        variable("HOME").map(|home| PathBuf::from(home).join(".local/share"))
+                    })
+                    .unwrap_or_default()
+                    .join("flatpak")
+            })
+    } else {
+        variable("FLATPAK_SYSTEM_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/var/lib/flatpak"))
+    };
+    installation.join(format!("repo/{remote}.trustedkeys.gpg"))
+}
+
+/// The bytes in a folder and everything under it.
+fn folder_bytes(path: &Path) -> u64 {
+    let Ok(listing) = std::fs::read_dir(path) else {
+        return 0;
+    };
+    listing
+        .flatten()
+        .map(|item| match item.file_type() {
+            Ok(kind) if kind.is_dir() => folder_bytes(&item.path()),
+            Ok(kind) if kind.is_file() => item.metadata().map(|data| data.len()).unwrap_or(0),
+            _ => 0,
+        })
+        .sum()
 }
 
 fn dnf_download(names: &[String], complete: bool, into: &Path) -> bool {
@@ -112,15 +195,21 @@ pub fn run(
                             "checksum": download.checksum,
                         })).collect::<Vec<_>>(),
                         "dnf": found.dnf,
+                        "flatpaks": found.flatpaks,
                         "complete": complete,
                     }),
                 );
                 return Ok(());
             }
             for entry in &found.entries {
-                match &entry.network {
-                    None => println!("Offline: {}", printable(&entry.name)),
-                    Some(why) => println!("Needs the network: {} ({why})", printable(&entry.name)),
+                match (&entry.network, &entry.flatpak) {
+                    (None, Some(id)) => {
+                        println!("Offline: {} (the Flatpak {id})", printable(&entry.name))
+                    }
+                    (None, None) => println!("Offline: {}", printable(&entry.name)),
+                    (Some(why), _) => {
+                        println!("Needs the network: {} ({why})", printable(&entry.name))
+                    }
                 }
             }
             let files = found
@@ -133,7 +222,7 @@ pub fn run(
                     "dnf downloads {} with their dependencies.",
                     found.dnf.join(", ")
                 );
-            } else {
+            } else if files > 0 || found.flatpaks.is_empty() {
                 println!(
                     "{files} package files to download{}.",
                     if complete {
@@ -141,6 +230,17 @@ pub fn run(
                     } else {
                         ", with the dependencies this machine lacks"
                     }
+                );
+            }
+            if !found.flatpaks.is_empty() {
+                println!(
+                    "flatpak create-usb copies {}, with the runtimes they need, from this machine's installation.",
+                    found
+                        .flatpaks
+                        .iter()
+                        .map(|flatpak| printable(&flatpak.reference))
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 );
             }
             if dry_run {
@@ -157,6 +257,8 @@ pub fn run(
                 system: &doctor::Here,
                 download: &curl,
                 dnf_download: &dnf_download,
+                create_usb: &create_usb,
+                flatpak_key: &flatpak_key,
             };
             let this = std::env::current_exe().context("cannot find the HelixForge executable")?;
             let build = crate::inspect::build();
@@ -169,7 +271,8 @@ pub fn run(
                 history::now(),
                 &tools,
             )?;
-            let bytes: u64 = manifest.files.iter().map(|file| file.bytes).sum();
+            let bytes: u64 = manifest.files.iter().map(|file| file.bytes).sum::<u64>()
+                + folder_bytes(&directory.join(bundle::FLATPAKS));
             println!(
                 "Made {} ({} files, {:.1} MB) for {} {}.\nCopy the folder over; on the other machine, inside it: ./helixforge bundle install .",
                 directory.display(),
@@ -202,6 +305,14 @@ pub fn run(
                 },
                 manifest.files.len()
             );
+            for flatpak in &manifest.flatpaks {
+                println!(
+                    "  Flatpak: {} at commit {}, from {}",
+                    printable(&flatpak.reference),
+                    &flatpak.commit[..12],
+                    printable(&flatpak.remote)
+                );
+            }
             for entry in &manifest.entries {
                 match &entry.network {
                     None => println!("  Offline: {}", printable(&entry.name)),
