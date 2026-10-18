@@ -2426,11 +2426,18 @@ impl App {
                 if control_c {
                     return false;
                 }
-                if popup.handle_key(key) == EffectsOutcome::Closed {
-                    let back = popup.from_confirmation;
-                    self.popup = None;
-                    if back && let Some((header, lines)) = &self.confirming {
-                        self.popup = Some(Popup::Confirm(ConfirmPopup::new(header, lines)));
+                match popup.handle_key(key) {
+                    EffectsOutcome::Open => {}
+                    EffectsOutcome::Closed => {
+                        let back = popup.from_confirmation;
+                        self.popup = None;
+                        if back && let Some((header, lines)) = &self.confirming {
+                            self.popup = Some(Popup::Confirm(ConfirmPopup::new(header, lines)));
+                        }
+                    }
+                    EffectsOutcome::Download => {
+                        let (planned, back) = (popup.plan.clone(), popup.from_confirmation);
+                        self.download_sources(&planned, back);
                     }
                 }
                 return true;
@@ -4167,6 +4174,7 @@ impl App {
         let look = helixforge_engine::preview::Look {
             system: &doctor::Here,
             render: &render,
+            pinned: &|name| helixforge_engine::preview::pinned_source(&scripts, name),
         };
         let steps = helixforge_engine::preview::preview(
             planned,
@@ -4174,7 +4182,37 @@ impl App {
             &self.platform,
             &look,
         );
-        self.popup = Some(Popup::Effects(EffectsPopup::new(steps, from_confirmation)));
+        let download = helixforge_engine::preview::sources_for(planned)
+            .into_iter()
+            .any(|name| {
+                matches!(
+                    helixforge_engine::preview::pinned_source(&scripts, name),
+                    helixforge_engine::preview::Pinned::Missing { .. }
+                )
+            });
+        self.popup = Some(Popup::Effects(EffectsPopup::new(
+            steps,
+            from_confirmation,
+            planned.clone(),
+            download,
+        )));
+    }
+
+    /// Download the pinned sources a plan reads, which changes nothing
+    /// else, then show its changes again.
+    fn download_sources(&mut self, planned: &Plan, from_confirmation: bool) {
+        let scripts = self.catalog.root().join("scripts");
+        for name in helixforge_engine::preview::sources_for(planned) {
+            if let Err(why) = helixforge_engine::preview::fetch_source(&scripts, name) {
+                self.popup = Some(Popup::Text(TextPopup::new(
+                    "Cannot download",
+                    format!("{name}: {why}"),
+                    true,
+                )));
+                return;
+            }
+        }
+        self.show_effects(planned, from_confirmation);
     }
 
     // ----- The setup wizard -----

@@ -94,7 +94,15 @@ enum Command {
         ids: Vec<String>,
     },
     /// Show what running entries would do, without running them.
-    Plan { ids: Vec<String> },
+    Plan {
+        ids: Vec<String>,
+        /// First download the pinned sources the entries read, such as
+        /// dotfiles, into the folder the installers read them from, so
+        /// --effects can compare the files they write with the ones here.
+        /// Nothing else is changed.
+        #[arg(long)]
+        fetch_sources: bool,
+    },
     /// Run entries in this terminal, after confirmation.
     Run {
         ids: Vec<String>,
@@ -546,9 +554,17 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Command::Plan { ids } => {
+        Command::Plan { ids, fetch_sources } => {
             let catalog = load(false)?;
             let planned = plan_ids(&catalog, &platform, &ids)?;
+            if fetch_sources {
+                let scripts = catalog.root().join("scripts");
+                for name in helixforge_engine::preview::sources_for(&planned) {
+                    let folder = helixforge_engine::preview::fetch_source(&scripts, name)
+                        .map_err(|why| anyhow::anyhow!("cannot download {name}: {why}"))?;
+                    eprintln!("Source: {name} in {}", folder.display());
+                }
+            }
             if as_json {
                 print_plan_json(&catalog, &platform, &planned);
             } else {
@@ -1350,6 +1366,7 @@ fn effects(
         &helixforge_engine::preview::Look {
             system: &doctor::Here,
             render: &render,
+            pinned: &|name| helixforge_engine::preview::pinned_source(&scripts, name),
         },
     )
 }

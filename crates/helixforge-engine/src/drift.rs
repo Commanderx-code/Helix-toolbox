@@ -758,7 +758,7 @@ fn same_target(was: Option<&str>, now: Option<&str>) -> bool {
 }
 
 /// A path with `~` for the home folder.
-fn tilde(home: &Path, path: &str) -> String {
+pub(crate) fn tilde(home: &Path, path: &str) -> String {
     match Path::new(path).strip_prefix(home) {
         Ok(rest) if !home.as_os_str().is_empty() => {
             if rest.as_os_str().is_empty() {

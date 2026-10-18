@@ -313,7 +313,7 @@ fn script_texts(file: &Path) -> Vec<String> {
 }
 
 /// The pinned sources `fetch_source` knows, from the shared helpers.
-fn pins(scripts: &Path) -> Vec<(String, String, String)> {
+pub(crate) fn pins(scripts: &Path) -> Vec<(String, String, String)> {
     let Ok(text) = std::fs::read_to_string(scripts.join("installers/commander/common.sh")) else {
         return Vec::new();
     };

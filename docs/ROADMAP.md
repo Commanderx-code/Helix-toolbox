@@ -74,8 +74,8 @@ The items:
 - [x] Hardware and firmware center (item 5): fwupd devices and updates,
       disks, sensors, batteries, PCI and USB, read-only; SMART checks and
       firmware updates as plans of their own, the latter behind a typed word
-- [ ] Previews of the dotfiles configurations' new contents, once their
-      pinned source is on the machine
+- [x] Previews of the dotfiles configurations' new contents, once their
+      pinned source is on the machine (v1.5.4)
 
 ## v1.2.0: how far each installer can be trusted (done)
 

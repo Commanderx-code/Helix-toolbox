@@ -4,6 +4,17 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.5.4
+
+- **The dotfiles entries' files before they are written**: the change
+  preview compares each file the Neovim, Fastfetch, Starship, Konsole and
+  Ghostty entries would write with the one here, side by side, once their
+  pinned dotfiles source is on the machine; a folder replaced whole says
+  which files change, which are added and which stay only in its backup.
+  The installer's own code lists them without writing anything. `d` on the
+  changes, or `plan --fetch-sources`, downloads the source, and nothing
+  else, when it is not there yet.
+
 ## v1.5.3
 
 - **Every boot entry but NVIDIA's in a virtual machine**: a machine of its

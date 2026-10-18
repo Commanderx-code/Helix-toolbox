@@ -287,6 +287,13 @@ def render_ghostty_css(palette, name):
             '    background-image: none;\n}\n')
 
 
+def ghostty_targets(repo, source):
+    palette, name = load_palette(repo)
+    return {'config': source / 'config', 'spotatui.conf': source / 'spotatui.conf',
+            'themes/commander': render_ghostty_theme(palette, name),
+            'topbar.css': render_ghostty_css(palette, name)}
+
+
 def install_dotfiles(repo, component, config, data):
     source = repo / 'configs' / component
     if component == 'konsole':
@@ -298,10 +305,7 @@ def install_dotfiles(repo, component, config, data):
     elif component == 'starship':
         deploy(source / 'starship.toml', config / 'starship.toml')
     elif component == 'ghostty':
-        palette, name = load_palette(repo)
-        targets = {'config': source / 'config', 'spotatui.conf': source / 'spotatui.conf',
-                   'themes/commander': render_ghostty_theme(palette, name),
-                   'topbar.css': render_ghostty_css(palette, name)}
+        targets = ghostty_targets(repo, source)
         for target in targets:
             check_destination(config / 'ghostty' / target)
         for target, content in targets.items():
@@ -343,6 +347,13 @@ def fastfetch_shell_config(home, config, shell, launcher):
     return target, text.rstrip() + '\n\n' + start + '\n' + block + '\n' + end + '\n'
 
 
+def fastfetch_settings(text):
+    settings = json.loads(text)
+    # Keep the layout; the launcher chooses the distro PNG at runtime.
+    settings['logo'] = {'type': 'none', 'width': 24}
+    return json.dumps(settings, ensure_ascii=False, indent=4) + '\n'
+
+
 def install_fastfetch(source, config):
     destination = config / 'fastfetch'
     launcher = Path.home() / '.local/bin/fastfetch'
@@ -360,10 +371,7 @@ def install_fastfetch(source, config):
         shutil.copytree(resources / 'fastfetch-logos', logos)
         shutil.copy2(source / 'visuals/dr460nized-fastfetch.png', logos / 'garuda.png')
         path = stage / 'config.jsonc'
-        settings = json.loads(path.read_text())
-        # Keep the layout; the launcher chooses the distro PNG at runtime.
-        settings['logo'] = {'type': 'none', 'width': 24}
-        path.write_text(json.dumps(settings, ensure_ascii=False, indent=4) + '\n')
+        path.write_text(fastfetch_settings(path.read_text()))
         deploy(stage, destination)
     deploy(resources / 'fastfetch-distro.py', launcher)
     launcher.chmod(0o755)
@@ -372,6 +380,74 @@ def install_fastfetch(source, config):
     print('Installed Fastfetch PNG launcher: ' + str(launcher))
     print('Open a new terminal to activate the fastfetch shell shortcut.')
     print('PNG logos: Kitty/Ghostty, Konsole/WezTerm/iTerm, or Sixel terminals. Other terminals show details without a logo.')
+
+
+def files_under(folder):
+    return {path.relative_to(folder).as_posix(): path
+            for path in sorted(folder.rglob('*')) if path.is_file()}
+
+
+def dotfiles_targets(repo, component, config, data):
+    """What install_dotfiles writes: destination -> a file, a folder of
+    files (relative path -> file or text) or text."""
+    source = repo / 'configs' / component
+    if component == 'konsole':
+        return {data / 'konsole' / name: source / name for name in ('Garuda.profile', 'Sweet.colorscheme')}
+    if component == 'starship':
+        return {config / 'starship.toml': source / 'starship.toml'}
+    if component == 'ghostty':
+        return {config / 'ghostty' / target: content
+                for target, content in ghostty_targets(repo, source).items()}
+    if component == 'nvim':
+        return {config / 'nvim': files_under(source)}
+    if component == 'fastfetch':
+        resources = Path(__file__).resolve().parent
+        folder = files_under(source)
+        folder.update({'commander-logos/' + name: path
+                       for name, path in files_under(resources / 'fastfetch-logos').items()})
+        folder['commander-logos/garuda.png'] = source / 'visuals/dr460nized-fastfetch.png'
+        folder['config.jsonc'] = fastfetch_settings((source / 'config.jsonc').read_text())
+        launcher = Path.home() / '.local/bin/fastfetch'
+        shell = Path(os.environ.get('SHELL', '/bin/bash')).name
+        shell_config, shell_text = fastfetch_shell_config(Path.home(), config, shell, launcher)
+        targets = {config / 'fastfetch': folder, launcher: resources / 'fastfetch-distro.py'}
+        if not shell_config.exists() or shell_config.read_text() != shell_text:
+            targets[shell_config] = shell_text
+        return targets
+    raise ValueError('Unsupported dotfiles component.')
+
+
+def preview_dotfiles(repo, component, config, data):
+    """What installing a dotfiles component would change, file by file,
+    without writing anything: each file's state and its new text (None when
+    it is not text). Files only in a replaced folder stay in its backup."""
+    files, folders = [], []
+
+    def compare(destination, content):
+        new = content.encode() if isinstance(content, str) else content.read_bytes()
+        try:
+            text = new.decode()
+        except UnicodeDecodeError:
+            text = None
+        if not destination.is_file():
+            state = 'new'
+        else:
+            state = 'same' if destination.read_bytes() == new else 'changed'
+        files.append({'path': str(destination), 'state': state, 'text': text})
+
+    for destination, content in dotfiles_targets(repo, component, config, data).items():
+        check_destination(destination)
+        if isinstance(content, dict):
+            folders.append(str(destination))
+            for name, inner in content.items():
+                compare(destination / name, inner)
+            if destination.is_dir():
+                for name in files_under(destination):
+                    if name not in content:
+                        files.append({'path': str(destination / name), 'state': 'removed', 'text': None})
+        else:
+            compare(destination, content)
+    return {'files': files, 'folders': folders}
 
 
 NALA_START = '# BEGIN Commander Linutil Nala alias'
@@ -420,6 +496,8 @@ def main():
             print(f'Alias destination: {target}')
     elif mode == 'dotfiles':
         install_dotfiles(source, args[0], config, data)
+    elif mode == 'dotfiles-preview':
+        print(json.dumps(preview_dotfiles(source, args[0], config, data)))
     elif mode == 'topgrade':
         template = source / 'configs/topgrade/topgrade.toml'
         deploy(template, config / 'topgrade.toml', render_topgrade(template.read_text(), args[0]))

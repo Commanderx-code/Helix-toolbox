@@ -247,6 +247,17 @@ AppArmor entries declare their effects; other scripts are previewed by the
 paths they write and the services their script names, and say plainly that
 the rest cannot be known before they run.
 
+The dotfiles entries (Neovim, Fastfetch, Starship, Konsole and Ghostty) are
+compared file by file once their pinned source, the dotfiles commit the
+installers read, is on this machine: each file is new, changed (side by
+side), the same, or, in a folder the installer replaces whole, left only in
+the backup it keeps. The installer's own `configure.py` lists them without
+writing anything, and refuses what another tool manages as it would when it
+runs. Until then the preview names the commit; `d` on the changes, or
+`helixforge --effects plan --fetch-sources ID`, downloads it into
+`~/.local/share/helixforge/sources`, where the installers look first, and
+changes nothing else.
+
 ## Hardware
 
 **Hardware** reads the machine without root: fwupd's devices and the
@@ -359,6 +370,7 @@ helixforge setup gaming               # what the Gaming workstation would add he
 helixforge bundle create ~/b git htop # packages and HelixForge, for a machine offline
 helixforge desktop                    # the desktop, its look and who else sets it
 helixforge plan sddm --effects        # what it would change, files side by side
+helixforge --effects plan --fetch-sources dotfiles-nvim  # with the dotfiles source to compare
 helixforge hardware                   # firmware, disks, temperatures, batteries, devices
 helixforge reliability --critical     # how far the boot, login and driver entries are tested
 helixforge trust sddm                 # where an entry comes from and what checks it

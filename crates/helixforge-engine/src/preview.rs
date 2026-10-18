@@ -8,7 +8,7 @@
 use crate::{Plan, Step, doctor::System};
 use helixforge_core::{Entry, PackageManager, printable};
 use helixforge_platform::LinuxInfo;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// How a change is known.
@@ -103,7 +103,33 @@ pub struct Look<'a> {
     /// Run one of the installers' `configure.py` renderers, which only
     /// print: the new contents of a file, or why not.
     pub render: &'a dyn Fn(&[String]) -> Result<String, String>,
+    /// Where a pinned source `fetch_source` downloads is on this machine.
+    pub pinned: &'a dyn Fn(&str) -> Pinned,
 }
+
+/// A pinned source, as found on this machine.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Pinned {
+    /// Downloaded, at its pinned revision and unedited.
+    Here(PathBuf),
+    /// Not downloaded yet: the repository and revision `fetch_source` takes.
+    Missing {
+        repository: String,
+        revision: String,
+    },
+    /// There but not usable as it is, or not a pinned source at all.
+    Unusable(String),
+}
+
+/// The dotfiles components `dotfiles.sh` installs.
+const DOTFILES: [&str; 5] = ["nvim", "fastfetch", "starship", "konsole", "ghostty"];
+
+/// What lists a dotfiles component's files without writing them.
+const DOTFILES_PREVIEW: &str = "dotfiles-preview";
+
+/// Dotfiles folders with more changed files than this list the rest as a
+/// count.
+const FOLDER_FILES: usize = 40;
 
 /// Files larger than this, or with lines past this count, get no diff.
 const DIFF_BYTES: usize = 1 << 20;
@@ -198,7 +224,7 @@ fn step_changes(
         Step::Script { file, .. } => {
             if let Some(entry) = entry {
                 changes.extend(declared(entry, look));
-                changes.extend(writes(entry, look.system));
+                changes.extend(writes(entry, file, look));
             }
             // Declared services say more than a look at the script.
             if entry.is_none_or(|entry| entry.effects.services.is_empty()) {
@@ -207,7 +233,7 @@ fn step_changes(
             changes.push(change(
                 Certainty::Unknown,
                 Area::Other,
-                if entry.is_some_and(|entry| !entry.effects.is_empty()) {
+                if entry.is_some_and(|entry| !entry.effects.is_empty() || !entry.writes.is_empty()) {
                     "anything else the script does as it runs, and the answers it asks you for"
                 } else {
                     "what the script changes: it decides as it runs, so HelixForge cannot show it in advance"
@@ -567,8 +593,18 @@ fn declared(entry: &Entry, look: &Look) -> Vec<Change> {
     changes
 }
 
-/// The user paths an entry says it writes.
-fn writes(entry: &Entry, system: &dyn System) -> Vec<Change> {
+/// The user paths an entry says it writes: file by file from its pinned
+/// source where that is on this machine and the installer can list them.
+fn writes(entry: &Entry, file: &Path, look: &Look) -> Vec<Change> {
+    let system = look.system;
+    let mut why =
+        "the new contents come from the entry's pinned source, read as it runs".to_string();
+    if let Some(component) = dotfiles_component(file) {
+        match dotfiles(entry, component, look) {
+            Ok(changes) => return changes,
+            Err(reason) => why = reason,
+        }
+    }
     let (_, _, home) = system.user();
     entry
         .writes
@@ -587,11 +623,252 @@ fn writes(entry: &Entry, system: &dyn System) -> Vec<Change> {
             };
             let mut found = change(Certainty::Expected, Area::File, format!("{written}: {what}"));
             if system.exists(&path) {
-                found.text.push_str("; the new contents come from the entry's pinned source, read as it runs");
+                found.text.push_str("; ");
+                found.text.push_str(&why);
             }
             found
         })
         .collect()
+}
+
+/// The dotfiles component a script installs, from its name.
+fn dotfiles_component(file: &Path) -> Option<&'static str> {
+    let name = file.file_stem()?.to_str()?.strip_prefix("dotfiles-")?;
+    DOTFILES.into_iter().find(|component| *component == name)
+}
+
+#[derive(Deserialize)]
+struct Listing {
+    files: Vec<Listed>,
+    folders: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct Listed {
+    path: String,
+    state: String,
+    /// The new contents, when they are text.
+    text: Option<String>,
+}
+
+/// A dotfiles component's files, compared with the ones here, from the
+/// installer's own listing of its pinned source; or why that cannot be done.
+fn dotfiles(entry: &Entry, component: &str, look: &Look) -> Result<Vec<Change>, String> {
+    let source = match (look.pinned)("dotfiles") {
+        Pinned::Here(source) => source,
+        Pinned::Missing {
+            repository,
+            revision,
+        } => {
+            return Err(format!(
+                "the new contents come from github.com/{repository} at commit {}, which is not on this machine yet; `helixforge --effects plan --fetch-sources {}` downloads it to compare them",
+                revision.get(..12).unwrap_or(&revision),
+                entry.id
+            ));
+        }
+        Pinned::Unusable(why) => {
+            return Err(printable(&format!(
+                "the new contents come from the entry's pinned source, which cannot be compared: {why}"
+            )));
+        }
+    };
+    let arguments = [
+        DOTFILES_PREVIEW.to_string(),
+        source.display().to_string(),
+        component.to_string(),
+    ];
+    let listing: Listing = (look.render)(&arguments)
+        .map_err(|why| printable(&format!("its new contents could not be worked out: {why}")))
+        .and_then(|text| {
+            serde_json::from_str(&text)
+                .map_err(|why| format!("its new contents could not be worked out: {why}"))
+        })?;
+    let (_, _, home) = look.system.user();
+    let shown = |path: &str| printable(&crate::drift::tilde(&home, path));
+    let in_folder = |path: &str| {
+        listing
+            .folders
+            .iter()
+            .find(|folder| Path::new(path).starts_with(folder.as_str()))
+    };
+    let compared = |listed: &Listed, text: String| {
+        let mut found = change(Certainty::Known, Area::File, text);
+        match (&listed.text, listed.state.as_str()) {
+            (None, "new" | "changed") => found
+                .text
+                .push_str("; it is not text, so it is not shown side by side"),
+            (Some(after), "new") => found.diff = diff(&shown(&listed.path), "", after),
+            (Some(after), "changed") => match read_text(look.system, Path::new(&listed.path)) {
+                Some(before) => found.diff = diff(&shown(&listed.path), &before, after),
+                None => found.text.push_str("; it cannot be read here to compare"),
+            },
+            _ => {}
+        }
+        found
+    };
+    let mut changes = Vec::new();
+    for folder in &listing.folders {
+        let inside: Vec<&Listed> = listing
+            .files
+            .iter()
+            .filter(|listed| in_folder(&listed.path) == Some(folder))
+            .collect();
+        let count = |state: &str| inside.iter().filter(|listed| listed.state == state).count();
+        let what = if look.system.exists(Path::new(folder)) {
+            format!(
+                "replaced as a whole, keeping the current folder as a backup: {} changed, {} added, {} left in the backup only, {} the same",
+                count("changed"),
+                count("new"),
+                count("removed"),
+                count("same")
+            )
+        } else {
+            format!("created, with {} files", inside.len())
+        };
+        changes.push(change(
+            Certainty::Known,
+            Area::File,
+            format!("{}: {what}", shown(folder)),
+        ));
+        let differing: Vec<&&Listed> = inside
+            .iter()
+            .filter(|listed| listed.state != "same")
+            .collect();
+        for listed in differing.iter().take(FOLDER_FILES) {
+            let what = match listed.state.as_str() {
+                "new" => "added",
+                "changed" => "changed",
+                _ => "only in the current folder, so it stays in the backup",
+            };
+            changes.push(compared(listed, format!("{}: {what}", shown(&listed.path))));
+        }
+        if differing.len() > FOLDER_FILES {
+            changes.push(change(
+                Certainty::Known,
+                Area::File,
+                format!(
+                    "{}: and {} more files that differ",
+                    shown(folder),
+                    differing.len() - FOLDER_FILES
+                ),
+            ));
+        }
+    }
+    for listed in listing
+        .files
+        .iter()
+        .filter(|listed| in_folder(&listed.path).is_none())
+    {
+        let what = match listed.state.as_str() {
+            "new" => "created",
+            "changed" => "replaced, keeping the current one as a backup",
+            _ => "already says this; it is written again, keeping the current one as a backup",
+        };
+        changes.push(compared(listed, format!("{}: {what}", shown(&listed.path))));
+    }
+    Ok(changes)
+}
+
+/// Where `fetch_source` keeps its downloads.
+fn sources_folder() -> Option<PathBuf> {
+    match std::env::var_os("XDG_DATA_HOME").filter(|value| !value.is_empty()) {
+        Some(data) => Some(PathBuf::from(data)),
+        None => Some(PathBuf::from(std::env::var_os("HOME")?).join(".local/share")),
+    }
+    .map(|data| data.join("helixforge/sources"))
+}
+
+/// Find a pinned source on this machine, as `fetch_source` would before
+/// using it: at its revision and unedited. `scripts` is the unpacked
+/// scripts folder. Only reads.
+pub fn pinned_source(scripts: &Path, name: &str) -> Pinned {
+    match sources_folder() {
+        Some(sources) => pinned_in(scripts, &sources, name),
+        None => Pinned::Unusable("there is no home folder".to_string()),
+    }
+}
+
+fn pinned_in(scripts: &Path, sources: &Path, name: &str) -> Pinned {
+    let Some((_, repository, revision)) = crate::trust::pins(scripts)
+        .into_iter()
+        .find(|(pinned, _, _)| pinned == name)
+    else {
+        return Pinned::Unusable(format!("{name} is not a pinned source"));
+    };
+    let folder = sources.join(format!("{name}-{revision}"));
+    if !folder.exists() {
+        return Pinned::Missing {
+            repository,
+            revision,
+        };
+    }
+    let git = |arguments: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&folder)
+            .args(arguments)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+    };
+    if git(&["rev-parse", "HEAD"]).as_deref() != Some(revision.as_str()) {
+        return Pinned::Unusable(format!(
+            "{} is not at the pinned revision",
+            folder.display()
+        ));
+    }
+    match git(&["status", "--porcelain", "--untracked-files=all"]) {
+        Some(status) if status.is_empty() => Pinned::Here(folder),
+        Some(_) => Pinned::Unusable(format!(
+            "{} has edits; move it aside to fetch a fresh copy",
+            folder.display()
+        )),
+        None => Pinned::Unusable(format!("git cannot read {}", folder.display())),
+    }
+}
+
+/// The pinned sources a plan's dotfiles entries read.
+pub fn sources_for(plan: &Plan) -> Vec<&'static str> {
+    let mut names = Vec::new();
+    for step in &plan.steps {
+        if let Step::Script { file, .. } = step
+            && dotfiles_component(file).is_some()
+            && !names.contains(&"dotfiles")
+        {
+            names.push("dotfiles");
+        }
+    }
+    names
+}
+
+/// Download a pinned source into the folder the installers read it from,
+/// with the installers' own `fetch_source`, which checks the revision. It
+/// changes nothing else. `scripts` is the unpacked scripts folder.
+pub fn fetch_source(scripts: &Path, name: &str) -> Result<PathBuf, String> {
+    if let Pinned::Unusable(why) = pinned_source(scripts, name) {
+        return Err(why);
+    }
+    let output = std::process::Command::new("sh")
+        .args(["-ec", ". ./common.sh; fetch_source \"$1\"", "sh", name])
+        .current_dir(scripts.join("installers/commander"))
+        .env(crate::LIB_VARIABLE, scripts.join("shared"))
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|error| format!("cannot run sh: {error}"))?;
+    if !output.status.success() {
+        let mut why = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if why.is_empty() {
+            why = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        }
+        return Err(printable(&why));
+    }
+    match pinned_source(scripts, name) {
+        Pinned::Here(folder) => Ok(folder),
+        Pinned::Missing { .. } => Err(format!("{name} was not downloaded")),
+        Pinned::Unusable(why) => Err(why),
+    }
 }
 
 /// Services and system paths the script names, which it may change.
@@ -773,10 +1050,9 @@ impl Diff {
 /// Run a renderer from the installers' folder: `python3 configure.py ARGS`,
 /// which only prints. `scripts` is the unpacked scripts folder.
 pub fn render_with(scripts: &Path, arguments: &[String]) -> Result<String, String> {
-    if !arguments
-        .first()
-        .is_some_and(|action| helixforge_core::RENDERERS.contains(&action.as_str()))
-    {
+    if !arguments.first().is_some_and(|action| {
+        helixforge_core::RENDERERS.contains(&action.as_str()) || action == DOTFILES_PREVIEW
+    }) {
         return Err("not a renderer".to_string());
     }
     let output = std::process::Command::new("python3")
@@ -902,6 +1178,7 @@ mod tests {
         let look = Look {
             system: &fake,
             render: &render,
+            pinned: &|_| Pinned::Unusable("none".into()),
         };
         let planned = crate::plan_with(
             [entry],
@@ -950,6 +1227,7 @@ mod tests {
         let look = Look {
             system: &fake,
             render: &render,
+            pinned: &|_| Pinned::Unusable("none".into()),
         };
         let planned = crate::plan_with(
             [catalog.find("neovim").unwrap()],
@@ -997,6 +1275,7 @@ mod tests {
         let look = Look {
             system: &fake,
             render: &render,
+            pinned: &|_| Pinned::Unusable("none".into()),
         };
         let found = preview(
             &crate::backups::plan_restore(&backup),
@@ -1007,5 +1286,167 @@ mod tests {
         let diff = found[0].changes[0].diff.as_ref().unwrap();
         assert_eq!(diff.rows[0].before.as_deref(), Some("new"));
         assert_eq!(diff.rows[0].after.as_deref(), Some("old"));
+    }
+
+    /// A dotfiles entry's step, made directly: a plan would leave it out
+    /// on a machine where Home Manager manages the file.
+    fn dotfiles_plan(catalog: &Catalog, id: &str) -> Plan {
+        let entry = catalog.find(id).unwrap();
+        Plan {
+            steps: vec![Step::Script {
+                id: entry.id.clone(),
+                name: entry.name.clone(),
+                file: PathBuf::from(format!("/scripts/installers/commander/{id}.sh")),
+                program: "sh".into(),
+                args: Vec::new(),
+                interactive: true,
+            }],
+            ..Plan::default()
+        }
+    }
+
+    #[test]
+    fn dotfiles_are_compared_file_by_file_from_their_pinned_source() {
+        let catalog = Catalog::builtin(false).unwrap();
+        let mut fake = Fake::default();
+        fake.files
+            .insert(PathBuf::from("/home/me/.config/nvim"), String::new());
+        fake.files.insert(
+            PathBuf::from("/home/me/.config/nvim/init.lua"),
+            "-- mine\n".into(),
+        );
+        let render = |arguments: &[String]| -> Result<String, String> {
+            assert_eq!(arguments, ["dotfiles-preview", "/sources/dotfiles", "nvim"]);
+            Ok(serde_json::json!({
+                "folders": ["/home/me/.config/nvim"],
+                "files": [
+                    {"path": "/home/me/.config/nvim/init.lua", "state": "changed", "text": "require(\"commander\")\n"},
+                    {"path": "/home/me/.config/nvim/lua/new.lua", "state": "new", "text": "-- new\n"},
+                    {"path": "/home/me/.config/nvim/logo.png", "state": "new", "text": null},
+                    {"path": "/home/me/.config/nvim/local.lua", "state": "removed", "text": null},
+                    {"path": "/home/me/.config/nvim/same.lua", "state": "same", "text": "x\n"},
+                ],
+            })
+            .to_string())
+        };
+        let look = Look {
+            system: &fake,
+            render: &render,
+            pinned: &|name| {
+                assert_eq!(name, "dotfiles");
+                Pinned::Here(PathBuf::from("/sources/dotfiles"))
+            },
+        };
+        let planned = dotfiles_plan(&catalog, "dotfiles-nvim");
+        let found = preview(&planned, &|id| catalog.find(id), &arch(), &look);
+        let changes = &found[0].changes;
+        let texts: Vec<&str> = changes.iter().map(|change| change.text.as_str()).collect();
+        assert_eq!(
+            texts[0],
+            "~/.config/nvim: replaced as a whole, keeping the current folder as a backup: 1 changed, 2 added, 1 left in the backup only, 1 the same"
+        );
+        let init = &changes[1];
+        assert_eq!(init.certainty, Certainty::Known);
+        assert_eq!(init.text, "~/.config/nvim/init.lua: changed");
+        let unified = init.diff.as_ref().unwrap().unified();
+        assert!(
+            unified.contains("--- ~/.config/nvim/init.lua (now)"),
+            "{unified}"
+        );
+        assert!(
+            unified.contains("--- mine\n+require(\"commander\")"),
+            "{unified}"
+        );
+        assert!(
+            changes[2]
+                .diff
+                .as_ref()
+                .unwrap()
+                .unified()
+                .contains("+-- new")
+        );
+        assert!(texts[3].ends_with("it is not text, so it is not shown side by side"));
+        assert_eq!(
+            texts[4],
+            "~/.config/nvim/local.lua: only in the current folder, so it stays in the backup"
+        );
+        assert!(!texts.iter().any(|text| text.contains("same.lua")));
+        assert!(
+            texts
+                .last()
+                .unwrap()
+                .starts_with("anything else the script does"),
+            "{texts:?}"
+        );
+    }
+
+    #[test]
+    fn dotfiles_without_their_source_say_how_to_get_it() {
+        let catalog = Catalog::builtin(false).unwrap();
+        let mut fake = Fake::default();
+        fake.files.insert(
+            PathBuf::from("/home/me/.config/starship.toml"),
+            "x\n".into(),
+        );
+        let render = |_: &[String]| -> Result<String, String> { panic!("nothing to render") };
+        let look = Look {
+            system: &fake,
+            render: &render,
+            pinned: &|_| Pinned::Missing {
+                repository: "Commanderx-code/dotfiles".into(),
+                revision: "42eea7a576fcdc1fefe8ff70d73bf417f5fdc89c".into(),
+            },
+        };
+        let planned = dotfiles_plan(&catalog, "dotfiles-starship");
+        let found = preview(&planned, &|id| catalog.find(id), &arch(), &look);
+        let starship = &found[0].changes[0];
+        assert_eq!(starship.certainty, Certainty::Expected);
+        assert!(
+            starship.text.contains("github.com/Commanderx-code/dotfiles at commit 42eea7a576fc, which is not on this machine yet; `helixforge --effects plan --fetch-sources dotfiles-starship`"),
+            "{}",
+            starship.text
+        );
+        assert_eq!(sources_for(&planned), ["dotfiles"]);
+        // An installer that refuses says why, as it would when it runs.
+        let refused = |_: &[String]| -> Result<String, String> {
+            Err(
+                "/home/me/.config/starship.toml is symlink-managed; update its owner instead."
+                    .into(),
+            )
+        };
+        let look = Look {
+            system: &fake,
+            render: &refused,
+            pinned: &|_| Pinned::Here(PathBuf::from("/sources/dotfiles")),
+        };
+        let found = preview(&planned, &|id| catalog.find(id), &arch(), &look);
+        assert!(found[0].changes[0].text.ends_with(
+            "its new contents could not be worked out: /home/me/.config/starship.toml is symlink-managed; update its owner instead."
+        ));
+    }
+
+    #[test]
+    fn a_pinned_source_is_found_only_at_its_revision() {
+        let catalog = Catalog::builtin(false).unwrap();
+        let scripts = catalog.root().join("scripts");
+        let empty = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            pinned_in(&scripts, empty.path(), "nothing"),
+            Pinned::Unusable(_)
+        ));
+        let Pinned::Missing {
+            repository,
+            revision,
+        } = pinned_in(&scripts, empty.path(), "dotfiles")
+        else {
+            panic!("an empty folder has no sources");
+        };
+        assert_eq!(repository, "Commanderx-code/dotfiles");
+        assert_eq!(revision.len(), 40);
+        std::fs::create_dir(empty.path().join(format!("dotfiles-{revision}"))).unwrap();
+        assert!(matches!(
+            pinned_in(&scripts, empty.path(), "dotfiles"),
+            Pinned::Unusable(why) if why.contains("not at the pinned revision")
+        ));
     }
 }

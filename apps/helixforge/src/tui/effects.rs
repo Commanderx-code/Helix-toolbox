@@ -3,7 +3,10 @@
 
 use super::{hints::Hint, theme::Theme};
 use crossterm::event::{KeyCode, KeyEvent};
-use helixforge_engine::preview::{Certainty, Diff, StepPreview, Tag};
+use helixforge_engine::{
+    Plan,
+    preview::{Certainty, Diff, StepPreview, Tag},
+};
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
@@ -31,6 +34,10 @@ pub struct EffectsPopup {
     /// Whether closing goes back to the confirmation.
     pub from_confirmation: bool,
     visible: u16,
+    /// The plan shown, and whether a pinned source it reads can be
+    /// downloaded to compare the files it writes.
+    pub plan: Plan,
+    pub download: bool,
 }
 
 /// What a key did.
@@ -38,10 +45,17 @@ pub struct EffectsPopup {
 pub enum Outcome {
     Open,
     Closed,
+    /// Download the pinned sources, then show the changes again.
+    Download,
 }
 
 impl EffectsPopup {
-    pub fn new(steps: Vec<StepPreview>, from_confirmation: bool) -> Self {
+    pub fn new(
+        steps: Vec<StepPreview>,
+        from_confirmation: bool,
+        plan: Plan,
+        download: bool,
+    ) -> Self {
         let mut items = Vec::new();
         for step in steps {
             items.push(Item::Step(step.name));
@@ -63,6 +77,8 @@ impl EffectsPopup {
             showing: None,
             from_confirmation,
             visible: 0,
+            plan,
+            download,
         }
     }
 
@@ -96,6 +112,7 @@ impl EffectsPopup {
         }
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => return Outcome::Closed,
+            KeyCode::Char('d') if self.download => return Outcome::Download,
             KeyCode::Char('j') | KeyCode::Down => self.step(1),
             KeyCode::Char('k') | KeyCode::Up => self.step(-1),
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
@@ -251,6 +268,9 @@ impl EffectsPopup {
                 "Read it all"
             },
         ));
+        if self.download {
+            hints.push(Hint::new(&["d"], "Download the source to compare"));
+        }
         hints.push(Hint::new(
             &["Esc"],
             if self.from_confirmation {
@@ -332,4 +352,24 @@ fn draw_diff(frame: &mut Frame, area: Rect, diff: &Diff, scroll: u16, theme: The
             area.height.saturating_sub(1),
         ),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::KeyModifiers;
+
+    fn press(popup: &mut EffectsPopup, code: KeyCode) -> Outcome {
+        popup.handle_key(&KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    #[test]
+    fn a_missing_source_can_be_downloaded_from_the_changes() {
+        let mut popup = EffectsPopup::new(Vec::new(), false, Plan::default(), true);
+        assert_eq!(popup.hints().1.len(), 4);
+        assert_eq!(press(&mut popup, KeyCode::Char('d')), Outcome::Download);
+        let mut popup = EffectsPopup::new(Vec::new(), false, Plan::default(), false);
+        assert_eq!(popup.hints().1.len(), 3);
+        assert_eq!(press(&mut popup, KeyCode::Char('d')), Outcome::Open);
+    }
 }
