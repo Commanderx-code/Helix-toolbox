@@ -5,3 +5,7 @@ order = 104
 
 [script]
 id = "system-setup/arch/cachyos-repos"
+
+[needs]
+# CachyOS builds its packages for x86-64 only.
+architectures = ["x86_64"]

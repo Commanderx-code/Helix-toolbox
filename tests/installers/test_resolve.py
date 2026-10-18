@@ -59,6 +59,8 @@ fetch_source() { source_dir=$HOME; }
 ''')
             bin_dir = root / 'bin'
             bin_dir.mkdir()
+            # The machine Resolve is for, whatever this one is.
+            (bin_dir / 'uname').write_text(f'#!/bin/sh\n[ "$1" = -m ] && echo x86_64 && exit\nexec {shutil.which("uname")} "$@"\n')
             (bin_dir / 'apt-get').write_text('#!/bin/sh\necho apt-get \"$@\" >> \"$HOME/packages\"\n')
             (bin_dir / 'apt-cache').write_text('#!/bin/sh\nexit 0\n')
             (bin_dir / 'nvidia-smi').write_text('#!/bin/sh\nexit 0\n')

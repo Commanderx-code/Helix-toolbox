@@ -14,10 +14,13 @@ dotfiles or Myfish repositories report new sources. Nobody tags by hand.
    Reliability screen and published as `validation.json`. A source update,
    which has no Distributions run of its own, carries its ancestor's.
 3. The workflow runs every check `scripts/verify.sh` runs and builds the
-   release program with the version stamped in.
-4. `scripts/package.sh` makes the Arch, Debian and RPM packages with nfpm;
-   `SHA256SUMS` covers them and the program, and each gets a build
-   provenance attestation.
+   release program with the version stamped in. A second job, on GitHub's
+   ARM64 runner, checks out the same commit with the same record, runs the
+   tests and builds the aarch64 program.
+4. `scripts/package.sh` makes the Arch, Debian and RPM packages with nfpm,
+   for the architecture it runs on; ARM64 gets no Arch package, since Arch
+   Linux has no official ARM image to test one in. `SHA256SUMS` covers both
+   architectures' files, and each gets a build provenance attestation.
 5. The GitHub release `vX.Y.Z` is created as a draft, the files are
    uploaded, and only then is it published.
 6. With a crates.io token set up (below), `scripts/stamp-version.py` writes

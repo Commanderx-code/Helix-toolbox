@@ -9,9 +9,9 @@
 //! killed are removed the next time HelixForge starts.
 
 use helixforge_core::{
-    Action, Check, Detect, Effects, Entry, FileEffect, GPU_VENDORS, Group, Item, NativeAction,
-    Needs, NixAction, PackageNames, Precondition, Tab, valid_binary_name, valid_flatpak_id,
-    valid_id, valid_package_name, valid_script_segment,
+    ARCHITECTURES, Action, Check, Detect, Effects, Entry, FileEffect, GPU_VENDORS, Group, Item,
+    NativeAction, Needs, NixAction, PackageNames, Precondition, Tab, valid_binary_name,
+    valid_flatpak_id, valid_id, valid_package_name, valid_script_segment,
 };
 use helixforge_platform::binary_exists;
 use include_dir::{Dir, include_dir};
@@ -282,6 +282,8 @@ struct NeedsFile {
     space_mb: Option<u64>,
     #[serde(default)]
     after: Vec<String>,
+    #[serde(default)]
+    architectures: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -522,6 +524,10 @@ fn load_items(
             };
             let detect = detect_of(&entry, &path)?;
             let needs = needs_of(&entry, &path)?;
+            // For other processors, like a failed precondition.
+            if validate && !needs.runs_on(std::env::consts::ARCH) {
+                continue;
+            }
             let effects = effects_of(&entry, &path)?;
             if !ids.insert(stem.to_string()) {
                 return Err(CatalogError::Invalid(format!("duplicate entry id: {stem}")));
@@ -627,7 +633,11 @@ fn needs_of(entry: &EntryFile, path: &Path) -> Result<Needs, CatalogError> {
             .repositories
             .iter()
             .all(|name| valid_package_name(name))
-        && needs.after.iter().all(|id| valid_id(id));
+        && needs.after.iter().all(|id| valid_id(id))
+        && needs
+            .architectures
+            .iter()
+            .all(|name| ARCHITECTURES.contains(&name.as_str()));
     if !valid {
         return Err(CatalogError::Invalid(format!(
             "{} has an invalid needs section",
@@ -639,6 +649,7 @@ fn needs_of(entry: &EntryFile, path: &Path) -> Result<Needs, CatalogError> {
         repositories: needs.repositories.clone(),
         space_mb: needs.space_mb,
         after: needs.after.clone(),
+        architectures: needs.architectures.clone(),
     })
 }
 
@@ -1001,6 +1012,19 @@ mod tests {
             "catalog/apps/tools/hidden.toml",
             "name = \"Hidden\"\n\n[[preconditions]]\nmatches = true\ncheck = \"command_exists\"\nvalues = [\"no-such-command-helixforge\"]\n\n[command]\nline = \"true\"\n",
         );
+        // For another processor than this one.
+        let other = if std::env::consts::ARCH == "x86_64" {
+            "aarch64"
+        } else {
+            "x86_64"
+        };
+        write(
+            root,
+            "catalog/apps/tools/elsewhere.toml",
+            &format!(
+                "name = \"Elsewhere\"\n\n[command]\nline = \"true\"\n\n[needs]\narchitectures = [\"{other}\"]\n"
+            ),
+        );
         write(
             root,
             "catalog/apps/tools/exotic.toml",
@@ -1062,7 +1086,7 @@ mod tests {
         assert_eq!(
             names,
             ["Hello", "Shared", "Git"],
-            "order before name; hidden and exotic left out"
+            "order before name; hidden, elsewhere and exotic left out"
         );
         let Item::Entry(shared) = &tools.items[1] else {
             panic!("expected an entry");
@@ -1098,7 +1122,15 @@ mod tests {
     fn unvalidated_loading_keeps_everything() {
         let directory = sample();
         let catalog = Catalog::from_directory(directory.path(), false).unwrap();
-        assert_eq!(catalog.entries().len(), 10);
+        assert_eq!(catalog.entries().len(), 11);
+        assert!(
+            !catalog
+                .find("elsewhere")
+                .unwrap()
+                .needs
+                .architectures
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1144,6 +1176,10 @@ mod tests {
             (
                 "aurflag.toml",
                 "name = \"Aur\"\n[package]\nbinary = \"x\"\naur = \"-x\"\n",
+            ),
+            (
+                "sparc.toml",
+                "name = \"Sparc\"\n[command]\nline = \"true\"\n[needs]\narchitectures = [\"sparc\"]\n",
             ),
             (
                 "flat.toml",

@@ -5,3 +5,7 @@ order = 108
 
 [script]
 id = "gaming/starfield-titus-mod"
+
+[needs]
+# It installs through Steam, which is built for x86 only.
+architectures = ["x86_64"]

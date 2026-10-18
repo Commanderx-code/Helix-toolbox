@@ -14,4 +14,6 @@ id = "commander/resolve-native"
 
 # Checked before a run.
 [needs]
+# DaVinci Resolve for Linux is built for x86_64 only, and its installer refuses others.
+architectures = ["x86_64"]
 space_mb = 6000

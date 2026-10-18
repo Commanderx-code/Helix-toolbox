@@ -9,3 +9,7 @@ id = "commander/jagex-launcher-flatpak"
 # What the script installs, so its status can be shown.
 [detect]
 flatpak = "com.jagexlauncher.JagexLauncher"
+
+[needs]
+# The launcher is built for x86_64 only, and its installer refuses others.
+architectures = ["x86_64"]

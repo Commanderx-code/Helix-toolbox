@@ -20,7 +20,7 @@ package installs happen only in the Distributions workflow's containers.
 | Source render | `scripts/verify.sh` | rendering the dotfiles and Myfish exports again changes no catalog file |
 | Crates | Checks workflow | `cargo package --workspace`: every crate packaged and built from its package, as crates.io and `cargo install` would |
 | Virtual machines | `scripts/vm-tests.py`, in the Distributions workflow | the boot, login-screen, disk and kernel entries run for real under QEMU, in Arch, Debian and Fedora cloud images on BIOS and UEFI firmware, the Arch live ISO and an Arch machine that says it is a Steam Deck: each is run through `helixforge run`, rebooted into and checked, with the boot screens kept |
-| Distributions | `.github/workflows/distributions.yml` | Arch, Debian, Ubuntu 22.04 and 24.04, Fedora and openSUSE Tumbleweed containers with real package installs and removals, each verified, and the real package manager failing over to a stand-in Flathub; HelixForge's own package for each installed, used and removed |
+| Distributions | `.github/workflows/distributions.yml` | Arch, Debian, Ubuntu 22.04 and 24.04, Fedora and openSUSE Tumbleweed containers with real package installs and removals, each verified, and the real package manager failing over to a stand-in Flathub; HelixForge's own package for each installed, used and removed. The ARM64 build's tests, and the same containers but Arch on ARM64 runners, with the x86_64-only entries left out |
 
 ## The program in a terminal
 
@@ -211,7 +211,8 @@ file names exists.
 Every push to `main` runs the Checks, Distributions and Sync sources
 workflows; the last waits for Distributions on the same commit, then
 publishes the next release, tagged `vMAJOR.MINOR.PATCH`,
-with `helixforge-linux-x86_64` and `SHA256SUMS`, and checks that
+with `helixforge-linux-x86_64`, `helixforge-linux-aarch64`, the packages and
+`SHA256SUMS`, and checks that
 `helixforge --version` reports that version. `scripts/release-version.py`
 picks it: the commit's own version when it already has one (a rebuild), else
 one patch above the newest tag, or the workspace version in `Cargo.toml` when
@@ -239,7 +240,10 @@ chmod +x helixforge-linux-x86_64
 - Real Flatpak installs, Nix entries and `sudo` password prompts are not
   run by any automated test; Flathub fallback runs against a stand-in
   `flatpak`.
-- The release is built for Linux x86_64 with glibc 2.34 or later only.
+- The releases are built for Linux x86_64 and aarch64 with glibc 2.35 or
+  later. The ARM64 build runs the tests and the containers on GitHub's ARM64
+  runners, but not the virtual machines, which need hardware virtualization
+  those runners do not offer, nor Arch, which has no official ARM image.
 - The banner picture is checked against a test terminal that answers like
   Ghostty and one that answers like a Sixel terminal, with the image the
   program sends painted into the screenshot; how real terminals draw it is

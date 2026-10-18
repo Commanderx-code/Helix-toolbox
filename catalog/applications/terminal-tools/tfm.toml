@@ -12,3 +12,6 @@ values = ["nix", "git"]
 
 [script]
 id = "commander/tfm"
+
+[needs]
+architectures = ["x86_64"]

@@ -35,8 +35,14 @@ class RuneScapeTests(unittest.TestCase):
         real_id = shutil.which('id')
         self.stand_in('id', f'#!/bin/sh\n[ "$1" = -u ] && echo 1000 && exit\nexec {real_id} "$@"\n')
         self.stand_in('sudo', '#!/bin/sh\nexec "$@"\n')
+        # The machine these launchers are for, whatever this one is.
+        self.processor('x86_64')
         self.stand_in('pacman', '#!/bin/sh\necho "pacman $*" >> "$FAKE/log"\n')
         (self.fake / 'log').write_text('')
+
+    def processor(self, name):
+        real = shutil.which('uname')
+        self.stand_in('uname', f'#!/bin/sh\n[ "$1" = -m ] && echo {name} && exit\nexec {real} "$@"\n')
 
     def stand_in(self, name, text):
         (self.bin / name).write_text(text)
@@ -79,6 +85,15 @@ class RuneScapeTests(unittest.TestCase):
         result = self.run_script('jagex-launcher-flatpak.sh', nvidia=version)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('no libraries for NVIDIA driver 615-78-08', result.stdout)
+
+    def test_other_processors_are_refused_before_anything_happens(self):
+        self.processor('aarch64')
+        self.stand_in('flatpak', FLATPAK)
+        for name in ('jagex-launcher-flatpak.sh', 'jagex-launcher-appimage.sh'):
+            result = self.run_script(name)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('x86_64 only', result.stderr)
+        self.assertEqual(self.log(), [])
 
     def test_without_flatpak_nothing_happens(self):
         result = self.run_script('jagex-launcher-flatpak.sh')

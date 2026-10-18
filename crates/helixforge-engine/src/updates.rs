@@ -200,17 +200,39 @@ fn release(version: &str) -> Option<(u64, u64, u64)> {
     parts.next().is_none().then_some(found)
 }
 
-/// The release file a family's package manager installs.
+/// The release file a family's package manager installs on this machine.
 pub fn package_asset(manager: PackageManager, version: &str) -> Option<String> {
+    package_asset_for(manager, version, std::env::consts::ARCH)
+}
+
+/// The release file a family's package manager installs on `architecture`
+/// (x86_64 or aarch64). Debian names the architectures its own way.
+pub fn package_asset_for(
+    manager: PackageManager,
+    version: &str,
+    architecture: &str,
+) -> Option<String> {
     release(version)?;
+    let debian = match architecture {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        _ => return None,
+    };
     match manager {
-        PackageManager::Arch => Some(format!("helixforge-{version}-1-x86_64.pkg.tar.zst")),
-        PackageManager::Debian => Some(format!("helixforge_{version}-1_amd64.deb")),
+        PackageManager::Arch => Some(format!("helixforge-{version}-1-{architecture}.pkg.tar.zst")),
+        PackageManager::Debian => Some(format!("helixforge_{version}-1_{debian}.deb")),
         PackageManager::Fedora | PackageManager::Suse => {
-            Some(format!("helixforge-{version}-1.x86_64.rpm"))
+            Some(format!("helixforge-{version}-1.{architecture}.rpm"))
         }
         _ => None,
     }
+}
+
+/// The release's program on its own, for `architecture`.
+pub fn program_asset(architecture: &str) -> Option<String> {
+    helixforge_core::ARCHITECTURES
+        .contains(&architecture)
+        .then(|| format!("helixforge-linux-{architecture}"))
 }
 
 /// HelixForge itself, updated the way it was installed.
@@ -1051,9 +1073,13 @@ mod tests {
         let channel = only_this(&fake, Install::Package, true);
         assert_eq!(channel.summary(), "1 update");
         assert_eq!(channel.note, "1.0.3, the latest release is 1.0.4");
+        // The package for this machine's architecture.
+        let file = format!("helixforge-1.0.4-1-{}.pkg.tar.zst", std::env::consts::ARCH);
         assert_eq!(
             channel.command_line(),
-            "/usr/bin/helixforge fetch-release 1.0.4 helixforge-1.0.4-1-x86_64.pkg.tar.zst /home/me/.cache/helixforge/release && sudo pacman -U /home/me/.cache/helixforge/release/helixforge-1.0.4-1-x86_64.pkg.tar.zst"
+            format!(
+                "/usr/bin/helixforge fetch-release 1.0.4 {file} /home/me/.cache/helixforge/release && sudo pacman -U /home/me/.cache/helixforge/release/{file}"
+            )
         );
         // Up to date: nothing to run.
         latest(&mut fake, "v1.0.3");
@@ -1069,17 +1095,41 @@ mod tests {
     }
 
     #[test]
-    fn package_files_follow_each_family() {
+    fn package_files_follow_each_family_and_architecture() {
+        let file = |manager, architecture| package_asset_for(manager, "1.2.3", architecture);
         assert_eq!(
-            package_asset(PackageManager::Debian, "1.2.3").as_deref(),
+            file(PackageManager::Debian, "x86_64").as_deref(),
             Some("helixforge_1.2.3-1_amd64.deb")
         );
         assert_eq!(
-            package_asset(PackageManager::Suse, "1.2.3").as_deref(),
+            file(PackageManager::Suse, "x86_64").as_deref(),
             Some("helixforge-1.2.3-1.x86_64.rpm")
         );
-        assert_eq!(package_asset(PackageManager::Alpine, "1.2.3"), None);
+        assert_eq!(
+            file(PackageManager::Arch, "aarch64").as_deref(),
+            Some("helixforge-1.2.3-1-aarch64.pkg.tar.zst")
+        );
+        assert_eq!(
+            file(PackageManager::Debian, "aarch64").as_deref(),
+            Some("helixforge_1.2.3-1_arm64.deb")
+        );
+        assert_eq!(
+            file(PackageManager::Fedora, "aarch64").as_deref(),
+            Some("helixforge-1.2.3-1.aarch64.rpm")
+        );
+        assert_eq!(file(PackageManager::Debian, "riscv64"), None);
+        assert_eq!(file(PackageManager::Alpine, "x86_64"), None);
         assert_eq!(package_asset(PackageManager::Arch, "1.2.3/../x"), None);
+        // This machine's own.
+        assert_eq!(
+            package_asset(PackageManager::Fedora, "1.2.3"),
+            file(PackageManager::Fedora, std::env::consts::ARCH)
+        );
+        assert_eq!(
+            program_asset("aarch64").as_deref(),
+            Some("helixforge-linux-aarch64")
+        );
+        assert_eq!(program_asset("../x"), None);
     }
 
     #[test]

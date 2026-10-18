@@ -4,6 +4,23 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.6.0
+
+- **ARM64**: every release has a build for Linux on aarch64 beside the
+  x86_64 one: `helixforge-linux-aarch64`, a Debian/Ubuntu package (`arm64`)
+  and an RPM (`aarch64`), built and tested on ARM64 machines, with their
+  checksums in `SHA256SUMS` and signed provenance. The Distributions
+  containers run on ARM64 too (all but Arch, which has no official ARM image,
+  so there is no Arch package for ARM64 yet; the program runs there on its
+  own). `start.sh`, the Updates screen and `fetch-release` take the files for
+  the machine's architecture.
+- **Entries for x86_64 only**: a new `architectures` key in an entry's
+  `[needs]` table. Steam, Proton CachyOS, the CachyOS gaming lists and
+  repository, Chaotic-AUR, the Steam Deck kernel, Arch Server Setup, DaVinci
+  Resolve, the Jagex Launcher, Google Chrome, FreeOffice, PDF Studio and the
+  pinned terminal tools (TFM, Cassette, NetWatch) are left out on ARM64, and
+  blocked if named there anyway.
+
 ## v1.5.9
 
 - **The last British spellings go**: pinned entries are kept in

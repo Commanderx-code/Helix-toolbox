@@ -4,3 +4,7 @@ order = 104
 
 [script]
 id = "applications-setup/pdf-suites/pdfstudioviewer"
+
+[needs]
+# Qoppa's installer is a 64-bit x86 build.
+architectures = ["x86_64"]

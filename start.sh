@@ -1,8 +1,9 @@
 #!/bin/sh -e
 
 # Run HelixForge: from source when this is a checkout with Cargo, otherwise
-# the latest published Linux x86_64 release, checked against its published
-# SHA-256 sum. Prevent execution if only partially downloaded.
+# the latest published Linux release for this machine (x86_64 or aarch64),
+# checked against its published SHA-256 sum. Prevent execution if only
+# partially downloaded.
 {
 rc='\033[0m'
 red='\033[0;31m'
@@ -28,12 +29,12 @@ if [ -f "$SCRIPT_DIR/Cargo.toml" ] && command -v cargo >/dev/null 2>&1; then
 fi
 
 case "$(uname -m)" in
-    x86_64|amd64) ;;
-    *) check 1 "Releases are built for Linux x86_64 only; build from a checkout with cargo on this machine" ;;
+    x86_64|amd64) asset=helixforge-linux-x86_64 ;;
+    aarch64|arm64) asset=helixforge-linux-aarch64 ;;
+    *) check 1 "Releases are built for Linux x86_64 and aarch64 only; build from a checkout with cargo on this machine" ;;
 esac
 
 base=${HELIXFORGE_RELEASE:-https://github.com/Commanderx-code/Helix-Forge/releases/latest/download}
-asset=helixforge-linux-x86_64
 work=$(mktemp -d)
 check $? "Creating the temporary directory"
 trap 'rm -rf "$work"' 0

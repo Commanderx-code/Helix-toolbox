@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result, bail};
 use helixforge_core::PackageManager;
-use helixforge_engine::updates::{RELEASES, package_asset};
+use helixforge_engine::updates::{RELEASES, package_asset_for, program_asset};
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
@@ -14,18 +14,23 @@ use std::{
     process::Command,
 };
 
-/// The files a release has that HelixForge may fetch.
+/// The files a release has that HelixForge may fetch, for each architecture
+/// there are builds for.
 fn allowed(version: &str) -> Vec<String> {
-    let mut files: Vec<String> = [
-        PackageManager::Arch,
-        PackageManager::Debian,
-        PackageManager::Fedora,
-    ]
-    .into_iter()
-    .filter_map(|manager| package_asset(manager, version))
-    .collect();
-    if !files.is_empty() {
-        files.push("helixforge-linux-x86_64".into());
+    let mut files = Vec::new();
+    for architecture in helixforge_core::ARCHITECTURES {
+        let packages: Vec<String> = [
+            PackageManager::Arch,
+            PackageManager::Debian,
+            PackageManager::Fedora,
+        ]
+        .into_iter()
+        .filter_map(|manager| package_asset_for(manager, version, architecture))
+        .collect();
+        if !packages.is_empty() {
+            files.extend(packages);
+            files.extend(program_asset(architecture));
+        }
     }
     files
 }
@@ -173,5 +178,7 @@ mod tests {
         // Nothing reaches the network or the disk for a refused file.
         assert!(fs::read_dir(cache.path()).unwrap().next().is_none());
         assert!(allowed("1.2.3").contains(&"helixforge_1.2.3-1_amd64.deb".to_string()));
+        assert!(allowed("1.2.3").contains(&"helixforge-1.2.3-1.aarch64.rpm".to_string()));
+        assert!(allowed("1.2.3").contains(&"helixforge-linux-aarch64".to_string()));
     }
 }

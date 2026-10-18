@@ -168,6 +168,10 @@ pub fn vm_label(name: &str) -> String {
 
 /// A container image as people name the system.
 pub fn image_label(image: &str) -> String {
+    // The ARM64 build's containers: "debian:stable on aarch64".
+    if let Some(image) = image.strip_suffix(" on aarch64") {
+        return format!("{} on ARM64", image_label(image));
+    }
     match image {
         "archlinux:latest" => "Arch".to_string(),
         "debian:stable" => "Debian".to_string(),
@@ -454,6 +458,16 @@ mod tests {
         "images": {"archlinux:latest": {"entries": {"htop": "verified"}},
                    "ubuntu:24.04": {"entries": {"htop": "verified", "system-report": "ran"}}},
         "vms": {"arch": {"entries": {"sddm": "verified"}}}}"#;
+
+    #[test]
+    fn container_images_are_named_as_systems() {
+        assert_eq!(image_label("debian:stable"), "Debian");
+        assert_eq!(image_label("ubuntu:22.04"), "Ubuntu 22.04");
+        assert_eq!(
+            image_label("opensuse/tumbleweed:latest on aarch64"),
+            "openSUSE Tumbleweed on ARM64"
+        );
+    }
 
     #[test]
     fn levels_come_from_the_record_never_beyond_it() {

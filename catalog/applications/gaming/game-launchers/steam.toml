@@ -17,4 +17,6 @@ flatpak = "com.valvesoftware.Steam"
 
 # Checked before a run.
 [needs]
+# Steam for Linux is built for x86 only.
+architectures = ["x86_64"]
 repositories = ["multilib"]

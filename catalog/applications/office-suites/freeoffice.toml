@@ -10,3 +10,7 @@ id = "applications-setup/office-suites/freeoffice"
 debian = "softmaker-freeoffice-2024"
 fedora = "softmaker-freeoffice-2024"
 aur = "freeoffice"
+
+[needs]
+# SoftMaker's packages the installer uses are x86_64 builds.
+architectures = ["x86_64"]

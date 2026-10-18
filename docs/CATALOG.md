@@ -158,6 +158,8 @@ confirmation:
   before removing it)
 - an entry needs an Arch repository that is off, such as Steam and multilib
   (blocker)
+- an entry is for another processor, such as Steam on an ARM64 machine
+  (blocker)
 - an entry is for graphics hardware the machine does not have, such as the
   Nvidia drivers without an Nvidia card (warning)
 - the root file system has less free space than the packages' installed
@@ -188,7 +190,13 @@ gpu = ["nvidia"]              # nvidia, amd or intel; any one will do
 repositories = ["multilib"]   # Arch repositories that must be enabled
 space_mb = 6000               # free space beyond its packages, for downloads
 after = ["paru-aur-helper"]   # entries that run first when both are queued
+architectures = ["x86_64"]    # x86_64 or aarch64; any when left out
 ```
+
+An entry with `architectures` is left out of the menu and the lists on other
+processors, like one whose preconditions fail. Named on the command line
+anyway, it is blocked before anything runs. Give it to entries whose
+programs are only built for one, such as Steam or DaVinci Resolve.
 
 A package entry lists every source it has on this machine, in order: the
 distribution's package, the AUR on Arch, then Flathub. The plan shows the

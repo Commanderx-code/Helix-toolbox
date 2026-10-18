@@ -332,6 +332,18 @@ pub struct Needs {
     pub space_mb: Option<u64>,
     /// Entries that run before it when both are queued.
     pub after: Vec<String>,
+    /// The processor architectures it works on (x86_64, aarch64); any when
+    /// empty. It is left out of the catalog on others, and planned anyway
+    /// it is blocked.
+    pub architectures: Vec<String>,
+}
+
+impl Needs {
+    /// Whether it works on `architecture`.
+    pub fn runs_on(&self, architecture: &str) -> bool {
+        self.architectures.is_empty()
+            || self.architectures.iter().any(|found| found == architecture)
+    }
 }
 
 /// Text from outside HelixForge (journal lines, file and unit names, error
@@ -349,6 +361,10 @@ pub fn printable(text: &str) -> String {
 
 /// The graphics vendors `Needs::gpu` may name.
 pub const GPU_VENDORS: [&str; 3] = ["nvidia", "amd", "intel"];
+
+/// The processor architectures `Needs::architectures` may name: those there
+/// are builds for.
+pub const ARCHITECTURES: [&str; 2] = ["x86_64", "aarch64"];
 
 /// The packages and command that show a non-package entry's software.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

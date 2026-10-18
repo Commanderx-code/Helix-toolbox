@@ -175,11 +175,23 @@ fn conflicts(entries: &[&Entry], platform: &LinuxInfo, facts: &Facts, into: &mut
     }
 }
 
-/// Repositories and graphics hardware the entries need.
+/// An entry for other processors than `here`, planned anyway, cannot work.
+fn foreign(entry: &Entry, here: &str) -> Option<Finding> {
+    (!entry.needs.runs_on(here)).then(|| {
+        Finding::blocker(format!(
+            "{} is for {} only, and this machine is {here}",
+            entry.name,
+            entry.needs.architectures.join(" and ")
+        ))
+    })
+}
+
+/// Repositories, processors and graphics hardware the entries need.
 fn needs(entries: &[&Entry], platform: &LinuxInfo, facts: &Facts, into: &mut Vec<Finding>) {
     let mut enabled = None;
     let mut found = None;
     for entry in entries {
+        into.extend(foreign(entry, std::env::consts::ARCH));
         if platform.manager == Some(PackageManager::Arch) && !entry.needs.repositories.is_empty() {
             let enabled = enabled.get_or_insert_with(|| (facts.repositories)());
             if let Some(enabled) = enabled {
@@ -528,6 +540,26 @@ mod tests {
         let multilib = || Some(vec!["core".to_string(), "multilib".to_string()]);
         let facts = facts_of(&both, &multilib, &|_, _| None, &|_| true, &plenty);
         assert!(run(&[&steam, &nvidia], &facts).is_empty());
+    }
+
+    #[test]
+    fn an_entry_for_other_processors_is_blocked() {
+        let steam = package(
+            "steam",
+            "steam",
+            &[],
+            Needs {
+                architectures: vec!["x86_64".into()],
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            foreign(&steam, "aarch64").map(|finding| finding.line()),
+            Some("Blocked: steam is for x86_64 only, and this machine is aarch64".to_string())
+        );
+        assert_eq!(foreign(&steam, "x86_64"), None);
+        let anywhere = package("htop", "htop", &[], Needs::default());
+        assert_eq!(foreign(&anywhere, "aarch64"), None);
     }
 
     #[test]

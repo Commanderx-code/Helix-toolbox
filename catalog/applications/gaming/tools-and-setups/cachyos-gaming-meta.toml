@@ -13,6 +13,8 @@ id = "commander/cachyos-gaming-meta"
 
 # Checked before a run.
 [needs]
+# Its packages come from CachyOS, multilib and Chaotic-AUR, which are x86_64 only.
+architectures = ["x86_64"]
 repositories = ["multilib"]
 # Its script needs paru or yay.
 after = ["paru-aur-helper", "yay-aur-helper"]

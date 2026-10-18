@@ -5,3 +5,7 @@ order = 105
 
 [script]
 id = "system-setup/arch/chaotic-aur-setup"
+
+[needs]
+# Chaotic-AUR builds its packages for x86_64 only.
+architectures = ["x86_64"]

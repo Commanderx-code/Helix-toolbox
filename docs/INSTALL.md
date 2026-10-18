@@ -2,8 +2,11 @@
 
 Every release on the
 [releases page](https://github.com/Commanderx-code/Helix-Forge/releases)
-has the same tested Linux x86_64 build in four forms: an Arch package, a
-Debian/Ubuntu package, an RPM package for Fedora and openSUSE, and the bare
+has the same tested build for Linux on x86_64 and on aarch64 (ARM64). For
+x86_64 it comes in four forms: an Arch package, a Debian/Ubuntu package, an
+RPM package for Fedora and openSUSE, and the bare program. For ARM64 there are
+the Debian/Ubuntu and RPM packages and the bare program; Arch Linux ARM has
+no official container image to test an Arch package in, so it runs the bare
 program. With Rust installed, `cargo install` builds it on your machine
 instead (below). It needs glibc 2.35 or newer (Debian 12, Ubuntu 22.04, Fedora 36,
 current Arch and openSUSE Tumbleweed, or later).
@@ -17,11 +20,24 @@ Download the file for your distribution from the release, check it (below),
 then:
 
 ```sh
-sudo pacman -U helixforge-1.0.0-1-x86_64.pkg.tar.zst     # Arch, Garuda, CachyOS, Manjaro
-sudo apt install ./helixforge_1.0.0-1_amd64.deb          # Debian, Ubuntu, Mint, Pop!_OS
-sudo dnf install ./helixforge-1.0.0-1.x86_64.rpm         # Fedora
-sudo zypper install --allow-unsigned-rpm ./helixforge-1.0.0-1.x86_64.rpm   # openSUSE
+sudo pacman -U helixforge-1.6.0-1-x86_64.pkg.tar.zst     # Arch, Garuda, CachyOS, Manjaro
+sudo apt install ./helixforge_1.6.0-1_amd64.deb          # Debian, Ubuntu, Mint, Pop!_OS
+sudo dnf install ./helixforge-1.6.0-1.x86_64.rpm         # Fedora
+sudo zypper install --allow-unsigned-rpm ./helixforge-1.6.0-1.x86_64.rpm   # openSUSE
 ```
+
+On ARM64 (a Raspberry Pi 4 or 5 with a 64-bit system, an Apple Silicon Mac
+with Fedora Asahi Remix, an ARM laptop or server):
+
+```sh
+sudo apt install ./helixforge_1.6.0-1_arm64.deb          # Debian, Ubuntu, Raspberry Pi OS
+sudo dnf install ./helixforge-1.6.0-1.aarch64.rpm        # Fedora, Fedora Asahi Remix
+sudo zypper install --allow-unsigned-rpm ./helixforge-1.6.0-1.aarch64.rpm  # openSUSE
+```
+
+Entries for programs built only for x86_64, such as Steam, Google Chrome,
+DaVinci Resolve and the CachyOS and Chaotic-AUR repositories, are not shown
+on ARM64.
 
 The packages are not signed with a distribution key; zypper needs
 `--allow-unsigned-rpm` to accept that. Check the file first instead (below).

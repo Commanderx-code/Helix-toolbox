@@ -39,9 +39,38 @@ jobs:
           name: packages
           path: dist/
 
+  # The same build for ARM64 (aarch64), on an ARM machine, where the tests
+  # run as well.
+  build-arm64:
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+      - run: cargo test --locked --workspace --no-fail-fast
+      - run: cargo build --locked --release -p helixforge
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: helixforge-aarch64
+          path: target/release/helixforge
+      - name: Debian and RPM packages of the build
+        run: |
+          scripts/install-nfpm.sh "$RUNNER_TEMP/bin"
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$version" target/release/helixforge dist
+          # No Arch package: Arch Linux has no official ARM image to test one in.
+          rm dist/*.pkg.tar.zst
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: packages-aarch64
+          path: dist/
+
   distribution:
-    needs: build
-    runs-on: ubuntu-latest
+    needs: [build, build-arm64]
+    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -78,8 +107,44 @@ jobs:
             group: ''
             removable: mupen-64-plus
             program: mupen64plus
+          # The ARM64 build on ARM machines; Arch Linux has no official ARM image.
+          - image: debian:stable
+            family: Debian
+            group: Debian / Ubuntu
+            removable: mypaint
+            program: mypaint
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+          - image: ubuntu:24.04
+            family: Debian
+            group: Ubuntu
+            removable: mypaint
+            program: mypaint
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+          - image: ubuntu:22.04
+            family: Debian
+            group: Debian / Ubuntu
+            removable: mypaint
+            program: mypaint
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+          - image: fedora:latest
+            family: Fedora
+            group: Fedora
+            removable: mupen-64-plus
+            program: mupen64plus
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+          - image: opensuse/tumbleweed:latest
+            family: openSUSE
+            group: ''
+            removable: mupen-64-plus
+            program: mupen64plus
+            arch: aarch64
+            runner: ubuntu-24.04-arm
     container: ${{ matrix.image }}
-    name: ${{ matrix.image }}
+    name: ${{ matrix.image }}${{ matrix.arch && ' on aarch64' || '' }}
     steps:
       - name: Base tools
         run: |
@@ -104,7 +169,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: helixforge
+          name: ${{ matrix.arch && 'helixforge-aarch64' || 'helixforge' }}
           path: bin
       - name: Detection
         run: |
@@ -223,10 +288,15 @@ jobs:
           bin/helixforge desktop | grep -q '^Desktop   none found'
       - name: An offline bundle is made, checked and installed from
         run: |
-          # htop was removed by the Drift step above.
-          bin/helixforge bundle create /tmp/bundle htop steam | tee bundle.txt
+          # htop was removed by the Drift step above. Steam, a script, needs
+          # the network; there is no Steam for ARM.
+          if [ -n "${{ matrix.arch }}" ]; then
+            bin/helixforge bundle create /tmp/bundle htop | tee bundle.txt
+          else
+            bin/helixforge bundle create /tmp/bundle htop steam | tee bundle.txt
+            grep -q '^Needs the network: Steam' bundle.txt
+          fi
           grep -q '^Offline: htop$' bundle.txt
-          grep -q '^Needs the network: Steam' bundle.txt
           (cd /tmp/bundle && sha256sum --check SHA256SUMS)
           bin/helixforge bundle verify /tmp/bundle
           # A changed file is caught before anything is installed.
@@ -239,7 +309,25 @@ jobs:
           yes | /tmp/bundle/helixforge bundle install /tmp/bundle --yes | tee installed.txt
           command -v htop
           bin/helixforge status htop | grep -qE '^htop +Installed'
+      - name: Entries for x86_64 only are left out on ARM
+        if: matrix.arch
+        run: |
+          for id in steam google-chrome install-chaotic-aur-repository resolve-native; do
+            if grep -q "^ *$id " visible.txt; then
+              echo "$id, for x86_64 only, shows on ${{ matrix.image }} on aarch64" >&2
+              exit 1
+            fi
+            grep -q "^ *$id " all.txt
+          done
+          # Named anyway, it is blocked before anything runs.
+          bin/helixforge plan steam | grep -q '^Blocked: Steam is for x86_64 only, and this machine is aarch64$'
+          if yes | bin/helixforge run steam --yes; then
+            echo "Steam ran on aarch64" >&2
+            exit 1
+          fi
+      # WINE and Steam's gaming stack are for x86 programs.
       - name: WINE and gaming packages the catalog names exist here
+        if: ${{ !matrix.arch }}
         run: |
           bin/helixforge plan wine winetricks protontricks minigalaxy | tee gaming.txt
           grep -q '^[0-9]\. WINE$' gaming.txt
@@ -355,24 +443,29 @@ jobs:
           python3 -B -m unittest discover -s tests/installers -t tests/installers
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: packages
+          name: ${{ matrix.arch && 'packages-aarch64' || 'packages' }}
           path: packages
       - name: The native package installs, works and removes cleanly
         run: |
           ls -l packages
+          # The packages for this machine's architecture.
+          case "${{ matrix.arch }}" in
+            aarch64) arch=aarch64 debian=arm64 ;;
+            *) arch=x86_64 debian=amd64 ;;
+          esac
           case "${{ matrix.family }}" in
             Arch)
-              pacman -U --noconfirm packages/helixforge-*-x86_64.pkg.tar.zst
+              pacman -U --noconfirm packages/helixforge-*-$arch.pkg.tar.zst
               pacman -Ql helixforge > files.txt ;;
             Debian)
-              apt-get install -y ./packages/helixforge_*_amd64.deb
+              apt-get install -y ./packages/helixforge_*_$debian.deb
               dpkg -L helixforge > files.txt ;;
             Fedora)
-              dnf install -y ./packages/helixforge-*.x86_64.rpm
+              dnf install -y ./packages/helixforge-*.$arch.rpm
               rpm -ql helixforge > files.txt ;;
             openSUSE)
               # nfpm's packages are not signed with a key zypper knows.
-              zypper --non-interactive install --allow-unsigned-rpm ./packages/helixforge-*.x86_64.rpm
+              zypper --non-interactive install --allow-unsigned-rpm ./packages/helixforge-*.$arch.rpm
               rpm -ql helixforge > files.txt ;;
           esac
           # Arch and Fedora link /usr/sbin to /usr/bin, which comes first on PATH.
@@ -406,7 +499,7 @@ jobs:
       - name: Record what HelixForge verified in this container
         run: |
           bin/helixforge history --json --limit 1000 > history.json
-          python3 -B scripts/validation-record.py record "${{ matrix.image }}" history.json catalog \
+          python3 -B scripts/validation-record.py record "${{ matrix.image }}${{ matrix.arch && ' on aarch64' || '' }}" history.json catalog \
             > "validation-${{ strategy.job-index }}.json"
           cat "validation-${{ strategy.job-index }}.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -481,7 +574,7 @@ jobs:
         run: |
           python3 -B scripts/validation-record.py merge validation.json "$GITHUB_RUN_ID" \
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$GITHUB_SHA" parts/*.json
-          python3 -c 'import json; d = json.load(open("validation.json")); assert len(d["images"]) == 6, d; assert all(i["entries"].get("htop") == "verified" for i in d["images"].values()), d; assert sorted(d["vms"]) == ["arch", "arch-iso", "arch-themes", "arch-uefi", "debian", "fedora", "opensuse", "steamdeck"], d'
+          python3 -c 'import json; d = json.load(open("validation.json")); assert len(d["images"]) == 11, d; assert all(i["entries"].get("htop") == "verified" for i in d["images"].values()), d; assert sorted(d["vms"]) == ["arch", "arch-iso", "arch-themes", "arch-uefi", "debian", "fedora", "opensuse", "steamdeck"], d'
           cat validation.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

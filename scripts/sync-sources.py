@@ -42,6 +42,8 @@ BUILTINS = {
     'myfish-zsh': ('configurations/myfish', [], [], 'I FM MP'),
     'myfish': ('configurations/myfish', [], [], 'I FM MP'),
 }
+# Built-ins whose pinned releases are for Linux x86_64 only (terminal-tool.sh).
+X86_ONLY = {'netwatch', 'tfm', 'cassette'}
 CONFIG_AREA = {'dotfiles': 'configurations/dotfiles', 'Myfish': 'configurations/myfish'}
 
 
@@ -139,6 +141,8 @@ def render_entry(source, entry, order):
     if needs:
         text += '\n[[preconditions]]\nmatches = true\ncheck = "command_exists"\nvalues = [' + ', '.join(toml_string(n) for n in needs) + ']\n'
     text += f'\n[script]\nid = {toml_string(script_id)}\n'
+    if entry['type'] == 'builtin' and entry['handler'] in X86_ONLY:
+        text += '\n[needs]\narchitectures = ["x86_64"]\n'
     return path, text
 
 

@@ -4,3 +4,7 @@ order = 103
 
 [script]
 id = "applications-setup/pdf-suites/pdfstudio"
+
+[needs]
+# Qoppa's installer is a 64-bit x86 build.
+architectures = ["x86_64"]

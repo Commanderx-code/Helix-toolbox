@@ -13,3 +13,7 @@ debian = "google-chrome-stable"
 fedora = "google-chrome-stable"
 aur = "google-chrome"
 flatpak = "com.google.Chrome"
+
+[needs]
+# Google's packages and repositories the installer uses are x86_64 builds.
+architectures = ["x86_64"]

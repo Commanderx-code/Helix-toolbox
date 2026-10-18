@@ -44,6 +44,20 @@ The items:
    customization profiles that fit, warning where Home Manager or a
    desktop's own tools own a setting.
 
+## v1.6.0: ARM64 (done)
+
+- [x] Builds and packages for Linux on aarch64: the program, a Debian/Ubuntu
+      package and an RPM, built, tested and attested on GitHub's ARM64
+      runners, beside the x86_64 ones in every release
+- [x] The Distributions containers on ARM64 as well (Debian, Ubuntu 22.04
+      and 24.04, Fedora, openSUSE), in the Reliability record as "on ARM64"
+- [x] Entries for programs built only for x86_64 (`[needs] architectures`)
+      left out on ARM64, and blocked when named anyway
+- [x] Updates, `fetch-release` and `start.sh` choose this machine's files
+- [ ] An Arch package for Arch Linux ARM, once there is an image to test it
+      in, and the virtual machines on ARM64, once a runner offers hardware
+      virtualization
+
 ## v1.5.0: machines without reliable internet (done)
 
 - [x] Offline bundles (item 8): HelixForge, its catalog and the packages
@@ -294,7 +308,7 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 
 ## After 1.0
 
-- ARM64 builds and packages, once there is an ARM64 machine to test them on
+- ARM64 builds and packages (v1.6.0)
 - The graphical interface (Milestone 5 below), on the same engine
 - What testers report (docs/REPORTING.md)
 
@@ -328,8 +342,8 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] Issue forms for problems and ideas, asking for the report
 - [x] A user guide (docs/GUIDE.md), a beta testing guide (docs/REPORTING.md) and
       a changelog
-- [ ] ARM64 builds: moved to after v1.0, when there is a tester with an
-      ARM64 machine
+- [x] ARM64 builds: moved to after v1.0, and made in v1.6.0 on GitHub's
+      ARM64 runners
 
 ## v0.6.0: unified update overview and JSON command line (done)
 

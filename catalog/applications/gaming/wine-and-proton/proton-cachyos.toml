@@ -11,3 +11,7 @@ values = ["pacman"]
 [package]
 aur = "proton-cachyos-slr"
 removable = true
+
+[needs]
+# Proton runs x86 Windows games, and this build is for x86_64 only.
+architectures = ["x86_64"]

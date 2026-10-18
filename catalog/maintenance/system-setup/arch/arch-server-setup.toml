@@ -6,3 +6,7 @@ order = 101
 
 [script]
 id = "system-setup/arch/server-setup"
+
+[needs]
+# It installs from the Arch live ISO, which is x86_64 only.
+architectures = ["x86_64"]

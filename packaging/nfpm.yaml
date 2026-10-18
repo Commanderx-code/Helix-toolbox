@@ -1,8 +1,8 @@
 # Arch, Debian and RPM packages of one release build, made with nfpm by
-# scripts/package.sh, which fills in the version and stages the build in
-# target/package-stage.
+# scripts/package.sh, which fills in the version and architecture and stages
+# the build in target/package-stage.
 name: helixforge
-arch: amd64
+arch: ${HELIXFORGE_ARCH}
 platform: linux
 version: ${HELIXFORGE_VERSION}
 release: 1

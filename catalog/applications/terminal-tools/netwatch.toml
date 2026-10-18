@@ -12,3 +12,6 @@ values = ["nix", "git"]
 
 [script]
 id = "commander/netwatch"
+
+[needs]
+architectures = ["x86_64"]

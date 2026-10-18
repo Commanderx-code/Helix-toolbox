@@ -102,6 +102,9 @@ then:
 | Debian, Ubuntu, Mint, Pop!_OS | `sudo apt install ./helixforge_*_amd64.deb` |
 | Fedora | `sudo dnf install ./helixforge-*.x86_64.rpm` |
 | openSUSE | `sudo zypper install --allow-unsigned-rpm ./helixforge-*.x86_64.rpm` |
+| Debian, Ubuntu, Raspberry Pi OS on ARM64 | `sudo apt install ./helixforge_*_arm64.deb` |
+| Fedora, Fedora Asahi Remix on ARM64 | `sudo dnf install ./helixforge-*.aarch64.rpm` |
+| openSUSE on ARM64 | `sudo zypper install --allow-unsigned-rpm ./helixforge-*.aarch64.rpm` |
 | Any distribution, with Rust | `cargo install --locked helixforge` |
 
 The packages add shell completions, manual pages and a menu entry. Every
@@ -116,7 +119,7 @@ GitHub, as your normal user:
 curl -fsSL https://raw.githubusercontent.com/Commanderx-code/Helix-Forge/main/start.sh | sh
 ```
 
-It needs Linux on x86_64 with glibc 2.35 or newer.
+It needs Linux on x86_64 or aarch64 (ARM64) with glibc 2.35 or newer.
 
 ## Quick start
 
