@@ -177,8 +177,55 @@ jobs:
           name: release-aarch64
           path: ${{ runner.temp }}/release/
 
+  # The graphical interface's packages, from the same commit, on each
+  # architecture: a Debian package, an RPM and an AppImage.
+  gui:
+    needs: sync
+    if: needs.sync.outputs.build == 'true'
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.sync.outputs.revision }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Install WebKitGTK and the other libraries Tauri needs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Build the packages at the release's version
+        env:
+          VERSION: ${{ needs.sync.outputs.version }}
+        working-directory: apps/helix-toolbox-gui
+        run: |
+          # The window carries the release's version; the checkout is not committed.
+          python3 -B ../../scripts/stamp-version.py "$VERSION" src-tauri/Cargo.toml
+          npm ci --no-fund --no-audit
+          npm run check
+          npx tauri build --bundles deb,rpm,appimage
+          mkdir -p "$RUNNER_TEMP/release"
+          cp src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/rpm/*.rpm src-tauri/target/release/bundle/appimage/*.AppImage "$RUNNER_TEMP/release/"
+          ls -1 "$RUNNER_TEMP/release"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-gui-${{ matrix.arch }}
+          path: ${{ runner.temp }}/release/
+
   publish:
-    needs: [sync, arm64]
+    needs: [sync, arm64, gui]
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     permissions:
@@ -207,15 +254,16 @@ jobs:
       - name: Copies under the name before 1.7
         run: |
           cd /tmp/helix-toolbox-release
-          for file in helix-toolbox-linux-* helix-toolbox_*.deb helix-toolbox-*.rpm helix-toolbox-*.pkg.tar.zst; do
+          for file in helix-toolbox-linux-* helix-toolbox_*.deb helix-toolbox-[0-9]*.rpm helix-toolbox-[0-9]*.pkg.tar.zst; do
             cp -- "$file" "helixforge${file#helix-toolbox}"
           done
           ls -1
       - name: Checksums of the tested builds
         run: |
           cd /tmp/helix-toolbox-release
-          sha256sum helix-toolbox-linux-x86_64 helix-toolbox-linux-aarch64 helix-toolbox_*.deb helix-toolbox-*.rpm \
-            helix-toolbox-*.pkg.tar.zst helixforge-linux-* helixforge_*.deb helixforge-*.rpm helixforge-*.pkg.tar.zst \
+          sha256sum helix-toolbox-linux-x86_64 helix-toolbox-linux-aarch64 helix-toolbox_*.deb helix-toolbox-[0-9]*.rpm \
+            helix-toolbox-[0-9]*.pkg.tar.zst helix-toolbox-gui_*.deb helix-toolbox-gui-[0-9]*.rpm helix-toolbox-gui_*.AppImage \
+            helixforge-linux-* helixforge_*.deb helixforge-*.rpm helixforge-*.pkg.tar.zst \
             validation.json > SHA256SUMS
           cat SHA256SUMS
       - name: Attest where the files were built
@@ -224,8 +272,11 @@ jobs:
           subject-path: |
             /tmp/helix-toolbox-release/helix-toolbox-linux-*
             /tmp/helix-toolbox-release/helix-toolbox_*.deb
-            /tmp/helix-toolbox-release/helix-toolbox-*.rpm
-            /tmp/helix-toolbox-release/helix-toolbox-*.pkg.tar.zst
+            /tmp/helix-toolbox-release/helix-toolbox-[0-9]*.rpm
+            /tmp/helix-toolbox-release/helix-toolbox-[0-9]*.pkg.tar.zst
+            /tmp/helix-toolbox-release/helix-toolbox-gui_*.deb
+            /tmp/helix-toolbox-release/helix-toolbox-gui-[0-9]*.rpm
+            /tmp/helix-toolbox-release/helix-toolbox-gui_*.AppImage
       - name: Publish the tested Linux builds
         env:
           GH_TOKEN: ${{ github.token }}
@@ -252,6 +303,12 @@ jobs:
             printf 'sudo dnf install ./helix-toolbox-%s-1.aarch64.rpm      # Fedora, Fedora Asahi Remix\n' "$VERSION"
             printf 'sudo zypper install --allow-unsigned-rpm ./helix-toolbox-%s-1.aarch64.rpm   # openSUSE\n' "$VERSION"
             printf '```\n\n'
+            printf 'The window (docs/GUI.md), which needs the helix-toolbox package above:\n\n'
+            printf '```sh\n'
+            printf 'sudo apt install ./helix-toolbox-gui_%s_amd64.deb      # Debian, Ubuntu (arm64 for ARM64)\n' "$VERSION"
+            printf 'sudo dnf install ./helix-toolbox-gui-%s-1.x86_64.rpm   # Fedora, openSUSE (aarch64 for ARM64)\n' "$VERSION"
+            printf 'chmod +x helix-toolbox-gui_%s_amd64.AppImage && ./helix-toolbox-gui_%s_amd64.AppImage   # any distribution\n' "$VERSION" "$VERSION"
+            printf '```\n\n'
             printf 'Check a download with %s, and where it was built with %s. See docs/INSTALL.md.\n' \
               "\`sha256sum --check --ignore-missing SHA256SUMS\`" \
               "\`gh attestation verify <file> --repo $GITHUB_REPOSITORY\`"
@@ -265,8 +322,9 @@ jobs:
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$revision" --draft --title "Helix Toolbox $tag" --notes-file release-notes.md
           fi
-          gh release upload "$tag" helix-toolbox-linux-x86_64 helix-toolbox-linux-aarch64 helix-toolbox_*.deb helix-toolbox-*.rpm \
-            helix-toolbox-*.pkg.tar.zst helixforge-linux-* helixforge_*.deb helixforge-*.rpm helixforge-*.pkg.tar.zst \
+          gh release upload "$tag" helix-toolbox-linux-x86_64 helix-toolbox-linux-aarch64 helix-toolbox_*.deb helix-toolbox-[0-9]*.rpm \
+            helix-toolbox-[0-9]*.pkg.tar.zst helix-toolbox-gui_*.deb helix-toolbox-gui-[0-9]*.rpm helix-toolbox-gui_*.AppImage \
+            helixforge-linux-* helixforge_*.deb helixforge-*.rpm helixforge-*.pkg.tar.zst \
             validation.json SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
           gh release edit "$tag" --draft=false --latest --repo "$GITHUB_REPOSITORY"
       - name: Publish the crates to crates.io

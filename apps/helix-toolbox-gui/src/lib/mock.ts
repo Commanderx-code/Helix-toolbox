@@ -1,0 +1,206 @@
+// Sample answers for working on the interface in a browser, where there is
+// no Tauri side. Nothing here reads or changes the machine.
+
+import type { AreaView, EntryView, ItemView, Prepared, RecordView, RunEvent, StatusView } from './types';
+
+const entry = (id: string, name: string, description: string, flags = 'I', extra: Partial<EntryView> = {}): ItemView => ({
+  type: 'entry',
+  id,
+  name,
+  description,
+  flags,
+  kind: 'package',
+  queueable: true,
+  interactive: false,
+  runs: [],
+  ...extra,
+});
+
+const group = (id: string, name: string, description: string, items: ItemView[]): ItemView => ({
+  type: 'group',
+  id,
+  name,
+  description,
+  items,
+});
+
+const AREAS: AreaView[] = [
+  {
+    id: 'applications',
+    name: 'Applications',
+    items: [
+      group('developer', 'Developer Tools', 'Editors, version control and command-line helpers.', [
+        entry('git', 'Git', 'Distributed version control.'),
+        entry('neovim', 'Neovim', 'Hyperextensible Vim-based text editor.'),
+        entry('vscode', 'VS Code', 'Code editing, redefined.', 'I'),
+        entry('zed', 'Zed', 'A high-performance, multiplayer code editor.'),
+        entry('ripgrep', 'Ripgrep', 'Recursively searches directories for a regex pattern.'),
+        entry('fzf', 'fzf', 'A command-line fuzzy finder.'),
+        entry('jetbrains', 'JetBrains Toolbox', 'Installs and updates JetBrains IDEs.', 'I', {
+          kind: 'script',
+          interactive: true,
+          queueable: false,
+        }),
+      ]),
+      group('browsers', 'Web Browsers', 'Browsers from the distribution or Flathub.', [
+        entry('firefox', 'Firefox', 'Fast, private and free web browser.'),
+        entry('brave', 'Brave', 'Privacy-focused browser that blocks ads and trackers.', 'FI'),
+        entry('chromium', 'Chromium', 'The open-source project behind Chrome.'),
+      ]),
+      group('multimedia', 'Multimedia', 'Players, editors and streaming tools.', [
+        entry('mpv', 'mpv', 'A free, open-source and cross-platform media player.'),
+        entry('obs', 'OBS Studio', 'Video recording and live streaming.', 'FI'),
+      ]),
+    ],
+  },
+  {
+    id: 'configurations',
+    name: 'Configurations',
+    items: [
+      entry('dotfiles', 'Dotfiles', 'Apply the dotfiles with Home Manager.', 'FM', { kind: 'nix' }),
+      entry('fish', 'Fish shell setup', 'Myfish: the fish configuration, prompt and functions.', 'FM', { kind: 'script' }),
+      entry('kernel-params', 'Kernel parameters', 'Tune boot parameters for this machine.', 'K', {
+        kind: 'script',
+        interactive: true,
+        queueable: false,
+      }),
+    ],
+  },
+  {
+    id: 'maintenance',
+    name: 'Maintenance',
+    items: [
+      entry('mirrors', 'Refresh mirrors', 'Rank the fastest package mirrors.', 'MP', { kind: 'script' }),
+      entry('cache', 'Clean package cache', 'Keep the last two versions of each package.', 'MP', { kind: 'command' }),
+      entry('report', 'System report', 'Write a report of this machine for a bug report.', '', { kind: 'native' }),
+    ],
+  },
+];
+
+const STATUSES: Record<string, StatusView> = {
+  git: { kind: 'installed', label: 'Installed', detail: 'pacman 2.56.0-1' },
+  neovim: { kind: 'installed', label: 'Installed', detail: 'pacman 0.12.6-1' },
+  ripgrep: { kind: 'update', label: 'Update', detail: 'pacman 15.2.0-1 → 15.3.0-1' },
+  fzf: { kind: 'managed', label: 'Managed', detail: 'home-manager 0.74.4' },
+  vscode: { kind: 'absent', label: 'Not installed', detail: '' },
+  zed: { kind: 'installed', label: 'Installed', detail: 'pacman 1.24.3-1' },
+  firefox: { kind: 'installed', label: 'Installed', detail: 'pacman 151.0-1' },
+  brave: { kind: 'absent', label: 'Not installed', detail: '' },
+  chromium: { kind: 'absent', label: 'Not installed', detail: 'would replace ungoogled-chromium' },
+  mpv: { kind: 'installed', label: 'Installed', detail: 'pacman 0.41.0-2' },
+  obs: { kind: 'absent', label: 'Not installed', detail: '' },
+};
+
+let pinned = ['neovim', 'ripgrep'];
+
+const RUNS: RecordView[] = [
+  { date: '2026-10-18 21:04', unix_timestamp: 0, names: ['Ripgrep', 'fzf'], success: true, result: 'exit 0, verified', log: null },
+  { date: '2026-10-17 09:41', unix_timestamp: 0, names: ['OBS Studio'], success: false, result: 'exit 1', log: null },
+  { date: '2026-10-15 18:12', unix_timestamp: 0, names: ['Refresh mirrors'], success: true, result: 'exit 0', log: null },
+];
+
+function find(id: string, items: ItemView[] = AREAS.flatMap((area) => area.items)): EntryView | undefined {
+  for (const item of items) {
+    if (item.type === 'entry' && item.id === id) return item;
+    if (item.type === 'group') {
+      const found = find(id, item.items);
+      if (found) return found;
+    }
+  }
+}
+
+let planned: EntryView[] = [];
+
+export async function call(command: string, args: Record<string, unknown> = {}): Promise<unknown> {
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  switch (command) {
+    case 'about':
+      return {
+        version: '1.8.0',
+        command_line: true,
+        overview: {
+          rows: [
+            ['Distribution', 'Sample Linux'],
+            ['Package manager', 'pacman'],
+            ['Desktop', 'KDE'],
+            ['Shell', 'fish'],
+            ['Kernel', '7.2.10-1-sample'],
+            ['CPU', '11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz'],
+            ['Memory', '62.5 GiB'],
+            ['Root disk', '932G, 559G free'],
+          ],
+        },
+      };
+    case 'areas':
+      return AREAS;
+    case 'statuses':
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      return STATUSES;
+    case 'favorites':
+      return pinned;
+    case 'pin': {
+      const id = args.id as string;
+      pinned = pinned.filter((other) => other !== id);
+      if (args.pinned) pinned.push(id);
+      return pinned;
+    }
+    case 'prepare': {
+      planned = (args.ids as string[]).map((id) => find(id)).filter((e): e is EntryView => !!e);
+      const result: Prepared = {
+        kind: 'ready',
+        risk: 'medium',
+        privileged: true,
+        header: [
+          'Risk: medium · asks for your password',
+          'Warning: about 412 MiB more on /, with 559 GiB free',
+          ...(planned.length > 1 ? ['After a failed step: stop (Settings changes it)'] : []),
+        ],
+        lines: planned.map((entry) => ({
+          name: entry.name,
+          detail:
+            entry.kind === 'package'
+              ? `sudo pacman -S --needed ${entry.id}`
+              : `/bin/sh -e ${entry.id}.sh  (in scripts/installers)`,
+        })),
+      };
+      return result;
+    }
+    case 'runs':
+      return RUNS;
+    default:
+      return undefined;
+  }
+}
+
+/** A pretend run of what was last prepared. */
+export async function run(onEvent: (event: RunEvent) => void) {
+  const steps = planned.map((entry, index) => ({ index, id: entry.id, name: entry.name }));
+  let offset = 0;
+  const output = (text: string) => {
+    const terminal = text.replace(/\n/g, '\r\n');
+    onEvent({ event: 'output', offset, data: btoa(terminal) });
+    offset += terminal.length;
+  };
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  onEvent({ event: 'run_started', entries: steps.map(({ id, name }) => ({ id, name })), steps });
+  for (const step of steps) {
+    onEvent({ event: 'step_started', step });
+    output(`\x1b[1;36m==> ${step.name}\x1b[0m\n`);
+    output(`resolving dependencies...\nlooking for conflicting packages...\n\n`);
+    output(`Packages (1) ${step.id}-1.0-1\n\nTotal Installed Size:  4.20 MiB\n\n`);
+    await wait(500);
+    output(`(1/1) installing ${step.id}                       [####################] 100%\n`);
+    await wait(300);
+    onEvent({ event: 'step_completed', step });
+    onEvent({ event: 'progress', ended: step.index + 1, total: steps.length });
+  }
+  onEvent({
+    event: 'completed',
+    outcome: { kind: 'success' },
+    description: 'exit 0, verified',
+    succeeded: true,
+    verified: true,
+    steps: steps.map((step) => ({ ...step, state: 'done' as const })),
+    checks: steps.map((step) => ({ name: step.name, passed: true, detail: `pacman lists ${step.id}` })),
+  });
+}

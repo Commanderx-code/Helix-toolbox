@@ -4,6 +4,21 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.8.0
+
+- **A window.** `helix-toolbox-gui` opens the catalog in a Tauri window:
+  the Dashboard, the areas with search, status and flags, the details of
+  an entry, Favorites, the Install Plan, History, the confirmation with
+  each step's command, and the run in an embedded terminal, where a step's
+  questions and the password prompt are typed into. The same engine plans,
+  checks, confirms, verifies and records; the terminal interface's
+  favorites and history are shared. Packages for Debian and Ubuntu, Fedora
+  and openSUSE, and an AppImage, on x86_64 and ARM64, each release; see
+  docs/GUI.md. The other screens stay in the terminal interface for now.
+- **For interfaces**: `confirmation::prepare()`, `overview::Overview` and
+  `settings::run_choices()` in the engine, which the terminal interface
+  uses too.
+
 ## v1.7.5
 
 - **A clearer header.** Where the terminal shows pictures, the header now

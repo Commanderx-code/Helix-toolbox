@@ -14,6 +14,7 @@ package installs happen only in the Distributions workflow's containers.
 | Screen tests | `apps/helix-toolbox/src/tui/` | the interface drawn into a test backend: keys, screens, popups, the small-terminal warning |
 | Engine end to end | `apps/helix-toolbox/tests/end_to_end.rs` | fixture plans run through the mock runner and a real shell |
 | Program in a terminal | `apps/helix-toolbox/tests/terminal.rs` | the built `helix-toolbox` driven through a pseudo-terminal, below |
+| The window | `apps/helix-toolbox-gui` | the frontend type-checked and built, the crate's tests of the shapes the window reads; by hand, a debug build's `--drive FILE` runs a script in the window against the fixture catalog ([GUI.md](GUI.md)) |
 | Installer tests | `tests/installers/` | the Commander installers against stand-in commands and temporary homes |
 | Shellcheck | `scripts/verify.sh` | every shared helper and installer, with errors gated for the general catalog |
 | Workflow lint | `scripts/verify.sh` | actionlint over every workflow, including the shell in each step |
@@ -254,6 +255,8 @@ chmod +x helix-toolbox-linux-x86_64
   later. The ARM64 build runs the tests and the containers on GitHub's ARM64
   runners; the ARM64 virtual machines are emulated on x86_64, weekly, and
   are not in the Reliability record.
+- The window's screens are driven by a script in a virtual session by
+  hand ([GUI.md](GUI.md)); no workflow opens the window.
 - The banner picture is checked against a test terminal that answers like
   Ghostty and one that answers like a Sixel terminal, with the image the
   program sends painted into the screenshot; how real terminals draw it is

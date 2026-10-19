@@ -1,10 +1,8 @@
 # Execution events
 
 A run of a plan, as the engine reports it to an interface:
-`helix_toolbox_engine::execution`. The terminal interface's running window is
-built on it, and a graphical interface (Tauri 2, Milestone 5 on the
-[roadmap](ROADMAP.md)) will use the same API. There is no graphical
-interface yet.
+`helix_toolbox_engine::execution`. The terminal interface's running window
+and the window's run panel ([GUI.md](GUI.md)) are both built on it.
 
 Every change to the machine stays in the engine. It checks the plan's
 requirements, builds and runs the shell program in a pseudo-terminal,
@@ -133,9 +131,9 @@ the size of its terminal panel on every draw, forwards keys with `write`,
 calls `stop` on Ctrl-C, and calls `record` when the window closes, with a
 log if the user saved one.
 
-A graphical interface would move the receiver to a thread that forwards
-each event to its window, for example through a Tauri channel, and draw
-`Output` with a terminal emulator such as xterm.js. `Output` bytes may split
+The window moves the receiver to a thread that forwards each event through
+a Tauri channel (`run` in `apps/helix-toolbox-gui/src-tauri/src/main.rs`),
+output as base64, and draws `Output` with xterm.js. `Output` bytes may split
 a UTF-8 character or an escape sequence; the emulator joins them.
 
 ## JSON form

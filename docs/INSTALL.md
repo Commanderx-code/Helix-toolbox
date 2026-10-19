@@ -4,7 +4,8 @@ Every release on the
 [releases page](https://github.com/Commanderx-code/Helix-toolbox/releases)
 has the same tested build for Linux on x86_64 and on aarch64 (ARM64), each in
 four forms: an Arch package, a Debian/Ubuntu package, an RPM package for
-Fedora and openSUSE, and the bare program. With Rust installed, `cargo install` builds it on your machine
+Fedora and openSUSE, and the bare program, and the window beside them
+(below). With Rust installed, `cargo install` builds it on your machine
 instead (below). It needs glibc 2.35 or newer (Debian 12, Ubuntu 22.04, Fedora 36,
 current Arch and openSUSE Tumbleweed, or later).
 
@@ -46,6 +47,26 @@ it and installs it for you (`helix-toolbox updates --online --apply helix-toolbo
 `sudo pacman -R helix-toolbox`, `sudo apt remove helix-toolbox`, `sudo dnf remove
 helix-toolbox` or `sudo zypper remove helix-toolbox`; your settings, profiles and
 history in `~/.config/helix-toolbox` and `~/.local/state/helix-toolbox` stay.
+
+## The window
+
+`helix-toolbox-gui` opens the same catalog in a window ([GUI.md](GUI.md)).
+Each release has it for x86_64 and aarch64 as a Debian package, an RPM and
+an AppImage. Install the `helix-toolbox` package above first: the window
+runs the command line for the built-in steps, and the Debian and RPM
+packages require it.
+
+```sh
+sudo apt install ./helix-toolbox-gui_1.8.0_amd64.deb          # Debian, Ubuntu (arm64 on ARM64)
+sudo dnf install ./helix-toolbox-gui-1.8.0-1.x86_64.rpm       # Fedora (aarch64 on ARM64)
+sudo zypper install --allow-unsigned-rpm ./helix-toolbox-gui-1.8.0-1.x86_64.rpm   # openSUSE
+chmod +x helix-toolbox-gui_1.8.0_amd64.AppImage && ./helix-toolbox-gui_1.8.0_amd64.AppImage   # any distribution, Arch included
+```
+
+The packages add a menu entry, **Helix Toolbox**. The window is drawn by
+WebKitGTK 4.1, which the Debian and RPM packages install with it; the
+AppImage carries its libraries. It is not on crates.io: building it needs
+the frontend, as [GUI.md](GUI.md) describes.
 
 ## Without installing
 

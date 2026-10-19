@@ -29,6 +29,21 @@ if [ "$(generated)" != "$before" ]; then
     git status --short -- catalog scripts/installers/commander >&2
     exit 1
 fi
+# The graphical interface, where its tools are installed (docs/GUI.md).
+if command -v npm >/dev/null && pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
+    (
+        cd apps/helix-toolbox-gui
+        npm ci --no-fund --no-audit
+        npm run check
+        npm run build
+        cd src-tauri
+        cargo fmt --all -- --check
+        cargo clippy --all-targets -- -D warnings
+        cargo test
+    )
+else
+    echo "npm or WebKitGTK is not installed; the Checks workflow checks the graphical interface." >&2
+fi
 cargo build --release -p helix-toolbox
 target/release/helix-toolbox --version
 target/release/helix-toolbox docgen docs/walkthrough.md

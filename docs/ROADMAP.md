@@ -432,6 +432,10 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 - [x] Execution events: a run as typed events on a bounded channel, from
       the engine, which the terminal interface's running window uses
       ([EVENTS.md](EVENTS.md))
-- Tauri 2 frontend on the same crates, with an embedded terminal panel for
-  interactive entries, drawn from those events
-- Window and launcher icons made from `assets/icon.png`
+- [x] Tauri 2 window on the same crates (`apps/helix-toolbox-gui`,
+      [GUI.md](GUI.md)): the Dashboard, the areas with search, status and
+      flags, Favorites, the Install Plan, History, the confirmation, and the
+      run in an embedded terminal drawn from those events, in 1.8
+- [x] Window and launcher icons made from `assets/icon.png`
+- The other screens in the window: Doctor, Updates, Backups, Drift,
+      Reliability, Hardware, Desktop, Profiles, Settings

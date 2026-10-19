@@ -1,0 +1,41 @@
+# The graphical interface, a workspace of its own: it needs WebKitGTK and a
+# built frontend (`npm run build`), which the command line does not.
+[workspace]
+resolver = "2"
+
+[workspace.package]
+version = "1.8.0"
+
+[workspace.dependencies]
+# scripts/stamp-version.py keeps these in step with the version above.
+helix-toolbox-catalog = { path = "../../../crates/helix-toolbox-catalog", version = "=1.8.0" }
+helix-toolbox-core = { path = "../../../crates/helix-toolbox-core", version = "=1.8.0" }
+helix-toolbox-engine = { path = "../../../crates/helix-toolbox-engine", version = "=1.8.0" }
+helix-toolbox-platform = { path = "../../../crates/helix-toolbox-platform", version = "=1.8.0" }
+
+[package]
+name = "helix-toolbox-gui"
+version.workspace = true
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+repository = "https://github.com/Commanderx-code/Helix-toolbox"
+authors = ["Commanderx-code"]
+description = "Helix Toolbox in a window: browse the catalog, plan, and run with an embedded terminal."
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2.6", features = [] }
+
+[dependencies]
+base64 = "0.22"
+helix-toolbox-catalog.workspace = true
+helix-toolbox-core.workspace = true
+helix-toolbox-engine.workspace = true
+helix-toolbox-platform.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.11", features = [] }
+
+[dev-dependencies]
+tempfile = "3"

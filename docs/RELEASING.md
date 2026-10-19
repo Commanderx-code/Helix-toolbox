@@ -19,7 +19,9 @@ dotfiles or Myfish repositories report new sources. Nobody tags by hand.
    tests and builds the aarch64 program.
 4. `scripts/package.sh` makes the Arch, Debian and RPM packages with nfpm,
    for the architecture it runs on. `SHA256SUMS` covers both architectures'
-   files, and each gets a build provenance attestation.
+   files, and each gets a build provenance attestation. A third job builds
+   the window's Debian package, RPM and AppImage on each architecture with
+   `tauri build`, after `scripts/stamp-version.py` on its own `Cargo.toml`.
 5. The GitHub release `vX.Y.Z` is created as a draft, the files are
    uploaded, and only then is it published.
 6. With a crates.io token set up (below), `scripts/stamp-version.py` writes

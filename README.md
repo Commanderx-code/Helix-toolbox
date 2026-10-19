@@ -18,13 +18,18 @@ updates, backups and health checks. Every change is planned first, shown to
 you with its risk, run only after you confirm it, verified afterward and
 recorded in a history. It is written in Rust and works the same way on Arch,
 Debian, Ubuntu, Fedora and openSUSE. Run it as `helix-toolbox`, or `htb` for
-short.
+short; `helix-toolbox-gui` opens the same catalog in a window, with the run in
+an embedded terminal ([the window](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/GUI.md)).
 
 Helix Toolbox was called HelixForge before 1.7; updating carries your
 settings, profiles and history over ([what changed](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/MIGRATION.md)).
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/assets/screenshots/applications.png" width="820" alt="The Applications screen, showing which entries are installed, from where and at which version">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/assets/screenshots/gui-applications.png" width="820" alt="The same screen in the window, with the details of the selected entry">
 </p>
 
 ## Highlights
@@ -111,6 +116,7 @@ then:
 | Fedora, Fedora Asahi Remix on ARM64 | `sudo dnf install ./helix-toolbox-*.aarch64.rpm` |
 | openSUSE on ARM64 | `sudo zypper install --allow-unsigned-rpm ./helix-toolbox-*.aarch64.rpm` |
 | Any distribution, with Rust | `cargo install --locked helix-toolbox` |
+| The window, beside one of the above | `helix-toolbox-gui_*.deb`, `helix-toolbox-gui-*.rpm` or the `.AppImage` ([the window](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/GUI.md)) |
 
 The packages add shell completions, manual pages and a menu entry. Every
 release file has a SHA-256 sum and a signed build provenance attestation;
@@ -164,6 +170,7 @@ helix-toolbox report                    # what a bug report needs
 | [Catalog and plans](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/CATALOG.md) | How entries are written, and how a run is planned and checked |
 | [JSON output](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/JSON.md) | The `--json` shapes, for scripts and other programs |
 | [Execution events](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/EVENTS.md) | A run as typed events from the engine, for interfaces built on it |
+| [The window](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/GUI.md) | The graphical interface: installing it, its screens, and how it is built |
 | [Installing](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/INSTALL.md) | Packages, Cargo, checking downloads, building from source |
 | [Stability](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/STABILITY.md) | What stays the same across 1.x |
 | [Security](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/SECURITY.md) | How Helix Toolbox runs things safely, and how to report a vulnerability |

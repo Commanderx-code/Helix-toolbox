@@ -87,7 +87,8 @@ scripts/verify.sh
 runs the formatter, clippy, the Rust tests (including the program driven in
 a pseudo-terminal against a fixture catalog), the installer tests,
 shellcheck, a fresh render of the dotfiles and Myfish exports, a release
-build and the walkthrough. The Checks workflow runs the same on every pull
+build and the walkthrough, and the window's checks when npm and WebKitGTK
+are installed (`docs/GUI.md`). The Checks workflow runs the same on every pull
 request. [docs/TESTING.md](docs/TESTING.md) describes the test layers and
 what they cannot cover.
 

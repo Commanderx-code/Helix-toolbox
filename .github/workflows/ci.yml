@@ -58,3 +58,37 @@ jobs:
         run: |
           target/release/helix-toolbox docgen docs/walkthrough.md
           git diff --exit-code -- docs/walkthrough.md
+
+  # The graphical interface: its own workspace, which needs WebKitGTK and
+  # the built frontend.
+  gui:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/helix-toolbox-gui/package-lock.json
+      - name: Install WebKitGTK and the other libraries Tauri needs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: The frontend type-checks and builds
+        working-directory: apps/helix-toolbox-gui
+        run: |
+          npm ci --no-fund --no-audit
+          npm run check
+          npm run build
+      - name: The window's crate
+        working-directory: apps/helix-toolbox-gui/src-tauri
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked

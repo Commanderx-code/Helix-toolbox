@@ -6,6 +6,7 @@
 | :--- | :--- |
 | Language | Rust (edition 2024) |
 | Terminal interface | Ratatui and Crossterm |
+| Window | Tauri 2, Svelte 5 and xterm.js ([GUI.md](GUI.md)) |
 | Graphical interface, later | Tauri 2 on the same crates |
 | Command line | Clap |
 | Interactive execution | portable-pty, rendered with tui-term and vt100 |
@@ -43,6 +44,7 @@ helix-toolbox-catalog   reads catalog/ and scripts/ (embedded or from a director
 helix-toolbox-platform  /etc/os-release, package manager family, PATH lookups
 helix-toolbox-engine    plan() -> Plan of Steps; shell_program(); execution (pty runs as events); Runner (inherited, mock); history
 helix-toolbox           clap command line, ratatui interface, tracing setup
+helix-toolbox-gui       the window: Tauri 2 on the same crates, a workspace of its own under apps/helix-toolbox-gui
 ```
 
 `--json` output is built in `apps/helix-toolbox/src/json.rs`, field by field
@@ -215,6 +217,12 @@ and the same terminal, and will through the graphical interface's terminal
 panel too.
 
 ## Interface
+
+The window (`apps/helix-toolbox-gui`, [GUI.md](GUI.md)) is a second
+interface on the same engine: its Rust side answers the frontend's calls
+with shapes built field by field in `views.rs`, plans and checks through
+`confirmation::prepare()`, and forwards a run's execution events on a
+channel to an xterm.js terminal. It holds no catalog logic of its own.
 
 A header with the name, tagline and a status badge (with the emblem picture
 before a spaced-out name where the terminal shows pictures:
