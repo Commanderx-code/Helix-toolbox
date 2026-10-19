@@ -20,9 +20,8 @@ use anyhow::Result;
 use app::App;
 use crossterm::event::{self, Event, KeyEventKind};
 use helixforge_catalog::Catalog;
-use helixforge_engine::pty::OUTPUT_CHANGED;
 use helixforge_platform::LinuxInfo;
-use std::{sync::atomic::Ordering, time::Duration};
+use std::time::Duration;
 
 pub fn run(catalog: Catalog, platform: LinuxInfo, args: TuiArgs) -> Result<()> {
     let path = settings::path();
@@ -47,10 +46,8 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
     terminal.draw(|frame| app.draw(frame))?;
     loop {
         if !event::poll(Duration::from_millis(10))? {
-            let output_changed = OUTPUT_CHANGED
-                .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
-                .is_ok();
-            if output_changed || app.needs_redraw() {
+            // A run's output and end arrive as execution events.
+            if app.needs_redraw() {
                 terminal.draw(|frame| app.draw(frame))?;
             }
             continue;

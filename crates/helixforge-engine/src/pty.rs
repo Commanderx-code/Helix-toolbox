@@ -17,7 +17,7 @@ use std::{
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
-        mpsc::{Receiver, channel},
+        mpsc::{Receiver, SyncSender, channel},
     },
     thread::JoinHandle,
 };
@@ -27,6 +27,8 @@ pub static OUTPUT_CHANGED: AtomicBool = AtomicBool::new(false);
 
 pub struct Session {
     output: Arc<Mutex<Vec<u8>>>,
+    /// True while the output is still being read.
+    reading: Arc<AtomicBool>,
     waiter: Option<JoinHandle<Option<ExitStatus>>>,
     /// Delivers the shell's process id, which is also its process group.
     started: Option<Receiver<u32>>,
@@ -39,6 +41,18 @@ pub struct Session {
 
 impl Session {
     pub fn spawn(program: &str, lib_dir: &Path) -> Result<Self, EngineError> {
+        Self::spawn_sized(program, lib_dir, 24, 80, None)
+    }
+
+    /// `spawn` with the terminal's first size, ringing `bell` whenever
+    /// output arrives.
+    pub(crate) fn spawn_sized(
+        program: &str,
+        lib_dir: &Path,
+        rows: u16,
+        cols: u16,
+        bell: Option<SyncSender<()>>,
+    ) -> Result<Self, EngineError> {
         let mut builder = CommandBuilder::new("sh");
         builder.args(["-c", program]);
         builder.env("TERM", "xterm-256color");
@@ -46,8 +60,8 @@ impl Session {
         builder.env(LIB_VARIABLE, lib_dir);
         let pair = NativePtySystem::default()
             .openpty(PtySize {
-                rows: 24,
-                cols: 80,
+                rows: rows.max(1),
+                cols: cols.max(1),
                 pixel_width: 0,
                 pixel_height: 0,
             })
@@ -66,6 +80,15 @@ impl Session {
             .map_err(|error| EngineError::Spawn(std::io::Error::other(error)))?;
         let output: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
         let shared = output.clone();
+        let reading = Arc::new(AtomicBool::new(true));
+        let still_reading = reading.clone();
+        let ring = move || {
+            OUTPUT_CHANGED.store(true, Ordering::Release);
+            if let Some(bell) = &bell {
+                // A full bell has already been rung.
+                let _ = bell.try_send(());
+            }
+        };
         std::thread::spawn(move || {
             let mut buffer = [0u8; 8192];
             while let Ok(size) = reader.read(&mut buffer) {
@@ -73,9 +96,10 @@ impl Session {
                     break;
                 }
                 shared.lock().unwrap().extend_from_slice(&buffer[..size]);
-                OUTPUT_CHANGED.store(true, Ordering::Release);
+                ring();
             }
-            OUTPUT_CHANGED.store(true, Ordering::Release);
+            still_reading.store(false, Ordering::Release);
+            ring();
         });
         let writer = pair
             .master
@@ -84,6 +108,7 @@ impl Session {
         OUTPUT_CHANGED.store(true, Ordering::Release);
         Ok(Self {
             output,
+            reading,
             waiter: Some(waiter),
             started: Some(receiver),
             group: None,
@@ -117,6 +142,17 @@ impl Session {
     /// Everything the program has written so far.
     pub fn output(&self) -> Vec<u8> {
         self.output.lock().unwrap().clone()
+    }
+
+    /// The output as it grows, shared with the thread that reads it.
+    pub(crate) fn transcript(&self) -> Arc<Mutex<Vec<u8>>> {
+        self.output.clone()
+    }
+
+    /// Whether output can still arrive: false once every process holding
+    /// the terminal has closed it.
+    pub(crate) fn reading(&self) -> bool {
+        self.reading.load(Ordering::Acquire)
     }
 
     pub fn is_finished(&self) -> bool {

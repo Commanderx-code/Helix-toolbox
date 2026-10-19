@@ -4,6 +4,17 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.6.3
+
+- **Execution events**: the engine reports a run in its pseudo-terminal as
+  typed events on a bounded channel: the run and each step starting and
+  ending, the terminal's output, progress, warnings, and how the run ended
+  with its checks. A consumer that falls behind loses nothing and never holds
+  the run up. The terminal interface's running window is drawn from these
+  events and works as before; a graphical interface will use the same ones
+  ([docs/EVENTS.md](docs/EVENTS.md)). The command line and `--json` do not
+  change.
+
 ## v1.6.0
 
 - **ARM64**: every release has a build for Linux on aarch64 beside the

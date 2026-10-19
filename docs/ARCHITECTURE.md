@@ -15,11 +15,11 @@
 | Tests | Cargo tests with fixtures; Linux VM runs for real installers, later |
 | Releases | GitHub Actions, later |
 
-An async runtime (Tokio) is not in the workspace yet. The engine reports a
-running command's output through a shared buffer and a flag, which the
-terminal interface polls. The graphical interface will want an event stream;
-that is the point to add Tokio, with the engine exposing a channel instead of
-a buffer.
+There is no async runtime (Tokio). A run in a pseudo-terminal reports
+itself as typed events on a bounded standard channel
+(`helixforge_engine::execution`, [EVENTS.md](EVENTS.md)), fed by threads of
+its own; the terminal interface takes them on each pass of its event loop,
+and a graphical interface will take the same events.
 
 ## Principles
 
@@ -41,7 +41,7 @@ a buffer.
 helixforge-core      Tab, Group, Entry, Action, Precondition, Risk; name validation
 helixforge-catalog   reads catalog/ and scripts/ (embedded or from a directory), applies preconditions
 helixforge-platform  /etc/os-release, package manager family, PATH lookups
-helixforge-engine    plan() -> Plan of Steps; shell_program(); Runner (inherited, pty, mock); history
+helixforge-engine    plan() -> Plan of Steps; shell_program(); execution (pty runs as events); Runner (inherited, mock); history
 helixforge           clap command line, ratatui interface, tracing setup
 ```
 
@@ -71,10 +71,11 @@ privileged, and the highest risk among them (from the flags: `D`, `K` and
 ## A run, end to end
 
 ```text
-entries ──plan──▶ Plan ──shell_program──▶ sh program ──▶ Runner
-                                                         ├─ pty::Session     (interface window)
-                                                         ├─ InheritedRunner  (command line)
-                                                         └─ MockRunner       (tests)
+entries ──plan──▶ Plan ──shell_program──▶ sh program ──▶ execution::Execution (interface window)
+                                                         │    pty::Session, ExecutionEvents on a channel
+                                                         └─ Runner
+                                                              ├─ InheritedRunner  (command line)
+                                                              └─ MockRunner       (tests)
                                                                  │
                                                           Outcome: Success | Failed{code} | Interrupted | CouldNotStart
                                                                  │
@@ -225,6 +226,7 @@ tests render it into a test backend. Search ranking is
 
 ## Graphical interface, later
 
-A Tauri crate uses the same engine: plans for its forms, the pseudo-terminal
-session for an embedded terminal panel where entries are interactive, and
-the history for its log view. Nothing in the engine assumes a terminal.
+A Tauri crate uses the same engine: plans for its forms, an `Execution` and
+its events for an embedded terminal panel where entries are interactive
+([EVENTS.md](EVENTS.md)), and the history for its log view. Nothing in the
+engine assumes a terminal.

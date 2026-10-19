@@ -849,7 +849,8 @@ impl App {
         self.clamp_main();
     }
 
-    /// Whether something changed without a key press: a finished command.
+    /// Whether something changed without a key press: a finished check, or
+    /// a run's events.
     pub fn needs_redraw(&mut self) -> bool {
         if let Some(receiver) = &self.examining {
             match receiver.try_recv() {

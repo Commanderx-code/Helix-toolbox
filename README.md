@@ -159,6 +159,7 @@ helixforge report                    # what a bug report needs
 | [Reference](https://github.com/Commanderx-code/Helix-Forge/blob/main/docs/REFERENCE.md) | Everything the menu and the commands do, in detail |
 | [Catalog and plans](https://github.com/Commanderx-code/Helix-Forge/blob/main/docs/CATALOG.md) | How entries are written, and how a run is planned and checked |
 | [JSON output](https://github.com/Commanderx-code/Helix-Forge/blob/main/docs/JSON.md) | The `--json` shapes, for scripts and other programs |
+| [Execution events](https://github.com/Commanderx-code/Helix-Forge/blob/main/docs/EVENTS.md) | A run as typed events from the engine, for interfaces built on it |
 | [Installing](https://github.com/Commanderx-code/Helix-Forge/blob/main/docs/INSTALL.md) | Packages, Cargo, checking downloads, building from source |
 | [Stability](https://github.com/Commanderx-code/Helix-Forge/blob/main/docs/STABILITY.md) | What stays the same across 1.x |
 | [Security](https://github.com/Commanderx-code/Helix-Forge/blob/main/docs/SECURITY.md) | How HelixForge runs things safely, and how to report a vulnerability |

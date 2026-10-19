@@ -10,7 +10,7 @@ package installs happen only in the Distributions workflow's containers.
 
 | Layer | Where | What it covers |
 | :--- | :--- | :--- |
-| Unit tests | each crate's `src/` | catalog validation, plans, the shell program, history, the pseudo-terminal session, the unpacked-copy lock and sweep |
+| Unit tests | each crate's `src/` | catalog validation, plans, the shell program, history, the pseudo-terminal session, the unpacked-copy lock and sweep; the execution events with a consumer that does not read until the end, 12 MB of output, a stopped run whose child ignores the hangup, a dropped handle, a failed step and what it skips, a resize and a hidden password prompt |
 | Screen tests | `apps/helixforge/src/tui/` | the interface drawn into a test backend: keys, screens, popups, the small-terminal warning |
 | Engine end to end | `apps/helixforge/tests/end_to_end.rs` | fixture plans run through the mock runner and a real shell |
 | Program in a terminal | `apps/helixforge/tests/terminal.rs` | the built `helixforge` driven through a pseudo-terminal, below |

@@ -429,6 +429,9 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 
 ## Milestone 5: graphical interface
 
+- [x] Execution events: a run as typed events on a bounded channel, from
+      the engine, which the terminal interface's running window uses
+      ([EVENTS.md](EVENTS.md))
 - Tauri 2 frontend on the same crates, with an embedded terminal panel for
-  interactive entries and an event stream from the engine
+  interactive entries, drawn from those events
 - Window and launcher icons made from `assets/icon.png`

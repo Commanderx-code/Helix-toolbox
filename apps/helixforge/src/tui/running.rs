@@ -1,9 +1,12 @@
-//! The window that shows entries running in their pseudo-terminal.
+//! The window that shows entries running in their pseudo-terminal, drawn
+//! from the engine's execution events.
 
 use super::{hints::Hint, theme::Theme};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use helixforge_engine::{
-    Finished, Outcome, Plan, StepState, history, pty::Session, shell_program_with, status_file,
+    Finished, Outcome, Plan, StepState,
+    execution::{Execution, ExecutionEvent, Options},
+    history,
 };
 use ratatui::{
     Frame,
@@ -13,90 +16,74 @@ use ratatui::{
     text::Line,
     widgets::{Block, Padding},
 };
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::mpsc::Receiver,
+};
 use tui_term::widget::PseudoTerminal;
 
 pub struct RunningView {
-    session: Session,
-    plan: Plan,
+    execution: Execution,
+    events: Receiver<ExecutionEvent>,
+    /// The terminal's output, as the events brought it.
+    output: Vec<u8>,
     /// The outcome with the checks of its package steps, once it ends.
     finished: Option<Finished>,
-    entries: Vec<(String, String)>,
-    /// The history's marker for this run, until the record is written.
-    pending: Option<history::Pending>,
     recorded: bool,
     log: Option<PathBuf>,
     /// Why the history record or the log could not be written, if so.
     problem: Option<String>,
     scrollback: usize,
-    finish_drawn: bool,
-    /// Where the run's program writes each step's outcome.
-    status: Option<PathBuf>,
 }
 
 impl RunningView {
     pub fn start(plan: &Plan, lib_dir: &Path, this: &Path) -> Result<Self, String> {
-        helixforge_engine::check_requirements(plan).map_err(|error| error.to_string())?;
-        tracing::info!(steps = ?plan.entries(), "run started");
-        let status = status_file();
-        let session = Session::spawn(
-            &shell_program_with(plan, lib_dir, this, status.as_deref()),
-            lib_dir,
-        )
-        .map_err(|error| error.to_string())?;
-        let pending = history::begin(&plan.entries())
-            .inspect_err(|error| tracing::warn!(%error, "the run start was not recorded"))
-            .ok();
+        let (execution, events) = Execution::start(plan, lib_dir, this, Options::default())
+            .map_err(|error| error.to_string())?;
         Ok(Self {
-            session,
-            plan: plan.clone(),
+            execution,
+            events,
+            output: Vec::new(),
             finished: None,
-            entries: plan.entries(),
-            pending,
             recorded: false,
             log: None,
             problem: None,
             scrollback: 0,
-            finish_drawn: false,
-            status,
         })
     }
 
     pub fn is_finished(&self) -> bool {
-        self.session.is_finished()
+        self.finished.is_some()
     }
 
-    /// The finished run, checked once when the program ends.
-    fn finished(&mut self) -> Option<&Finished> {
-        if self.finished.is_none() && self.is_finished() {
-            let outcome = self
-                .session
-                .outcome()
-                .unwrap_or_else(|| Outcome::CouldNotStart("unknown".into()));
-            self.finished = Some(Finished::from_run(
-                &self.plan,
-                outcome,
-                self.status.as_deref(),
-            ));
-        }
+    fn finished(&self) -> Option<&Finished> {
         self.finished.as_ref()
     }
 
-    /// True once after the program finishes, so the screen shows it even
-    /// when no further output or key arrives.
+    /// Take the events that arrived; true when any changes the window.
     pub fn needs_redraw(&mut self) -> bool {
-        if self.is_finished() && !self.finish_drawn {
-            self.finish_drawn = true;
-            // The record waits for the window to close; until then the
-            // marker keeps the outcome in case HelixForge stops first.
-            if let Some(finished) = self.finished().cloned()
-                && let Some(pending) = &mut self.pending
-            {
-                let _ = pending.ended(finished.succeeded(), &finished.describe());
+        let mut changed = false;
+        while let Ok(event) = self.events.try_recv() {
+            match event {
+                ExecutionEvent::Output { offset, bytes } => {
+                    let offset = usize::try_from(offset).unwrap_or(usize::MAX);
+                    if offset > self.output.len() {
+                        // Never expected: the events lose nothing.
+                        self.output = self.execution.transcript();
+                    } else if let Some(new) = bytes.get(self.output.len() - offset..) {
+                        self.output.extend_from_slice(new);
+                    }
+                    changed = true;
+                }
+                ExecutionEvent::Completed(finished) | ExecutionEvent::Interrupted(finished) => {
+                    self.finished = Some(finished);
+                    changed = true;
+                }
+                // The terminal shows the steps; the end shows what is left.
+                _ => {}
             }
-            return true;
         }
-        false
+        changed
     }
 
     /// Write the history record once, when the window closes, so a saved log
@@ -106,32 +93,13 @@ impl RunningView {
             return;
         }
         self.recorded = true;
-        let Some(finished) = self.finished().cloned() else {
-            return;
-        };
-        tracing::info!(outcome = finished.describe(), "run finished");
-        let mut result = finished.describe();
-        let left = self.session.survivors();
-        if left > 0 {
-            result.push_str(&format!("; {left} process(es) left running"));
-        }
-        let written = match self.pending.take() {
-            Some(pending) => pending.finish(finished.succeeded(), &result, self.log.clone()),
-            None => history::record(
-                &self.entries,
-                finished.succeeded(),
-                &result,
-                self.log.clone(),
-            ),
-        };
-        if let Err(error) = written {
-            tracing::warn!(%error, "the run was not recorded");
+        if let Err(error) = self.execution.record(self.log.clone()) {
             self.problem = Some(format!("The run was not recorded in the history: {error}"));
         }
     }
 
     /// The ids of the steps that did not finish, once the run has ended.
-    pub fn unfinished(&mut self) -> Vec<String> {
+    pub fn unfinished(&self) -> Vec<String> {
         self.finished()
             .map(|finished| {
                 finished
@@ -144,7 +112,7 @@ impl RunningView {
     }
 
     /// Each step and how it ended, one per line.
-    pub fn summary(&mut self) -> String {
+    pub fn summary(&self) -> String {
         self.finished()
             .map(|finished| {
                 finished
@@ -206,8 +174,8 @@ impl RunningView {
             .filter(|check| !failed || !check.passed)
             .map(|check| format!("{}: {}", check.name, check.detail))
             .collect();
-        let left = if self.is_finished() && self.session.stop_requested() {
-            self.session.survivors()
+        let left = if self.is_finished() && self.execution.stop_requested() {
+            self.execution.survivors()
         } else {
             0
         };
@@ -235,9 +203,9 @@ impl RunningView {
             .title_bottom(Line::from(note).centered())
             .padding(Padding::horizontal(1));
         let inner = block.inner(area);
-        self.session.resize(inner.height, inner.width);
+        self.execution.resize(inner.height, inner.width);
         let mut parser = vt100::Parser::new(inner.height.max(1), inner.width.max(1), 2000);
-        parser.process(&self.session.output());
+        parser.process(&self.output);
         parser.screen_mut().set_scrollback(self.scrollback);
         frame.render_widget(PseudoTerminal::new(parser.screen()).block(block), area);
     }
@@ -246,14 +214,14 @@ impl RunningView {
     pub fn handle_key(&mut self, key: &KeyEvent) -> bool {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.session.kill()
+                self.execution.stop()
             }
             KeyCode::Enter | KeyCode::Char('q') if self.is_finished() => {
                 self.record();
                 return true;
             }
             KeyCode::Char('l') if self.is_finished() && self.log.is_none() => {
-                match history::save_log(&self.session.output()) {
+                match history::save_log(&self.execution.transcript()) {
                     Ok(path) => self.log = Some(path),
                     Err(error) => self.problem = Some(format!("The log was not saved: {error}")),
                 }
@@ -295,7 +263,7 @@ impl RunningView {
             KeyCode::Insert => b"\x1b[2~".to_vec(),
             _ => return,
         };
-        self.session.write(&bytes);
+        self.execution.write(&bytes);
     }
 
     pub fn hints(&self) -> (&'static str, Vec<Hint>) {
@@ -323,8 +291,5 @@ impl RunningView {
 impl Drop for RunningView {
     fn drop(&mut self) {
         self.record();
-        if let Some(status) = &self.status {
-            let _ = std::fs::remove_file(status);
-        }
     }
 }

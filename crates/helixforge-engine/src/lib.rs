@@ -18,6 +18,7 @@ pub mod bundle;
 pub mod desktop;
 pub mod doctor;
 pub mod drift;
+pub mod execution;
 pub mod hardware;
 pub mod history;
 pub mod inventory;
@@ -1028,7 +1029,8 @@ pub fn shell_program(plan: &Plan, lib_dir: &Path, this: &Path) -> String {
 }
 
 /// `shell_program` that also writes each step's outcome to `status`, one
-/// `index state exit` line per step (done, failed, interrupted, skipped).
+/// `index state exit` line per step (done, failed, interrupted, skipped),
+/// after an `index started 0` line when the step begins.
 pub fn shell_program_with(
     plan: &Plan,
     lib_dir: &Path,
@@ -1099,7 +1101,7 @@ pub fn shell_program_with(
             }
         };
         let run = format!(
-            "printf '\\n==> %s\\n' {name}\n(\n{body}\n)\nrc=$?\n\
+            "hf_status {index} started 0\nprintf '\\n==> %s\\n' {name}\n(\n{body}\n)\nrc=$?\n\
              if [ \"$rc\" -eq 0 ]; then\n  hf_status {index} done 0\n\
              else\n  hf_failed_{index}=1\n  hf_last=$rc\n\
              \x20 if [ \"$rc\" -ge 128 ]; then hf_status {index} interrupted \"$rc\"; exit \"$rc\"; fi\n\
