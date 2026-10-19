@@ -46,7 +46,7 @@ fetch_source() {
         silentsddm) source_repo=uiriansan/SilentSDDM; revision=d477613b07ca13729af20cb4699b308ac7348d2f ;;
         grub-vince) source_repo=vinceliuice/grub2-themes; revision=4c5a77125b93f833edc9bf7b14a899faa8ac79c6 ;;
         Myfish) revision=e685d1b681f0c607ff782d92ec8750c3e0e280c8 ;;
-        dotfiles) revision=42eea7a576fcdc1fefe8ff70d73bf417f5fdc89c ;;
+        dotfiles) revision=5e08ea162d167151ad0eef24e4e4ee0b9f730ef3 ;;
         *) exit 1 ;;
     esac
     source_base="${XDG_DATA_HOME:-$HOME/.local/share}/helixforge/sources"
