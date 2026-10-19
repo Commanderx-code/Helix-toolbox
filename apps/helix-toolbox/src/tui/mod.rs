@@ -11,7 +11,6 @@ mod palette;
 mod popup;
 mod running;
 pub mod settings;
-mod sysinfo;
 pub mod theme;
 mod wizard;
 

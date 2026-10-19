@@ -123,6 +123,15 @@ them. The command line prints the findings with the plan and refuses a
 blocked run; the interface shows them in the Install Plan's summary and the
 confirmation, and a blocked plan opens "Cannot run yet" instead.
 
+`confirmation::prepare()` is the step between a plan and its run for every
+interface: it adds the snapshot where the run is worth one, runs the checks,
+and returns `Prepared::Nothing` (the notes saying why), `Blocked` (the
+blockers) or `Ready`, the plan with the choice after a failure applied and
+the lines to confirm (risk and password, warnings, how entries were tested,
+the steps). `overview::Overview` is the dashboard's facts about the machine,
+and `settings` reads the run choices from `settings.toml` and keeps the
+favorites in `favorites.toml`, so the interfaces share them.
+
 After planning, `arrange()` orders the steps: each comes after a step whose
 entry installs a command it needs (`identity().binary`) or that its entry
 names in `needs.after`, the queue's order deciding the rest (Kahn's algorithm

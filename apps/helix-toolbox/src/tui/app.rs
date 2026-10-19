@@ -10,7 +10,6 @@ use super::{
     popup::{Answer, ConfirmPopup, Decision, InputPopup, TextPopup, centered},
     running::RunningView,
     settings::{self, Look},
-    sysinfo::Overview,
     theme::{self, Theme},
     wizard::{Outcome as WizardOutcome, Pick, Wizard},
 };
@@ -19,8 +18,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, Item};
 use helix_toolbox_engine::{
-    EngineError, Plan, backups, doctor, drift, history,
+    EngineError, Plan, backups,
+    confirmation::{self, Prepared},
+    doctor, drift, history,
     inventory::{Inventory, Status, which},
+    overview::Overview,
     plan, plan_removal, preflight, profiles, reliability, updates,
 };
 use helix_toolbox_platform::LinuxInfo;
@@ -5042,32 +5044,28 @@ impl App {
         self.confirm_plan(planned);
     }
 
-    /// Show a plan's confirmation, or why there is nothing to run.
     /// What the checks before a run find for a plan on this machine.
     fn findings(&self, planned: &Plan) -> Vec<preflight::Finding> {
+        self.with_facts(|facts| {
+            preflight::check(planned, &self.platform, &|id| self.catalog.find(id), facts)
+        })
+    }
+
+    /// Call `then` with what the checks before a run ask the machine.
+    fn with_facts<R>(&self, then: impl FnOnce(&preflight::Facts) -> R) -> R {
         if !self.check_statuses {
             // Tests: no machine questions beyond what planning asked.
-            return preflight::check(
-                planned,
-                &self.platform,
-                &|id| self.catalog.find(id),
-                &preflight::Facts {
-                    present: &|_| true,
-                    free_bytes: &|_| None,
-                    gpus: &Vec::new,
-                    repositories: &|| None,
-                    sizes: &|_, _| None,
-                    active_runs: &Vec::new,
-                    ..preflight::Facts::real()
-                },
-            );
+            return then(&preflight::Facts {
+                present: &|_| true,
+                free_bytes: &|_| None,
+                gpus: &Vec::new,
+                repositories: &|| None,
+                sizes: &|_, _| None,
+                active_runs: &Vec::new,
+                ..preflight::Facts::real()
+            });
         }
-        preflight::check(
-            planned,
-            &self.platform,
-            &|id| self.catalog.find(id),
-            &preflight::Facts::real(),
-        )
+        then(&preflight::Facts::real())
     }
 
     /// Plan updating entries from the last status check, and ask.
@@ -5084,6 +5082,7 @@ impl App {
         self.confirm_plan(Ok(planned));
     }
 
+    /// Show a plan's confirmation, or why there is nothing to run.
     fn confirm_plan(&mut self, planned: Result<Plan, EngineError>) {
         let planned = match planned {
             Ok(planned) => planned,
@@ -5096,85 +5095,47 @@ impl App {
                 return;
             }
         };
-        if planned.is_empty() {
-            let mut lines = planned.notes.clone();
-            lines.extend(
-                planned
-                    .blocked
-                    .iter()
-                    .map(|blocked| format!("Not run: {blocked}")),
-            );
-            let text = if lines.is_empty() {
-                "Nothing to run.".to_string()
-            } else {
-                lines.join("\n")
-            };
-            self.popup = Some(Popup::Text(TextPopup::new("Nothing to run", text, true)));
-            return;
-        }
-        // A snapshot first when the run changes the system, where possible.
-        let mut planned = planned;
-        if self.snapshots
-            && let Some(tool) = self.snapshot_tool
-            && backups::worth_a_snapshot(&planned, &|id| {
-                self.catalog.find(id).map(|entry| entry.flags.clone())
-            })
-        {
-            backups::with_snapshot(&mut planned, tool);
-        }
-        let findings = self.findings(&planned);
-        if preflight::blocked(&findings) {
-            let lines: Vec<String> = findings.iter().map(preflight::Finding::line).collect();
-            self.popup = Some(Popup::Text(TextPopup::new(
-                "Cannot run yet",
-                format!("{}\n\nNothing was changed.", lines.join("\n")),
-                true,
-            )));
-            return;
-        }
-        let mut header = vec![format!(
-            "Risk: {}{}",
-            planned.risk.label(),
-            if planned.privileged {
-                " · asks for your password"
-            } else {
-                ""
-            }
-        )];
-        header.extend(findings.iter().map(preflight::Finding::line));
         let evidence = self.evidence();
-        header.extend(
-            reliability::warnings(
-                planned.steps.iter().map(|step| step.id()),
+        let choices = confirmation::Choices {
+            snapshot: self.snapshot_tool.filter(|_| self.snapshots),
+            keep_going: self.keep_going,
+        };
+        let prepared = self.with_facts(|facts| {
+            confirmation::prepare(
+                planned,
+                &self.platform,
                 &|id| self.catalog.find(id),
+                choices,
+                facts,
                 &evidence,
             )
+        });
+        let ready = match prepared {
+            Prepared::Nothing(lines) => {
+                self.popup = Some(Popup::Text(TextPopup::new(
+                    "Nothing to run",
+                    lines.join("\n"),
+                    true,
+                )));
+                return;
+            }
+            Prepared::Blocked(lines) => {
+                self.popup = Some(Popup::Text(TextPopup::new(
+                    "Cannot run yet",
+                    format!("{}\n\nNothing was changed.", lines.join("\n")),
+                    true,
+                )));
+                return;
+            }
+            Prepared::Ready(ready) => ready,
+        };
+        let header = ready.header;
+        let lines: Vec<(String, String)> = ready
+            .lines
             .into_iter()
-            .map(|warning| format!("Warning: {warning}")),
-        );
-        planned.keep_going = self.keep_going;
-        if planned.steps.len() > 1 {
-            header.push(format!(
-                "After a failed step: {} (Settings changes it)",
-                if self.keep_going {
-                    "continue with what does not need it"
-                } else {
-                    "stop"
-                }
-            ));
-        }
-        let mut lines: Vec<(String, String)> = planned
-            .steps
-            .iter()
-            .map(|step| (step.name().to_string(), step.display()))
+            .map(|line| (line.name, line.detail))
             .collect();
-        for note in &planned.notes {
-            lines.push((note.clone(), String::new()));
-        }
-        for blocked in &planned.blocked {
-            lines.push((format!("Not run: {blocked}"), String::new()));
-        }
-        self.pending = Some(planned);
+        self.pending = Some(ready.plan);
         if self.skip_confirmation {
             self.run_pending();
             return;

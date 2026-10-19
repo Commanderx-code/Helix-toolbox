@@ -15,6 +15,7 @@
 
 pub mod backups;
 pub mod bundle;
+pub mod confirmation;
 pub mod desktop;
 pub mod doctor;
 pub mod drift;
@@ -23,11 +24,13 @@ pub mod hardware;
 pub mod history;
 pub mod inventory;
 pub mod legacy;
+pub mod overview;
 pub mod preflight;
 pub mod preview;
 pub mod profiles;
 pub mod pty;
 pub mod reliability;
+pub mod settings;
 pub mod setup;
 pub mod trust;
 pub mod updates;

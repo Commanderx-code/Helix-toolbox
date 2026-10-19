@@ -1,13 +1,18 @@
-//! What the dashboard shows about the machine.
+//! What an interface's dashboard shows about the machine.
 
 use helix_toolbox_platform::LinuxInfo;
+use serde::Serialize;
 use std::{fs, path::Path, process::Command};
 
+/// Labeled facts about the machine, in the order to show them. In JSON, each
+/// row is a `[label, value]` pair.
+#[derive(Clone, Debug, Serialize)]
 pub struct Overview {
     pub rows: Vec<(&'static str, String)>,
 }
 
 impl Overview {
+    /// Read them; this asks `df` for the root disk.
     pub fn gather(platform: &LinuxInfo) -> Self {
         let mut rows = vec![
             ("Distribution", platform.pretty_name.clone()),
