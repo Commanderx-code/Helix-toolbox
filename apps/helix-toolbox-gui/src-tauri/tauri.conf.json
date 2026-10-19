@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Helix Toolbox",
+  "productName": "helix-toolbox-gui",
   "mainBinaryName": "helix-toolbox-gui",
   "identifier": "io.github.commanderx-code.helix-toolbox",
   "build": {
@@ -46,12 +46,17 @@
         "depends": [
           "helix-toolbox"
         ],
-        "section": "utils"
+        "section": "utils",
+        "desktopTemplate": "../../../packaging/helix-toolbox-gui.desktop"
       },
       "rpm": {
         "depends": [
           "helix-toolbox"
-        ]
+        ],
+        "desktopTemplate": "../../../packaging/helix-toolbox-gui.desktop"
+      },
+      "appimage": {
+        "bundleMediaFramework": false
       }
     }
   }
