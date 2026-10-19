@@ -1,5 +1,5 @@
 name = "Marker"
-description = "Writes a marker file where HELIXFORGE_TEST_OUT points; a safe stand-in for an installer."
+description = "Writes a marker file where HELIX_TOOLBOX_TEST_OUT points; a safe stand-in for an installer."
 flags = "FM"
 
 [script]

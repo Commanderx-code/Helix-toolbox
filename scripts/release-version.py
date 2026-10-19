@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The version of the release a HelixForge build is published as.
+"""The version of the release a Helix Toolbox build is published as.
 
 Releases are tagged vMAJOR.MINOR.PATCH. The commit already has a version tag:
 that version again (a rebuild). Otherwise one patch above the newest version

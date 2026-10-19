@@ -1,22 +1,29 @@
 # Arch, Debian and RPM packages of one release build, made with nfpm by
 # scripts/package.sh, which fills in the version and architecture and stages
 # the build in target/package-stage.
-name: helixforge
-arch: ${HELIXFORGE_ARCH}
+name: helix-toolbox
+arch: ${HELIX_TOOLBOX_ARCH}
 platform: linux
-version: ${HELIXFORGE_VERSION}
+version: ${HELIX_TOOLBOX_VERSION}
 release: 1
 section: admin
 priority: optional
 maintainer: Commanderx-code <Commanderx-code@users.noreply.github.com>
 description: |
   Build, configure and optimize a Linux machine from a terminal menu.
-  HelixForge plans every change before it runs it: packages through the
+  Helix Toolbox plans every change before it runs it: packages through the
   distribution's package manager, Flatpak or Nix, configuration scripts,
   updates, backups and health checks, with a command line and JSON output.
-vendor: HelixForge
-homepage: https://github.com/Commanderx-code/Helix-Forge
+vendor: Helix Toolbox
+homepage: https://github.com/Commanderx-code/Helix-toolbox
 license: MIT
+
+# HelixForge was its name before 1.7: this package takes over from that one
+# (in an RPM, replaces is Obsoletes; Arch and Debian also need conflicts).
+replaces:
+  - helixforge
+provides:
+  - helixforge
 
 # The release build needs glibc 2.35 or newer; scripts run under bash and
 # fetch with curl and git, and system changes go through sudo.
@@ -36,6 +43,8 @@ overrides:
       - curl
       - git
       - ca-certificates
+    conflicts:
+      - helixforge
   rpm:
     depends:
       - glibc >= 2.35
@@ -44,48 +53,57 @@ overrides:
     depends:
       - glibc
       - bash
+    conflicts:
+      - helixforge
 
 archlinux:
   packager: Commanderx-code <Commanderx-code@users.noreply.github.com>
 
 contents:
-  - src: target/package-stage/helixforge
-    dst: /usr/bin/helixforge
+  - src: target/package-stage/helix-toolbox
+    dst: /usr/bin/helix-toolbox
     file_info:
       mode: 0755
-  - src: target/package-stage/completions/helixforge.bash
-    dst: /usr/share/bash-completion/completions/helixforge
-  - src: target/package-stage/completions/_helixforge
-    dst: /usr/share/zsh/site-functions/_helixforge
-  - src: target/package-stage/completions/helixforge.fish
-    dst: /usr/share/fish/vendor_completions.d/helixforge.fish
+  # The short name, and the name before 1.7.
+  - src: helix-toolbox
+    dst: /usr/bin/htb
+    type: symlink
+  - src: helix-toolbox
+    dst: /usr/bin/helixforge
+    type: symlink
+  - src: target/package-stage/completions/helix-toolbox.bash
+    dst: /usr/share/bash-completion/completions/helix-toolbox
+  - src: target/package-stage/completions/_helix-toolbox
+    dst: /usr/share/zsh/site-functions/_helix-toolbox
+  - src: target/package-stage/completions/helix-toolbox.fish
+    dst: /usr/share/fish/vendor_completions.d/helix-toolbox.fish
   - src: target/package-stage/man/
     dst: /usr/share/man/man1/
-  - src: packaging/helixforge.desktop
-    dst: /usr/share/applications/helixforge.desktop
+  - src: packaging/helix-toolbox.desktop
+    dst: /usr/share/applications/helix-toolbox.desktop
   - src: assets/icon.png
-    dst: /usr/share/icons/hicolor/512x512/apps/helixforge.png
+    dst: /usr/share/icons/hicolor/512x512/apps/helix-toolbox.png
   - src: README.md
-    dst: /usr/share/doc/helixforge/README.md
+    dst: /usr/share/doc/helix-toolbox/README.md
   - src: docs/JSON.md
-    dst: /usr/share/doc/helixforge/JSON.md
+    dst: /usr/share/doc/helix-toolbox/JSON.md
   - src: docs/INSTALL.md
-    dst: /usr/share/doc/helixforge/INSTALL.md
+    dst: /usr/share/doc/helix-toolbox/INSTALL.md
   - src: docs/GUIDE.md
-    dst: /usr/share/doc/helixforge/GUIDE.md
+    dst: /usr/share/doc/helix-toolbox/GUIDE.md
   - src: CHANGELOG.md
-    dst: /usr/share/doc/helixforge/CHANGELOG.md
+    dst: /usr/share/doc/helix-toolbox/CHANGELOG.md
   - src: docs/STABILITY.md
-    dst: /usr/share/doc/helixforge/STABILITY.md
+    dst: /usr/share/doc/helix-toolbox/STABILITY.md
   - src: docs/REPORTING.md
-    dst: /usr/share/doc/helixforge/REPORTING.md
+    dst: /usr/share/doc/helix-toolbox/REPORTING.md
   - src: LICENSE
-    dst: /usr/share/doc/helixforge/copyright
+    dst: /usr/share/doc/helix-toolbox/copyright
     packager: deb
   - src: LICENSE
-    dst: /usr/share/licenses/helixforge/LICENSE
+    dst: /usr/share/licenses/helix-toolbox/LICENSE
     packager: archlinux
   - src: LICENSE
-    dst: /usr/share/licenses/helixforge/LICENSE
+    dst: /usr/share/licenses/helix-toolbox/LICENSE
     packager: rpm
     type: license

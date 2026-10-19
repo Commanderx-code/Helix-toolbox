@@ -24,16 +24,16 @@ dotfiles or Myfish repositories report new sources. Nobody tags by hand.
    uploaded, and only then is it published.
 6. With a crates.io token set up (below), `scripts/stamp-version.py` writes
    the version into the checkout's `Cargo.toml` and the five crates are
-   published to crates.io in dependency order: `helixforge-core`,
-   `helixforge-platform`, `helixforge-catalog`, `helixforge-engine`, then
-   `helixforge`. Nothing of this is committed.
+   published to crates.io in dependency order: `helix-toolbox-core`,
+   `helix-toolbox-platform`, `helix-toolbox-catalog`, `helix-toolbox-engine`, then
+   `helix-toolbox`. Nothing of this is committed.
 
 ## crates.io
 
-The library crates exist only so `helixforge` can be published; their
+The library crates exist only so `helix-toolbox` can be published; their
 descriptions say they are not general-purpose libraries. The catalog crate
 reaches the repository's `catalog/` and `scripts/` through the links
-`crates/helixforge-catalog/catalog` and `scripts`, which `cargo package`
+`crates/helix-toolbox-catalog/catalog` and `scripts`, which `cargo package`
 follows. The Checks workflow runs `cargo package --workspace` on every
 change, which builds each crate from its packaged form.
 
@@ -48,5 +48,5 @@ To turn publishing on, once:
 
 The next release publishes all five crates. Without the secret the step is
 skipped and nothing else changes. A version on crates.io cannot be deleted,
-only yanked (`cargo yank --version X.Y.Z helixforge`), which stops new
+only yanked (`cargo yank --version X.Y.Z helix-toolbox`), which stops new
 installs from choosing it.

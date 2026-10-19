@@ -3,7 +3,7 @@ description = "One of two packages that replace each other. The tests queue both
 flags = "I"
 
 [package]
-arch = "helixforge-conflict-a"
-debian = "helixforge-conflict-a"
-fedora = "helixforge-conflict-a"
-conflicts = ["helixforge-conflict-b"]
+arch = "helix-toolbox-conflict-a"
+debian = "helix-toolbox-conflict-a"
+fedora = "helix-toolbox-conflict-a"
+conflicts = ["helix-toolbox-conflict-b"]

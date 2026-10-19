@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The record of what the Distributions workflow verified, per container.
 
-  record IMAGE HISTORY CATALOG   what one container's HelixForge history shows
+  record IMAGE HISTORY CATALOG   what one container's Helix Toolbox history shows
                                  it ran and verified, as JSON on stdout
                                  (scripts/vm-tests.py writes the same for a
                                  virtual machine, as image vm:NAME)
@@ -25,7 +25,7 @@ import sys
 import tempfile
 import time
 
-REPOSITORY = os.environ.get('GITHUB_REPOSITORY', 'Commanderx-code/Helix-Forge')
+REPOSITORY = os.environ.get('GITHUB_REPOSITORY', 'Commanderx-code/Helix-toolbox')
 SKIPPED = {'tabs.toml', 'tab.toml', 'group.toml', 'validation.toml', 'setup.toml'}
 
 

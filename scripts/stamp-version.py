@@ -30,11 +30,11 @@ def stamp(text: str, version: str) -> str:
         if section == 'workspace.package' and re.match(r'^version\s*=', line):
             lines[index] = f'version = "{version}"'
             stamped_package = True
-        elif section == 'workspace.dependencies' and line.startswith('helixforge-'):
+        elif section == 'workspace.dependencies' and line.startswith('helix-toolbox-'):
             lines[index], count = re.subn(r'version = "=[^"]*"', f'version = "={version}"', line)
             pinned += count
     if not stamped_package or pinned == 0:
-        raise ValueError('no workspace version or pinned helixforge crates found')
+        raise ValueError('no workspace version or pinned helix-toolbox crates found')
     return '\n'.join(lines)
 
 

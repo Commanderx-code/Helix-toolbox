@@ -1,4 +1,38 @@
-# Migration from Commander Toolbox
+# Migration
+
+## From HelixForge to Helix Toolbox (1.7)
+
+HelixForge is called Helix Toolbox from 1.7.0. Updating carries everything
+over; nothing needs to be done by hand.
+
+| What | Before 1.7 | From 1.7 |
+| :--- | :--- | :--- |
+| Command | `helixforge` | `helix-toolbox`, or `htb` for short; the packages keep `helixforge` as a link to it |
+| Repository | `Commanderx-code/Helix-Forge` | `Commanderx-code/Helix-toolbox`; GitHub sends the old address, its downloads and `git` to the new one |
+| Packages | `helixforge` | `helix-toolbox`, which replaces `helixforge` when installed |
+| Release files | `helixforge-linux-x86_64`, `helixforge_*.deb`, ... | `helix-toolbox-linux-x86_64`, `helix-toolbox_*.deb`, ...; each release also has the same files under the old names, for older copies to update from |
+| Crates | `helixforge`, `helixforge-core`, ... | `helix-toolbox`, `helix-toolbox-core`, ...; the old crates' last version says where to go |
+| Settings, favorites, profiles, baselines, looks | `~/.config/helixforge` | `~/.config/helix-toolbox` |
+| History and logs | `~/.local/state/helixforge` | `~/.local/state/helix-toolbox` |
+| Variable for scripts | `HELIXFORGE_LIB` | `HELIX_TOOLBOX_LIB`; runs set both |
+| Log level | `HELIXFORGE_LOG` | `HELIX_TOOLBOX_LOG`; the old name still works |
+| Configuration backups | `<file>.helixforge-backup-<time>` | `<file>.helix-toolbox-backup-<time>`; the Backups screen lists both |
+
+The first start of 1.7 moves the two folders to their new names and leaves
+a link at each old name, so an older release or a script reading the old
+path finds the same files. What installed software keeps under
+`~/.local/share/helixforge` (AppImages, launchers, downloaded sources) stays
+there, because the entries made for it point there.
+
+Some names stay as they were, because other programs read them: the
+`helixforge` version field in `--json` output (beside a new
+`helix_toolbox`), the Updates channel id `helixforge`, and the `helixforge`
+version field in offline bundles. Bundles made before 1.7 install as before.
+
+To update from HelixForge, use the Updates screen or install the new
+package; `cargo install --locked helix-toolbox` for a Cargo install.
+
+## From Commander Toolbox
 
 HelixForge replaces Commander Toolbox, a Linutil fork, which is now archived;
 the dotfiles `toolbox` command opens HelixForge. This matrix records every

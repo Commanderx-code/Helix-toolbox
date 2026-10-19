@@ -117,7 +117,7 @@ covers = "the package and its configuration, a repeat install, and Home Manager'
 # Runs on real machines, and on virtual machines other than the Distributions
 # workflow's own (scripts/vm-tests.py records those itself), from tester
 # reports (docs/REPORTING.md). Each names the entry, the system, the
-# HelixForge version and the date:
+# Helix Toolbox version and the date:
 #
 # [[hardware]]
 # entry = "sddm"

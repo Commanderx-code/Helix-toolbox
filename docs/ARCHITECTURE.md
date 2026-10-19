@@ -11,13 +11,13 @@
 | Interactive execution | portable-pty, rendered with tui-term and vt100 |
 | Configuration and catalog | Serde and TOML |
 | Errors | thiserror in the crates, anyhow in the application |
-| Logging | tracing, to `~/.local/state/helixforge/logs/helixforge.log` |
+| Logging | tracing, to `~/.local/state/helix-toolbox/logs/helix-toolbox.log` |
 | Tests | Cargo tests with fixtures; Linux VM runs for real installers, later |
 | Releases | GitHub Actions, later |
 
 There is no async runtime (Tokio). A run in a pseudo-terminal reports
 itself as typed events on a bounded standard channel
-(`helixforge_engine::execution`, [EVENTS.md](EVENTS.md)), fed by threads of
+(`helix_toolbox_engine::execution`, [EVENTS.md](EVENTS.md)), fed by threads of
 its own; the terminal interface takes them on each pass of its event loop,
 and a graphical interface will take the same events.
 
@@ -38,14 +38,14 @@ and a graphical interface will take the same events.
 ## Crates
 
 ```text
-helixforge-core      Tab, Group, Entry, Action, Precondition, Risk; name validation
-helixforge-catalog   reads catalog/ and scripts/ (embedded or from a directory), applies preconditions
-helixforge-platform  /etc/os-release, package manager family, PATH lookups
-helixforge-engine    plan() -> Plan of Steps; shell_program(); execution (pty runs as events); Runner (inherited, mock); history
-helixforge           clap command line, ratatui interface, tracing setup
+helix-toolbox-core      Tab, Group, Entry, Action, Precondition, Risk; name validation
+helix-toolbox-catalog   reads catalog/ and scripts/ (embedded or from a directory), applies preconditions
+helix-toolbox-platform  /etc/os-release, package manager family, PATH lookups
+helix-toolbox-engine    plan() -> Plan of Steps; shell_program(); execution (pty runs as events); Runner (inherited, mock); history
+helix-toolbox           clap command line, ratatui interface, tracing setup
 ```
 
-`--json` output is built in `apps/helixforge/src/json.rs`, field by field
+`--json` output is built in `apps/helix-toolbox/src/json.rs`, field by field
 from the engine's types rather than derived from them, so the engine can
 change without changing what other programs read; the shapes and their
 `schema` version are in [JSON.md](JSON.md).
@@ -60,7 +60,7 @@ An entry's `Action` is one of:
 | `Script` | `cd <its directory> && <interpreter> <script>`; interactive by default |
 | `Command` | `sh -e -c '<line>'` |
 | `Nix` | `nix profile install <installable>` or `home-manager switch --flake <flake>` |
-| `Native` | `helixforge native <action>`: HelixForge re-invoked, the operation implemented in Rust |
+| `Native` | `helix-toolbox native <action>`: Helix Toolbox re-invoked, the operation implemented in Rust |
 | `Profile` | the actions of the entries it names, in order |
 
 `plan()` turns entries into a `Plan`: ordered `Step`s, notes for entries that
@@ -95,7 +95,7 @@ directory); only a source without a probe falls back to the entry's command
 on the PATH. Before planning, `package_state()` asks the same probes about
 the entry's own packages, then about the packages it `conflicts` with, and
 only then whether its optional `binary` is on the PATH: `Installed`,
-`OnPath` (an install HelixForge did not make, such as Nix's) or `Absent`
+`OnPath` (an install Helix Toolbox did not make, such as Nix's) or `Absent`
 with the installed packages it would replace.
 
 `inventory::Inventory` is the same knowledge for showing it. `gather()` runs
@@ -109,7 +109,7 @@ version, and a Nix copy of the command found first on the PATH), `Managed`
 generation's `home-path` has the same file, NixOS for
 `/run/current-system/sw`, else Nix, with the version from the store path),
 `Elsewhere` and `Absent`. The interface gathers it on a background thread
-when it opens and after each run; `helixforge status` prints it.
+when it opens and after each run; `helix-toolbox status` prints it.
 
 `preflight::check()` looks at a plan before it runs and returns `Finding`s,
 each a blocker or a warning: requirements no source can do without
@@ -134,11 +134,11 @@ a failed step no longer ends the program, steps that depend on it are skipped,
 and an exit status of 128 or more still stops everything. `Finished::from_run`
 reads the file into `StepResult`s (done, failed, interrupted, skipped, not
 run), verifies the package steps that finished, and `describe()` adds "1 of 3
-steps done" to the history. `history::active()` finds other HelixForge runs
+steps done" to the history. `history::active()` finds other Helix Toolbox runs
 still going from their markers, a preflight blocker.
 
 `profiles` keeps the user's workstation profiles as TOML (`Profile`: name,
-description, entry ids) in `$XDG_CONFIG_HOME/helixforge/profiles/<slug>.toml`.
+description, entry ids) in `$XDG_CONFIG_HOME/helix-toolbox/profiles/<slug>.toml`.
 `check()` refuses an empty profile or one naming entries the catalog lacks;
 `add_to()` puts every valid one into the Profiles tab as a "Your profiles"
 group of `Action::Profile` entries with ids `profile-<slug>`, so planning,
@@ -158,9 +158,9 @@ checks on a background thread when Helix Doctor opens and with `r`.
 and the time stamp) under `Roots`: the user's configuration and data
 folders to any depth (skipping caches, repositories and links) and the home
 folder, and `/etc`, `/boot` and two SDDM folders a few levels deep, which need
-root to restore. `plan_restore()` builds a `Step::Shell` (a program HelixForge
+root to restore. `plan_restore()` builds a `Step::Shell` (a program Helix Toolbox
 composes from quoted paths only) that moves the current file aside as
-`.helixforge-backup-<time>` and copies the backup back. `Snapshots` detects
+`.helix-toolbox-backup-<time>` and copies the backup back. `Snapshots` detects
 Snapper with a root configuration or Timeshift; `worth_a_snapshot()` says
 whether a plan changes the system (risk high, or PFM, K, D, SI flags) and
 `with_snapshot()` puts a snapshot step first.
@@ -200,7 +200,7 @@ exit status of 128 or more ends the run. When the program succeeds,
 `verify()` asks the same questions from Rust, and the `Finished` result,
 outcome plus checks, is what the history records. A package step whose first
 source cannot run does not stop the run from starting when another source
-can. Native steps re-enter HelixForge through its hidden `native`
+can. Native steps re-enter Helix Toolbox through its hidden `native`
 subcommand, so even Rust-implemented operations go through the same program
 and the same terminal, and will through the graphical interface's terminal
 panel too.
@@ -220,9 +220,9 @@ the Install Plan (the queue, planned live), Updates (the channels, gathered
 on a background thread), History (the records,
 with saved logs) and Settings. Popups over the current screen show text, the
 confirmation with the plan's risk line, and the running terminal. All of it
-is one `App` in `apps/helixforge/src/tui/app.rs` driven by key events; screen
+is one `App` in `apps/helix-toolbox/src/tui/app.rs` driven by key events; screen
 tests render it into a test backend. Search ranking is
-`helixforge_core::search::score`, shared with `helixforge search`.
+`helix_toolbox_core::search::score`, shared with `helix-toolbox search`.
 
 ## Graphical interface, later
 

@@ -1,0 +1,11 @@
+[package]
+name = "helixforge-platform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "Renamed: HelixForge is now Helix Toolbox, and this crate is helix-toolbox-platform."
+readme = "README.md"

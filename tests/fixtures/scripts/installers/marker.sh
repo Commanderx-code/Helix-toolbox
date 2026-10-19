@@ -3,4 +3,4 @@
 # shellcheck source=tests/fixtures/scripts/shared/common-script.sh
 . "$HELIXFORGE_LIB/common-script.sh"
 command_exists sh
-printf 'marker from %s\n' "$(pwd)" > "${HELIXFORGE_TEST_OUT:?}"
+printf 'marker from %s\n' "$(pwd)" > "${HELIX_TOOLBOX_TEST_OUT:?}"

@@ -29,8 +29,8 @@ if [ "$(generated)" != "$before" ]; then
     git status --short -- catalog scripts/installers/commander >&2
     exit 1
 fi
-cargo build --release -p helixforge
-target/release/helixforge --version
-target/release/helixforge docgen docs/walkthrough.md
+cargo build --release -p helix-toolbox
+target/release/helix-toolbox --version
+target/release/helix-toolbox docgen docs/walkthrough.md
 git diff --exit-code -- docs/walkthrough.md
-echo "HelixForge checks passed."
+echo "Helix Toolbox checks passed."

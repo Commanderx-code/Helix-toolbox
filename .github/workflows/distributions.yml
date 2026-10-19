@@ -1,6 +1,6 @@
 name: Distributions
 
-# HelixForge in real distribution containers: detection, the visible catalog,
+# Helix Toolbox in real distribution containers: detection, the visible catalog,
 # real package installs through the engine, script and native entries, and the
 # installer tests under each distribution's own /bin/sh.
 
@@ -29,16 +29,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           toolchain: stable
-      - run: cargo build --locked --release -p helixforge
+      - run: cargo build --locked --release -p helix-toolbox
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: helixforge
-          path: target/release/helixforge
+          name: helix-toolbox
+          path: target/release/helix-toolbox
       - name: Arch, Debian and RPM packages of the build
         run: |
           scripts/install-nfpm.sh "$RUNNER_TEMP/bin"
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
-          PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$version" target/release/helixforge dist
+          PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$version" target/release/helix-toolbox dist
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: packages
@@ -56,16 +56,16 @@ jobs:
         with:
           toolchain: stable
       - run: cargo test --locked --workspace --no-fail-fast
-      - run: cargo build --locked --release -p helixforge
+      - run: cargo build --locked --release -p helix-toolbox
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: helixforge-aarch64
-          path: target/release/helixforge
+          name: helix-toolbox-aarch64
+          path: target/release/helix-toolbox
       - name: Arch, Debian and RPM packages of the build
         run: |
           scripts/install-nfpm.sh "$RUNNER_TEMP/bin"
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
-          PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$version" target/release/helixforge dist
+          PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$version" target/release/helix-toolbox dist
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: packages-aarch64
@@ -84,7 +84,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: helixforge-aarch64
+          name: helix-toolbox-aarch64
           path: bin
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -103,7 +103,7 @@ jobs:
             grep -q '^\[GNUPG:\] VALIDSIG 68B3537F39A313B3E574D06777193F152BDBE6A6 '
           docker import "$RUNNER_TEMP/root.tar.gz" archlinuxarm:checked
           rm "$RUNNER_TEMP/root.tar.gz"
-      - name: HelixForge in Arch Linux ARM
+      - name: Helix Toolbox in Arch Linux ARM
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo archlinuxarm:checked \
             /bin/bash -e scripts/arch-arm-tests.sh validation-arch-arm64.json
@@ -213,17 +213,17 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: ${{ matrix.arch && 'helixforge-aarch64' || 'helixforge' }}
+          name: ${{ matrix.arch && 'helix-toolbox-aarch64' || 'helix-toolbox' }}
           path: bin
       - name: Detection
         run: |
-          chmod +x bin/helixforge
-          bin/helixforge system | tee system.txt
+          chmod +x bin/helix-toolbox
+          bin/helix-toolbox system | tee system.txt
           grep -q "Package manager: .*(${{ matrix.family }} family)" system.txt
       - name: The catalog on this distribution
         run: |
-          bin/helixforge list > visible.txt
-          bin/helixforge list --all > all.txt
+          bin/helix-toolbox list > visible.txt
+          bin/helix-toolbox list --all > all.txt
           visible=$(grep -vE '/$' visible.txt | grep -cE '^\s')
           total=$(grep -vE '/$' all.txt | grep -cE '^\s')
           echo "Visible entries: $visible of $total"
@@ -234,45 +234,45 @@ jobs:
           fi
       - name: Real package installs through the engine
         run: |
-          bin/helixforge plan htop
-          yes | bin/helixforge run htop ripgrep --yes | tee run.txt
+          bin/helix-toolbox plan htop
+          yes | bin/helix-toolbox run htop ripgrep --yes | tee run.txt
           command -v htop
           command -v rg
           # Verified by the package manager, not by the command on the PATH.
           grep -qE '^Verified: htop: (pacman|dpkg|dnf|zypper) lists htop' run.txt
           grep -qE '^Verified: Ripgrep: (pacman|dpkg|dnf|zypper) lists ripgrep' run.txt
-          bin/helixforge plan developer-basics | tee plan.txt
+          bin/helix-toolbox plan developer-basics | tee plan.txt
           grep -qE 'Ripgrep: already installed \((pacman|dpkg|dnf|zypper) lists ripgrep\)' plan.txt
-          bin/helixforge history --limit 1 | grep -q 'ok .*exit 0, verified'
+          bin/helix-toolbox history --limit 1 | grep -q 'ok .*exit 0, verified'
           # Their status: installed, from the family's package manager, with a version.
-          bin/helixforge status htop ripgrep | tee status.txt
+          bin/helix-toolbox status htop ripgrep | tee status.txt
           grep -qE '^htop +Installed +(pacman|apt|dnf|zypper) [0-9]' status.txt
           grep -qE '^Ripgrep +Installed +(pacman|apt|dnf|zypper) [0-9]' status.txt
           # The health checks run read-only on each distribution.
-          bin/helixforge doctor | tee doctor.txt
+          bin/helix-toolbox doctor | tee doctor.txt
           grep -qE '^(OK|Notice|Problem) +Disk space: ' doctor.txt
           grep -qE '^(OK|Notice|Problem) +Network: ' doctor.txt
-          if bin/helixforge doctor --repair no-such-check --yes; then
+          if bin/helix-toolbox doctor --repair no-such-check --yes; then
             echo "an unknown repair ran" >&2
             exit 1
           fi
           # Freshly installed, so nothing to update; on Arch it would be the whole system.
-          bin/helixforge update htop --dry-run | tee update.txt
+          bin/helix-toolbox update htop --dry-run | tee update.txt
           grep -qE '^htop: up to date \((pacman|apt|dnf|zypper) [0-9]' update.txt
       - name: More package entries every family has (git is already there)
         run: |
-          yes | bin/helixforge run neovim btop --yes --keep-going | tee more.txt
+          yes | bin/helix-toolbox run neovim btop --yes --keep-going | tee more.txt
           for name in Neovim btop; do
             grep -qE "^Verified: $name: " more.txt
           done
       - name: Drift sees what changed since a baseline
         run: |
           echo one > "$HOME/drift-sample.conf"
-          bin/helixforge drift save "Before" --path "$HOME/drift-sample.conf"
-          bin/helixforge drift list | grep -q '^before  Before '
-          bin/helixforge drift check --exit-code
+          bin/helix-toolbox drift save "Before" --path "$HOME/drift-sample.conf"
+          bin/helix-toolbox drift list | grep -q '^before  Before '
+          bin/helix-toolbox drift check --exit-code
           echo two > "$HOME/drift-sample.conf"
-          yes | bin/helixforge run fzf --yes > /dev/null
+          yes | bin/helix-toolbox run fzf --yes > /dev/null
           case "${{ matrix.family }}" in
             Arch) pacman -R --noconfirm htop ;;
             Debian) apt-get remove -y htop ;;
@@ -280,79 +280,79 @@ jobs:
             openSUSE) zypper remove htop ;;
           esac
           status=0
-          bin/helixforge drift check --exit-code > drift.txt || status=$?
+          bin/helix-toolbox drift check --exit-code > drift.txt || status=$?
           cat drift.txt
           test "$status" = 1
           grep -qE '^Missing +htop +was installed \((pacman|apt|dnf|zypper)' drift.txt
           grep -qE '^Added +fzf ' drift.txt
           grep -qE '^Changed +~/drift-sample.conf ' drift.txt
-          grep -q 'helixforge run htop$' drift.txt
-          bin/helixforge drift check --json > drift.json
+          grep -q 'helix-toolbox run htop$' drift.txt
+          bin/helix-toolbox drift check --json > drift.json
           python3 -c 'import json; d = json.load(open("drift.json"))["data"]; assert d["restore"] == ["htop"], d; assert {"missing", "added", "file-changed"} <= {x["kind"] for x in d["differences"]}, d'
           # What restores it plans like any run, without changing anything.
           restore=$(python3 -c 'import json; print(json.load(open("drift.json"))["data"]["restore"][0])')
-          bin/helixforge run "$restore" --dry-run | grep -q '^1\. htop$'
+          bin/helix-toolbox run "$restore" --dry-run | grep -q '^1\. htop$'
       - name: The change preview and the hardware center, read-only
         run: |
           # htop was removed by the Drift step above.
-          bin/helixforge plan htop --effects | tee effects.txt
+          bin/helix-toolbox plan htop --effects | tee effects.txt
           grep -qE '✓ installs htop from (pacman|apt-get|dnf|zypper)' effects.txt
           case "${{ matrix.family }}" in
             Arch) grep -qE '✓ pacman (lists nothing else|would also install)' effects.txt ;;
             Debian) grep -qE '✓ apt (lists nothing else|would also install)' effects.txt ;;
             *) grep -q '? which dependencies' effects.txt ;;
           esac
-          bin/helixforge plan htop --effects --json | python3 -c 'import json, sys; d = json.load(sys.stdin)["data"]; assert d["effects"][0]["changes"][0]["certainty"] == "known", d'
+          bin/helix-toolbox plan htop --effects --json | python3 -c 'import json, sys; d = json.load(sys.stdin)["data"]; assert d["effects"][0]["changes"][0]["certainty"] == "known", d'
           # Containers have no GRUB, and the preview says so instead of guessing.
-          bin/helixforge plan grub-dracula --effects | grep -q '/etc/default/grub: .*it is not on this machine, so this does not apply'
-          bin/helixforge hardware | tee hardware.txt
+          bin/helix-toolbox plan grub-dracula --effects | grep -q '/etc/default/grub: .*it is not on this machine, so this does not apply'
+          bin/helix-toolbox hardware | tee hardware.txt
           grep -q '^Firmware$' hardware.txt
           grep -q '^Disks$' hardware.txt
-          bin/helixforge hardware --json | python3 -c 'import json, sys; d = json.load(sys.stdin); assert d["schema"] == 1 and "disks" in d["data"], d'
-          bin/helixforge hardware --smart nvme0n1 --dry-run | grep -q 'sudo smartctl --health --attributes /dev/nvme0n1'
-          if bin/helixforge hardware --smart '../sda' --dry-run; then
+          bin/helix-toolbox hardware --json | python3 -c 'import json, sys; d = json.load(sys.stdin); assert d["schema"] == 1 and "disks" in d["data"], d'
+          bin/helix-toolbox hardware --smart nvme0n1 --dry-run | grep -q 'sudo smartctl --health --attributes /dev/nvme0n1'
+          if bin/helix-toolbox hardware --smart '../sda' --dry-run; then
             echo "a disk name with a path was accepted" >&2
             exit 1
           fi
       - name: The setup wizard's plans and the desktop, read-only
         run: |
-          bin/helixforge setup | tee setup.txt
+          bin/helix-toolbox setup | tee setup.txt
           grep -qE '^Packages +(pacman|APT|DNF|zypper)' setup.txt
           grep -q '^  developer ' setup.txt
           # A workstation's plan only plans: nothing is installed.
-          bin/helixforge setup minimal | tee minimal.txt
+          bin/helix-toolbox setup minimal | tee minimal.txt
           grep -q 'The plan, which nothing has run' minimal.txt
-          grep -q 'To run it, after reading it: helixforge run ' minimal.txt
-          bin/helixforge setup developer --json | python3 -c 'import json, sys; d = json.load(sys.stdin)["data"]; assert d["chosen"] == "developer" and any(s["id"] == "git" for s in d["suggestions"]), d'
-          if bin/helixforge setup no-such-workstation; then
+          grep -q 'To run it, after reading it: helix-toolbox run ' minimal.txt
+          bin/helix-toolbox setup developer --json | python3 -c 'import json, sys; d = json.load(sys.stdin)["data"]; assert d["chosen"] == "developer" and any(s["id"] == "git" for s in d["suggestions"]), d'
+          if bin/helix-toolbox setup no-such-workstation; then
             echo "an unknown workstation was accepted" >&2
             exit 1
           fi
           # Containers run no desktop, and it says so.
-          bin/helixforge desktop | grep -q '^Desktop   none found'
+          bin/helix-toolbox desktop | grep -q '^Desktop   none found'
       - name: An offline bundle is made, checked and installed from
         run: |
           # htop was removed by the Drift step above. Steam, a script, needs
           # the network; there is no Steam for ARM.
           if [ -n "${{ matrix.arch }}" ]; then
-            bin/helixforge bundle create /tmp/bundle htop | tee bundle.txt
+            bin/helix-toolbox bundle create /tmp/bundle htop | tee bundle.txt
           else
-            bin/helixforge bundle create /tmp/bundle htop steam | tee bundle.txt
+            bin/helix-toolbox bundle create /tmp/bundle htop steam | tee bundle.txt
             grep -q '^Needs the network: Steam' bundle.txt
           fi
           grep -q '^Offline: htop$' bundle.txt
           (cd /tmp/bundle && sha256sum --check SHA256SUMS)
-          bin/helixforge bundle verify /tmp/bundle
+          bin/helix-toolbox bundle verify /tmp/bundle
           # A changed file is caught before anything is installed.
           cp -a /tmp/bundle /tmp/tampered
-          echo changed >> /tmp/tampered/helixforge
-          if bin/helixforge bundle install /tmp/tampered --dry-run; then
+          echo changed >> /tmp/tampered/helix-toolbox
+          if bin/helix-toolbox bundle install /tmp/tampered --dry-run; then
             echo "a tampered bundle was accepted" >&2
             exit 1
           fi
-          yes | /tmp/bundle/helixforge bundle install /tmp/bundle --yes | tee installed.txt
+          yes | /tmp/bundle/helix-toolbox bundle install /tmp/bundle --yes | tee installed.txt
           command -v htop
-          bin/helixforge status htop | grep -qE '^htop +Installed'
+          bin/helix-toolbox status htop | grep -qE '^htop +Installed'
       - name: Entries for x86_64 only are left out on ARM
         if: matrix.arch
         run: |
@@ -364,8 +364,8 @@ jobs:
             grep -q "^ *$id " all.txt
           done
           # Named anyway, it is blocked before anything runs.
-          bin/helixforge plan steam | grep -q '^Blocked: Steam is for x86_64 only, and this machine is aarch64$'
-          if yes | bin/helixforge run steam --yes; then
+          bin/helix-toolbox plan steam | grep -q '^Blocked: Steam is for x86_64 only, and this machine is aarch64$'
+          if yes | bin/helix-toolbox run steam --yes; then
             echo "Steam ran on aarch64" >&2
             exit 1
           fi
@@ -373,7 +373,7 @@ jobs:
       - name: WINE and gaming packages the catalog names exist here
         if: ${{ !matrix.arch }}
         run: |
-          bin/helixforge plan wine winetricks protontricks minigalaxy | tee gaming.txt
+          bin/helix-toolbox plan wine winetricks protontricks minigalaxy | tee gaming.txt
           grep -q '^[0-9]\. WINE$' gaming.txt
           case "${{ matrix.image }}" in
             archlinux:*)
@@ -414,14 +414,14 @@ jobs:
           fi
       - name: Converted package entries, removal and the AUR route
         run: |
-          yes | bin/helixforge run lynx --yes
+          yes | bin/helix-toolbox run lynx --yes
           command -v lynx
           if [ -n "${{ matrix.removable }}" ]; then
-            yes | bin/helixforge run ${{ matrix.removable }} --yes
+            yes | bin/helix-toolbox run ${{ matrix.removable }} --yes
             command -v ${{ matrix.program }}
-            bin/helixforge remove ${{ matrix.removable }} --dry-run | tee removal.txt
+            bin/helix-toolbox remove ${{ matrix.removable }} --dry-run | tee removal.txt
             grep -q '^1. Remove ' removal.txt
-            yes | bin/helixforge remove ${{ matrix.removable }} --yes | tee removed.txt
+            yes | bin/helix-toolbox remove ${{ matrix.removable }} --yes | tee removed.txt
             grep -q '^Verified: Remove .*: removed' removed.txt
             # A bare "! command" never fails a step under set -e; test it explicitly.
             # Forget the path bash remembered from the install check above, or
@@ -431,16 +431,16 @@ jobs:
               echo "${{ matrix.program }} is still installed after removal" >&2
               exit 1
             fi
-            bin/helixforge remove ${{ matrix.removable }} --dry-run | grep -q 'not installed'
+            bin/helix-toolbox remove ${{ matrix.removable }} --dry-run | grep -q 'not installed'
           else
             # Arch takes these from the AUR, then Flathub; without paru, yay
             # or flatpak the run stops before it starts.
-            bin/helixforge plan tenacity | grep -q -- '-S --needed tenacity'
-            if bin/helixforge run tenacity --yes; then
+            bin/helix-toolbox plan tenacity | grep -q -- '-S --needed tenacity'
+            if bin/helix-toolbox run tenacity --yes; then
               echo "the AUR route ran without paru or yay" >&2
               exit 1
             fi
-            bin/helixforge remove tenacity --dry-run | grep -q 'not installed'
+            bin/helix-toolbox remove tenacity --dry-run | grep -q 'not installed'
           fi
       - name: Falling back to the next source, and verification
         run: |
@@ -456,31 +456,31 @@ jobs:
           esac
           STANDIN
           chmod +x /usr/bin/flatpak
-          hf() { bin/helixforge --catalog-dir tests/fixtures/packages "$@"; }
+          hf() { bin/helix-toolbox --catalog-dir tests/fixtures/packages "$@"; }
           yes | hf run fallback-sample --yes | tee fallback.txt
-          grep -q '^HelixForge: .* failed (exit [0-9]*)' fallback.txt
-          grep -q '^HelixForge: trying Flathub' fallback.txt
-          grep -q '^Verified: Fallback Sample: org.helixforge.FallbackSample is installed from Flathub' fallback.txt
+          grep -q '^Helix Toolbox: .* failed (exit [0-9]*)' fallback.txt
+          grep -q '^Helix Toolbox: trying Flathub' fallback.txt
+          grep -q '^Verified: Fallback Sample: org.helixtoolbox.FallbackSample is installed from Flathub' fallback.txt
           hf plan fallback-sample | grep -q 'already installed'
           yes | hf remove fallback-sample --yes | tee removal.txt
           grep -q '^Verified: Remove Fallback Sample: removed' removal.txt
-          test ! -e /var/lib/flatpak/app/org.helixforge.FallbackSample
+          test ! -e /var/lib/flatpak/app/org.helixtoolbox.FallbackSample
           if yes | hf run missing-sample --yes > missing.txt; then
             echo "an install that left nothing behind was trusted" >&2
             exit 1
           fi
-          grep -q '^HelixForge: Flathub finished, but Missing Sample is not installed' missing.txt
+          grep -q '^Helix Toolbox: Flathub finished, but Missing Sample is not installed' missing.txt
           hf history --limit 1 | grep -q 'failed | Missing Sample | exit 1'
           rm /usr/bin/flatpak
       - name: Script and native entries
         run: |
-          bin/helixforge run system-report machine-summary --yes | tee report.txt
+          bin/helix-toolbox run system-report machine-summary --yes | tee report.txt
           grep -q '^==> System Report (script)' report.txt
           grep -q '^Distribution:' report.txt
       - name: A failing run is recorded as failed
         run: |
           printf 'name = "Fail"\n\n[command]\nline = "exit 7"\n' > /dev/null
-          ! bin/helixforge run definitely-not-an-entry --yes
+          ! bin/helix-toolbox run definitely-not-an-entry --yes
       - name: Installer tests under this distribution's shell
         run: |
           ls -l /bin/sh
@@ -499,50 +499,50 @@ jobs:
           esac
           case "${{ matrix.family }}" in
             Arch)
-              pacman -U --noconfirm packages/helixforge-*-$arch.pkg.tar.zst
-              pacman -Ql helixforge > files.txt ;;
+              pacman -U --noconfirm packages/helix-toolbox-*-$arch.pkg.tar.zst
+              pacman -Ql helix-toolbox > files.txt ;;
             Debian)
-              apt-get install -y ./packages/helixforge_*_$debian.deb
-              dpkg -L helixforge > files.txt ;;
+              apt-get install -y ./packages/helix-toolbox_*_$debian.deb
+              dpkg -L helix-toolbox > files.txt ;;
             Fedora)
-              dnf install -y ./packages/helixforge-*.$arch.rpm
-              rpm -ql helixforge > files.txt ;;
+              dnf install -y ./packages/helix-toolbox-*.$arch.rpm
+              rpm -ql helix-toolbox > files.txt ;;
             openSUSE)
               # nfpm's packages are not signed with a key zypper knows.
-              zypper --non-interactive install --allow-unsigned-rpm ./packages/helixforge-*.$arch.rpm
-              rpm -ql helixforge > files.txt ;;
+              zypper --non-interactive install --allow-unsigned-rpm ./packages/helix-toolbox-*.$arch.rpm
+              rpm -ql helix-toolbox > files.txt ;;
           esac
           # Arch and Fedora link /usr/sbin to /usr/bin, which comes first on PATH.
-          test "$(readlink -f "$(command -v helixforge)")" = /usr/bin/helixforge
-          helixforge --version | grep -qE '^helixforge [0-9]+\.[0-9]+\.[0-9]+$'
-          helixforge list --json | python3 -c 'import json, sys; assert json.load(sys.stdin)["schema"] == 1'
-          helixforge system | grep -q "(${{ matrix.family }} family)"
-          helixforge report --no-checks | tee report.txt
+          test "$(readlink -f "$(command -v helix-toolbox)")" = /usr/bin/helix-toolbox
+          helix-toolbox --version | grep -qE '^helix-toolbox [0-9]+\.[0-9]+\.[0-9]+$'
+          helix-toolbox list --json | python3 -c 'import json, sys; assert json.load(sys.stdin)["schema"] == 1'
+          helix-toolbox system | grep -q "(${{ matrix.family }} family)"
+          helix-toolbox report --no-checks | tee report.txt
           grep -q '^- Installed from: package$' report.txt
           # The images leave out manual pages and documentation, so these are
           # checked in the package's own file list.
-          for file in /usr/bin/helixforge /usr/share/man/man1/helixforge.1.gz \
-              /usr/share/bash-completion/completions/helixforge \
-              /usr/share/zsh/site-functions/_helixforge \
-              /usr/share/fish/vendor_completions.d/helixforge.fish \
-              /usr/share/applications/helixforge.desktop \
-              /usr/share/icons/hicolor/512x512/apps/helixforge.png; do
-            grep -qE "^(helixforge )?$file\$" files.txt
+          for file in /usr/bin/helix-toolbox /usr/share/man/man1/helix-toolbox.1.gz \
+              /usr/share/bash-completion/completions/helix-toolbox \
+              /usr/share/zsh/site-functions/_helix-toolbox \
+              /usr/share/fish/vendor_completions.d/helix-toolbox.fish \
+              /usr/share/applications/helix-toolbox.desktop \
+              /usr/share/icons/hicolor/512x512/apps/helix-toolbox.png; do
+            grep -qE "^(helix-toolbox )?$file\$" files.txt
           done
-          test -f /usr/share/bash-completion/completions/helixforge
-          test -f /usr/share/applications/helixforge.desktop
+          test -f /usr/share/bash-completion/completions/helix-toolbox
+          test -f /usr/share/applications/helix-toolbox.desktop
           case "${{ matrix.family }}" in
-            Arch) pacman -R --noconfirm helixforge ;;
-            Debian) apt-get remove -y helixforge ;;
-            Fedora) dnf remove -y helixforge ;;
-            openSUSE) zypper --non-interactive remove helixforge ;;
+            Arch) pacman -R --noconfirm helix-toolbox ;;
+            Debian) apt-get remove -y helix-toolbox ;;
+            Fedora) dnf remove -y helix-toolbox ;;
+            openSUSE) zypper --non-interactive remove helix-toolbox ;;
           esac
           hash -r
-          test ! -e /usr/bin/helixforge
-          test ! -e /usr/share/applications/helixforge.desktop
-      - name: Record what HelixForge verified in this container
+          test ! -e /usr/bin/helix-toolbox
+          test ! -e /usr/share/applications/helix-toolbox.desktop
+      - name: Record what Helix Toolbox verified in this container
         run: |
-          bin/helixforge history --json --limit 1000 > history.json
+          bin/helix-toolbox history --json --limit 1000 > history.json
           python3 -B scripts/validation-record.py record "${{ matrix.image }}${{ matrix.arch && ' on aarch64' || '' }}" history.json catalog \
             > "validation-${{ strategy.job-index }}.json"
           cat "validation-${{ strategy.job-index }}.json"
@@ -573,7 +573,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: helixforge
+          name: helix-toolbox
           path: bin
       - name: KVM and QEMU
         run: |
@@ -585,8 +585,8 @@ jobs:
           ls -l /dev/kvm
       - name: The entries, run and rebooted into
         run: |
-          chmod +x bin/helixforge
-          python3 -B scripts/vm-tests.py --distro "${{ matrix.distro }}" --binary bin/helixforge \
+          chmod +x bin/helix-toolbox
+          python3 -B scripts/vm-tests.py --distro "${{ matrix.distro }}" --binary bin/helix-toolbox \
             --work "$RUNNER_TEMP/vm" --out "validation-vm-${{ matrix.distro }}.json" --shots screens
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
@@ -619,7 +619,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: helixforge-aarch64
+          name: helix-toolbox-aarch64
           path: bin
       - name: QEMU for ARM64
         run: |
@@ -627,8 +627,8 @@ jobs:
           sudo apt-get install -y qemu-system-arm qemu-efi-aarch64 qemu-utils genisoimage python3-pil
       - name: The entries, run and rebooted into
         run: |
-          chmod +x bin/helixforge
-          python3 -B scripts/vm-tests.py --distro "${{ matrix.distro }}" --binary bin/helixforge \
+          chmod +x bin/helix-toolbox
+          python3 -B scripts/vm-tests.py --distro "${{ matrix.distro }}" --binary bin/helix-toolbox \
             --work "$RUNNER_TEMP/vm" --out "arm-vm-${{ matrix.distro }}.json" --shots screens
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()

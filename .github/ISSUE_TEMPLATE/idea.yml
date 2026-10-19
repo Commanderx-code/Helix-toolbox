@@ -1,12 +1,12 @@
 name: An idea or a missing entry
-description: Something HelixForge could install, configure, check or do better.
+description: Something Helix Toolbox could install, configure, check or do better.
 labels: [enhancement]
 body:
   - type: textarea
     id: idea
     attributes:
       label: The idea
-      description: What you would like HelixForge to do, and what it would help with.
+      description: What you would like Helix Toolbox to do, and what it would help with.
     validations:
       required: true
   - type: textarea

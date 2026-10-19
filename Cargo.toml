@@ -1,29 +1,29 @@
 [workspace]
 resolver = "2"
 members = [
-    "apps/helixforge",
-    "crates/helixforge-core",
-    "crates/helixforge-catalog",
-    "crates/helixforge-platform",
-    "crates/helixforge-engine",
+    "apps/helix-toolbox",
+    "crates/helix-toolbox-core",
+    "crates/helix-toolbox-catalog",
+    "crates/helix-toolbox-platform",
+    "crates/helix-toolbox-engine",
 ]
 
 [workspace.package]
-version = "1.6.0"
+version = "1.7.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
-repository = "https://github.com/Commanderx-code/Helix-Forge"
-homepage = "https://github.com/Commanderx-code/Helix-Forge"
+repository = "https://github.com/Commanderx-code/Helix-toolbox"
+homepage = "https://github.com/Commanderx-code/Helix-toolbox"
 authors = ["Commanderx-code"]
 
 [workspace.dependencies]
 # The crates of this workspace, published together at the same version;
 # scripts/stamp-version.py keeps these in step with the version above.
-helixforge-catalog = { path = "crates/helixforge-catalog", version = "=1.6.0" }
-helixforge-core = { path = "crates/helixforge-core", version = "=1.6.0" }
-helixforge-engine = { path = "crates/helixforge-engine", version = "=1.6.0" }
-helixforge-platform = { path = "crates/helixforge-platform", version = "=1.6.0" }
+helix-toolbox-catalog = { path = "crates/helix-toolbox-catalog", version = "=1.7.0" }
+helix-toolbox-core = { path = "crates/helix-toolbox-core", version = "=1.7.0" }
+helix-toolbox-engine = { path = "crates/helix-toolbox-engine", version = "=1.7.0" }
+helix-toolbox-platform = { path = "crates/helix-toolbox-platform", version = "=1.7.0" }
 anyhow = "1"
 clap = { version = "4.5", features = ["derive"] }
 # The poll(2) event source: the default edge-triggered one can leave a key

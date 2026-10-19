@@ -11,16 +11,16 @@ package installs happen only in the Distributions workflow's containers.
 | Layer | Where | What it covers |
 | :--- | :--- | :--- |
 | Unit tests | each crate's `src/` | catalog validation, plans, the shell program, history, the pseudo-terminal session, the unpacked-copy lock and sweep; the execution events with a consumer that does not read until the end, 12 MB of output, a stopped run whose child ignores the hangup, a dropped handle, a failed step and what it skips, a resize and a hidden password prompt |
-| Screen tests | `apps/helixforge/src/tui/` | the interface drawn into a test backend: keys, screens, popups, the small-terminal warning |
-| Engine end to end | `apps/helixforge/tests/end_to_end.rs` | fixture plans run through the mock runner and a real shell |
-| Program in a terminal | `apps/helixforge/tests/terminal.rs` | the built `helixforge` driven through a pseudo-terminal, below |
+| Screen tests | `apps/helix-toolbox/src/tui/` | the interface drawn into a test backend: keys, screens, popups, the small-terminal warning |
+| Engine end to end | `apps/helix-toolbox/tests/end_to_end.rs` | fixture plans run through the mock runner and a real shell |
+| Program in a terminal | `apps/helix-toolbox/tests/terminal.rs` | the built `helix-toolbox` driven through a pseudo-terminal, below |
 | Installer tests | `tests/installers/` | the Commander installers against stand-in commands and temporary homes |
 | Shellcheck | `scripts/verify.sh` | every shared helper and installer, with errors gated for the general catalog |
 | Workflow lint | `scripts/verify.sh` | actionlint over every workflow, including the shell in each step |
 | Source render | `scripts/verify.sh` | rendering the dotfiles and Myfish exports again changes no catalog file |
 | Crates | Checks workflow | `cargo package --workspace`: every crate packaged and built from its package, as crates.io and `cargo install` would |
-| Virtual machines | `scripts/vm-tests.py`, in the Distributions workflow | the boot, login-screen, disk and kernel entries run for real under QEMU, in Arch, Debian and Fedora cloud images on BIOS and UEFI firmware, the Arch live ISO and an Arch machine that says it is a Steam Deck, and weekly Debian's and Fedora's ARM64 cloud images, emulated: each is run through `helixforge run`, rebooted into and checked, with the boot screens kept |
-| Distributions | `.github/workflows/distributions.yml` | Arch, Debian, Ubuntu 22.04 and 24.04, Fedora and openSUSE Tumbleweed containers with real package installs and removals, each verified, and the real package manager failing over to a stand-in Flathub; HelixForge's own package for each installed, used and removed. The ARM64 build's tests, and the same containers on ARM64 runners, Arch being Arch Linux ARM's own root file system checked against its build key (`scripts/arch-arm-tests.sh`), with the x86_64-only entries left out |
+| Virtual machines | `scripts/vm-tests.py`, in the Distributions workflow | the boot, login-screen, disk and kernel entries run for real under QEMU, in Arch, Debian and Fedora cloud images on BIOS and UEFI firmware, the Arch live ISO and an Arch machine that says it is a Steam Deck, and weekly Debian's and Fedora's ARM64 cloud images, emulated: each is run through `helix-toolbox run`, rebooted into and checked, with the boot screens kept |
+| Distributions | `.github/workflows/distributions.yml` | Arch, Debian, Ubuntu 22.04 and 24.04, Fedora and openSUSE Tumbleweed containers with real package installs and removals, each verified, and the real package manager failing over to a stand-in Flathub; Helix Toolbox's own package for each installed, used and removed. The ARM64 build's tests, and the same containers on ARM64 runners, Arch being Arch Linux ARM's own root file system checked against its build key (`scripts/arch-arm-tests.sh`), with the x86_64-only entries left out |
 
 ## The program in a terminal
 
@@ -31,7 +31,7 @@ emulator and types keys. It checks:
 - sidebar navigation, the help popup, search and clearing it
 - pinning an entry, `favorites.toml`, and the entry under Favorites after a
   restart
-- the Updates screen between the catalog areas and History; HelixForge's
+- the Updates screen between the catalog areas and History; Helix Toolbox's
   own row for each way of installing it, and `fetch-release` keeping a file
   that matches the release's SHA256SUMS and deleting one that does not
   (from a release folder served over `file://`)
@@ -55,7 +55,7 @@ emulator and types keys. It checks:
 - resizing while an entry runs, the too-small warning and recovery, and a
   key pressed together with a resize being read at once
 - `Ctrl-C` in the confirmation leaving without running
-- a killed HelixForge's unpacked copy being removed by the next start, and a
+- a killed Helix Toolbox's unpacked copy being removed by the next start, and a
   clean exit removing its own
 - refusing to open the menu without a terminal, and opening it when standard
   input is a pipe, as with `curl … | sh`
@@ -71,23 +71,23 @@ emulator and types keys. It checks:
   it once as not finished; killed after a run ended: its real result
 - the command line's confirmation asked on the terminal when standard input
   is a pipe, and a wrong word canceling
-- `helixforge status` after real installs of htop and ripgrep: Installed,
+- `helix-toolbox status` after real installs of htop and ripgrep: Installed,
   from the family's package manager, with a version, and `update htop
   --dry-run` saying it is up to date (Distributions)
 - profiles: file names from names, saving, replacing, refusing unknown
   entries, empty profiles and unusable names, listing with a broken file,
   the "Your profiles" group planning like a built-in profile, and a queue
   flattened into one; the Install Plan's `s` saving one that then appears
-  under Profiles; `helixforge profile import`, `list`, a dry run of
+  under Profiles; `helix-toolbox profile import`, `list`, a dry run of
   `profile-<name>`, `export` and `delete` in a scratch configuration
 - the health checks against made-up machines: healthy, offline, DNS failing
   (restarting NetworkManager), failed system and user services, graphics
   with no driver or nouveau, a stale or busy pacman lock, unfinished dpkg,
   root-owned settings (paths quoted), missing initramfs and GRUB menu, a full
   EFI partition and disk; the Helix Doctor screen's evidence, repair
-  confirmation and reports; `helixforge doctor` on each distribution
+  confirmation and reports; `helix-toolbox doctor` on each distribution
   (Distributions)
-- backups in a scratch home: `helixforge backups` lists one, `restore` puts
+- backups in a scratch home: `helix-toolbox backups` lists one, `restore` puts
   it back and keeps the replaced file as a backup, and a path that is not a
   backup is refused; in the menu, the Backups screen lists, describes and
   confirms a restore, and a GRUB theme run gets a Snapper snapshot first
@@ -112,7 +112,7 @@ The fixture catalog's entries:
 
 | Entry | Does |
 | :--- | :--- |
-| marker | writes a marker file where `HELIXFORGE_TEST_OUT` points |
+| marker | writes a marker file where `HELIX_TOOLBOX_TEST_OUT` points |
 | failing | exits with status 9 |
 | report | the native system report |
 | bundle | a profile of marker and report |
@@ -147,7 +147,7 @@ The cloud images have a user in the administrators' group with
 passwordless `sudo`, and are first made to boot like a desktop installation:
 GRUB and the kernel on the screen rather than the serial line, and the boot
 menu shown for five seconds. Their disks take TRIM, as an SSD does. Then
-each case runs its entry through `helixforge run` in a terminal, answering
+each case runs its entry through `helix-toolbox run` in a terminal, answering
 the installer's questions as they come (`APPLY`, the package manager's
 `[Y/n]`, yes to `[y/N]`, and the entry's own), reboots, captures the screen
 every half second while the machine boots, and checks the result:
@@ -197,20 +197,20 @@ hardware and firmware other than QEMU's are not covered. It runs on a
 machine with KVM and OVMF too, in a folder of its own:
 
 ```sh
-python3 scripts/vm-tests.py --distro arch --binary target/release/helixforge \
+python3 scripts/vm-tests.py --distro arch --binary target/release/helix-toolbox \
   --work /tmp/vm --out /tmp/vm/arch.json --shots /tmp/vm/screens
 ```
 
 ## The reliability record
 
-Each Distributions container ends by turning its own HelixForge history into
-a record of the entries it ran successfully, and which of those HelixForge
+Each Distributions container ends by turning its own Helix Toolbox history into
+a record of the entries it ran successfully, and which of those Helix Toolbox
 verified (`scripts/validation-record.py record`); a last job merges them into
 one `validation.json`. The release waits for Distributions on its commit,
 publishes nothing if that run failed, and builds `validation.json` into the
 program as `catalog/validation-results.json` (a source update, which has no
 run of its own, takes its ancestor's). The Reliability screen and
-`helixforge reliability` read it beside `catalog/validation.toml`, which
+`helix-toolbox reliability` read it beside `catalog/validation.toml`, which
 lists the installer tests that cover each entry with stand-ins, the
 critical entries, and runs reported from virtual and real machines.
 `tests/installers/test_validation.py` checks that every entry and test that
@@ -221,23 +221,23 @@ file names exists.
 Every push to `main` runs the Checks, Distributions and Sync sources
 workflows; the last waits for Distributions on the same commit, then
 publishes the next release, tagged `vMAJOR.MINOR.PATCH`,
-with `helixforge-linux-x86_64`, `helixforge-linux-aarch64`, the packages and
+with `helix-toolbox-linux-x86_64`, `helix-toolbox-linux-aarch64`, the packages and
 `SHA256SUMS`, and checks that
-`helixforge --version` reports that version. `scripts/release-version.py`
+`helix-toolbox --version` reports that version. `scripts/release-version.py`
 picks it: the commit's own version when it already has one (a rebuild), else
 one patch above the newest tag, or the workspace version in `Cargo.toml` when
-that is higher. Releases before v0.1.0 were named `helixforge-<commit>`. To
+that is higher. Releases before v0.1.0 were named `helix-toolbox-<commit>`. To
 check a published build by hand, without running any entry:
 
 ```sh
-tag=$(gh release view --repo Commanderx-code/Helix-Forge --json tagName --jq .tagName)
+tag=$(gh release view --repo Commanderx-code/Helix-toolbox --json tagName --jq .tagName)
 dir=$(mktemp -d) && cd "$dir"
-gh release download "$tag" --repo Commanderx-code/Helix-Forge
+gh release download "$tag" --repo Commanderx-code/Helix-toolbox
 sha256sum -c SHA256SUMS
-chmod +x helixforge-linux-x86_64
-./helixforge-linux-x86_64 --version
-./helixforge-linux-x86_64 list | head
-./helixforge-linux-x86_64 run system-report --dry-run
+chmod +x helix-toolbox-linux-x86_64
+./helix-toolbox-linux-x86_64 --version
+./helix-toolbox-linux-x86_64 list | head
+./helix-toolbox-linux-x86_64 run system-report --dry-run
 ```
 
 ## Not covered

@@ -94,7 +94,7 @@ jobs:
       - name: Validate and build without installation
         if: steps.release.outputs.build == 'true'
         env:
-          HELIXFORGE_VERSION: ${{ steps.release.outputs.version }}
+          HELIX_TOOLBOX_VERSION: ${{ steps.release.outputs.version }}
         run: |
           cargo fmt --all -- --check
           cargo clippy --workspace --all-targets -- -D warnings
@@ -102,25 +102,25 @@ jobs:
           python3 -B -m unittest discover -s tests/installers -v
           shellcheck -x -P . scripts/shared/*.sh scripts/installers/*.sh scripts/installers/commander/*.sh
           find scripts/installers -name '*.sh' -not -path '*/commander/*' -print0 | xargs -0 shellcheck -x -P . -S error
-          cargo build --release -p helixforge
-          target/release/helixforge docgen docs/walkthrough.md
-          target/release/helixforge --help >/dev/null
-          target/release/helixforge --version | grep -qx "helixforge $HELIXFORGE_VERSION"
+          cargo build --release -p helix-toolbox
+          target/release/helix-toolbox docgen docs/walkthrough.md
+          target/release/helix-toolbox --help >/dev/null
+          target/release/helix-toolbox --version | grep -qx "helix-toolbox $HELIX_TOOLBOX_VERSION"
       - name: Package the tested build
         if: steps.release.outputs.build == 'true'
         env:
           VERSION: ${{ steps.release.outputs.version }}
         run: |
-          mkdir -p /tmp/helixforge-release
-          cp target/release/helixforge /tmp/helixforge-release/helixforge-linux-x86_64
-          cp catalog/validation-results.json /tmp/helixforge-release/validation.json
+          mkdir -p /tmp/helix-toolbox-release
+          cp target/release/helix-toolbox /tmp/helix-toolbox-release/helix-toolbox-linux-x86_64
+          cp catalog/validation-results.json /tmp/helix-toolbox-release/validation.json
           scripts/install-nfpm.sh "$RUNNER_TEMP/bin"
-          PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$VERSION" target/release/helixforge /tmp/helixforge-release
+          PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$VERSION" target/release/helix-toolbox /tmp/helix-toolbox-release
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.release.outputs.build == 'true'
         with:
           name: release-x86_64
-          path: /tmp/helixforge-release/
+          path: /tmp/helix-toolbox-release/
       - name: Commit tested source updates
         if: steps.sync.outputs.changed == 'true'
         run: |
@@ -157,21 +157,21 @@ jobs:
           toolchain: stable
       - name: Test and build on ARM64
         env:
-          HELIXFORGE_VERSION: ${{ needs.sync.outputs.version }}
+          HELIX_TOOLBOX_VERSION: ${{ needs.sync.outputs.version }}
         run: |
           cp "$RUNNER_TEMP/x86_64/validation.json" catalog/validation-results.json
           cargo test --workspace
-          cargo build --release -p helixforge
-          target/release/helixforge --help >/dev/null
-          target/release/helixforge --version | grep -qx "helixforge $HELIXFORGE_VERSION"
+          cargo build --release -p helix-toolbox
+          target/release/helix-toolbox --help >/dev/null
+          target/release/helix-toolbox --version | grep -qx "helix-toolbox $HELIX_TOOLBOX_VERSION"
       - name: Package the tested build
         env:
           VERSION: ${{ needs.sync.outputs.version }}
         run: |
           mkdir -p "$RUNNER_TEMP/release"
-          cp target/release/helixforge "$RUNNER_TEMP/release/helixforge-linux-aarch64"
+          cp target/release/helix-toolbox "$RUNNER_TEMP/release/helix-toolbox-linux-aarch64"
           scripts/install-nfpm.sh "$RUNNER_TEMP/bin"
-          PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$VERSION" target/release/helixforge "$RUNNER_TEMP/release"
+          PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$VERSION" target/release/helix-toolbox "$RUNNER_TEMP/release"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-aarch64
@@ -200,22 +200,32 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: release-*
-          path: /tmp/helixforge-release
+          path: /tmp/helix-toolbox-release
           merge-multiple: true
+      # Copies of 1.6 and older, and launchers made for them, update from the
+      # files named for HelixForge; these are the same files under that name.
+      - name: Copies under the name before 1.7
+        run: |
+          cd /tmp/helix-toolbox-release
+          for file in helix-toolbox-linux-* helix-toolbox_*.deb helix-toolbox-*.rpm helix-toolbox-*.pkg.tar.zst; do
+            cp -- "$file" "helixforge${file#helix-toolbox}"
+          done
+          ls -1
       - name: Checksums of the tested builds
         run: |
-          cd /tmp/helixforge-release
-          sha256sum helixforge-linux-x86_64 helixforge-linux-aarch64 helixforge_*.deb helixforge-*.rpm \
-            helixforge-*.pkg.tar.zst validation.json > SHA256SUMS
+          cd /tmp/helix-toolbox-release
+          sha256sum helix-toolbox-linux-x86_64 helix-toolbox-linux-aarch64 helix-toolbox_*.deb helix-toolbox-*.rpm \
+            helix-toolbox-*.pkg.tar.zst helixforge-linux-* helixforge_*.deb helixforge-*.rpm helixforge-*.pkg.tar.zst \
+            validation.json > SHA256SUMS
           cat SHA256SUMS
       - name: Attest where the files were built
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: |
-            /tmp/helixforge-release/helixforge-linux-*
-            /tmp/helixforge-release/helixforge_*.deb
-            /tmp/helixforge-release/helixforge-*.rpm
-            /tmp/helixforge-release/helixforge-*.pkg.tar.zst
+            /tmp/helix-toolbox-release/helix-toolbox-linux-*
+            /tmp/helix-toolbox-release/helix-toolbox_*.deb
+            /tmp/helix-toolbox-release/helix-toolbox-*.rpm
+            /tmp/helix-toolbox-release/helix-toolbox-*.pkg.tar.zst
       - name: Publish the tested Linux builds
         env:
           GH_TOKEN: ${{ github.token }}
@@ -225,26 +235,27 @@ jobs:
           tag="v$VERSION"
           python3 -B scripts/sync-sources.py --render
           git diff --exit-code
-          cd /tmp/helixforge-release
+          cd /tmp/helix-toolbox-release
           {
-            printf 'HelixForge %s, built from commit %s.\n\n' "$tag" "$revision"
+            printf 'Helix Toolbox %s, built from commit %s.\n\n' "$tag" "$revision"
             printf 'Linux x86_64 and aarch64 (ARM64), built on Ubuntu 22.04 (glibc 2.35 or newer).\n\n'
             printf 'Install the package for your distribution, or run the program directly:\n\n'
             printf '```sh\n'
             printf '# x86_64\n'
-            printf 'sudo pacman -U helixforge-%s-1-x86_64.pkg.tar.zst   # Arch and derivatives\n' "$VERSION"
-            printf 'sudo apt install ./helixforge_%s-1_amd64.deb        # Debian, Ubuntu\n' "$VERSION"
-            printf 'sudo dnf install ./helixforge-%s-1.x86_64.rpm       # Fedora\n' "$VERSION"
-            printf 'sudo zypper install --allow-unsigned-rpm ./helixforge-%s-1.x86_64.rpm   # openSUSE\n\n' "$VERSION"
+            printf 'sudo pacman -U helix-toolbox-%s-1-x86_64.pkg.tar.zst   # Arch and derivatives\n' "$VERSION"
+            printf 'sudo apt install ./helix-toolbox_%s-1_amd64.deb        # Debian, Ubuntu\n' "$VERSION"
+            printf 'sudo dnf install ./helix-toolbox-%s-1.x86_64.rpm       # Fedora\n' "$VERSION"
+            printf 'sudo zypper install --allow-unsigned-rpm ./helix-toolbox-%s-1.x86_64.rpm   # openSUSE\n\n' "$VERSION"
             printf '# aarch64 (ARM64)\n'
-            printf 'sudo pacman -U helixforge-%s-1-aarch64.pkg.tar.zst  # Arch Linux ARM\n' "$VERSION"
-            printf 'sudo apt install ./helixforge_%s-1_arm64.deb        # Debian, Ubuntu, Raspberry Pi OS\n' "$VERSION"
-            printf 'sudo dnf install ./helixforge-%s-1.aarch64.rpm      # Fedora, Fedora Asahi Remix\n' "$VERSION"
-            printf 'sudo zypper install --allow-unsigned-rpm ./helixforge-%s-1.aarch64.rpm   # openSUSE\n' "$VERSION"
+            printf 'sudo pacman -U helix-toolbox-%s-1-aarch64.pkg.tar.zst  # Arch Linux ARM\n' "$VERSION"
+            printf 'sudo apt install ./helix-toolbox_%s-1_arm64.deb        # Debian, Ubuntu, Raspberry Pi OS\n' "$VERSION"
+            printf 'sudo dnf install ./helix-toolbox-%s-1.aarch64.rpm      # Fedora, Fedora Asahi Remix\n' "$VERSION"
+            printf 'sudo zypper install --allow-unsigned-rpm ./helix-toolbox-%s-1.aarch64.rpm   # openSUSE\n' "$VERSION"
             printf '```\n\n'
             printf 'Check a download with %s, and where it was built with %s. See docs/INSTALL.md.\n' \
               "\`sha256sum --check --ignore-missing SHA256SUMS\`" \
               "\`gh attestation verify <file> --repo $GITHUB_REPOSITORY\`"
+            printf '\nThe files named helixforge-* are the same files under the name before 1.7, for copies of HelixForge to update from.\n'
           } > release-notes.md
           # A draft left by a failed run may point at an older commit; start again.
           if [ "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)" = true ]; then
@@ -252,10 +263,11 @@ jobs:
           fi
           # Draft first: a failed upload never exposes a partial release as the latest build.
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$revision" --draft --title "HelixForge $tag" --notes-file release-notes.md
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$revision" --draft --title "Helix Toolbox $tag" --notes-file release-notes.md
           fi
-          gh release upload "$tag" helixforge-linux-x86_64 helixforge-linux-aarch64 helixforge_*.deb helixforge-*.rpm \
-            helixforge-*.pkg.tar.zst validation.json SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+          gh release upload "$tag" helix-toolbox-linux-x86_64 helix-toolbox-linux-aarch64 helix-toolbox_*.deb helix-toolbox-*.rpm \
+            helix-toolbox-*.pkg.tar.zst helixforge-linux-* helixforge_*.deb helixforge-*.rpm helixforge-*.pkg.tar.zst \
+            validation.json SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
           gh release edit "$tag" --draft=false --latest --repo "$GITHUB_REPOSITORY"
       - name: Publish the crates to crates.io
         env:
@@ -272,8 +284,8 @@ jobs:
           cargo update --workspace
           # In dependency order; one already there (a rerun after a partial
           # publish) is skipped. Each publish waits until crates.io serves it.
-          for crate in helixforge-core helixforge-platform helixforge-catalog helixforge-engine helixforge; do
-            if curl -fsS -o /dev/null -A "helixforge-release (github.com/$GITHUB_REPOSITORY)" \
+          for crate in helix-toolbox-core helix-toolbox-platform helix-toolbox-catalog helix-toolbox-engine helix-toolbox; do
+            if curl -fsS -o /dev/null -A "helix-toolbox-release (github.com/$GITHUB_REPOSITORY)" \
                 "https://crates.io/api/v1/crates/$crate/$VERSION"; then
               echo "$crate $VERSION is already on crates.io"
             else

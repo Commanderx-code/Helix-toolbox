@@ -31,17 +31,17 @@ stage=target/package-stage
 rm -rf "$stage"
 mkdir -p "$stage"
 
-cp -- "$binary" "$stage/helixforge"
-chmod 0755 "$stage/helixforge"
+cp -- "$binary" "$stage/helix-toolbox"
+chmod 0755 "$stage/helix-toolbox"
 mkdir -p "$stage/completions" "$stage/man"
-"$stage/helixforge" completions bash > "$stage/completions/helixforge.bash"
-"$stage/helixforge" completions zsh > "$stage/completions/_helixforge"
-"$stage/helixforge" completions fish > "$stage/completions/helixforge.fish"
-"$stage/helixforge" manpages "$stage/man"
+"$stage/helix-toolbox" completions bash > "$stage/completions/helix-toolbox.bash"
+"$stage/helix-toolbox" completions zsh > "$stage/completions/_helix-toolbox"
+"$stage/helix-toolbox" completions fish > "$stage/completions/helix-toolbox.fish"
+"$stage/helix-toolbox" manpages "$stage/man"
 gzip -9n "$stage"/man/*.1
 
 for packager in archlinux deb rpm; do
-    HELIXFORGE_VERSION=$version HELIXFORGE_ARCH=$arch \
+    HELIX_TOOLBOX_VERSION=$version HELIX_TOOLBOX_ARCH=$arch \
         nfpm package --config packaging/nfpm.yaml --packager "$packager" --target "$out"
 done
 ls -1 "$out"

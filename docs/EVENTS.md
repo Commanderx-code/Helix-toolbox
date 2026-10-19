@@ -1,7 +1,7 @@
 # Execution events
 
 A run of a plan, as the engine reports it to an interface:
-`helixforge_engine::execution`. The terminal interface's running window is
+`helix_toolbox_engine::execution`. The terminal interface's running window is
 built on it, and a graphical interface (Tauri 2, Milestone 5 on the
 [roadmap](ROADMAP.md)) will use the same API. There is no graphical
 interface yet.
@@ -19,7 +19,7 @@ at schema 1, and the files listed there do not change because of it.
 ## Starting a run
 
 ```rust
-use helixforge_engine::execution::{Execution, ExecutionEvent, HistoryPlace, Options};
+use helix_toolbox_engine::execution::{Execution, ExecutionEvent, HistoryPlace, Options};
 
 let (execution, events) = Execution::start(&plan, &lib_dir, &this, Options::default())?;
 ```
@@ -27,8 +27,8 @@ let (execution, events) = Execution::start(&plan, &lib_dir, &this, Options::defa
 | Argument | Meaning |
 | :--- | :--- |
 | `plan` | a `Plan` from `plan()`, `plan_removal()`, `updates::plan()` and the rest, already confirmed by the user |
-| `lib_dir` | the catalog's script folder (`Catalog::lib_dir()`), exported to the run as `HELIXFORGE_LIB` |
-| `this` | the HelixForge executable, which native steps run again (`helixforge native …`) |
+| `lib_dir` | the catalog's script folder (`Catalog::lib_dir()`), exported to the run as `HELIX_TOOLBOX_LIB` and its old name `HELIXFORGE_LIB` |
+| `this` | the Helix Toolbox executable, which native steps run again (`helix-toolbox native …`) |
 | `options` | below |
 
 It returns an error, and starts nothing, when an executable the plan needs is
@@ -60,7 +60,7 @@ own thread.
 | `record(log)` | writes the history record, with the path of a saved log (`history::save_log`) if there is one. Only the first call after the end writes; dropping the handle writes it without a log if nothing did. |
 
 Until the record is written, the history's marker for the run keeps its
-outcome, so a HelixForge that stops before the record is written still
+outcome, so a Helix Toolbox that stops before the record is written still
 leaves an accurate history. Dropping the handle before the run ends hangs
 the run up, as closing the window would.
 
@@ -175,6 +175,6 @@ interface that can pass raw bytes should do so instead.
 There is no async runtime: a run has three threads of its own. One waits
 for the shell to exit, one reads the terminal into the transcript, and the
 monitor reads the program's step file, sends the events and verifies the
-run once it ends. The command line's `helixforge run` does not use the
+run once it ends. The command line's `helix-toolbox run` does not use the
 pseudo-terminal or the events: it runs the same program in the caller's
 terminal (`InheritedRunner`) and records it the same way.

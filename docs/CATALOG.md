@@ -1,6 +1,6 @@
 # The catalog and plans
 
-How entries are written, and how HelixForge turns the ones you choose into a
+How entries are written, and how Helix Toolbox turns the ones you choose into a
 plan, checks it and runs it.
 
 ## Entries
@@ -21,7 +21,7 @@ debian = "ardour"                # also arch, fedora, suse, alpine, void, solus
 fedora = "ardour"
 aur = "ardour"                   # Arch, through paru or yay, when arch is not given
 flatpak = "org.ardour.Ardour"    # for families with no package
-removable = true                 # offer removal: r in the interface, helixforge remove
+removable = true                 # offer removal: r in the interface, helix-toolbox remove
 ```
 
 Whether an entry is installed is asked of the package manager (`pacman -Q`,
@@ -92,11 +92,11 @@ check = "command_exists"         # or "file_exists", { containing_file = "..." }
 values = ["sddm"]
 ```
 
-Scripts source the shared helpers with `. "$HELIXFORGE_LIB/common-script.sh"`.
+Scripts source the shared helpers with `. "$HELIX_TOOLBOX_LIB/common-script.sh"`. The installers brought across use its name before 1.7, `HELIXFORGE_LIB`, which every run sets too.
 The catalog and scripts are embedded into the binary at build time and
 unpacked to a private temporary directory when it starts, so scripts run as
-real files. The copy is removed on exit; one left behind by a HelixForge that
-was killed is removed the next time HelixForge starts.
+real files. The copy is removed on exit; one left behind by a Helix Toolbox that
+was killed is removed the next time Helix Toolbox starts.
 
 A script entry can say what it changes in an `[effects]` table, which the
 change preview shows before it runs:
@@ -141,11 +141,11 @@ screen reads it.
 
 Running entries first makes a plan: the steps in order, what they need,
 whether any asks for your password, and the risk from the flags. The
-interface shows it in the confirmation; `helixforge plan` and `helixforge run
+interface shows it in the confirmation; `helix-toolbox plan` and `helix-toolbox run
 --dry-run` print it. Every run is recorded with its outcome, including runs
 that failed or were interrupted.
 
-Before anything runs, HelixForge checks the plan on this machine. A
+Before anything runs, Helix Toolbox checks the plan on this machine. A
 **blocker** stops the run (the menu says why instead of asking, the command
 line exits without changing anything); a **warning** is shown with the
 confirmation:
@@ -166,7 +166,7 @@ confirmation:
   sizes (`pacman -Si`, `apt-cache show`, `dnf repoquery`) plus what scripts
   say they need (blocker), or would be left with less than 1 GiB (warning)
 
-- another HelixForge run is still going (blocker): one run at a time, so
+- another Helix Toolbox run is still going (blocker): one run at a time, so
   package managers are never driven twice at once; their own locks guard
   against other tools
 
@@ -180,7 +180,7 @@ goes on with the steps that do not depend on it, skipping those that do; a
 `Ctrl-C` always stops. Each step's result is shown afterward (done, failed
 with its exit status, skipped, not run), the history records "1 of 3 steps
 done", what did not finish stays in the Install Plan to run again, and the
-command line prints the `helixforge run …` that retries it.
+command line prints the `helix-toolbox run …` that retries it.
 
 Entries say what they need from the machine in an optional `[needs]` table:
 
@@ -205,7 +205,7 @@ Flathub)`). When a source fails, or finishes without the package being
 installed, the run says so and tries the next one; a source whose tool is
 missing is skipped. A command stopped with `Ctrl-C` stops the run instead.
 
-After a run, HelixForge checks each package step: an install passes when its
+After a run, Helix Toolbox checks each package step: an install passes when its
 package manager lists one of the entry's packages or its Flatpak is
 installed (the command counts only where nothing can be asked, as on Solus);
 a removal passes when the package is gone. The

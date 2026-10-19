@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run HelixForge's boot, login-screen, disk and kernel entries in a virtual machine.
+"""Run Helix Toolbox's boot, login-screen, disk and kernel entries in a virtual machine.
 
   vm-tests.py --distro MACHINE --binary PATH --work DIR --out RESULT.json
               [--shots DIR] [--only ID,ID]
@@ -8,8 +8,8 @@ MACHINE is one of MACHINES below: a distribution's cloud image on BIOS or
 UEFI firmware, the Arch live ISO with an empty disk, or an Arch machine that
 says it is a Steam Deck. Boots it under QEMU with KVM, makes it boot like a
 desktop installation (a user in the administrators' group, GRUB on the
-screen with a visible menu), copies HelixForge in, and for each case: runs
-the entry through `helixforge run`, answering its questions, reboots,
+screen with a visible menu), copies Helix Toolbox in, and for each case: runs
+the entry through `helix-toolbox run`, answering its questions, reboots,
 captures the screen while it boots, and checks what the entry should have
 done (its configuration, the kernel command line, the boot images, services)
 and that the machine came back. The result lists each entry as `verified` or
@@ -218,7 +218,7 @@ class Machine:
                          '    shell: /bin/bash\n'
                          f'    ssh_authorized_keys: ["{public}"]\n')
         (folder / 'user-data').write_text(user_data)
-        (folder / 'meta-data').write_text('instance-id: helixforge-vm\nlocal-hostname: helixforge-vm\n')
+        (folder / 'meta-data').write_text('instance-id: helix-toolbox-vm\nlocal-hostname: helix-toolbox-vm\n')
         iso = self.work / 'seed.iso'
         subprocess.run(['genisoimage', '-quiet', '-output', str(iso), '-volid', 'cidata', '-joliet', '-rock',
                         str(folder / 'user-data'), str(folder / 'meta-data')], check=True)
@@ -405,8 +405,8 @@ class Machine:
     def prepare(self, binary):
         """Make the cloud image boot like a desktop installation."""
         if self.live:
-            self.copy(binary, 'helixforge')
-            self.ssh('chmod +x helixforge && ./helixforge --version')
+            self.copy(binary, 'helix-toolbox')
+            self.ssh('chmod +x helix-toolbox && ./helix-toolbox --version')
             return
         if self.distro == 'arch':
             self.ssh('sudo pacman -Syu --noconfirm --needed git python >/dev/null')
@@ -451,8 +451,8 @@ class Machine:
         self.ssh(regenerate + ' >/dev/null 2>&1')
         # Fedora's cloud image starts no graphical session, so no login screen.
         self.ssh('sudo systemctl set-default graphical.target')
-        self.copy(binary, 'helixforge')
-        self.ssh('chmod +x helixforge && ./helixforge --version')
+        self.copy(binary, 'helix-toolbox')
+        self.ssh('chmod +x helix-toolbox && ./helix-toolbox --version')
 
     def run(self, entry, environment='', answers=()):
         """Run an entry, answering its questions as they come: `answers`
@@ -460,7 +460,7 @@ class Machine:
         it has printed since the last answer, then the installers' APPLY, the
         package managers' [Y/n] and yes to [y/N] (dnf's end with a colon)."""
         # A terminal names itself.
-        command = f'TERM=xterm-256color {environment} ./helixforge run {shlex.quote(entry)} --yes'
+        command = f'TERM=xterm-256color {environment} ./helix-toolbox run {shlex.quote(entry)} --yes'
         # In a terminal, as people run it: bash shows read -p's prompts only
         # to one.
         process = subprocess.Popen(
@@ -494,7 +494,7 @@ class Machine:
         process.wait(timeout=30)
         text = output.decode(errors='replace')
         if process.returncode != 0:
-            raise RuntimeError(f'helixforge run {entry} failed:\n{text[-4000:]}')
+            raise RuntimeError(f'helix-toolbox run {entry} failed:\n{text[-4000:]}')
         return text
 
 
@@ -830,8 +830,8 @@ def server_setup(machine, shots):
     # trusted signature. Starting the service again waits for it.
     machine.ssh('systemctl start pacman-init.service')
     output = machine.run('arch-server-setup', answers=[
-        ('Please enter username:', 'forge'), ('Please enter password:', 'helix-forge-test'),
-        ('Please re-enter password:', 'helix-forge-test'), ('Please name your machine:', 'forge-server'),
+        ('Please enter username:', 'forge'), ('Please enter password:', 'helix-toolbox-test'),
+        ('Please re-enter password:', 'helix-toolbox-test'), ('Please name your machine:', 'forge-server'),
         # The disk, btrfs and the keyboard layout: the first of each.
         (MENU, ''), ('(Y/n)', 'y'), ('(e.g. de_DE.UTF-8):', '')])
     if '/dev/vda selected' not in output:
@@ -933,14 +933,14 @@ def flatpak_bundle(machine, shots):
     machine.ssh('curl -fsSLo flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo')
     machine.ssh('sudo flatpak remote-add --if-not-exists flathub flathub.flatpakrepo')
     machine.ssh(f'sudo flatpak install -y --noninteractive flathub {app} >/dev/null')
-    refused = machine.ssh('./helixforge bundle create bundle flycast', check=False)
+    refused = machine.ssh('./helix-toolbox bundle create bundle flycast', check=False)
     if refused.returncode == 0 or '--collection-id=org.flathub.Stable flathub' not in refused.stderr:
         raise RuntimeError(f'a remote without a collection ID was not named: {refused.stderr[-500:]}')
     machine.ssh('sudo flatpak remote-modify --collection-id=org.flathub.Stable flathub')
-    made = machine.ssh('./helixforge bundle create bundle flycast').stdout
+    made = machine.ssh('./helix-toolbox bundle create bundle flycast').stdout
     if f'Offline: Flycast (the Flatpak {app})' not in made:
         raise RuntimeError(f'Flycast was not bundled as a Flatpak:\n{made}')
-    machine.ssh('./helixforge bundle verify bundle')
+    machine.ssh('./helix-toolbox bundle verify bundle')
     # The other machine: Flathub added as its file adds it, without a
     # collection ID, and nothing installed; then no network.
     machine.ssh('sudo flatpak uninstall -y --noninteractive --all >/dev/null && sudo flatpak remote-delete flathub'
@@ -949,16 +949,16 @@ def flatpak_bundle(machine, shots):
     try:
         if machine.ok('curl -fsS --max-time 10 -o /dev/null https://dl.flathub.org/repo/'):
             raise RuntimeError('the machine still reaches Flathub')
-        machine.ssh('./helixforge bundle install bundle --yes')
+        machine.ssh('./helix-toolbox bundle install bundle --yes')
         machine.ssh(f'flatpak info {app} >/dev/null && flatpak run --command=true {app}')
         if 'org.flathub.Stable' not in machine.ssh('flatpak remotes --columns=name,collection').stdout:
             raise RuntimeError('the remote was not given its collection ID')
         # No remote at all: the bundle's key, only when trusted.
         machine.ssh('sudo flatpak uninstall -y --noninteractive --all >/dev/null && sudo flatpak remote-delete flathub')
-        refused = machine.ssh('./helixforge bundle install bundle --yes', check=False)
+        refused = machine.ssh('./helix-toolbox bundle install bundle --yes', check=False)
         if refused.returncode == 0 or 'no flathub Flatpak remote' not in refused.stderr:
             raise RuntimeError(f'a missing remote was added on the bundle\'s word: {refused.stderr[-500:]}')
-        machine.ssh('./helixforge bundle install bundle --trust-bundle --yes')
+        machine.ssh('./helix-toolbox bundle install bundle --trust-bundle --yes')
         machine.ssh(f'flatpak info {app} >/dev/null && flatpak run --command=true {app}')
     finally:
         machine.relaunch()
@@ -968,8 +968,8 @@ def zypper_bundle(machine, shots):
     """zypper downloads a bundle as the user, without root, and it installs
     with no network."""
     machine.ssh('sudo zypper -n -q rm -u htop >/dev/null 2>&1 || true')
-    made = machine.ssh('./helixforge bundle create bundle htop && ./helixforge bundle create complete htop --complete'
-                       ' && ./helixforge bundle verify complete').stdout
+    made = machine.ssh('./helix-toolbox bundle create bundle htop && ./helix-toolbox bundle create complete htop --complete'
+                       ' && ./helix-toolbox bundle verify complete').stdout
     if 'zypper downloads htop with the dependencies this machine lacks, as you, without root.' not in made:
         raise RuntimeError(f'zypper did not make the bundle:\n{made[-1500:]}')
     files = lambda folder: int(machine.ssh(f'ls {folder}/packages | wc -l').stdout)
@@ -979,7 +979,7 @@ def zypper_bundle(machine, shots):
     try:
         if machine.ok('curl -fsS --max-time 10 -o /dev/null https://download.opensuse.org/'):
             raise RuntimeError('the machine still reaches openSUSE')
-        machine.ssh('./helixforge bundle install complete --yes < /dev/null')
+        machine.ssh('./helix-toolbox bundle install complete --yes < /dev/null')
         machine.ssh('rpm -q htop && htop --version')
     finally:
         machine.relaunch()

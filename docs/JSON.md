@@ -16,9 +16,9 @@ Errors go to standard error as text, with exit status 1 and nothing on
 standard output.
 
 ```sh
-helixforge status --json | jq -r '.data.entries[] | select(.status.state == "update") | .id'
-helixforge updates --online --json | jq '.data.channels[] | {id, count}'
-helixforge run git ripgrep --dry-run --json | jq '.data.runnable'
+helix-toolbox status --json | jq -r '.data.entries[] | select(.status.state == "update") | .id'
+helix-toolbox updates --online --json | jq '.data.channels[] | {id, count}'
+helix-toolbox run git ripgrep --dry-run --json | jq '.data.runnable'
 ```
 
 ## The envelope
@@ -26,11 +26,17 @@ helixforge run git ripgrep --dry-run --json | jq '.data.runnable'
 ```json
 {
   "schema": 1,
-  "helixforge": "0.6.0",
+  "helixforge": "1.7.0",
+  "helix_toolbox": "1.7.0",
   "command": "status",
   "data": { }
 }
 ```
+
+`helix_toolbox` is the program's version, from 1.7. `helixforge` is the
+same version under the program's name before 1.7, kept so schema 1 readers
+still find it. The Updates channel for the program itself keeps the id
+`helixforge` for the same reason.
 
 `schema` is the version of these shapes. Within one schema version fields are
 only added, never removed or changed in meaning; a field you do not know can
@@ -115,7 +121,7 @@ mean nothing waits. `commands` are what updating runs, as argument lists.
 
 `{checks: [{id, title, health, summary, evidence, advice, repair, entry}]}`,
 `health` being `good`, `notice` or `problem`; `repair` is `{label,
-commands}` or `null`, run with `helixforge doctor --repair <id>`.
+commands}` or `null`, run with `helix-toolbox doctor --repair <id>`.
 
 ## backups
 
@@ -125,7 +131,7 @@ system, directory}`.
 
 ## drift
 
-`helixforge drift check --json` prints `{against, baseline, profile,
+`helix-toolbox drift check --json` prints `{against, baseline, profile,
 matched, differences, unknown, restore}`. `against` is `baseline` or
 `profile`; `baseline` is `{name, taken, system}` (`taken` in Unix seconds)
 or `null`, and `profile` the profile's id or `null`. Each difference is
@@ -145,11 +151,11 @@ or `null`, and `profile` the profile's id or `null`. Each difference is
 `entry` is the entry that installs or writes it, or `null`. `matched` counts
 what is the same, `unknown` lists ids this catalog does not have, and
 `restore` the entries that would put back what is missing and can run on this
-machine, in order, for `helixforge run`.
+machine, in order, for `helix-toolbox run`.
 
 ## baselines
 
-`helixforge drift list --json`: `{baselines: [{id, name, taken, system,
+`helix-toolbox drift list --json`: `{baselines: [{id, name, taken, system,
 entries, files, settings, applied}]}`, newest first; the last four are
 counts, `id` the name `drift check` takes.
 
@@ -205,7 +211,7 @@ available, note}`.
 appearance, owners, blocked}`: `kind` is `kde`, `gnome`, `xfce`, `cinnamon`,
 `mate`, `hyprland`, `sway`, `other` or `null`; `display_manager` is `{name,
 files, theme}` or `null`; each appearance value `{key, label, value}`;
-`owners` says what else sets the look; `blocked` why HelixForge would not
+`owners` says what else sets the look; `blocked` why Helix Toolbox would not
 change it, or `null`. `entries` are the suggestions for this desktop.
 
 ## bundle
@@ -214,7 +220,7 @@ change it, or `null`. `entries` are the suggestions for this desktop.
 complete}`, each entry `{id, name, offline, packages, network, flatpak}`
 (`flatpak` and `network` only when they apply), each download `{url, file,
 checksum}`, each Flatpak `{id, reference, commit, remote, url, collection,
-user}`. `bundle verify --json`: the manifest, `{format, created, helixforge,
+user}`. `bundle verify --json`: the manifest, `{format, created, helix-toolbox,
 release, distribution, family, architecture, complete, entries, files,
 flatpak}` (`flatpak`, the Flatpaks in the same form, only in format 2), each
 file `{path, sha256, bytes, source, assurance}`.

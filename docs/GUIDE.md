@@ -1,6 +1,6 @@
-# Using HelixForge
+# Using Helix Toolbox
 
-HelixForge sets up and looks after a Linux machine from one menu in the
+Helix Toolbox sets up and looks after a Linux machine from one menu in the
 terminal. Everything it changes is planned first and shown to you, runs only
 after you confirm it, and is recorded in History. This guide walks through
 the menu and the common jobs; [INSTALL.md](INSTALL.md) covers installing it,
@@ -9,17 +9,17 @@ the menu and the common jobs; [INSTALL.md](INSTALL.md) covers installing it,
 
 ## Starting
 
-Run `helixforge` as your normal user, not with `sudo`: entries that change
+Run `helix-toolbox` as your normal user, not with `sudo`: entries that change
 the system ask for your password inside the run, when they need it. The
 terminal should be at least 100 columns by 25 rows; a Nerd Font shows the
 icons (Settings turns them off otherwise). In Ghostty, Kitty, WezTerm, foot
-and other terminals that show pictures, the header is the HelixForge banner.
+and other terminals that show pictures, the header is the Helix Toolbox banner.
 `t` cycles the themes: solid, transparent, compatible (sixteen colors) and
 monochrome (no color, the theme `NO_COLOR` selects for a run).
 
 ## The first start
 
-The first time it starts, HelixForge offers to set the machine up: it shows
+The first time it starts, Helix Toolbox offers to set the machine up: it shows
 what it found (distribution, desktop, graphics, package tools), asks which
 kind of workstation this is (Developer, Gaming, Privacy, Minimal or Custom)
 and lists what that would add, ticked where it is not installed yet. `Enter`
@@ -78,7 +78,7 @@ and press `Enter`.
 7. The run asks `[Y]` first, then shows its output in a window inside the
    menu. Type into it when an installer asks a question. `Ctrl-C` stops it;
    `l` saves the log.
-8. Afterward HelixForge checks each package with the package manager and
+8. Afterward Helix Toolbox checks each package with the package manager and
    says what it verified. Anything that did not finish stays in the Install
    Plan to run again.
 
@@ -93,8 +93,8 @@ A profile is a set of entries that run as one plan, in order, with what they
 depend on first. Profiles lists the built-in ones. To make your own, queue
 what a machine needs (applications, the Myfish shell, dotfiles
 configurations, tweaks) and press `s` on the Install Plan to name it. It is
-saved in `~/.config/helixforge/profiles/` and appears under Profiles, **Your
-profiles**. `helixforge profile export` and `import` move it to another
+saved in `~/.config/helix-toolbox/profiles/` and appears under Profiles, **Your
+profiles**. `helix-toolbox profile export` and `import` move it to another
 machine.
 
 ## How far to trust an entry
@@ -118,14 +118,14 @@ integrity checks and unverified third-party downloads are listed apart.
 
 **Drift** compares a machine with a **baseline**, a record of how a machine
 was set up. On the machine you have set up, open Drift and press `s` to save
-one (or run `helixforge drift save "My laptop"`). Later, Drift lists what
+one (or run `helix-toolbox drift save "My laptop"`). Later, Drift lists what
 has moved: applications that are missing, configuration files that are gone
-or changed, a different login shell or display manager, entries HelixForge
+or changed, a different login shell or display manager, entries Helix Toolbox
 ran there and not since.
 
 To bring a fresh installation up to the old one, export the baseline there
-(`helixforge drift export "My laptop"`), copy the file over, and on the new
-machine run `helixforge drift check my-laptop.toml`, or import it and open
+(`helix-toolbox drift export "My laptop"`), copy the file over, and on the new
+machine run `helix-toolbox drift check my-laptop.toml`, or import it and open
 Drift. `a` puts everything that restores the missing parts in the Install
 Plan; nothing runs until you review and confirm it there. `b` compares with
 a profile instead.
@@ -136,12 +136,12 @@ a profile instead.
 zypper; the AUR helper; Flatpak; Home Manager, NixOS or a Nix profile. It
 first shows what those tools already know, without going online; `r` checks
 online. `Enter` lists the packages, `u` updates the selected tool and `U`
-every tool with updates waiting. HelixForge runs each tool's own update
+every tool with updates waiting. Helix Toolbox runs each tool's own update
 command; on Arch that is the whole system, as Arch requires. Nix cannot count
 its updates beforehand, so its row shows how old its locked packages are, and
 updates with `u`.
 
-The **HelixForge** row updates HelixForge itself, the way it was installed:
+The **Helix Toolbox** row updates Helix Toolbox itself, the way it was installed:
 the new package for your distribution (downloaded and checked first), `cargo
 install` again, or a fresh build of your checkout. Copies run through the
 launcher or `start.sh` are always the latest release already.
@@ -164,10 +164,10 @@ runs. `s` checks a disk's SMART health, which asks for your password.
 
 ## A machine without internet
 
-On a machine of the same distribution that is online, `helixforge bundle
-create ~/bundle git htop neovim` puts those entries' packages and HelixForge
+On a machine of the same distribution that is online, `helix-toolbox bundle
+create ~/bundle git htop neovim` puts those entries' packages and Helix Toolbox
 itself in a folder. Copy it to the other machine, and there, inside it, run
-`./helixforge bundle install .`: it checks every file, then installs from
+`./helix-toolbox bundle install .`: it checks every file, then installs from
 them; with everything in the bundle, nothing is downloaded. A Flatpak
 installed on the first machine goes in too, with its runtimes, once its
 remote has a collection ID (`bundle create` says how to give Flathub its
@@ -178,47 +178,47 @@ own). Entries that need the network are named so you can run them later.
 **Helix Doctor** checks the network and name resolution, failed services,
 the graphics drivers, the package database, home folder permissions, boot
 images, GRUB, the EFI partition and disk space. It only reads. `Enter` shows
-the evidence; where HelixForge can repair a problem, `f` shows the repair,
+the evidence; where Helix Toolbox can repair a problem, `f` shows the repair,
 which runs after its own confirmation.
 
 **Backups** lists the configuration backups entries left, newest first.
 `Enter` restores one; the current file is kept as a backup first, so a
 restore can be undone the same way. With Snapper or Timeshift set up,
-HelixForge can take a snapshot before a run that changes system files, the
+Helix Toolbox can take a snapshot before a run that changes system files, the
 kernel or disks (Settings, or `--snapshot` on the command line). It never
 promises to roll back packages itself.
 
 **History** lists every run with its result; `Enter` opens its saved log.
 
-To report a problem, run `helixforge report` and paste its output into an
+To report a problem, run `helix-toolbox report` and paste its output into an
 issue; [REPORTING.md](REPORTING.md) says what helps, and
 [STABILITY.md](STABILITY.md) what stays the same across 1.x releases.
 
 ## The command line
 
 Everything the menu does is also a command, for scripts and for machines
-without a full terminal: `helixforge --help` lists them, and each has its own
-`--help` and manual page (`man helixforge`). The commands that read take
+without a full terminal: `helix-toolbox --help` lists them, and each has its own
+`--help` and manual page (`man helix-toolbox`). The commands that read take
 `--json` for other programs ([JSON.md](JSON.md)). A few to start with:
 
 ```sh
-helixforge search editor          # find entries
-helixforge status                 # what is installed, updated or managed
-helixforge run git ripgrep --dry-run
-helixforge updates --online       # what every package tool has waiting
-helixforge doctor                 # the health checks
-helixforge report                 # for a bug report
+helix-toolbox search editor          # find entries
+helix-toolbox status                 # what is installed, updated or managed
+helix-toolbox run git ripgrep --dry-run
+helix-toolbox updates --online       # what every package tool has waiting
+helix-toolbox doctor                 # the health checks
+helix-toolbox report                 # for a bug report
 ```
 
 ## Your files
 
 | Path | What |
 |---|---|
-| `~/.config/helixforge/settings.toml` | Theme, icons and the other settings |
-| `~/.config/helixforge/favorites.toml` | Pinned entries |
-| `~/.config/helixforge/profiles/` | Your profiles |
-| `~/.config/helixforge/baselines/` | Your baselines, for Drift |
-| `~/.config/helixforge/looks/` | Your saved desktop looks |
-| `~/.local/state/helixforge/` | History and saved logs |
+| `~/.config/helix-toolbox/settings.toml` | Theme, icons and the other settings |
+| `~/.config/helix-toolbox/favorites.toml` | Pinned entries |
+| `~/.config/helix-toolbox/profiles/` | Your profiles |
+| `~/.config/helix-toolbox/baselines/` | Your baselines, for Drift |
+| `~/.config/helix-toolbox/looks/` | Your saved desktop looks |
+| `~/.local/state/helix-toolbox/` | History and saved logs |
 
-Removing HelixForge leaves them; delete them to start afresh.
+Removing Helix Toolbox leaves them; delete them to start afresh.

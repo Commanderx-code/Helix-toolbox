@@ -3,10 +3,10 @@ description = "A package no distribution has, with a Flathub fallback. The tests
 flags = "I"
 
 [package]
-binary = "helixforge-fallback-sample"
-arch = "helixforge-no-such-package"
-debian = "helixforge-no-such-package"
-fedora = "helixforge-no-such-package"
-suse = "helixforge-no-such-package"
-flatpak = "org.helixforge.FallbackSample"
+binary = "helix-toolbox-fallback-sample"
+arch = "helix-toolbox-no-such-package"
+debian = "helix-toolbox-no-such-package"
+fedora = "helix-toolbox-no-such-package"
+suse = "helix-toolbox-no-such-package"
+flatpak = "org.helixtoolbox.FallbackSample"
 removable = true

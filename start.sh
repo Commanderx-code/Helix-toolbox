@@ -1,6 +1,6 @@
 #!/bin/sh -e
 
-# Run HelixForge: from source when this is a checkout with Cargo, otherwise
+# Run Helix Toolbox: from source when this is a checkout with Cargo, otherwise
 # the latest published Linux release for this machine (x86_64 or aarch64),
 # checked against its published SHA-256 sum. Prevent execution if only
 # partially downloaded.
@@ -22,27 +22,27 @@ check() {
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 if [ -f "$SCRIPT_DIR/Cargo.toml" ] && command -v cargo >/dev/null 2>&1; then
     cd "$SCRIPT_DIR"
-    check $? "Entering the HelixForge directory"
-    cargo run --locked -p helixforge -- "$@"
-    check $? "Running HelixForge from source"
+    check $? "Entering the Helix Toolbox directory"
+    cargo run --locked -p helix-toolbox -- "$@"
+    check $? "Running Helix Toolbox from source"
     exit 0
 fi
 
 case "$(uname -m)" in
-    x86_64|amd64) asset=helixforge-linux-x86_64 ;;
-    aarch64|arm64) asset=helixforge-linux-aarch64 ;;
+    x86_64|amd64) asset=helix-toolbox-linux-x86_64 ;;
+    aarch64|arm64) asset=helix-toolbox-linux-aarch64 ;;
     *) check 1 "Releases are built for Linux x86_64 and aarch64 only; build from a checkout with cargo on this machine" ;;
 esac
 
-base=${HELIXFORGE_RELEASE:-https://github.com/Commanderx-code/Helix-Forge/releases/latest/download}
+base=${HELIX_TOOLBOX_RELEASE:-https://github.com/Commanderx-code/Helix-toolbox/releases/latest/download}
 work=$(mktemp -d)
 check $? "Creating the temporary directory"
 trap 'rm -rf "$work"' 0
 
 curl --fail --silent --location --proto '=https' --tlsv1.2 -o "$work/SHA256SUMS" "$base/SHA256SUMS"
-check $? "Downloading the HelixForge checksums"
+check $? "Downloading the Helix Toolbox checksums"
 curl --fail --silent --location --proto '=https' --tlsv1.2 -o "$work/$asset" "$base/$asset"
-check $? "Downloading HelixForge"
+check $? "Downloading Helix Toolbox"
 
 expected=$(grep -E "^[0-9a-f]{64} [ *]?$asset\$" "$work/SHA256SUMS" | cut -c1-64)
 if [ -z "$expected" ]; then
@@ -50,12 +50,12 @@ if [ -z "$expected" ]; then
 fi
 actual=$(sha256sum -- "$work/$asset" | cut -c1-64)
 if [ "$actual" != "$expected" ]; then
-    check 1 "The downloaded HelixForge does not match its published checksum"
+    check 1 "The downloaded Helix Toolbox does not match its published checksum"
 fi
 
 chmod +x "$work/$asset"
-check $? "Making HelixForge executable"
+check $? "Making Helix Toolbox executable"
 
 "$work/$asset" "$@"
-check $? "Executing HelixForge"
+check $? "Executing Helix Toolbox"
 } # End of wrapping

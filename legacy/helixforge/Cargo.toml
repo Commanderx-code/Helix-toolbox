@@ -1,0 +1,13 @@
+[package]
+name = "helixforge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "Renamed: HelixForge is now Helix Toolbox. Install it with cargo install helix-toolbox."
+readme = "README.md"
+keywords = ["linux", "setup", "tui", "installer", "dotfiles"]
+categories = ["command-line-utilities", "config"]

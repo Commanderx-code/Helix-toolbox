@@ -1,6 +1,6 @@
-# How HelixForge works
+# How Helix Toolbox works
 
-What each part of HelixForge does, in detail. [GUIDE.md](GUIDE.md) is the
+What each part of Helix Toolbox does, in detail. [GUIDE.md](GUIDE.md) is the
 shorter walk-through for getting started; [CATALOG.md](CATALOG.md) covers the
 entries themselves and how a run is planned.
 
@@ -34,19 +34,19 @@ were on. `i` cycles the list between all entries, installed ones (including
 those managed by Nix) and ones with an update, flattening the groups of the
 area. `*` pins the selected entry; **Favorites** lists pinned entries, then
 the ones run recently, from History, and is also a quick action on the
-Dashboard. Pins are kept in `~/.config/helixforge/favorites.toml`. Each area
+Dashboard. Pins are kept in `~/.config/helix-toolbox/favorites.toml`. Each area
 remembers its group and row when you move to another.
 
-The menu follows the HelixForge dashboard design: cards for the main screens
+The menu follows the Helix Toolbox dashboard design: cards for the main screens
 and quick actions, with Nerd Font icons. `t` or Settings switches between
 four themes: **solid**, the default, paints the design's dark panels;
 **transparent** draws over your terminal's own background, so a wallpaper or
 transparency shows through (it was called **default** before, and that name
 still works); **compatible** keeps to sixteen colors; **monochrome** uses no
-color at all, only bold and reverse video. With `NO_COLOR` set, HelixForge
+color at all, only bold and reverse video. With `NO_COLOR` set, Helix Toolbox
 starts in monochrome without changing the theme it remembers. Settings also turns the icons
 off for terminals without a Nerd Font. Both choices are remembered in
-`~/.config/helixforge/settings.toml`; `--theme` and `--plain` override them
+`~/.config/helix-toolbox/settings.toml`; `--theme` and `--plain` override them
 for one run.
 
 ## Status and updates
@@ -85,15 +85,15 @@ another and the AUR after the repositories, through the tools themselves
 changes the flake's `flake.lock`, in your dotfiles checkout when the
 configuration is a link to one.
 
-The **HelixForge** row is HelixForge itself, updated the way it was
+The **Helix Toolbox** row is Helix Toolbox itself, updated the way it was
 installed, which it tells from where it runs. `r` asks GitHub for the latest
 release. A package in `/usr/bin` is updated by downloading the new release's
-package for this distribution into `~/.cache/helixforge/release`, checking it
-against the release's `SHA256SUMS` (the hidden `helixforge fetch-release`
+package for this distribution into `~/.cache/helix-toolbox/release`, checking it
+against the release's `SHA256SUMS` (the hidden `helix-toolbox fetch-release`
 command, which takes only a release version and one of the release's own file
 names), then installing it with `pacman -U`, `apt-get install`, `dnf install`
 or `zypper install`. A copy from `cargo install` runs `cargo install --locked
-helixforge` again. A build in a checkout fast-forwards it from GitHub and
+helix-toolbox` again. A build in a checkout fast-forwards it from GitHub and
 builds it, and leaves a checkout with local changes alone. The launcher and
 `start.sh` fetch the latest release every time they start, so there is
 nothing to run for them.
@@ -109,9 +109,9 @@ packages, the package that owns the file is looked up (`pacman -Qo`, `dpkg
 ## The header banner
 
 In terminals that show pictures through Kitty's graphics (Ghostty, Kitty) or
-Sixel (foot, WezTerm, xterm with Sixel on), the header is the HelixForge
+Sixel (foot, WezTerm, xterm with Sixel on), the header is the Helix Toolbox
 banner. Elsewhere, including Konsole, tmux and the console, with icons off or
-in the compatible theme, it is the text header. HelixForge asks the terminal
+in the compatible theme, it is the text header. Helix Toolbox asks the terminal
 once at start and waits at most 0.4 seconds for the answer.
 
 ## Profiles
@@ -119,12 +119,12 @@ once at start and waits at most 0.4 seconds for the answer.
 **Profiles** of your own: queue what a workstation needs (applications,
 the Myfish shell setup, dotfiles configurations, system tweaks; all are
 entries) and press `s` on the Install Plan to save it under a name. It is a
-TOML file in `~/.config/helixforge/profiles/` and appears under Profiles,
+TOML file in `~/.config/helix-toolbox/profiles/` and appears under Profiles,
 **Your profiles**, where `Enter` runs it and `Space` queues it, like the
 built-in ones; its entries run in order, after what they depend on.
-`helixforge profile list`, `export <name> [file]`, `import <file>` (which
+`helix-toolbox profile list`, `export <name> [file]`, `import <file>` (which
 refuses a profile naming entries this catalog does not have) and `delete
-<name>`; `helixforge run profile-<name>` runs one.
+<name>`; `helix-toolbox run profile-<name>` runs one.
 
 ```toml
 name = "Dev Box"
@@ -139,9 +139,9 @@ a profile, without changing anything. A baseline records what is installed
 (each package entry's source and version), the configuration files and
 folders catalog entries write (by SHA-256 checksum, never their contents),
 the login shell, display manager, Arch repositories, Flatpak remotes and
-desktop, and the entries without a package HelixForge has run successfully.
-`s` on the Drift screen, or `helixforge drift save <name>`, saves one in
-`~/.config/helixforge/baselines/`; `--path` adds files of your own.
+desktop, and the entries without a package Helix Toolbox has run successfully.
+`s` on the Drift screen, or `helix-toolbox drift save <name>`, saves one in
+`~/.config/helix-toolbox/baselines/`; `--path` adds files of your own.
 
 Comparing lists, most important first: **Missing** applications and
 configuration files, entries that ran there and are **Not run** here,
@@ -152,14 +152,14 @@ each of its entries: installed, its files present, or run here. An entry
 with no recorded run here still counts as set up when what it sets is in
 place: the files it writes are all there, or its installer's own renderer
 (`configure.py`, which only prints) finds the boot or login-screen settings
-it would write already in the file, as after a run from before HelixForge
+it would write already in the file, as after a run from before Helix Toolbox
 1.1 recorded runs, or a change made by hand. `Enter`
 explains a difference; `Space` adds the entry that puts it back to the
 Install Plan and `a` adds all of them, to be reviewed and confirmed there.
 
-To set up a new machine like an old one: `helixforge drift save "Old
-laptop"` and `helixforge drift export "Old laptop"` there, then `helixforge
-drift check old-laptop.toml` on the new one; it ends with the `helixforge
+To set up a new machine like an old one: `helix-toolbox drift save "Old
+laptop"` and `helix-toolbox drift export "Old laptop"` there, then `helix-toolbox
+drift check old-laptop.toml` on the new one; it ends with the `helix-toolbox
 run` that would restore what is missing (planned and confirmed first), and
 names what this distribution cannot install. `drift list`, `import` and
 `delete` manage the saved ones; `--exit-code` makes `check` exit with 1
@@ -167,7 +167,7 @@ when anything differs.
 
 ## The setup wizard
 
-The first time HelixForge starts, it offers the setup wizard (Settings,
+The first time Helix Toolbox starts, it offers the setup wizard (Settings,
 **Setup wizard**, and `Ctrl-K` "set up this machine" open it again). It shows
 what it found: the distribution and package manager, the other package
 tools (paru, yay, Flatpak, Nix, Home Manager, Snap), the desktop and session,
@@ -179,8 +179,8 @@ baseline and AppArmor, or SELinux on Fedora), **Minimal** and **Custom**
 ticked where they can run here and are not installed; `Enter` puts the
 ticked ones in the Install Plan, where they are planned, previewed and
 confirmed like anything else. The wizard runs nothing itself.
-`helixforge setup` lists the workstations; `helixforge setup gaming` prints
-what it would add and its plan, and the `helixforge run` that would run it.
+`helix-toolbox setup` lists the workstations; `helix-toolbox setup gaming` prints
+what it would add and its plan, and the `helix-toolbox run` that would run it.
 
 ## The desktop
 
@@ -192,19 +192,19 @@ read with the desktop's own tools (`kreadconfig6`, `gsettings`,
 It warns when something else sets them: Home Manager's Plasma or dconf
 steps, or Stylix, which may set them again at the next switch, and refuses
 to change them where Home Manager links the settings file itself. `s`
-saves the look in `~/.config/helixforge/looks/`; `Enter` on a saved look
+saves the look in `~/.config/helix-toolbox/looks/`; `Enter` on a saved look
 puts back what differs with the desktop's own commands
 (`plasma-apply-colorscheme`, `gsettings set`, …), after confirmation. The
 entries for this desktop (its login screen theme, terminal configuration,
-boot splash) are listed below, to run or queue. `helixforge desktop`,
+boot splash) are listed below, to run or queue. `helix-toolbox desktop`,
 `desktop save <name>`, `desktop apply <name>`, `list` and `delete`.
 
 ## Offline bundles
 
-For a machine without reliable internet, `helixforge bundle create <folder>
+For a machine without reliable internet, `helix-toolbox bundle create <folder>
 <entries…>` downloads, on a machine of the same distribution and
 architecture, the packages those entries need into a new folder, with a copy
-of HelixForge (the catalog and installers are inside it), a manifest
+of Helix Toolbox (the catalog and installers are inside it), a manifest
 (`bundle.toml`) and `SHA256SUMS`. By default it takes the dependencies this
 machine lacks, which suits a machine set up like it; `--complete` takes every
 dependency. pacman's packages come with their signatures, which `pacman -U`
@@ -227,9 +227,9 @@ its `.flatpakrepo` file, has none until it is given its own:
 `sudo flatpak remote-modify --collection-id=org.flathub.Stable flathub`.
 `bundle create` says so rather than changing your remotes.
 
-On the other machine, `./helixforge bundle verify .` checks that the bundle
+On the other machine, `./helix-toolbox bundle verify .` checks that the bundle
 was made for this distribution and architecture and that every file matches
-its checksum. `./helixforge bundle install .`, after confirmation, copies the
+its checksum. `./helix-toolbox bundle install .`, after confirmation, copies the
 packages into a new private folder, checks the copies against the checksums
 it verified (written into the plan, not read from the bundle again), checks
 each signature (`pacman-key --verify`, `rpm -K`), and installs them from the
@@ -282,7 +282,7 @@ side), the same, or, in a folder the installer replaces whole, left only in
 the backup it keeps. The installer's own `configure.py` lists them without
 writing anything, and refuses what another tool manages as it would when it
 runs. Until then the preview names the commit; `d` on the changes, or
-`helixforge --effects plan --fetch-sources ID`, downloads it into
+`helix-toolbox --effects plan --fetch-sources ID`, downloads it into
 `~/.local/share/helixforge/sources`, where the installers look first, and
 changes nothing else.
 
@@ -296,7 +296,7 @@ its design capacity) and cycle count; PCI devices with their drivers, and USB
 devices. A firmware update (`f`) asks you to type FIRMWARE, then shows its
 plan with its own confirmation, because an interrupted firmware update can
 leave a device unusable; a SMART health check (`s`) reads the disk's health
-record and needs your password. `helixforge hardware`, `--smart <disk>` and
+record and needs your password. `helix-toolbox hardware`, `--smart <disk>` and
 `--firmware <device>` do the same from the command line.
 
 ## Reliability and trust
@@ -310,7 +310,7 @@ changes):
 |---|---|
 | Hardware Tested | a tester ran it on a real machine and reported it |
 | VM Tested | the Distributions workflow ran it for real in a virtual machine (Arch, Debian or Fedora, on BIOS or UEFI firmware, or the Arch live ISO), rebooted into the result and checked it |
-| Container Tested | the Distributions workflow ran it in distribution containers and HelixForge verified the result there |
+| Container Tested | the Distributions workflow ran it in distribution containers and Helix Toolbox verified the result there |
 | Stand-in Tested | installer tests run its script against stand-in commands and files, on every change and in each container |
 | Not Yet Validated | nothing tests it yet beyond the checks every entry gets |
 
@@ -319,16 +319,16 @@ and when it last ran successfully on this machine. Release builds carry the
 record of the Distributions run they were built after; other builds show the
 stand-in tests and reports only. `i` shows only critical or only untested
 entries, `Enter` the evidence. Before a critical entry with no more than
-stand-in tests runs, its confirmation says so. `helixforge reliability
+stand-in tests runs, its confirmation says so. `helix-toolbox reliability
 [--critical]` prints the same.
 
-`v` on any entry (or `helixforge trust <id>`) opens the **trust inspector**:
-the installer's origin (HelixForge's own installers, Linutil's, or commands
+`v` on any entry (or `helix-toolbox trust <id>`) opens the **trust inspector**:
+the installer's origin (Helix Toolbox's own installers, Linutil's, or commands
 built from package names), its file and SHA-256 checksum, its license and
 the software's (as the package manager reports it), and three kinds of
 assurance kept apart:
 
-- **Release provenance**: whether this HelixForge, which ships the catalog
+- **Release provenance**: whether this Helix Toolbox, which ships the catalog
   and every installer, is a release build with a signed build provenance
   attestation, and whether its download was checked against `SHA256SUMS`.
 - **Package integrity**: what each package source checks: pacman's
@@ -355,23 +355,23 @@ what to do; where a safe repair exists (restart the resolver or a service,
 remove a stale lock, `dpkg --configure -a`, give files back to you, rebuild
 the initramfs or GRUB's menu, clear package caches) `f` runs it after its own
 confirmation, or runs the entry that addresses it (the graphics drivers).
-The Helix Doctor reports are listed below the checks. `helixforge doctor`
-prints the checks and `helixforge doctor --repair <id>` runs one repair.
+The Helix Doctor reports are listed below the checks. `helix-toolbox doctor`
+prints the checks and `helix-toolbox doctor --repair <id>` runs one repair.
 
-The **Backups** screen (and `helixforge backups`) lists the configuration
-backups HelixForge's entries leave beside a file before changing it
-(`<file>.commander-backup-<time>`, `<file>.helixforge-backup-<time>`), newest
+The **Backups** screen (and `helix-toolbox backups`) lists the configuration
+backups Helix Toolbox's entries leave beside a file before changing it
+(`<file>.commander-backup-<time>`, `<file>.helix-toolbox-backup-<time>`), newest
 first: your own in `~/.config`, `~/.local/share` and `~`, and system ones in
-`/etc`, `/boot` and the SDDM theme and font folders. `Enter` (or `helixforge
+`/etc`, `/boot` and the SDDM theme and font folders. `Enter` (or `helix-toolbox
 restore <backup>`) puts one back after a confirmation: the file now in its
 place is moved aside as its own backup first, so a restore can be undone the
-same way; system files ask for your password. Only backups HelixForge finds
+same way; system files ask for your password. Only backups Helix Toolbox finds
 can be restored.
 
 On Btrfs with Snapper (a `root` configuration) or with Timeshift, a snapshot
 is taken first before runs that change system files, the kernel or disks
 (flags PFM, K, D, SI, or high risk): **Snapshot before system changes** in
-Settings, `--snapshot` on the command line. HelixForge does not roll
+Settings, `--snapshot` on the command line. Helix Toolbox does not roll
 snapshots or packages back itself; the Backups screen says where to (Btrfs
 Assistant, `snapper rollback`, Timeshift).
 
@@ -379,37 +379,37 @@ Assistant, `snapper rollback`, Timeshift).
 
 
 ```sh
-helixforge system                     # the distribution and package manager it sees
-helixforge list                       # the catalog as tabs, groups and entries
-helixforge search rip grep            # entries by name, id or description, closest first
-helixforge info git                   # one entry
-helixforge status                     # every package entry: installed, update, managed or not
-helixforge update --dry-run           # what updating every entry with an update would run
-helixforge updates --online           # what each package tool has waiting
-helixforge updates --apply --dry-run  # what updating those channels would run
-helixforge plan git system-report     # what running entries would do
-helixforge run git --dry-run          # the plan, nothing changed
-helixforge run git                    # runs after you type RUN, asked on the terminal even when piped
-helixforge remove ardour              # removes a package entry that offers it
-helixforge profile list               # your profiles; also export, import, delete
-helixforge drift save "Old laptop"    # record this machine as a baseline
-helixforge drift check                # how it differs now; --profile <name> for a profile
-helixforge setup gaming               # what the Gaming workstation would add here, as a plan
-helixforge bundle create ~/b git htop # packages and HelixForge, for a machine offline
-helixforge desktop                    # the desktop, its look and who else sets it
-helixforge plan sddm --effects        # what it would change, files side by side
-helixforge --effects plan --fetch-sources dotfiles-nvim  # with the dotfiles source to compare
-helixforge hardware                   # firmware, disks, temperatures, batteries, devices
-helixforge reliability --critical     # how far the boot, login and driver entries are tested
-helixforge trust sddm                 # where an entry comes from and what checks it
-helixforge doctor                     # health checks, read-only
-helixforge doctor --repair permissions  # one repair, after confirmation
-helixforge backups                    # configuration backups, newest first
-helixforge restore <backup>           # put one back, keeping the current file
-helixforge history                    # recent runs
-helixforge docgen docs/walkthrough.md # the catalog as Markdown
-helixforge status --json              # any reading command, or a --dry-run plan, as JSON
-helixforge report                     # what a bug report needs, to paste into an issue
+helix-toolbox system                     # the distribution and package manager it sees
+helix-toolbox list                       # the catalog as tabs, groups and entries
+helix-toolbox search rip grep            # entries by name, id or description, closest first
+helix-toolbox info git                   # one entry
+helix-toolbox status                     # every package entry: installed, update, managed or not
+helix-toolbox update --dry-run           # what updating every entry with an update would run
+helix-toolbox updates --online           # what each package tool has waiting
+helix-toolbox updates --apply --dry-run  # what updating those channels would run
+helix-toolbox plan git system-report     # what running entries would do
+helix-toolbox run git --dry-run          # the plan, nothing changed
+helix-toolbox run git                    # runs after you type RUN, asked on the terminal even when piped
+helix-toolbox remove ardour              # removes a package entry that offers it
+helix-toolbox profile list               # your profiles; also export, import, delete
+helix-toolbox drift save "Old laptop"    # record this machine as a baseline
+helix-toolbox drift check                # how it differs now; --profile <name> for a profile
+helix-toolbox setup gaming               # what the Gaming workstation would add here, as a plan
+helix-toolbox bundle create ~/b git htop # packages and Helix Toolbox, for a machine offline
+helix-toolbox desktop                    # the desktop, its look and who else sets it
+helix-toolbox plan sddm --effects        # what it would change, files side by side
+helix-toolbox --effects plan --fetch-sources dotfiles-nvim  # with the dotfiles source to compare
+helix-toolbox hardware                   # firmware, disks, temperatures, batteries, devices
+helix-toolbox reliability --critical     # how far the boot, login and driver entries are tested
+helix-toolbox trust sddm                 # where an entry comes from and what checks it
+helix-toolbox doctor                     # health checks, read-only
+helix-toolbox doctor --repair permissions  # one repair, after confirmation
+helix-toolbox backups                    # configuration backups, newest first
+helix-toolbox restore <backup>           # put one back, keeping the current file
+helix-toolbox history                    # recent runs
+helix-toolbox docgen docs/walkthrough.md # the catalog as Markdown
+helix-toolbox status --json              # any reading command, or a --dry-run plan, as JSON
+helix-toolbox report                     # what a bug report needs, to paste into an issue
 ```
 
 `--json` prints one JSON document for other programs instead of text; it

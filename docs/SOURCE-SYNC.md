@@ -1,12 +1,12 @@
 # Automatic source updates
 
-HelixForge watches **Commanderx-code/dotfiles** and **Commanderx-code/Myfish**.
-The [Sync sources and release workflow](https://github.com/Commanderx-code/Helix-Forge/actions/workflows/sync-sources.yml)
+Helix Toolbox watches **Commanderx-code/dotfiles** and **Commanderx-code/Myfish**.
+The [Sync sources and release workflow](https://github.com/Commanderx-code/Helix-toolbox/actions/workflows/sync-sources.yml)
 runs when dotfiles or Myfish pass their checks on `main`, on pushes to
-HelixForge's `main`, through **Run workflow**, and on a schedule at minutes 17
+Helix Toolbox's `main`, through **Run workflow**, and on a schedule at minutes 17
 and 47 of each hour. The schedule is only a backstop: GitHub fires scheduled
 workflows on these repositories every few hours at best, so the sources
-notify HelixForge themselves.
+notify Helix Toolbox themselves.
 
 For each source it reads the current `main` commit, then checks that commit's
 `check.yml` push or dispatched workflow. Only a completed successful run is
@@ -17,7 +17,7 @@ unchecked version.
 The workflow imports each accepted `toolbox.json`, renders its entries as
 catalog files (`catalog/configurations/dotfiles/`, `catalog/configurations/myfish/`
 and the terminal tools under `catalog/applications/terminal-tools/`), runs
-every check, builds HelixForge and regenerates the walkthrough. Only after
+every check, builds Helix Toolbox and regenerates the walkthrough. Only after
 those steps succeed does it commit and push the new pins and catalog. It then
 publishes the next release, tagged `vMAJOR.MINOR.PATCH`, with the Linux
 x86_64 and aarch64 builds and their SHA-256 sums; `start.sh` and the dotfiles
@@ -25,19 +25,19 @@ launcher fetch the latest.
 
 ## Notifications from the sources
 
-Each source repository has a **Notify HelixForge** workflow. It runs when that
+Each source repository has a **Notify Helix Toolbox** workflow. It runs when that
 repository's `check.yml` finishes successfully for a push to `main` and starts
 this workflow with the reason `source-updated`. Such a run behaves like a
 scheduled one: it adopts the new revision, and builds and publishes only when
-something changed. A notification carries no data that HelixForge trusts; the
+something changed. A notification carries no data that Helix Toolbox trusts; the
 sync still checks the source's latest `main` commit and its check run itself.
 
 Starting a workflow in another repository needs a token. Create it once:
 
 1. On GitHub, open **Settings > Developer settings > Fine-grained personal
    access tokens > Generate new token**.
-2. Name it `HelixForge sync`, choose an expiry, set **Repository access** to
-   **Only select repositories > Commanderx-code/Helix-Forge**, and under
+2. Name it `Helix Toolbox sync`, choose an expiry, set **Repository access** to
+   **Only select repositories > Commanderx-code/Helix-toolbox**, and under
    **Repository permissions** set **Actions** to **Read and write**. Nothing
    else; the token can start and view workflows but cannot change code.
 3. Store it in both sources:
@@ -47,7 +47,7 @@ Starting a workflow in another repository needs a token. Create it once:
    gh secret set HELIXFORGE_DISPATCH_TOKEN --repo Commanderx-code/Myfish
    ```
 
-Without the secret, the notifier succeeds with a notice and HelixForge picks
+Without the secret, the notifier succeeds with a notice and Helix Toolbox picks
 the source up on its next push or scheduled run. When the token expires, the
 notifier fails visibly in the source repository; create a new one and set it
 again.

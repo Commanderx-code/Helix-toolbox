@@ -36,7 +36,7 @@ The items:
    checksums and signatures, license, last validation and privileges,
    telling verified release provenance from package integrity checks and
    from unverified third-party scripts.
-8. Offline bundles: HelixForge, its catalog and predownloaded packages for
+8. Offline bundles: Helix Toolbox, its catalog and predownloaded packages for
    one distribution and architecture, with packages and signatures still
    verifiable, and the actions that need the network named.
 9. Desktop environment manager: detect KDE Plasma, GNOME, XFCE and others,
@@ -61,7 +61,7 @@ The items:
 
 ## v1.5.0: machines without reliable internet (done)
 
-- [x] Offline bundles (item 8): HelixForge, its catalog and the packages
+- [x] Offline bundles (item 8): Helix Toolbox, its catalog and the packages
       entries need for one distribution and architecture, with signatures
       or the repository's checksums kept verifiable, a manifest and sums;
       verified before use and installed without downloading; what needs the
@@ -118,9 +118,9 @@ The items:
 
 - [x] HELIX Drift (item 1): baselines of what is installed, the
       configuration files entries write (by checksum), machine settings and
-      the entries HelixForge ran; saved, listed, exported and imported as
+      the entries Helix Toolbox ran; saved, listed, exported and imported as
       TOML; compared with this machine or a profile on the Drift screen and
-      with `helixforge drift check` (`--json`, `--exit-code`), with the
+      with `helix-toolbox drift check` (`--json`, `--exit-code`), with the
       entries that restore what is missing queued for review
 - [x] Command palette (item 6): `Ctrl-K` over any screen, with every
       screen, the common actions and every entry, ranked like search
@@ -210,18 +210,18 @@ The items:
 - [x] Every carried-over script parses, every entry names an existing script,
       and the catalog gates shellcheck errors
 - [x] The migration matrix is all "done" (two entries dropped on purpose)
-- [x] Distribution checks: the Distributions workflow runs HelixForge in Arch,
+- [x] Distribution checks: the Distributions workflow runs Helix Toolbox in Arch,
       Debian, Ubuntu and Fedora containers on every push and weekly, with real
       package installs and removals (containers stand in for virtual machines;
       boot, login-screen and desktop entries still need a real machine)
 - [x] Turn plain package installs into data-only package entries: 38 of them,
       with AUR and Flatpak routes and removal
 - [x] Retire Commander Toolbox: the dotfiles `toolbox` command opens
-      HelixForge, and the old repository is archived
+      Helix Toolbox, and the old repository is archived
 
 ## Phase 1: release stability and safe end-to-end testing (done)
 
-Reviewed on 2026-10-15 against release `helixforge-0eac13844ec2`, without
+Reviewed on 2026-10-15 against release `helix-toolbox-0eac13844ec2`, without
 running any entry on a real machine. `docs/TESTING.md` describes the layers.
 
 - [x] Local verification suite passes; it now also runs the installer tests,
@@ -245,12 +245,12 @@ Defects found and fixed:
   standard input, so `curl … | sh` keeps working.
 - A key pressed together with a terminal resize stayed unread until the next
   key, so a `Ctrl-C` right after a resize did nothing. crossterm's default
-  event source is edge-triggered; HelixForge now uses its `poll(2)` source.
+  event source is edge-triggered; Helix Toolbox now uses its `poll(2)` source.
 - `Ctrl-C` signaled only the run's shell: a child ignoring the hangup kept
   running while the window said INTERRUPTED. The whole process group is
   signaled now, survivors are shown and recorded, and a second `Ctrl-C`
   kills them.
-- A killed HelixForge left its unpacked catalog in `/tmp` for good. Copies
+- A killed Helix Toolbox left its unpacked catalog in `/tmp` for good. Copies
   hold a lock now, and the next start removes copies nobody holds.
 - A run whose history could not be written was silently unrecorded; the
   command line and the menu now say so.
@@ -261,7 +261,7 @@ Remaining before the next phase:
   schedules on these repositories only every two to six hours. dotfiles and
   Myfish now start the sync when their checks pass on `main`, once they hold
   the `HELIXFORGE_DISPATCH_TOKEN` secret (see `docs/SOURCE-SYNC.md`).
-- [x] **A run was lost when HelixForge itself died mid-run.** Fixed: a run
+- [x] **A run was lost when Helix Toolbox itself died mid-run.** Fixed: a run
   keeps a marker beside the history while it is in progress, and the next
   read records an orphaned one as not finished, or with its real result if
   it had ended. `history.jsonl` keeps its format.
@@ -337,7 +337,7 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       Arch, Debian, Ubuntu and Fedora containers; SHA-256 sums and signed
       build provenance attestations for every published file, with
       verification instructions in docs/INSTALL.md
-- [x] `helixforge report`: version, how it was installed, the system,
+- [x] `helix-toolbox report`: version, how it was installed, the system,
       tools, terminal, settings, recent runs and health checks, for an
       issue, with the home folder shown as `~`; `--json` too
 - [x] Issue forms for problems and ideas, asking for the report
@@ -348,7 +348,7 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 
 ## v0.6.0: unified update overview and JSON command line (done)
 
-- [x] Unified update overview (item 6): an Updates screen and `helixforge
+- [x] Unified update overview (item 6): an Updates screen and `helix-toolbox
       updates` with what pacman, apt, dnf or zypper, the AUR helper,
       Flatpak's installations, Home Manager, NixOS and a Nix profile have
       waiting, offline from what they know or online through read-only
@@ -369,14 +369,14 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       built-in ones; export, import (checked against the catalog), list and
       delete from the command line
 - [x] Search and favorites (item 7): ranked search with loose spellings
-      (`helixforge search` too), an installed and an updates filter, pinned
+      (`helix-toolbox search` too), an installed and an updates filter, pinned
       favorites and recently run entries on a Favorites screen and
       Dashboard quick action, and the row kept when a search is cleared
 
 ## v0.4.0: backup and recovery, HELIX Doctor 2.0 (done)
 
 - [x] Backup and recovery center (item 3): one Backups screen and
-      `helixforge backups` for user and system configuration backups, with
+      `helix-toolbox backups` for user and system configuration backups, with
       when each was taken and what it covers; restores that keep the
       replaced file as a backup; a Snapper or Timeshift snapshot first before
       system changes where the machine supports it, without promising
@@ -399,7 +399,7 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       continue after a failure (Settings, `--keep-going`), skipping only what
       depends on the failed step; each step's result in the window, the
       command line and the history; unfinished entries stay in the Install
-      Plan and the command line prints the retry; one HelixForge run at a
+      Plan and the command line prints the retry; one Helix Toolbox run at a
       time
 
 ## Smart status (done)
@@ -409,8 +409,8 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       Manager, NixOS, with the store path's version) or Not installed, and a
       Nix copy of a packaged command that comes first on the PATH; the menu
       checks in the background on start and after every run, and
-      `helixforge status` prints the same
-- [x] Update action: `u` and `U` in the menu, `helixforge update`; one
+      `helix-toolbox status` prints the same
+- [x] Update action: `u` and `U` in the menu, `helix-toolbox update`; one
       package through Flatpak, apt, dnf or zypper, the whole system with
       `pacman -Syu` on Arch; verified by the version changing
 - [x] Script entries say what they install in `[detect]` (52 application

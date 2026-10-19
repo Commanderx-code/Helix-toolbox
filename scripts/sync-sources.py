@@ -204,7 +204,7 @@ def main():
     documents = {source: json.loads((INSTALLERS / 'catalogs' / f'{source}.json').read_text()) for source in SOURCES}
     revisions = {}
     if not args.render:
-        with tempfile.TemporaryDirectory(prefix='helixforge-sync-') as temporary:
+        with tempfile.TemporaryDirectory(prefix='helix-toolbox-sync-') as temporary:
             for source in SOURCES:
                 revision = eligible_revision(source)
                 if revision is None:

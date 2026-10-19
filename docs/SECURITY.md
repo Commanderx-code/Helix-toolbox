@@ -3,10 +3,10 @@
 ## Reporting a vulnerability
 
 Please report security problems privately, not in a public issue: use
-[**Report a vulnerability**](https://github.com/Commanderx-code/Helix-Forge/security/advisories/new)
+[**Report a vulnerability**](https://github.com/Commanderx-code/Helix-toolbox/security/advisories/new)
 on the repository's Security tab, which only the maintainer can read.
-Include what an attacker could do, the HelixForge version
-(`helixforge --version`), and how to reproduce it. A fix goes into the next
+Include what an attacker could do, the Helix Toolbox version
+(`helix-toolbox --version`), and how to reproduce it. A fix goes into the next
 release, and the advisory is published with it, crediting you unless you
 would rather not be named.
 
@@ -32,9 +32,9 @@ to add a remote the machine lacks, with `--trust-bundle`, and is checked
 against the sum verified first. A collection ID is given to a remote that
 has none only when it is the one published for the remote's address, or
 with `--trust-bundle`. A bundle from someone else is only as
-trustworthy as the HelixForge copy inside it; prefer your own.
+trustworthy as the Helix Toolbox copy inside it; prefer your own.
 
-## How HelixForge keeps runs safe
+## How Helix Toolbox keeps runs safe
 
 - **Trust boundary.** Only the catalog embedded in the binary runs. There is
   no remote catalog, no plugin loading and no downloaded script. Entries that
@@ -45,7 +45,7 @@ trustworthy as the HelixForge copy inside it; prefer your own.
   file turns it on.
 - **Unpacked copy.** The embedded catalog is unpacked into a private (0700)
   temporary directory that holds a lock for as long as its process lives.
-  At start, HelixForge removes only its own user's copies whose lock nobody
+  At start, Helix Toolbox removes only its own user's copies whose lock nobody
   holds; anything without the lock file is left alone.
 - **No free text in the shell.** The run is a shell program assembled from
   single-quoted literals: validated package names, script paths from the
@@ -72,11 +72,11 @@ trustworthy as the HelixForge copy inside it; prefer your own.
   root cannot be killed by the second `Ctrl-C`, and stays counted.
 - **Records.** Runs are appended to a private history file (mode 0600 in a
   0700 directory) with their outcome; interrupted runs are recorded as
-  interrupted, never as success. A run whose HelixForge died before it was
+  interrupted, never as success. A run whose Helix Toolbox died before it was
   recorded is listed as not finished, never as success. Run markers live in
   a private `running/` directory beside the history and name only the owning
   process. When the history cannot be written, the
-  run still happens and HelixForge says it was not recorded. Saved logs
+  run still happens and Helix Toolbox says it was not recorded. Saved logs
   contain whatever the program printed, which can include file names; typed
   passwords are not echoed by the terminal and so are not in them. The
   tracing log records plans and outcomes, not output.
@@ -92,7 +92,7 @@ trustworthy as the HelixForge copy inside it; prefer your own.
 - **Not provided.** Rollback, verification of scripts, commands and Nix
   entries beyond their exit status, and isolation of what an entry's script
   does once it runs.
-- Text HelixForge shows but did not write (journal lines, unit, file and
+- Text Helix Toolbox shows but did not write (journal lines, unit, file and
   backup names, error messages, paths found on the PATH) goes through
   `printable()`, which turns control characters into `?`, so it cannot start
   terminal escape sequences in the menu or on the command line. The programs

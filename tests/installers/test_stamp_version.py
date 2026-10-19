@@ -14,7 +14,7 @@ class StampVersionTest(unittest.TestCase):
         stamped = stamp_version.stamp(text, '7.8.9')
         self.assertIn('\nversion = "7.8.9"\n', stamped)
         for crate in ('core', 'catalog', 'platform', 'engine'):
-            self.assertRegex(stamped, rf'helixforge-{crate} = {{ path = "[^"]+", version = "=7\.8\.9" }}')
+            self.assertRegex(stamped, rf'helix-toolbox-{crate} = {{ path = "[^"]+", version = "=7\.8\.9" }}')
         # Other dependencies keep theirs.
         self.assertIn('clap = { version = "4.5"', stamped)
         self.assertEqual(stamped.count('7.8.9'), 5)

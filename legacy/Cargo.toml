@@ -1,0 +1,21 @@
+# The crates named for HelixForge, the name before 1.7, published once more
+# to say where Helix Toolbox is now. The legacy-crates workflow publishes
+# them; nothing depends on them.
+[workspace]
+resolver = "2"
+members = [
+    "helixforge",
+    "helixforge-core",
+    "helixforge-catalog",
+    "helixforge-platform",
+    "helixforge-engine",
+]
+
+[workspace.package]
+version = "1.7.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+repository = "https://github.com/Commanderx-code/Helix-toolbox"
+homepage = "https://github.com/Commanderx-code/Helix-toolbox"
+authors = ["Commanderx-code"]

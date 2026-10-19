@@ -3,9 +3,9 @@ description = "A package whose every source reports success without installing i
 flags = "I"
 
 [package]
-binary = "helixforge-missing-sample"
-arch = "helixforge-no-such-package"
-debian = "helixforge-no-such-package"
-fedora = "helixforge-no-such-package"
-suse = "helixforge-no-such-package"
-flatpak = "org.helixforge.MissingSample"
+binary = "helix-toolbox-missing-sample"
+arch = "helix-toolbox-no-such-package"
+debian = "helix-toolbox-no-such-package"
+fedora = "helix-toolbox-no-such-package"
+suse = "helix-toolbox-no-such-package"
+flatpak = "org.helixtoolbox.MissingSample"

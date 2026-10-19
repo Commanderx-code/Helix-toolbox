@@ -18,8 +18,8 @@ class StartScriptTests(unittest.TestCase):
         self.release = self.root / 'release'
         self.release.mkdir()
         shutil.copy2(ROOT / 'start.sh', self.root / 'start.sh')
-        self.binary = self.release / 'helixforge-linux-x86_64'
-        self.binary.write_text('#!/bin/sh\necho "helixforge ran $*" > "$RAN"\n')
+        self.binary = self.release / 'helix-toolbox-linux-x86_64'
+        self.binary.write_text('#!/bin/sh\necho "helix-toolbox ran $*" > "$RAN"\n')
         self.publish_sums()
         curl = self.root / 'curl'
         curl.write_text('#!/bin/sh\nwhile [ $# -gt 2 ]; do shift; done\ncp "${2#file://}" "$1"\n')
@@ -30,17 +30,17 @@ class StartScriptTests(unittest.TestCase):
 
     def publish_sums(self, digest=None):
         digest = digest or hashlib.sha256(self.binary.read_bytes()).hexdigest()
-        (self.release / 'SHA256SUMS').write_text(f'{digest}  helixforge-linux-x86_64\n')
+        (self.release / 'SHA256SUMS').write_text(f'{digest}  helix-toolbox-linux-x86_64\n')
 
     def run_start(self):
         return subprocess.run(['sh', str(self.root / 'start.sh'), '--help'], cwd=self.root, text=True, capture_output=True,
                               env=dict(os.environ, PATH=str(self.root) + ':' + os.environ['PATH'],
-                                       HELIXFORGE_RELEASE=f'file://{self.release}', RAN=str(self.root / 'ran')))
+                                       HELIX_TOOLBOX_RELEASE=f'file://{self.release}', RAN=str(self.root / 'ran')))
 
     def test_checked_release_runs_with_arguments(self):
         result = self.run_start()
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-        self.assertEqual((self.root / 'ran').read_text(), 'helixforge ran --help\n')
+        self.assertEqual((self.root / 'ran').read_text(), 'helix-toolbox ran --help\n')
 
     def test_mismatched_checksum_is_not_executed(self):
         self.publish_sums('0' * 64)

@@ -1,0 +1,38 @@
+# The crates named for HelixForge, the name before 1.7, published once more
+# (legacy/) to say where Helix Toolbox is now. Started by hand; a crate whose
+# version is already on crates.io is skipped, so it can run again.
+name: Legacy crates
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+      - name: Publish the renamed notices to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "No CARGO_REGISTRY_TOKEN secret with a value; nothing published." >&2
+            exit 1
+          fi
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' legacy/Cargo.toml)
+          for crate in helixforge-core helixforge-platform helixforge-catalog helixforge-engine helixforge; do
+            if curl -fsS -o /dev/null -A "helix-toolbox-legacy (github.com/$GITHUB_REPOSITORY)" \
+                "https://crates.io/api/v1/crates/$crate/$version"; then
+              echo "$crate $version is already on crates.io"
+            else
+              cargo publish --manifest-path legacy/Cargo.toml -p "$crate"
+            fi
+          done

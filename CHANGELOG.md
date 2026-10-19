@@ -4,6 +4,26 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.7.0
+
+- **HelixForge is now Helix Toolbox.** The command is `helix-toolbox`, or
+  `htb` for short, and the repository is
+  `Commanderx-code/Helix-toolbox` (the old address forwards). New artwork
+  for the banner, the icon and the logo.
+- **Nothing to do by hand.** The first start moves `~/.config/helixforge`
+  and `~/.local/state/helixforge` to `helix-toolbox`, leaving a link at the
+  old names. The `helix-toolbox` packages replace `helixforge` and keep a
+  `helixforge` command. Each release also carries its files under the old
+  names, so HelixForge copies and launchers update to it.
+- **What other programs read stays.** `--json` keeps its `helixforge`
+  version field, beside a new `helix_toolbox`; the Updates channel keeps the
+  id `helixforge`; runs set `HELIXFORGE_LIB` as well as `HELIX_TOOLBOX_LIB`;
+  `HELIXFORGE_LOG` still sets the log level; bundles and backups made
+  before 1.7 are read as before. See docs/MIGRATION.md.
+- **Crates**: `helix-toolbox` and `helix-toolbox-core`, `-catalog`,
+  `-platform` and `-engine` on crates.io. The `helixforge` crates' last
+  version says where they went.
+
 ## v1.6.3
 
 - **Execution events**: the engine reports a run in its pseudo-terminal as

@@ -1,11 +1,11 @@
 name: Something went wrong
-description: An entry failed, the menu misbehaved, or HelixForge did something unexpected.
+description: An entry failed, the menu misbehaved, or Helix Toolbox did something unexpected.
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you for testing HelixForge. `helixforge report` prints most of what is needed below; read it before you paste it.
+        Thank you for testing Helix Toolbox. `helix-toolbox report` prints most of what is needed below; read it before you paste it.
   - type: textarea
     id: happened
     attributes:
@@ -30,15 +30,15 @@ body:
   - type: textarea
     id: report
     attributes:
-      label: helixforge report
-      description: The output of `helixforge report`.
+      label: helix-toolbox report
+      description: The output of `helix-toolbox report`.
       render: markdown
     validations:
       required: true
   - type: dropdown
     id: installed
     attributes:
-      label: How you run HelixForge
+      label: How you run Helix Toolbox
       options:
         - A package from the releases (pacman, apt, dnf or zypper)
         - start.sh

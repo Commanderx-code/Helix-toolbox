@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Helix Toolbox
+GenericName=System setup
+Comment=Build, configure and optimize this machine from a terminal menu
+Exec=helix-toolbox
+Icon=helix-toolbox
+Terminal=true
+Categories=System;Settings;
+Keywords=install;packages;setup;dotfiles;update;
