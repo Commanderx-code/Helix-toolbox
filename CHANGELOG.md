@@ -4,24 +4,17 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
-## v1.6.1
-
-- **Arch Linux ARM**: releases have an Arch package for aarch64
-  (`helixforge-*-aarch64.pkg.tar.zst`). The Distributions workflow tests it
-  in Arch Linux ARM's own root file system, checked against the project's
-  build key, since there is no Arch Linux ARM image on Docker Hub; the
-  Reliability screen shows those results as "Arch Linux ARM on ARM64".
-
 ## v1.6.0
 
 - **ARM64**: every release has a build for Linux on aarch64 beside the
-  x86_64 one: `helixforge-linux-aarch64`, a Debian/Ubuntu package (`arm64`)
-  and an RPM (`aarch64`), built and tested on ARM64 machines, with their
-  checksums in `SHA256SUMS` and signed provenance. The Distributions
-  containers run on ARM64 too (all but Arch, which has no official ARM image,
-  so there is no Arch package for ARM64 yet; the program runs there on its
-  own). `start.sh`, the Updates screen and `fetch-release` take the files for
-  the machine's architecture.
+  x86_64 one: `helixforge-linux-aarch64`, an Arch package (`aarch64`), a
+  Debian/Ubuntu package (`arm64`) and an RPM (`aarch64`), built and tested on
+  ARM64 machines, with their checksums in `SHA256SUMS` and signed provenance.
+  The Distributions containers run on ARM64 too; Arch Linux ARM, which has no
+  image on Docker Hub, runs from its own root file system, checked against
+  the project's build key. The Reliability screen shows those results "on
+  ARM64". `start.sh`, the Updates screen and `fetch-release` take the files
+  for the machine's architecture.
 - **Entries for x86_64 only**: a new `architectures` key in an entry's
   `[needs]` table. Steam, Proton CachyOS, the CachyOS gaming lists and
   repository, Chaotic-AUR, the Steam Deck kernel, Arch Server Setup, DaVinci

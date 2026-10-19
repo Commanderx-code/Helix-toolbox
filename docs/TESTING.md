@@ -19,7 +19,7 @@ package installs happen only in the Distributions workflow's containers.
 | Workflow lint | `scripts/verify.sh` | actionlint over every workflow, including the shell in each step |
 | Source render | `scripts/verify.sh` | rendering the dotfiles and Myfish exports again changes no catalog file |
 | Crates | Checks workflow | `cargo package --workspace`: every crate packaged and built from its package, as crates.io and `cargo install` would |
-| Virtual machines | `scripts/vm-tests.py`, in the Distributions workflow | the boot, login-screen, disk and kernel entries run for real under QEMU, in Arch, Debian and Fedora cloud images on BIOS and UEFI firmware, the Arch live ISO and an Arch machine that says it is a Steam Deck: each is run through `helixforge run`, rebooted into and checked, with the boot screens kept |
+| Virtual machines | `scripts/vm-tests.py`, in the Distributions workflow | the boot, login-screen, disk and kernel entries run for real under QEMU, in Arch, Debian and Fedora cloud images on BIOS and UEFI firmware, the Arch live ISO and an Arch machine that says it is a Steam Deck, and weekly Debian's and Fedora's ARM64 cloud images, emulated: each is run through `helixforge run`, rebooted into and checked, with the boot screens kept |
 | Distributions | `.github/workflows/distributions.yml` | Arch, Debian, Ubuntu 22.04 and 24.04, Fedora and openSUSE Tumbleweed containers with real package installs and removals, each verified, and the real package manager failing over to a stand-in Flathub; HelixForge's own package for each installed, used and removed. The ARM64 build's tests, and the same containers on ARM64 runners, Arch being Arch Linux ARM's own root file system checked against its build key (`scripts/arch-arm-tests.sh`), with the x86_64-only entries left out |
 
 ## The program in a terminal
@@ -129,8 +129,9 @@ an interrupted source, and removals that leave the package behind.
 
 ## Virtual machines
 
-`scripts/vm-tests.py --distro MACHINE` boots one of these under QEMU with
-KVM, each image checked against its published checksum:
+`scripts/vm-tests.py --distro MACHINE` boots one of these under QEMU, with
+KVM where the host has the machine's processor, each image checked against
+its published checksum:
 
 | Machine | What it is |
 |---|---|
@@ -140,6 +141,7 @@ KVM, each image checked against its published checksum:
 | `arch-uefi` | the Arch cloud image on UEFI firmware (OVMF) |
 | `arch-iso` | the Arch live ISO on UEFI firmware, as root, with an empty disk |
 | `steamdeck` | the Arch cloud image with firmware that names Valve as the board's maker, as a Steam Deck's does |
+| `debian-arm64`, `fedora-arm64` | the distribution's ARM64 cloud image on UEFI firmware (AAVMF), Debian's with its own kernel in place of the cloud one, which has no graphics driver |
 
 The cloud images have a user in the administrators' group with
 passwordless `sudo`, and are first made to boot like a desktop installation:
@@ -167,6 +169,14 @@ every half second while the machine boots, and checks the result:
 | CachyOS and Garuda Limine Boot Menus | Arch UEFI | after the machine is made to boot through Limine, as CachyOS installs it: the look is merged with the boot entry unchanged and nothing left of the previous look, the wallpaper is beside `limine.conf`, the machine boots through Limine and the wallpaper was on the screen |
 | Arch Server Setup | Arch live ISO | it installs on the empty disk (btrfs, the first keyboard layout and locale); the installed system boots on its own and reports on the serial line that it started cleanly, with the user in `wheel`, NetworkManager running, root on the `@` subvolume, the swap file in use, the host name and the LTS kernel |
 | Linux Neptune for SteamDeck | Steam Deck stand-in | linux-neptune, its speaker firmware and a GRUB entry are installed, and the machine boots it |
+
+The ARM64 machines run Dracula GRUB Theme, Restore Default GRUB
+Appearance, Enable and Disable Boot Splash, AppArmor (Debian) or SELinux
+(Fedora), SDDM Theme and Enable SSD TRIM, checked the same way. GitHub's
+ARM64 runners have no KVM, so they are emulated on an x86_64 runner, an hour
+or more each: in the weekly run, and when the Distributions workflow is
+started by hand with `arm-vms` set. Their screens are kept the same way, but
+their results are not in the Reliability record.
 
 The Arch machine also makes an offline bundle of a Flatpak (Flycast) it
 installed from Flathub: `bundle create` first names the collection ID
@@ -242,7 +252,8 @@ chmod +x helixforge-linux-x86_64
   `flatpak`.
 - The releases are built for Linux x86_64 and aarch64 with glibc 2.35 or
   later. The ARM64 build runs the tests and the containers on GitHub's ARM64
-  runners, but not the virtual machines.
+  runners; the ARM64 virtual machines are emulated on x86_64, weekly, and
+  are not in the Reliability record.
 - The banner picture is checked against a test terminal that answers like
   Ghostty and one that answers like a Sixel terminal, with the image the
   program sends painted into the screenshot; how real terminals draw it is

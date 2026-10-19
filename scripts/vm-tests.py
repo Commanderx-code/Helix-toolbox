@@ -18,10 +18,12 @@ script exit 1. Nothing here touches the machine running it beyond the work
 folder.
 """
 import argparse
+import concurrent.futures
 import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import select
 import shlex
@@ -60,6 +62,21 @@ IMAGES = {
         'hash': 'sha256',
         'admins': 'wheel',
     },
+    # The same distributions for ARM64.
+    'debian-arm64': {
+        'url': 'https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-arm64.qcow2',
+        'sums': 'https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS',
+        'hash': 'sha512',
+        'admins': 'sudo',
+    },
+    'fedora-arm64': {
+        'url': 'https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/aarch64/images/'
+               'Fedora-Cloud-Base-Generic-44-1.7.aarch64.qcow2',
+        'sums': 'https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/aarch64/images/'
+                'Fedora-Cloud-44-1.7-aarch64-CHECKSUM',
+        'hash': 'sha256',
+        'admins': 'wheel',
+    },
     'archiso': {
         'url': 'https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso',
         'sums': 'https://geo.mirror.pkgbuild.com/iso/latest/sha256sums.txt',
@@ -80,6 +97,12 @@ MACHINES = {
     'arch-iso': {'image': 'archiso', 'family': 'arch', 'firmware': 'uefi', 'live': True, 'chipset': 'q35'},
     # Its firmware names Valve as the board's maker, as a Steam Deck's does.
     'steamdeck': {'image': 'arch', 'family': 'arch', 'firmware': 'bios', 'smbios': 'type=2,manufacturer=Valve'},
+    # ARM64 machines, which boot through UEFI.
+    # Debian's ARM kernel drives the UEFI framebuffer with efifb, which makes no
+    # /dev/dri for SDDM to wait on; its own kernel has the virtio GPU driver.
+    'debian-arm64': {'image': 'debian-arm64', 'family': 'debian', 'firmware': 'uefi', 'cpu': 'aarch64',
+                     'display': 'virtio-gpu-pci'},
+    'fedora-arm64': {'image': 'fedora-arm64', 'family': 'fedora', 'firmware': 'uefi', 'cpu': 'aarch64'},
 }
 
 # UEFI firmware, where Debian, Ubuntu, Fedora and Arch put it.
@@ -89,6 +112,12 @@ OVMF = [
     ('/usr/share/edk2/ovmf/OVMF_CODE.fd', '/usr/share/edk2/ovmf/OVMF_VARS.fd'),
 ]
 
+# ARM64's UEFI firmware, where Debian and Ubuntu, then Fedora, put it.
+AAVMF = [
+    ('/usr/share/AAVMF/AAVMF_CODE.fd', '/usr/share/AAVMF/AAVMF_VARS.fd'),
+    ('/usr/share/edk2/aarch64/QEMU_EFI-pflash.raw', '/usr/share/edk2/aarch64/vars-template-pflash.raw'),
+]
+
 PORT = 2222
 
 
@@ -96,18 +125,18 @@ def log(message):
     print(f'vm-tests: {message}', flush=True)
 
 
-def firmware_options(kind, vars_file):
+def firmware_options(kind, vars_file, cpu='x86_64'):
     """QEMU's options for BIOS or UEFI firmware, UEFI's variables kept in
     `vars_file` from one start to the next."""
     if kind != 'uefi':
         return []
-    for code, template in OVMF:
+    for code, template in AAVMF if cpu == 'aarch64' else OVMF:
         if Path(code).exists() and Path(template).exists():
             if not vars_file.exists():
                 vars_file.write_bytes(Path(template).read_bytes())
             return ['-drive', f'if=pflash,format=raw,readonly=on,file={code}',
                     '-drive', f'if=pflash,format=raw,file={vars_file}']
-    sys.exit('no UEFI firmware (OVMF) is installed')
+    sys.exit('no UEFI firmware (OVMF or AAVMF) is installed')
 
 
 ANSI = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]|\x1b[()][A-Z0-9]|\r')
@@ -130,6 +159,11 @@ class Machine:
         self.key = work / 'key'
         self.disk = work / 'disk.qcow2'
         self.vars = work / 'vars.fd'
+        self.cpu = self.spec.get('cpu', 'x86_64')
+        # Another processor than this one's is emulated, several times slower:
+        # everything is given that much longer.
+        self.native = self.cpu == platform.machine() and Path('/dev/kvm').exists()
+        self.pace = 1 if self.native else 6
         # Unix socket paths are short: a private folder of its own in /tmp.
         self.monitor = Path(tempfile.mkdtemp(prefix='hf-vm-', dir='/tmp')) / 'monitor'
 
@@ -193,12 +227,22 @@ class Machine:
     def launch(self, drives, serial='serial.log', network=True):
         self.monitor.unlink(missing_ok=True)
         self.serial = self.work / serial
-        # q35: no floppy drive, which the installer's disk menu would list first.
-        command = ['qemu-system-x86_64', '-enable-kvm', '-machine', self.spec.get('chipset', 'pc'), '-cpu', 'host',
-                   '-m', '4096', '-smp', '2',
-                   *firmware_options(self.spec['firmware'], self.vars), *drives,
-                   '-display', 'none', '-vga', 'std', '-monitor', f'unix:{self.monitor},server,nowait',
-                   '-serial', f'file:{self.work / serial}', '-daemonize', '-pidfile', str(self.work / 'qemu.pid')]
+        if self.cpu == 'aarch64':
+            # QEMU's generic ARM board. Its screen is a plain framebuffer in
+            # memory unless the machine names another, which UEFI hands to any
+            # kernel; a virtio GPU's goes dark unless the kernel has that driver,
+            # and cloud kernels do not.
+            processor = (['-enable-kvm', '-cpu', 'host', '-smp', '2'] if self.native else
+                         ['-accel', 'tcg,thread=multi', '-cpu', 'max,pauth-impdef=on', '-smp', '2'])
+            command = ['qemu-system-aarch64', '-machine', 'virt', *processor,
+                       '-device', self.spec.get('display', 'ramfb')]
+        else:
+            # q35: no floppy drive, which the installer's disk menu would list first.
+            command = ['qemu-system-x86_64', '-enable-kvm', '-machine', self.spec.get('chipset', 'pc'), '-cpu', 'host',
+                       '-smp', '2', '-vga', 'std']
+        command += ['-m', '4096', *firmware_options(self.spec['firmware'], self.vars, self.cpu), *drives,
+                    '-display', 'none', '-monitor', f'unix:{self.monitor},server,nowait',
+                    '-serial', f'file:{self.work / serial}', '-daemonize', '-pidfile', str(self.work / 'qemu.pid')]
         if network:
             # Restricted: SSH still reaches it, but it reaches nothing.
             restrict = ',restrict=on' if network == 'restricted' else ''
@@ -262,7 +306,7 @@ class Machine:
     def gone(self, patience=120):
         """Wait for QEMU to end, after a power-off."""
         pid = self.work / 'qemu.pid'
-        deadline = time.time() + patience
+        deadline = time.time() + patience * self.pace
         while time.time() < deadline:
             if not pid.exists() or not Path(f'/proc/{pid.read_text().strip()}').exists():
                 return
@@ -285,7 +329,7 @@ class Machine:
         return self.ssh(command, check=False).returncode == 0
 
     def wait(self, patience=240):
-        deadline = time.time() + patience
+        deadline = time.time() + patience * self.pace
         while time.time() < deadline:
             try:
                 with socket.create_connection(('127.0.0.1', self.port), timeout=3):
@@ -320,21 +364,29 @@ class Machine:
 
     def watch(self, done, patience=240):
         """Capture the screen every half second until `done()` holds; the
-        frames, oldest first."""
+        frames, oldest first. `done()` runs beside the captures: an SSH probe
+        of a machine still booting can take seconds, as long as a boot menu
+        stays up."""
         frames = []
-        deadline = time.time() + patience
+        deadline = time.time() + patience * self.pace
         index = 0
-        while time.time() < deadline:
-            frame = self.work / f'frame-{index:03}.ppm'
-            try:
-                self.screen(frame)
-                frames.append(frame)
-            except OSError:
-                pass
-            index += 1
-            time.sleep(0.5)
-            if index > 20 and index % 4 == 0 and done():
-                break
+        checking = None
+        with concurrent.futures.ThreadPoolExecutor(1) as pool:
+            while time.time() < deadline:
+                frame = self.work / f'frame-{index:03}.ppm'
+                try:
+                    self.screen(frame)
+                    frames.append(frame)
+                except OSError:
+                    pass
+                index += 1
+                time.sleep(0.5)
+                if checking and checking.done():
+                    if checking.result():
+                        break
+                    checking = None
+                if checking is None and index > 20:
+                    checking = pool.submit(done)
         return frames
 
     def reboot(self, shots, name):
@@ -368,6 +420,18 @@ class Machine:
         else:
             self.ssh('sudo apt-get update -q >/dev/null && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q git python3 >/dev/null')
             regenerate = 'sudo update-grub'
+            if self.cpu == 'aarch64':
+                # Debian's cloud kernel for ARM64 has no graphics driver at
+                # all, so no login screen can start; a desktop has the
+                # distribution's own kernel.
+                self.ssh('sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q linux-image-arm64 >/dev/null && '
+                         "sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -q 'linux-image-*cloud*' >/dev/null")
+                before = self.boot_id()
+                self.ssh('sudo systemctl reboot', check=False)
+                time.sleep(10)
+                self.wait()
+                if self.boot_id() == before or 'cloud' in self.ssh('uname -r').stdout:
+                    raise RuntimeError('the machine did not start its new kernel')
         # The cloud images send GRUB and the kernel's console to the serial
         # line, which also keeps Plymouth's splash away, and hide the menu.
         self.ssh("sudo sed -i -e '/^GRUB_TERMINAL\\(_INPUT\\|_OUTPUT\\)\\{0,1\\}=/d' -e '/^GRUB_SERIAL_COMMAND=/d' "
@@ -410,7 +474,7 @@ class Machine:
             (r'\(default=1\):', ''), (r'\(default=all\):', '')]
         output = b''
         answered = 0
-        deadline = time.time() + 2400
+        deadline = time.time() + 2400 * self.pace
         while time.time() < deadline:
             ready, _, _ = select.select([process.stdout], [], [], 1)
             if ready:
@@ -478,6 +542,11 @@ def keep_frames(frames, shots, name, firmware='bios'):
         shots.mkdir(parents=True, exist_ok=True)
         Image.open(best[3]).save(shots / f'{name}-boot.png')
         Image.open(measured[-1][3]).save(shots / f'{name}-after.png')
+        if not graphical:
+            # Nothing graphical: a spread of what was on the screen, to look at.
+            step = max(1, len(measured) // 8)
+            for number, item in enumerate(measured[::step][:8]):
+                Image.open(item[3]).save(shots / f'{name}-frame-{number}.png')
     for frame in frames:
         frame.unlink(missing_ok=True)
     return best[1] if graphical else 0
@@ -617,9 +686,10 @@ def apparmor(machine, shots):
 
 
 def sddm(machine, shots):
-    # SDDM, and a display for the installer's preview of the theme.
+    # SDDM, and a display for the installer's preview of the theme. Debian's
+    # SDDM takes any X server, and Xvfb counts: name the real one.
     install = {'arch': 'sudo pacman -S --noconfirm --needed sddm xorg-server-xvfb imagemagick >/dev/null',
-               'debian': 'sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q sddm xvfb imagemagick >/dev/null',
+               'debian': 'sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q sddm xserver-xorg xvfb imagemagick >/dev/null',
                'fedora': 'sudo dnf install -y -q sddm xorg-x11-server-Xvfb ImageMagick >/dev/null'}
     machine.ssh(install[machine.distro])
     machine.ssh('setsid nohup Xvfb :99 -screen 0 1280x800x24 >/dev/null 2>&1 < /dev/null &')
@@ -649,20 +719,24 @@ def sddm(machine, shots):
     if not machine.ok('test -f /usr/share/sddm/themes/silent/metadata.desktop'):
         raise RuntimeError('the theme is not installed')
     machine.reboot(shots, 'sddm')
-    for _ in range(30):
+    for _ in range(30 * machine.pace):
         if machine.ok('systemctl is-active sddm'):
             break
         time.sleep(2)
     else:
         raise RuntimeError('SDDM is not running after the reboot')
-    time.sleep(10)
+    # The greeter draws in software, which emulation slows down.
+    time.sleep(10 * machine.pace)
     if shots:
         machine.screen(machine.work / 'greeter.ppm')
         size, count = colors(machine.work / 'greeter.ppm')
         from PIL import Image
         Image.open(machine.work / 'greeter.ppm').save(shots / 'sddm-greeter.png')
         if count < 60:
-            raise RuntimeError(f'no graphical login screen was seen ({count} colors)')
+            # What SDDM and the display said, to tell why.
+            said = machine.ssh('ls /dev/dri; ls -l /usr/bin/X; sudo journalctl -b -u sddm --no-pager | tail -n 15',
+                               check=False).stdout
+            raise RuntimeError(f'no graphical login screen was seen ({count} colors)\n{said}')
 
 
 def ssd_trim(machine, shots):
@@ -987,6 +1061,13 @@ CASES = {
     'opensuse': [('bundle-zypper', zypper_bundle)],
     'arch-iso': [('arch-server-setup', server_setup)],
     'steamdeck': [('linux-neptune-for-steamdeck', linux_neptune)],
+    # What also applies on ARM64 boards and servers that boot through UEFI.
+    'debian-arm64': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('plymouth-on', plymouth_on),
+                     ('plymouth-off', plymouth_off), ('apparmor', apparmor), ('sddm', sddm),
+                     ('enable-ssd-trim', ssd_trim)],
+    'fedora-arm64': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('plymouth-on', plymouth_on),
+                     ('plymouth-off', plymouth_off), ('selinux', selinux), ('sddm', sddm),
+                     ('enable-ssd-trim', ssd_trim)],
 }
 
 
@@ -1020,6 +1101,10 @@ def main():
             except Exception as error:  # every case is reported, then the run fails
                 failures[entry] = str(error)[-2000:]
                 log(f'{entry}: FAILED: {error}')
+                # What the machine printed, for a person to read.
+                if options.shots and getattr(machine, 'serial', None) and machine.serial.exists():
+                    options.shots.mkdir(parents=True, exist_ok=True)
+                    (options.shots / f'{entry}-serial.log').write_bytes(machine.serial.read_bytes())
                 try:
                     machine.wait(patience=60)
                 except RuntimeError:
