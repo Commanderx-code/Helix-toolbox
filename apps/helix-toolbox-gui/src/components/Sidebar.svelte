@@ -14,6 +14,8 @@
   const same = (a: Screen, b: Screen) =>
     a.kind === b.kind && (a.kind !== 'area' || (b.kind === 'area' && a.index === b.index));
 
+  const updatesWaiting = $derived(Object.values(toolbox.statuses).filter((status) => status.kind === 'update').length);
+
   function open(screen: Screen) {
     toolbox.screen = screen;
     toolbox.search = '';
@@ -29,8 +31,20 @@
 
   <div class="section">Catalog</div>
   {#each toolbox.areas as area, index (area.id)}
-    {@render item({ kind: 'area', index }, AREA_ICONS[area.id] ?? 'apps', area.name)}
+    {#if area.id !== 'doctor'}
+      {@render item({ kind: 'area', index }, AREA_ICONS[area.id] ?? 'apps', area.name)}
+    {/if}
   {/each}
+
+  <div class="section">More tools</div>
+  {@render item({ kind: 'doctor' }, 'doctor', 'Helix Doctor')}
+  {@render item({ kind: 'updates' }, 'refresh', 'Updates', updatesWaiting)}
+  {@render item({ kind: 'backups' }, 'backups', 'Backups')}
+  {@render item({ kind: 'drift' }, 'drift', 'Drift')}
+  {@render item({ kind: 'reliability' }, 'flask', 'Reliability')}
+  {@render item({ kind: 'hardware' }, 'chip', 'Hardware')}
+  {@render item({ kind: 'desktop' }, 'monitor', 'Desktop')}
+  {@render item({ kind: 'settings' }, 'gear', 'Settings')}
 </nav>
 
 {#snippet item(screen: Screen, icon: IconName, label: string, count = 0, accent = false)}

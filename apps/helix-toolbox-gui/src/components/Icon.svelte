@@ -25,6 +25,15 @@
     package: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM4 7.5l8 4.5 8-4.5M12 12v9',
     lock: 'M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3',
     folder: 'M3 6h6l2 2h10v11H3z',
+    doctor: 'M12 4v16M4 12h16M7 7l10 10M17 7L7 17',
+    backups: 'M4 7h16v4H4zM4 13h16v4H4zM7 9h.01M7 15h.01',
+    drift: 'M4 7h11l-3-3M20 17H9l3 3M4 7l5 10M20 17l-5-10',
+    flask: 'M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3M7 15h10',
+    chip: 'M7 7h10v10H7zM10 10h4v4h-4zM4 10h3M4 14h3M17 10h3M17 14h3M10 4v3M14 4v3M10 17v3M14 17v3',
+    monitor: 'M3 5h18v11H3zM9 20h6M12 16v4',
+    gear: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2',
+    save: 'M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6',
+    eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
   } as const;
 
   export type IconName = keyof typeof PATHS;

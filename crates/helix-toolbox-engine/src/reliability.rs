@@ -5,6 +5,7 @@
 //! runs beside them. Nothing here claims more than its record shows.
 
 use crate::history;
+use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, Risk};
 use serde::Deserialize;
 use std::{
@@ -442,6 +443,33 @@ pub fn warnings<'a>(
         }
     }
     warnings
+}
+
+/// The entries a reliability listing covers, critical ones first, then by
+/// how little they are tested, then by name. Profiles are left out: their
+/// entries are listed.
+pub fn rows<'a>(
+    catalog: &'a Catalog,
+    evidence: &Evidence,
+    records: &[history::Record],
+) -> Vec<(&'a Entry, Assessment)> {
+    let mut rows: Vec<(&Entry, Assessment)> = Vec::new();
+    for entry in catalog.entries() {
+        if matches!(entry.action, Action::Profile { .. })
+            || rows.iter().any(|(known, _)| known.id == entry.id)
+        {
+            continue;
+        }
+        rows.push((entry, evidence.assess(entry, records)));
+    }
+    rows.sort_by(|(a, first), (b, second)| {
+        second
+            .critical
+            .cmp(&first.critical)
+            .then(second.level.cmp(&first.level))
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    rows
 }
 
 #[cfg(test)]

@@ -3,9 +3,19 @@
   import Icon from '../components/Icon.svelte';
   import StatusBadge from '../components/StatusBadge.svelte';
   import { KINDS } from '../lib/flags';
+  import * as api from '../lib/api';
   import { toolbox } from '../lib/state.svelte';
 
   const queued = $derived(toolbox.queue.map((id) => toolbox.byId.get(id)).filter((place) => place !== undefined));
+
+  async function saveProfile() {
+    const name = await toolbox.ask('Save as a profile', 'A name for this plan, to run again later from Profiles.', 'My workstation');
+    if (!name) return;
+    const ids = [...toolbox.queue];
+    if (await toolbox.tell('Profile saved', () => api.saveProfile(name, ids))) {
+      await toolbox.reloadAreas();
+    }
+  }
 
   function move(index: number, by: number) {
     const queue = [...toolbox.queue];
@@ -24,6 +34,9 @@
     <div class="buttons">
       <button class="button ghost" disabled={queued.length === 0} onclick={() => (toolbox.queue = [])}>
         <Icon name="x" size={16} /> Clear
+      </button>
+      <button class="button" disabled={queued.length === 0} onclick={saveProfile}>
+        <Icon name="save" size={16} /> Save as profile
       </button>
       <button
         class="button primary"

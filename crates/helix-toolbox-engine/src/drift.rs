@@ -1084,6 +1084,24 @@ pub fn find(directory: &Path, name: &str) -> Option<(String, Baseline)> {
         .find(|(slug, _)| *slug == wanted)
 }
 
+/// Of the entries that would restore what is missing, those this machine
+/// can plan, and those it cannot.
+pub fn available(
+    ids: &[String],
+    catalog: &Catalog,
+    platform: &LinuxInfo,
+) -> (Vec<String>, Vec<String>) {
+    let nothing = crate::Machine {
+        holds: &|_| false,
+        on_path: &|_| false,
+    };
+    ids.iter().cloned().partition(|id| {
+        catalog.find(id).is_some_and(|entry| {
+            crate::plan_with([entry], platform, &|id| catalog.find(id), nothing).is_ok()
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -69,9 +69,41 @@ the checks of the package steps appear below, and **Close** records the run
 in the history. Entries that finished leave the Install Plan; the others
 stay.
 
-Not in the window yet: Doctor, Updates, Backups, Drift, Reliability,
-Hardware, Desktop, Profiles and Settings. They are in the terminal
-interface, `helix-toolbox`.
+The other tools, under **More tools** in the sidebar:
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/assets/screenshots/gui-doctor.png" width="820" alt="The window's Helix Doctor screen: the health checks with their state, and what the selected one found">
+</p>
+
+- **Helix Doctor**: the health checks, each with what it found and what
+  to do; a check with a repair, or an entry that addresses it, has
+  **Repair…**, which confirms like any run. The Helix Doctor area's
+  reports and tools are listed below the checks.
+- **Updates**: what each package tool has waiting, from what it already
+  knows, or checked online; **Update this channel** or **Update all**
+  runs the tools, and the entries with an update can be updated one by
+  one or all together.
+- **Backups**: the copies entries left beside the files they changed;
+  **Restore…** moves the current file aside first.
+- **Drift**: how this machine differs from a saved baseline or a profile,
+  the entries that would put back what is missing (add them to the plan
+  or run them), and **Save this machine as a baseline**.
+- **Reliability**: how far each entry has been tested, critical ones
+  first, with **Where it comes from**, the trust inspection.
+- **Hardware**: firmware updates through fwupd (typing FIRMWARE first, as
+  in the terminal interface), disks with **Check health…** (SMART, after
+  confirmation), temperatures, batteries, and the PCI and USB devices.
+- **Desktop**: the running desktop and its appearance, **Save this look**,
+  the saved looks put back after confirmation, and the entries for this
+  desktop.
+- **Settings**: what happens after a failed step and whether a snapshot
+  is taken first, the same `settings.toml` the terminal interface keeps
+  its own look in. The Install Plan's **Save as profile** adds a profile to
+  the Profiles area.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/assets/screenshots/gui-hardware.png" width="820" alt="The window's Hardware screen: firmware, disks with their health check, and the temperature sensors">
+</p>
 
 ## How it is built
 
@@ -104,9 +136,20 @@ Its commands:
 | `write`, `resize`, `stop` | what the user typed, the terminal's size, a stop |
 | `close_run` | records the run in the history |
 | `runs` | the history |
+| `save_profile` | the Install Plan as a profile |
+| `doctor`, `prepare_repair` | the health checks, and a repair ready to confirm |
+| `updates`, `prepare_channels`, `prepare_update` | the update channels, and updating channels or entries |
+| `list_backups`, `prepare_restore` | the backups, and a restore |
+| `drift_targets`, `drift_check`, `save_baseline` | what to compare with, a comparison, a new baseline |
+| `reliability`, `trust` | how entries are tested, and one entry's inspection |
+| `read_hardware`, `prepare_firmware`, `prepare_smart` | the hardware, a firmware update, a disk's health check |
+| `read_desktop`, `save_look`, `prepare_look` | the desktop and its looks, saving one, putting one back |
+| `read_settings`, `save_settings` | the run choices |
 
-The frontend only draws what the commands return and sends back what the
-user chose; it holds no catalog logic of its own.
+Every `prepare_*` command answers like `prepare`, with a plan waiting for
+`run`, so one confirmation dialog serves them all. The frontend only
+draws what the commands return and sends back what the user chose; it
+holds no catalog logic of its own.
 
 ### Working on it
 

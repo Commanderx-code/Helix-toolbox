@@ -174,3 +174,198 @@ input {
 .faint {
   color: var(--faint);
 }
+
+/* The layout the tool screens share: a title row, then a list beside a
+   details pane. */
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  padding: 20px 24px;
+}
+
+.screen-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.screen-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.split {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+.pane {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.pane.side {
+  flex: 0 0 360px;
+  padding: 18px;
+}
+
+.pane h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.pane h3 {
+  margin: 16px 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--purple);
+}
+
+.pane p {
+  margin: 6px 0;
+}
+
+.pane ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.pane .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.rows {
+  padding: 8px;
+}
+
+.row-item {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.row-item:hover {
+  background: var(--panel-raised);
+}
+
+.row-item.selected {
+  background: var(--selected);
+  border-color: var(--selected-line);
+}
+
+.row-item .name {
+  font-weight: 600;
+}
+
+.row-item .sub {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.heading-row {
+  margin: 12px 12px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--purple);
+}
+
+.pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pill.good {
+  color: var(--green);
+}
+
+.pill.notice {
+  color: var(--yellow);
+}
+
+.pill.problem {
+  color: var(--red);
+}
+
+.pill.plain {
+  color: var(--muted);
+  border-color: var(--line-strong);
+}
+
+.empty-note {
+  padding: 16px;
+  color: var(--muted);
+}
+
+.toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  cursor: pointer;
+}
+
+.toggle input {
+  margin-top: 3px;
+  accent-color: var(--cyan);
+}
+
+.toggle .title {
+  font-weight: 600;
+}
+
+.toggle .detail {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 18px;
+  margin: 0;
+}
+
+.kv dt {
+  color: var(--muted);
+}
+
+.kv dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

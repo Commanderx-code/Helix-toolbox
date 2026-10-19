@@ -116,7 +116,7 @@ export async function call(command: string, args: Record<string, unknown> = {}):
   switch (command) {
     case 'about':
       return {
-        version: '1.8.0',
+        version: '1.9.0',
         command_line: true,
         overview: {
           rows: [
@@ -167,6 +167,44 @@ export async function call(command: string, args: Record<string, unknown> = {}):
     }
     case 'runs':
       return RUNS;
+    case 'save_profile':
+      return `${args.name} (${(args.ids as string[]).length} entries) is saved.`;
+    case 'doctor':
+      return [
+        { id: 'network', title: 'Network', health: 'good', health_label: 'OK', summary: 'Connected through wlp0s20f3', evidence: [], advice: null, repair: null, entry: null },
+        { id: 'logrotate', title: 'Service logrotate.service', health: 'problem', health_label: 'Problem', summary: 'The system service logrotate.service failed', evidence: ['systemctl is-failed logrotate.service: failed'], advice: 'Look at journalctl -u logrotate.service', repair: { label: 'Restart logrotate.service', commands: ['sudo systemctl restart logrotate.service'] }, entry: null },
+        { id: 'disk', title: 'Disk space', health: 'good', health_label: 'OK', summary: '558.5 GiB free of 931.2 GiB on /', evidence: [], advice: null, repair: null, entry: null },
+      ];
+    case 'updates':
+      return {
+        online: args.online,
+        channels: [
+          { id: 'pacman', name: 'Arch packages', count: 58, summary: '58 updates', pending: [{ name: 'linux-zen', from: '7.2.9', to: '7.2.10' }], note: '', command_line: 'sudo pacman -Syu', caveat: null },
+          { id: 'flatpak', name: 'Flatpak (system)', count: 2, summary: '2 updates', pending: [], note: '', command_line: 'flatpak update -y', caveat: null },
+          { id: 'helixforge', name: 'Helix Toolbox', count: 0, summary: 'up to date', pending: [], note: '1.8.0; it fetches the latest release each time it starts', command_line: '', caveat: null },
+        ],
+      };
+    case 'list_backups':
+      return { snapshots: { tool: 'Snapper', restore: 'snapper list shows them; snapper undochange N puts one back.' }, backups: [{ index: 0, original: '/home/me/.config/fish/config.fish', backup: '/home/me/.config/fish/config.fish.helix-toolbox-backup-20261018', taken: '2026-10-18 21:04', system: false, directory: false }] };
+    case 'drift_targets':
+      return [{ key: 'baseline:laptop', kind: 'baseline', name: 'Laptop', detail: 'saved 2026-10-01 on Sample Linux: 42 entries, 12 configuration paths' }];
+    case 'drift_check':
+      return { report: { against: 'Laptop', matched: 40, differences: [{ kind: 'MissingEntry', subject: 'ripgrep', was: 'pacman 15.2.0', now: null, entry: 'ripgrep', note: '' }], unknown: [] }, restore: ['ripgrep'], unavailable: [] };
+    case 'save_baseline':
+      return `${args.name} is saved.`;
+    case 'reliability':
+      return { summary: 'The record covers 6 distributions and 9 virtual machines.', problems: [], rows: [{ id: 'git', name: 'Git', level: 'Tested in containers', explain: 'Installed and verified in distribution containers.', assessment: { level: 'ContainerTested', systems: ['Arch', 'Debian'], verified: '2026-10-19', evidence: ['archlinux: verified'], here: null, critical: false } }] };
+    case 'trust':
+      return `${args.id}\n\nInstaller   built in\nValidation  Tested in containers`;
+    case 'read_hardware':
+      return { firmware: { available: true, devices: [], updates: [], note: null }, disks: [{ name: 'nvme0n1', model: 'Sample SSD', bytes: 1000204886016, kind: 'NVMe', firmware: '1.0', celsius: 38 }], sensors: [{ chip: 'coretemp', label: 'Package', celsius: 52, high: 100, critical: 100 }], batteries: [{ name: 'BAT0', status: 'Charging', capacity: 80, health: 91, cycles: 120, model: null, technology: 'Li-ion' }], pci: [], usb: [] };
+    case 'read_desktop':
+      return { desktop: { kind: 'kde', name: 'KDE Plasma 6.8.0', session: 'Wayland', display_manager: { name: 'SDDM', files: [], theme: 'breeze' }, appearance: [{ key: 'theme', label: 'Global theme', value: 'Breeze Dark' }], owners: [], blocked: null }, looks: [], suggestions: [] };
+    case 'save_look':
+      return `${args.name} is saved.`;
+    case 'read_settings':
+    case 'save_settings':
+      return { keep_going: args.keepGoing ?? false, snapshots: args.snapshots ?? true, snapshot_tool: 'Snapper', path: '/home/me/.config/helix-toolbox/settings.toml' };
     default:
       return undefined;
   }

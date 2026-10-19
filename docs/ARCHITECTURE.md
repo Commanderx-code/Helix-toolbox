@@ -222,7 +222,10 @@ The window (`apps/helix-toolbox-gui`, [GUI.md](GUI.md)) is a second
 interface on the same engine: its Rust side answers the frontend's calls
 with shapes built field by field in `views.rs`, plans and checks through
 `confirmation::prepare()`, and forwards a run's execution events on a
-channel to an xterm.js terminal. It holds no catalog logic of its own.
+channel to an xterm.js terminal. Its tool screens call the same engine
+functions the terminal interface does (`doctor::examine`,
+`updates::overview`, `drift::compare`, `hardware::gather`,
+`desktop::detect` and the rest). It holds no catalog logic of its own.
 
 A header with the name, tagline and a status badge (with the emblem picture
 before a spaced-out name where the terminal shows pictures:

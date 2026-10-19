@@ -6,12 +6,13 @@ use anyhow::{Context, Result, bail};
 use clap::Subcommand;
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, printable};
+pub use helix_toolbox_engine::drift::available;
 use helix_toolbox_engine::{
-    Machine, doctor,
+    doctor,
     drift::{self, Baseline, Report},
     history,
     inventory::{Inventory, which},
-    plan_with, profiles,
+    profiles,
 };
 use helix_toolbox_platform::LinuxInfo;
 use std::path::{Path, PathBuf};
@@ -284,24 +285,6 @@ fn find_profile(catalog: &Catalog, name: &str) -> Result<(String, String, Vec<St
             _ => None,
         })
         .with_context(|| format!("no profile named '{name}'; see helix-toolbox list"))
-}
-
-/// Of the entries that would restore what is missing, those this machine
-/// can plan, and those it cannot.
-pub fn available(
-    ids: &[String],
-    catalog: &Catalog,
-    platform: &LinuxInfo,
-) -> (Vec<String>, Vec<String>) {
-    let nothing = Machine {
-        holds: &|_| false,
-        on_path: &|_| false,
-    };
-    ids.iter().cloned().partition(|id| {
-        catalog.find(id).is_some_and(|entry| {
-            plan_with([entry], platform, &|id| catalog.find(id), nothing).is_ok()
-        })
-    })
 }
 
 fn print_report(

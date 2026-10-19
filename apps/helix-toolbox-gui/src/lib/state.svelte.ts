@@ -1,5 +1,6 @@
 // The window's state: the catalog, how entries stand, the pins and the
-// Install Plan's queue. The run itself lives in RunPanel.
+// Install Plan's queue, and the dialogs every screen uses. The run itself
+// lives in RunPanel.
 
 import * as api from './api';
 import type { About, AreaView, EntryView, ItemView, Prepared, StatusView } from './types';
@@ -9,10 +10,28 @@ export type Screen =
   | { kind: 'area'; index: number }
   | { kind: 'favorites' }
   | { kind: 'plan' }
-  | { kind: 'history' };
+  | { kind: 'history' }
+  | { kind: 'doctor' }
+  | { kind: 'updates' }
+  | { kind: 'backups' }
+  | { kind: 'drift' }
+  | { kind: 'reliability' }
+  | { kind: 'hardware' }
+  | { kind: 'desktop' }
+  | { kind: 'settings' };
 
 /** An entry where it is listed: its area and group. */
 export type Placed = { entry: EntryView; area: string; group: string | null };
+
+/** A question with one text answer, such as a name. */
+export type Prompt = {
+  title: string;
+  text: string;
+  placeholder?: string;
+  /** The exact word the answer must be, for a dangerous action. */
+  expect?: string;
+  resolve: (answer: string | null) => void;
+};
 
 function placed(areas: AreaView[]): Placed[] {
   const out: Placed[] = [];
@@ -46,6 +65,9 @@ class Toolbox {
   /** Whether the run in the window is still going. */
   busy = $state(false);
   error = $state<string | null>(null);
+  /** Something to read, such as a result or an inspection. */
+  notice = $state<{ title: string; text: string; mono?: boolean } | null>(null);
+  prompt = $state<Prompt | null>(null);
 
   everything = $derived(placed(this.areas));
   byId = $derived(new Map(this.everything.map((place) => [place.entry.id, place])));
@@ -60,6 +82,15 @@ class Toolbox {
       this.error = String(error);
     }
     await this.refresh();
+  }
+
+  /** Read the catalog again, after a profile was saved. */
+  async reloadAreas() {
+    try {
+      this.areas = await api.areas();
+    } catch (error) {
+      this.error = String(error);
+    }
   }
 
   /** Check again how package entries stand; the old answers stay meanwhile. */
@@ -90,6 +121,13 @@ class Toolbox {
     }
   }
 
+  /** Queue these entries, those not queued yet; how many were added. */
+  enqueue(ids: string[]): number {
+    const added = ids.filter((id) => !this.isQueued(id) && this.entry(id)?.queueable);
+    this.queue = [...this.queue, ...added];
+    return added.length;
+  }
+
   async togglePin(id: string) {
     try {
       this.favorites = await api.pin(id, !this.favorites.includes(id));
@@ -100,11 +138,16 @@ class Toolbox {
 
   /** Have the engine plan and check these entries, then ask. */
   async review(ids: string[], fromPlan: boolean) {
-    if (ids.length === 0 || this.preparing) return;
+    if (ids.length === 0) return;
+    await this.reviewWith(() => api.prepare(ids), ids, fromPlan);
+  }
+
+  /** Ask about whatever `prepared` plans: a repair, an update, a restore. */
+  async reviewWith(prepared: () => Promise<Prepared>, ids: string[] = [], fromPlan = false) {
+    if (this.preparing) return;
     this.preparing = true;
     try {
-      const prepared = await api.prepare(ids);
-      this.confirming = { prepared, ids, fromPlan };
+      this.confirming = { prepared: await prepared(), ids, fromPlan };
     } catch (error) {
       this.error = String(error);
     } finally {
@@ -137,6 +180,33 @@ class Toolbox {
       this.queue = this.queue.filter((id) => !finished.includes(id));
     }
     await this.refresh();
+  }
+
+  /** Ask for a name or a word; null when the user cancels. */
+  ask(title: string, text: string, placeholder?: string, expect?: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      this.prompt = {
+        title,
+        text,
+        placeholder,
+        expect,
+        resolve: (answer) => {
+          this.prompt = null;
+          resolve(answer);
+        },
+      };
+    });
+  }
+
+  /** Show what a command said, or the problem it had. */
+  async tell(title: string, work: () => Promise<string>, mono = false) {
+    try {
+      this.notice = { title, text: await work(), mono };
+      return true;
+    } catch (error) {
+      this.notice = { title, text: String(error) };
+      return false;
+    }
   }
 
   /** Entries matching the search, across every area. */

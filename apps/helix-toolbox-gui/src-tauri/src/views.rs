@@ -5,10 +5,13 @@ use base64::Engine as _;
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, Item};
 use helix_toolbox_engine::{
+    backups::Backup,
     confirmation::{Line, Prepared},
+    doctor::{Diagnosis, Health},
     execution::ExecutionEvent,
     history::Record,
     inventory::Status,
+    updates::Channel,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -168,6 +171,125 @@ pub fn event(event: &ExecutionEvent) -> Value {
     }
 }
 
+/// A health check's finding, for the Doctor screen.
+#[derive(Debug, Serialize)]
+pub struct DiagnosisView {
+    pub id: String,
+    pub title: String,
+    /// good, notice or problem.
+    pub health: &'static str,
+    pub health_label: &'static str,
+    pub summary: String,
+    pub evidence: Vec<String>,
+    pub advice: Option<String>,
+    /// A repair the engine can run, with the commands it would run.
+    pub repair: Option<RepairView>,
+    /// The catalog entry that addresses it, when there is one.
+    pub entry: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RepairView {
+    pub label: String,
+    pub commands: Vec<String>,
+}
+
+pub fn diagnosis(diagnosis: &Diagnosis) -> DiagnosisView {
+    DiagnosisView {
+        id: diagnosis.id.clone(),
+        title: diagnosis.title.clone(),
+        health: match diagnosis.health {
+            Health::Good => "good",
+            Health::Notice => "notice",
+            Health::Problem => "problem",
+        },
+        health_label: diagnosis.health.label(),
+        summary: diagnosis.summary.clone(),
+        evidence: diagnosis.evidence.clone(),
+        advice: diagnosis.advice.clone(),
+        repair: diagnosis.repair.as_ref().map(|repair| RepairView {
+            label: repair.label.clone(),
+            commands: repair
+                .commands
+                .iter()
+                .map(|command| command.join(" "))
+                .collect(),
+        }),
+        entry: diagnosis.entry.clone(),
+    }
+}
+
+/// An update channel, for the Updates screen.
+#[derive(Debug, Serialize)]
+pub struct ChannelView {
+    pub id: String,
+    pub name: String,
+    /// How many updates wait; none when the channel cannot count them.
+    pub count: Option<usize>,
+    pub summary: String,
+    pub pending: Option<Vec<PendingView>>,
+    pub note: String,
+    /// What updating runs; empty when there is nothing to run.
+    pub command_line: String,
+    pub caveat: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PendingView {
+    pub name: String,
+    pub from: Option<String>,
+    pub to: Option<String>,
+}
+
+pub fn channel(channel: &Channel) -> ChannelView {
+    ChannelView {
+        id: channel.id.clone(),
+        name: channel.name.clone(),
+        count: channel.count(),
+        summary: channel.summary(),
+        pending: channel.pending.as_ref().map(|pending| {
+            pending
+                .iter()
+                .map(|item| PendingView {
+                    name: helix_toolbox_core::printable(&item.name),
+                    from: item.from.clone(),
+                    to: item.to.clone(),
+                })
+                .collect()
+        }),
+        note: channel.note.clone(),
+        command_line: if channel.commands.is_empty() {
+            String::new()
+        } else {
+            channel.command_line()
+        },
+        caveat: channel.caveat.clone(),
+    }
+}
+
+/// A backup Helix Toolbox or an installer left beside a file.
+#[derive(Debug, Serialize)]
+pub struct BackupView {
+    /// Its place in the list, for `prepare_restore`.
+    pub index: usize,
+    pub original: String,
+    pub backup: String,
+    pub taken: Option<String>,
+    pub system: bool,
+    pub directory: bool,
+}
+
+pub fn backup(index: usize, backup: &Backup) -> BackupView {
+    BackupView {
+        index,
+        original: helix_toolbox_core::printable(&backup.original.display().to_string()),
+        backup: helix_toolbox_core::printable(&backup.backup.display().to_string()),
+        taken: backup.taken.clone(),
+        system: backup.system,
+        directory: backup.directory,
+    }
+}
+
 /// A past run, for the History screen.
 #[derive(Debug, Serialize)]
 pub struct RecordView {
@@ -233,6 +355,51 @@ mod tests {
             progress,
             json!({"event": "progress", "ended": 1, "total": 2})
         );
+    }
+
+    #[test]
+    fn a_diagnosis_and_a_channel_keep_what_the_screens_show() {
+        let found = Diagnosis {
+            id: "dns".into(),
+            title: "Name resolution".into(),
+            health: Health::Problem,
+            summary: "nothing resolves".into(),
+            evidence: vec!["resolv.conf is empty".into()],
+            advice: Some("set a nameserver".into()),
+            repair: Some(helix_toolbox_engine::doctor::Repair {
+                label: "Restart systemd-resolved".into(),
+                commands: vec![vec![
+                    "sudo".into(),
+                    "systemctl".into(),
+                    "restart".into(),
+                    "systemd-resolved".into(),
+                ]],
+            }),
+            entry: None,
+        };
+        let view = diagnosis(&found);
+        assert_eq!(view.health, "problem");
+        assert_eq!(view.health_label, found.health.label());
+        assert_eq!(
+            view.repair.as_ref().unwrap().commands,
+            ["sudo systemctl restart systemd-resolved"]
+        );
+        let channel = channel(&Channel {
+            id: "pacman".into(),
+            name: "Arch packages".into(),
+            pending: Some(vec![helix_toolbox_engine::updates::Pending {
+                name: "ripgrep".into(),
+                from: Some("1".into()),
+                to: Some("2".into()),
+            }]),
+            note: String::new(),
+            commands: vec![vec!["sudo".into(), "pacman".into(), "-Syu".into()]],
+            requires: Vec::new(),
+            caveat: None,
+        });
+        assert_eq!(channel.count, Some(1));
+        assert_eq!(channel.command_line, "sudo pacman -Syu");
+        assert_eq!(channel.pending.unwrap()[0].to.as_deref(), Some("2"));
     }
 
     #[test]

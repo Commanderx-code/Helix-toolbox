@@ -58,6 +58,30 @@ pub fn run_choices(path: &Path) -> RunChoices {
     choices
 }
 
+/// Save the run choices into `settings.toml`, leaving every other setting
+/// in it (the terminal interface's look) as it is.
+pub fn save_run_choices(path: &Path, choices: RunChoices) -> std::io::Result<()> {
+    let mut table = fs::read_to_string(path)
+        .ok()
+        .and_then(|text| text.parse::<toml::Table>().ok())
+        .unwrap_or_default();
+    table.insert(
+        "keep_going".into(),
+        toml::Value::Boolean(choices.keep_going),
+    );
+    table.insert("snapshots".into(), toml::Value::Boolean(choices.snapshots));
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let text = toml::to_string(&table).map_err(std::io::Error::other)?;
+    let staging = path.with_extension("toml.new");
+    fs::write(
+        &staging,
+        format!("# Helix Toolbox interface settings; Settings in the menu changes them.\n{text}"),
+    )?;
+    fs::rename(&staging, path)
+}
+
 /// Pinned entries, kept beside the settings as `favorites.toml`.
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
@@ -158,6 +182,37 @@ mod tests {
         let path = favorites_path(&fresh.path().join("settings.toml"));
         save_favorites(&path, &["fzf".into()]).unwrap();
         assert!(!fresh.path().join(OLD_FAVORITES).exists());
+    }
+
+    #[test]
+    fn saving_run_choices_keeps_the_other_settings() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("helix-toolbox/settings.toml");
+        save_run_choices(
+            &path,
+            RunChoices {
+                keep_going: true,
+                snapshots: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            run_choices(&path),
+            RunChoices {
+                keep_going: true,
+                snapshots: false,
+            }
+        );
+        fs::write(
+            &path,
+            "theme = \"neon\"\nicons = false\nkeep_going = true\n",
+        )
+        .unwrap();
+        save_run_choices(&path, RunChoices::default()).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("theme = \"neon\""), "{text}");
+        assert!(text.contains("icons = false"));
+        assert_eq!(run_choices(&path), RunChoices::default());
     }
 
     #[test]

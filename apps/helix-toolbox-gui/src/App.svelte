@@ -10,6 +10,15 @@
   import Favorites from './screens/Favorites.svelte';
   import History from './screens/History.svelte';
   import Plan from './screens/Plan.svelte';
+  import Doctor from './screens/Doctor.svelte';
+  import Updates from './screens/Updates.svelte';
+  import Backups from './screens/Backups.svelte';
+  import Drift from './screens/Drift.svelte';
+  import Reliability from './screens/Reliability.svelte';
+  import Hardware from './screens/Hardware.svelte';
+  import Desktop from './screens/Desktop.svelte';
+  import Settings from './screens/Settings.svelte';
+  import Dialogs from './components/Dialogs.svelte';
 
   toolbox.load();
 </script>
@@ -29,6 +38,22 @@
         <Plan />
       {:else if toolbox.screen.kind === 'history'}
         <History />
+      {:else if toolbox.screen.kind === 'doctor'}
+        <Doctor />
+      {:else if toolbox.screen.kind === 'updates'}
+        <Updates />
+      {:else if toolbox.screen.kind === 'backups'}
+        <Backups />
+      {:else if toolbox.screen.kind === 'drift'}
+        <Drift />
+      {:else if toolbox.screen.kind === 'reliability'}
+        <Reliability />
+      {:else if toolbox.screen.kind === 'hardware'}
+        <Hardware />
+      {:else if toolbox.screen.kind === 'desktop'}
+        <Desktop />
+      {:else if toolbox.screen.kind === 'settings'}
+        <Settings />
       {/if}
     </main>
   </div>
@@ -56,6 +81,7 @@
   </div>
 {/if}
 
+<Dialogs />
 <ConfirmDialog />
 {#if toolbox.running}
   <RunPanel />

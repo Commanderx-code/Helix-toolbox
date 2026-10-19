@@ -17,9 +17,8 @@ and other terminals that show pictures, the header shows the Helix Toolbox
 emblem beside the name.
 `t` cycles the themes: solid, transparent, compatible (sixteen colors) and
 monochrome (no color, the theme `NO_COLOR` selects for a run). The same
-catalog opens in a window, `helix-toolbox-gui` ([GUI.md](GUI.md)), for
-browsing, planning and running; the other screens are in the terminal for
-now.
+catalog and screens open in a window too, `helix-toolbox-gui`
+([GUI.md](GUI.md)).
 
 ## The first start
 

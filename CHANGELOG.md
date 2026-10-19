@@ -4,6 +4,22 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.9.0
+
+- **The window has every screen.** Helix Doctor (the checks, each with
+  what it found and its repair), Updates (the channels, checked online on
+  request, and the entries with an update), Backups (restore one), Drift
+  (compare with a baseline or a profile, put back what is missing, save
+  this machine as a baseline), Reliability (how far each entry is tested,
+  and where it comes from), Hardware (firmware updates, disk health,
+  temperatures, batteries, devices), Desktop (the appearance, saved looks
+  put back, the entries for this desktop) and Settings (the run choices,
+  shared with the terminal interface). The Install Plan saves as a
+  profile. Every action goes through the same confirmation as before.
+- **A new icon** for the window and the menu entries.
+- **In the engine**, for both interfaces: `reliability::rows`,
+  `trust::text`, `drift::available` and `settings::save_run_choices`.
+
 ## v1.8.0
 
 - **A window.** `helix-toolbox-gui` opens the catalog in a Tauri window:

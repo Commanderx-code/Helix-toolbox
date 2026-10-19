@@ -437,5 +437,5 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       flags, Favorites, the Install Plan, History, the confirmation, and the
       run in an embedded terminal drawn from those events, in 1.8
 - [x] Window and launcher icons made from `assets/icon.png`
-- The other screens in the window: Doctor, Updates, Backups, Drift,
-      Reliability, Hardware, Desktop, Profiles, Settings
+- [x] The other screens in the window: Doctor, Updates, Backups, Drift,
+      Reliability, Hardware, Desktop, Profiles, Settings, in 1.9

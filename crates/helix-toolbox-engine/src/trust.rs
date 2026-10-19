@@ -673,6 +673,80 @@ impl ForManagerAny for helix_toolbox_core::PackageNames {
     }
 }
 
+/// An inspection as text, for the command line and the menu.
+pub fn text(found: &Inspection) -> String {
+    let mut text = format!("{} ({})\n\n", found.name, found.id);
+    text.push_str(&format!("Installer   {}\n", found.origin));
+    if let Some(file) = &found.file {
+        text.push_str(&format!("File        scripts/{file}\n"));
+    }
+    if let Some(sum) = &found.sha256 {
+        text.push_str(&format!("SHA-256     {sum}\n"));
+    }
+    if let Some(license) = &found.installer_license {
+        text.push_str(&format!("License     {license} for the installer"));
+        match &found.package_license {
+            Some(software) => text.push_str(&format!("; {software} for the software\n")),
+            None => text.push('\n'),
+        }
+    }
+    let section = |text: &mut String, title: &str, facts: &[Fact], empty: &str| {
+        text.push_str(&format!("\n{title}\n"));
+        if facts.is_empty() {
+            text.push_str(&format!("  {empty}\n"));
+        }
+        for fact in facts {
+            let subject = if fact.subject == "Download" {
+                String::new()
+            } else {
+                format!("{}: ", fact.subject)
+            };
+            text.push_str(&format!(
+                "  {:<19} {subject}{}\n",
+                fact.standing.label(),
+                fact.text
+            ));
+        }
+    };
+    section(
+        &mut text,
+        "Release provenance (the Helix Toolbox build it ships in)",
+        &found.provenance,
+        "none",
+    );
+    section(
+        &mut text,
+        "Package integrity (checked by the package tools)",
+        &found.integrity,
+        "it installs no packages Helix Toolbox knows of",
+    );
+    section(
+        &mut text,
+        "Downloads the installer makes itself",
+        &found.downloads,
+        "none found in its script",
+    );
+    text.push_str("\nPrivileges\n");
+    for line in &found.privileges {
+        text.push_str(&format!("  {line}\n"));
+    }
+    text.push_str(&format!(
+        "\nValidation  {}{}\n",
+        found.validation.level.label(),
+        found
+            .validation
+            .verified
+            .as_deref()
+            .map(|date| format!(", last verified {date}"))
+            .unwrap_or_default()
+    ));
+    text.push_str(&format!("  {}\n", found.validation.level.explain()));
+    for line in &found.validation.evidence {
+        text.push_str(&format!("  {}\n", printable(line)));
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
