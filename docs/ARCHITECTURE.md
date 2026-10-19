@@ -207,9 +207,9 @@ panel too.
 
 ## Interface
 
-A header with the name, tagline and a status badge (the banner picture
-instead of the name and tagline where the terminal shows pictures:
-`tui/banner.rs` asks it once at start and encodes the built-in copy for
+A header with the name, tagline and a status badge (with the emblem picture
+before a spaced-out name where the terminal shows pictures:
+`tui/banner.rs` asks it once at start and encodes the built-in emblem for
 Kitty's graphics or Sixel); a sidebar menu of
 screens in two sections; the current screen; a hint line. The screens are
 the Dashboard (system overview and quick actions), one screen per catalog

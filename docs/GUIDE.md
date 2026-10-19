@@ -13,7 +13,8 @@ Run `helix-toolbox` as your normal user, not with `sudo`: entries that change
 the system ask for your password inside the run, when they need it. The
 terminal should be at least 100 columns by 25 rows; a Nerd Font shows the
 icons (Settings turns them off otherwise). In Ghostty, Kitty, WezTerm, foot
-and other terminals that show pictures, the header is the Helix Toolbox banner.
+and other terminals that show pictures, the header shows the Helix Toolbox
+emblem beside the name.
 `t` cycles the themes: solid, transparent, compatible (sixteen colors) and
 monochrome (no color, the theme `NO_COLOR` selects for a run).
 

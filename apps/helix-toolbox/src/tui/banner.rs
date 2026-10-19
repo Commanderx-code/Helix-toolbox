@@ -1,6 +1,6 @@
-//! The Helix Toolbox banner, drawn as a picture in the header of terminals that
-//! can show one (with Kitty's graphics or Sixel); the others keep the text
-//! header.
+//! The Helix Toolbox emblem, drawn as a picture in the header of terminals that
+//! can show one (with Kitty's graphics or Sixel), with the name beside it in
+//! the theme's colors; the others keep the text header.
 
 use ratatui::layout::Size;
 use ratatui_image::{
@@ -15,10 +15,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// A smaller copy of `assets/banner.png`, so the program stays light.
-const BANNER: &[u8] = include_bytes!("banner.png");
+/// The emblem of `assets/logo.png` on a clear background, small so the
+/// program stays light. The whole banner, at four rows, is too small to read.
+const BANNER: &[u8] = include_bytes!("emblem.png");
 
-/// The height of the banner in rows.
+/// The height of the emblem in rows.
 pub const ROWS: u16 = 4;
 
 /// Kitty's graphics query, the cell size in pixels, then the device
@@ -157,7 +158,7 @@ fn read_replies(terminal: &mut File) -> Vec<u8> {
     replies
 }
 
-/// The banner encoded for this terminal, `ROWS` high.
+/// The emblem encoded for this terminal, `ROWS` high.
 pub fn encode(picker: &Picker) -> Option<Protocol> {
     let image = image::load_from_memory_with_format(BANNER, image::ImageFormat::Png).ok()?;
     let font = picker.font_size();
@@ -219,15 +220,16 @@ mod tests {
     }
 
     #[test]
-    fn the_banner_is_four_rows_and_keeps_its_shape() {
+    fn the_emblem_is_four_rows_and_keeps_its_shape() {
         #[allow(deprecated)]
         let mut picker = Picker::from_fontsize(FontSize::new(9, 19));
         picker.set_protocol_type(ProtocolType::Kitty);
-        let banner = encode(&picker).expect("the built-in banner encodes");
+        let banner = encode(&picker).expect("the built-in emblem encodes");
         assert_eq!(banner.size().height, ROWS);
-        // 4 rows of 19 pixels at the banner's 2.6:1 shape, in 9-pixel columns.
+        // 4 rows of 19 pixels at the emblem's nearly square shape, in 9-pixel
+        // columns.
         assert!(
-            (21..=23).contains(&banner.size().width),
+            (8..=10).contains(&banner.size().width),
             "{:?}",
             banner.size()
         );

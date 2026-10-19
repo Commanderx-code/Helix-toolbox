@@ -420,9 +420,9 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 
 ## Logo and banner (done)
 
-- `assets/`: the banner (README and the menu's header), the transparent logo,
-  the app icon and the README's screenshots
-- The menu's header shows the banner in terminals with Kitty's graphics or
+- `assets/`: the banner (README), the logo (its emblem is the menu's
+  header), the app icon and the README's screenshots
+- The menu's header shows the emblem in terminals with Kitty's graphics or
   Sixel, found by one query at start with a 0.4 second limit; Konsole, tmux,
   screen, the console, plain icons and the compatible theme keep the text
   header

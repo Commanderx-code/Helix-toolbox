@@ -41,6 +41,11 @@ const SIDEBAR_WIDTH: u16 = 30;
 const HEADER_HEIGHT: u16 = 4;
 /// Room kept beside the banner for the status on the right.
 const STATUS_WIDTH: u16 = 18;
+/// The name beside the emblem, spaced out as on the logo.
+const WORDMARK: [&str; 2] = ["H E L I X", "T O O L B O X"];
+const TAGLINE: &str = "BUILD • CONFIGURE • OPTIMIZE";
+/// Room the name and tagline take beside the emblem.
+const WORDMARK_WIDTH: u16 = 30;
 const HIGHLIGHT: &str = "> ";
 const ROOT_WARNING: &str = "You are running Helix Toolbox as root.\n\nEvery entry then has full access to the system. The entries expect to run as your normal user and ask for your password when they need it.";
 const FLAGS_GUIDE: &str = "The flags column names what an entry does:
@@ -618,10 +623,12 @@ impl App {
     }
 
     /// The banner, unless icons are off, a theme with few or no colors is in use,
-    /// or the terminal is too narrow for it and the status beside it.
+    /// or the terminal is too narrow for it, the name and the status beside it.
     fn banner(&self, width: u16) -> Option<&Protocol> {
         self.banner.as_ref().filter(|banner| {
-            self.icons && self.theme.colorful() && banner.size().width + 2 + STATUS_WIDTH <= width
+            self.icons
+                && self.theme.colorful()
+                && banner.size().width + 4 + WORDMARK_WIDTH + STATUS_WIDTH <= width
         })
     }
 
@@ -1062,13 +1069,26 @@ impl App {
                 Image::new(banner),
                 Rect::new(area.x + 2, area.y, size.width, size.height).intersection(area),
             );
-            let middle = Rect::new(
-                area.x,
-                area.y + size.height.saturating_sub(1) / 2,
-                area.width.saturating_sub(2),
-                1,
+            // The name and tagline in the middle two rows, beside the emblem.
+            let top = area.y + size.height.saturating_sub(2) / 2;
+            let text = Rect::new(
+                area.x + size.width + 4,
+                top,
+                area.width.saturating_sub(size.width + 6),
+                2,
             )
             .intersection(area);
+            let [helix, toolbox] = WORDMARK;
+            let brand = Text::from(vec![
+                Line::from(vec![
+                    Span::styled(helix, Style::default().fg(self.theme.focused()).bold()),
+                    Span::raw("   "),
+                    Span::styled(toolbox, Style::default().fg(self.theme.title()).bold()),
+                ]),
+                Line::styled(TAGLINE, Style::default().fg(self.theme.faint())),
+            ]);
+            frame.render_widget(Paragraph::new(brand), text);
+            let middle = Rect::new(area.x, top, area.width.saturating_sub(2), 1).intersection(area);
             frame.render_widget(
                 Paragraph::new(Line::styled(status, Style::default().fg(color).bold()))
                     .alignment(Alignment::Right),
@@ -1105,10 +1125,7 @@ impl App {
                 Span::styled("HELIX", Style::default().fg(self.theme.focused()).bold()),
                 Span::styled(" TOOLBOX", Style::default().fg(self.theme.title()).bold()),
             ]),
-            Line::styled(
-                "BUILD • CONFIGURE • OPTIMIZE",
-                Style::default().fg(self.theme.faint()),
-            ),
+            Line::styled(TAGLINE, Style::default().fg(self.theme.faint())),
         ]);
         frame.render_widget(Paragraph::new(brand), text);
         frame.render_widget(
@@ -5609,7 +5626,14 @@ mod tests {
         assert!(lines[0].contains('\u{10EEEE}'), "{}", lines[0]);
         assert!(lines[3].contains('\u{10EEEE}'));
         assert!(lines[1].contains("SYSTEM READY"));
-        assert!(!text.contains("BUILD • CONFIGURE"));
+        // The name and tagline beside the emblem, in the middle rows.
+        assert!(
+            lines[1].contains("H E L I X   T O O L B O X"),
+            "{}",
+            lines[1]
+        );
+        assert!(lines[2].contains("BUILD • CONFIGURE • OPTIMIZE"));
+        assert!(!text.contains("HELIX TOOLBOX"));
         // Four rows of picture, then the rule and the sidebar below it.
         assert!(lines[4].contains('─'));
         assert!(lines[6].contains("MAIN MENU"));
@@ -5619,10 +5643,10 @@ mod tests {
     fn the_text_header_returns_without_icons_in_sixteen_colors_or_when_narrow() {
         let mut app = with_banner(app());
         app.icons = false;
-        assert!(screen(&mut app, 120, 40).contains("BUILD • CONFIGURE"));
+        assert!(screen(&mut app, 120, 40).contains("HELIX TOOLBOX"));
         app.icons = true;
         app.theme = Theme::Compatible;
-        assert!(screen(&mut app, 120, 40).contains("BUILD • CONFIGURE"));
+        assert!(screen(&mut app, 120, 40).contains("HELIX TOOLBOX"));
         app.theme = Theme::Solid;
         app.size_bypass = true;
         let narrow = screen(&mut app, 40, 30);

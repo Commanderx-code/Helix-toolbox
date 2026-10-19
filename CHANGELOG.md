@@ -4,6 +4,13 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.7.5
+
+- **A clearer header.** Where the terminal shows pictures, the header now
+  shows the HT emblem with the name and tagline beside it in the theme's
+  cyan and purple, instead of the whole banner shrunk to four rows, where
+  its lettering could not be read.
+
 ## v1.7.0
 
 - **HelixForge is now Helix Toolbox.** The command is `helix-toolbox`, or

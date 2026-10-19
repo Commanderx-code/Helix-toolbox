@@ -536,7 +536,9 @@ fn the_banner_is_drawn_where_the_terminal_shows_pictures() {
     tui.wait_for(&["SYSTEM READY", "MAIN MENU"]);
     let screen = tui.contents();
     assert!(screen.contains('\u{10EEEE}'), "{screen}");
-    assert!(!screen.contains("BUILD • CONFIGURE"));
+    // The spaced-out name beside the emblem, not the text header's.
+    assert!(screen.contains("H E L I X   T O O L B O X"), "{screen}");
+    assert!(!screen.contains("HELIX TOOLBOX"));
     // The answers were all read, so the first key reaches the menu.
     tui.keys("?");
     tui.wait_for(&[" Keys "]);
