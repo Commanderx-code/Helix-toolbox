@@ -436,6 +436,7 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       [GUI.md](GUI.md)): the Dashboard, the areas with search, status and
       flags, Favorites, the Install Plan, History, the confirmation, and the
       run in an embedded terminal drawn from those events, in 1.8
-- [x] Window and launcher icons made from `assets/icon.png`
+- [x] Window and launcher icons made from `assets/icon.png`, with a flat
+      drawing of it for menu sizes (`assets/icon-small.svg`)
 - [x] The other screens in the window: Doctor, Updates, Backups, Drift,
       Reliability, Hardware, Desktop, Profiles, Settings, in 1.9

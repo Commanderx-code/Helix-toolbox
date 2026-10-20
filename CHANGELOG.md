@@ -4,6 +4,13 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.9.1
+
+- **The icon at menu size.** Both packages ship the icon in every size a
+  menu or panel asks for; at 16 to 48 pixels it is a flat drawing of the
+  same tile, letters and strand (`assets/icon-small.svg`), where the full
+  picture turned into a dark blur. `scripts/icons.sh` renders the sizes.
+
 ## v1.9.0
 
 - **The window has every screen.** Helix Doctor (the checks, each with

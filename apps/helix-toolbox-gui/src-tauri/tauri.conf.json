@@ -36,7 +36,11 @@
     "shortDescription": "Build, configure and optimize a Linux machine",
     "longDescription": "Helix Toolbox in a window: browse the catalog, queue entries in the Install Plan, review what each step does, and run it with an embedded terminal for prompts and passwords.",
     "icon": [
+      "icons/16x16.png",
+      "icons/24x24.png",
       "icons/32x32.png",
+      "icons/48x48.png",
+      "icons/64x64.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.png"

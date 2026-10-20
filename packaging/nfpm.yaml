@@ -81,8 +81,26 @@ contents:
     dst: /usr/share/man/man1/
   - src: packaging/helix-toolbox.desktop
     dst: /usr/share/applications/helix-toolbox.desktop
+  # The icon: assets/icon.png at 512 and, from scripts/icons.sh, each size a
+  # menu or panel asks for (the small ones drawn flat, from icon-small.svg).
   - src: assets/icon.png
     dst: /usr/share/icons/hicolor/512x512/apps/helix-toolbox.png
+  - src: assets/icons/256x256.png
+    dst: /usr/share/icons/hicolor/256x256/apps/helix-toolbox.png
+  - src: assets/icons/128x128.png
+    dst: /usr/share/icons/hicolor/128x128/apps/helix-toolbox.png
+  - src: assets/icons/64x64.png
+    dst: /usr/share/icons/hicolor/64x64/apps/helix-toolbox.png
+  - src: assets/icons/48x48.png
+    dst: /usr/share/icons/hicolor/48x48/apps/helix-toolbox.png
+  - src: assets/icons/32x32.png
+    dst: /usr/share/icons/hicolor/32x32/apps/helix-toolbox.png
+  - src: assets/icons/24x24.png
+    dst: /usr/share/icons/hicolor/24x24/apps/helix-toolbox.png
+  - src: assets/icons/22x22.png
+    dst: /usr/share/icons/hicolor/22x22/apps/helix-toolbox.png
+  - src: assets/icons/16x16.png
+    dst: /usr/share/icons/hicolor/16x16/apps/helix-toolbox.png
   - src: README.md
     dst: /usr/share/doc/helix-toolbox/README.md
   - src: docs/JSON.md

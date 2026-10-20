@@ -27,7 +27,8 @@ sudo zypper install --allow-unsigned-rpm ./helix-toolbox-gui-1.8.0-1.x86_64.rpm 
 chmod +x helix-toolbox-gui_1.8.0_amd64.AppImage && ./helix-toolbox-gui_1.8.0_amd64.AppImage   # any distribution
 ```
 
-The packages add a menu entry, **Helix Toolbox**, with the icon. The
+The packages add a menu entry, **Helix Toolbox**, with the icon (drawn flat
+at menu sizes, 16 to 48 pixels, where the full picture would blur). The
 window is drawn by WebKitGTK 4.1, which the Debian and RPM packages install
 with it; the AppImage carries its libraries. The files are checked like the
 others: `sha256sum --check --ignore-missing SHA256SUMS` and
@@ -118,6 +119,7 @@ apps/helix-toolbox-gui/
     src/main.rs        the commands, and the run's events forwarded on a Tauri channel
     src/views.rs       what the window reads, built field by field from the engine's types
     tauri.conf.json    the window, the content security policy, the bundles
+    icons/             the icon in the sizes the bundles ship, written by scripts/icons.sh
 ```
 
 The Rust side is a separate workspace because it needs WebKitGTK and the
@@ -168,6 +170,8 @@ In `src-tauri`, `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and
 when npm and WebKitGTK are installed, and the Checks workflow always.
 `npx tauri build --bundles deb,rpm,appimage` makes the packages, as the
 release does.
+After a change to `assets/icon.png` or `assets/icon-small.svg`, run
+`scripts/icons.sh` from the repository root and commit the sizes it writes.
 
 The window takes `--catalog-dir DIR`, like the command line, to read a
 catalog from a directory; with `tests/fixtures` it works against the

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The icon at menu sizes (16 to 48 pixels), where the detail of icon.png
+  turns to noise: the same tile, letters and strand, drawn flat.
+  scripts/icons.sh renders it into the sizes the packages ship.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a3570"/>
+      <stop offset="1" stop-color="#0d0f2c"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3bd2ff"/>
+      <stop offset="1" stop-color="#c04cf0"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.55" stop-color="#d4d6e6"/>
+      <stop offset="1" stop-color="#9ea2bd"/>
+    </linearGradient>
+    <linearGradient id="strand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3bd2ff"/>
+      <stop offset="1" stop-color="#d040ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="2.5" y="2.5" width="59" height="59" rx="14" fill="url(#tile)" stroke="url(#rim)" stroke-width="3"/>
+  <path fill="url(#metal)" d="M10 16h7v10h6V16h7v32h-7V36h-6v12h-7z"/>
+  <path d="M21 10c26 6 -2 30 24 44" fill="none" stroke="url(#strand)" stroke-width="5" stroke-linecap="round"/>
+  <path fill="url(#metal)" d="M32 16h22v7h-7.5v25h-7V23H32z"/>
+</svg>
