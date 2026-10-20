@@ -11,8 +11,10 @@ import type {
   Diagnosis,
   DriftView,
   Hardware,
+  PickView,
   Prepared,
   RecordView,
+  SetupView,
   ReliabilityView,
   RunEvent,
   SettingsView,
@@ -69,6 +71,10 @@ export const prepareSmart = (disk: string) => call<Prepared>('prepare_smart', { 
 export const desktop = () => call<DesktopView>('read_desktop');
 export const saveLook = (name: string) => call<string>('save_look', { name });
 export const prepareLook = (slug: string) => call<Prepared>('prepare_look', { slug });
+
+export const setupStart = () => call<SetupView>('setup_start');
+export const setupChoose = (id: string) => call<PickView[]>('setup_choose', { id });
+export const setupDone = () => call<void>('setup_done');
 
 export const settings = () => call<SettingsView>('read_settings');
 export const saveSettings = (keepGoing: boolean, snapshots: boolean) =>

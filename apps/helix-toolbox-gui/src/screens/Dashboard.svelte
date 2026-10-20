@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon, { type IconName } from '../components/Icon.svelte';
-  import { toolbox, type Screen } from '../lib/state.svelte';
+  import { toolbox } from '../lib/state.svelte';
 
   const counts = $derived.by(() => {
     const all = Object.values(toolbox.statuses);
@@ -13,11 +13,13 @@
 
   const applications = $derived(Math.max(0, toolbox.areas.findIndex((area) => area.id === 'applications')));
 
-  const actions: { icon: IconName; title: string; detail: string; screen: () => Screen }[] = [
-    { icon: 'apps', title: 'Browse Applications', detail: 'Search and install tools', screen: () => ({ kind: 'area', index: applications }) },
-    { icon: 'plan', title: 'Review the Install Plan', detail: 'See what is queued and run it', screen: () => ({ kind: 'plan' }) },
-    { icon: 'star', title: 'Favorites', detail: 'Pinned entries', screen: () => ({ kind: 'favorites' }) },
-    { icon: 'history', title: 'View History', detail: 'Past runs and their results', screen: () => ({ kind: 'history' }) },
+  const actions: { icon: IconName; title: string; detail: string; go: () => void }[] = [
+    { icon: 'apps', title: 'Browse Applications', detail: 'Search and install tools', go: () => toolbox.open({ kind: 'area', index: applications }) },
+    { icon: 'plan', title: 'Review the Install Plan', detail: 'See what is queued and run it', go: () => toolbox.open({ kind: 'plan' }) },
+    { icon: 'check', title: 'Set up this machine', detail: 'A workstation to choose, as an Install Plan to review', go: () => (toolbox.wizard = true) },
+    { icon: 'search', title: 'Find anything', detail: 'Screens, actions and entries (Ctrl K)', go: () => (toolbox.palette = true) },
+    { icon: 'star', title: 'Favorites', detail: 'Pinned entries', go: () => toolbox.open({ kind: 'favorites' }) },
+    { icon: 'history', title: 'View History', detail: 'Past runs and their results', go: () => toolbox.open({ kind: 'history' }) },
   ];
 </script>
 
@@ -56,7 +58,7 @@
       <h2 class="card-title">Quick Actions</h2>
       <div class="actions">
         {#each actions as action (action.title)}
-          <button class="action" onclick={() => (toolbox.screen = action.screen())}>
+          <button class="action" onclick={action.go}>
             <span class="icon"><Icon name={action.icon} size={20} /></span>
             <span>
               <span class="title">{action.title}</span>

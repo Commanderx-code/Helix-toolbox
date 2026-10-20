@@ -35,7 +35,9 @@
     }
   }
 
-  gather(false);
+  // The palette's "Check updates online" opens the screen asking online once.
+  gather(toolbox.wantOnline);
+  toolbox.wantOnline = false;
 
   const versions = (from: string | null, to: string | null) => (from && to ? `${from} → ${to}` : (to ?? ''));
 </script>

@@ -1,0 +1,15 @@
+# The setup wizard's workstations for the smoke test: fixture entries that
+# change nothing. scripts/gui-smoke.sh copies tests/fixtures and adds this
+# as catalog/setup.toml; the fixtures themselves have none, so the terminal
+# interface's tests see no wizard on their first start.
+
+[[workstation]]
+id = "smoke"
+name = "Smoke test"
+description = "A marker file, a sleeper and a greeter that asks for a name"
+entries = ["marker", "sleeper", "greeter", "not-in-this-catalog"]
+
+[[workstation]]
+id = "custom"
+name = "Custom"
+description = "Every workstation's entries, to pick from"

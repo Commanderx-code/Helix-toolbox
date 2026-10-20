@@ -105,8 +105,26 @@ The other tools, under **More tools** in the sidebar:
   desktop.
 - **Settings**: what happens after a failed step and whether a snapshot
   is taken first, the same `settings.toml` the terminal interface keeps
-  its own look in. The Install Plan's **Save as profile** adds a profile to
-  the Profiles area.
+  its own look in, and **Set up this machine…**, the setup wizard again.
+  The Install Plan's **Save as profile** adds a profile to the Profiles
+  area; a profile's details have **Put its entries in the plan**, to queue
+  its entries one by one and change the plan before it runs.
+
+Two things work from every screen:
+
+- **The setup wizard** opens by itself on the first start, as in the
+  terminal interface: what this machine is (distribution, package tools,
+  desktop, graphics, laptop or not), a choice of workstation from
+  `catalog/setup.toml` (Developer, Gaming, Privacy, Minimal, Custom), then
+  that workstation's entries for this machine, ticked where they can run
+  and are not installed. It ends by filling the Install Plan for review; it
+  runs nothing. Closing it remembers, in `settings.toml`, that it was
+  offered; the Dashboard and Settings open it again.
+- **The command palette**, `Ctrl K` or **Search…** in the header: one list
+  of the screens, actions (check updates online, clear or run the Install
+  Plan, save it as a profile, save a baseline, update every entry, the
+  wizard) and every entry (show it, or inspect where it comes from),
+  ranked as the terminal interface ranks its search.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/assets/screenshots/gui-hardware.png" width="820" alt="The window's Hardware screen: firmware, disks with their health check, and the temperature sensors">
@@ -119,8 +137,10 @@ apps/helix-toolbox-gui/
   src/                 the frontend: Svelte 5 and TypeScript, built with Vite
     lib/api.ts         the commands of the Rust side, and sample answers for a browser
     lib/state.svelte.ts  the window's state: catalog, statuses, queue, pins
-    components/        header, sidebar, entry rows and details, the confirmation, the run panel (xterm.js)
-    screens/           Dashboard, Area, Favorites, Plan, History
+    lib/search.ts      the search ranking, the same as the engine's
+    components/        header, sidebar, entry rows and details, the confirmation, the run panel (xterm.js), the wizard, the palette
+    screens/           Dashboard, Area, Favorites, Plan, History and the other tools
+  tests/drive/         the smoke test's drive script and its workstations
   src-tauri/           the Rust side, a Cargo workspace of its own
     src/main.rs        the commands, and the run's events forwarded on a Tauri channel
     src/views.rs       what the window reads, built field by field from the engine's types
@@ -153,6 +173,7 @@ Its commands:
 | `read_hardware`, `prepare_firmware`, `prepare_smart` | the hardware, a firmware update, a disk's health check |
 | `read_desktop`, `save_look`, `prepare_look` | the desktop and its looks, saving one, putting one back |
 | `read_settings`, `save_settings` | the run choices |
+| `setup_start`, `setup_choose`, `setup_done` | the wizard: the machine and the workstations, a workstation's entries for this machine, remembering it was offered |
 
 Every `prepare_*` command answers like `prepare`, with a plan waiting for
 `run`, so one confirmation dialog serves them all. The frontend only
@@ -185,5 +206,17 @@ fixture entries (a marker file, a failing command, a greeter that asks for
 a name), so the whole flow can be tried without changing anything. Debug
 builds also take `--drive FILE`: a JavaScript file run in the window once
 it has loaded, which can call the `trace` command to print on standard
-error. That is how the window is tested where no pointer reaches it, in a
-virtual session such as `kwin_wayland --virtual`.
+error, and the `quit` command to end the program. That is how the window
+is tested where no pointer reaches it. `scripts/gui-smoke.sh BINARY` runs
+`tests/drive/smoke.js` that way against the fixture catalog, with scratch
+folders for the home and settings: the wizard on the first start, the
+palette, every screen, a run of the marker fixture through the
+confirmation and the terminal, and a saved profile; then it checks the
+files those left. The Checks workflow runs it under `xvfb-run` on every
+change; by hand, inside a virtual session:
+
+```sh
+(cd apps/helix-toolbox-gui && npm run build && cd src-tauri && cargo build --features tauri/custom-protocol)
+kwin_wayland --virtual --xwayland --exit-with-session \
+  "scripts/gui-smoke.sh apps/helix-toolbox-gui/src-tauri/target/debug/helix-toolbox-gui"
+```

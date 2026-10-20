@@ -46,7 +46,7 @@ jobs:
         run: |
           shellcheck -x -P . scripts/shared/*.sh scripts/installers/*.sh scripts/installers/commander/*.sh \
               tests/fixtures/scripts/shared/*.sh tests/fixtures/scripts/installers/*.sh start.sh \
-              scripts/package.sh scripts/package-gui.sh scripts/install-nfpm.sh scripts/icons.sh
+              scripts/package.sh scripts/package-gui.sh scripts/install-nfpm.sh scripts/icons.sh scripts/gui-smoke.sh
           find scripts/installers -name '*.sh' -not -path '*/commander/*' -print0 | xargs -0 shellcheck -x -P . -S error
       - name: Catalog matches the dotfiles and Myfish exports
         run: |
@@ -79,7 +79,7 @@ jobs:
       - name: Install WebKitGTK and the other libraries Tauri needs
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb
       - name: The frontend type-checks and builds
         working-directory: apps/helix-toolbox-gui
         run: |
@@ -92,3 +92,11 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
+      # The window opened on a virtual display and driven through the setup
+      # wizard, the palette, every screen, a run and a saved profile against
+      # the fixture catalog (scripts/gui-smoke.sh), a debug build with the
+      # built frontend in it.
+      - name: The window's smoke test
+        run: |
+          (cd apps/helix-toolbox-gui/src-tauri && cargo build --locked --features tauri/custom-protocol)
+          xvfb-run -a scripts/gui-smoke.sh apps/helix-toolbox-gui/src-tauri/target/debug/helix-toolbox-gui

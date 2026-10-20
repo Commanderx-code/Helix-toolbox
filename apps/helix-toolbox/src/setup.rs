@@ -21,69 +21,18 @@ pub fn desktop_here() -> Desktop {
 
 /// What the wizard learns about this machine.
 pub fn survey_here(platform: &LinuxInfo, desktop: &Desktop) -> Survey {
-    let laptop = std::fs::read_dir("/sys/class/power_supply")
-        .map(|listing| {
-            listing.flatten().any(|item| {
-                std::fs::read_to_string(item.path().join("type"))
-                    .is_ok_and(|kind| kind.trim() == "Battery")
-            })
-        })
-        .unwrap_or(false);
     setup::survey(
         platform,
         desktop,
         helix_toolbox_engine::preflight::gpus(),
-        laptop,
+        setup::laptop_here(),
         &helix_toolbox_platform::binary_exists,
     )
 }
 
 /// The survey as lines of text.
 pub fn survey_lines(survey: &Survey) -> Vec<(&'static str, String)> {
-    let mut lines = vec![("System", survey.distribution.clone())];
-    lines.push((
-        "Packages",
-        match &survey.package_manager {
-            Some(manager) if survey.tools.is_empty() => manager.clone(),
-            Some(manager) => format!("{manager}, with {}", survey.tools.join(", ")),
-            None => "no package manager Helix Toolbox knows".to_string(),
-        },
-    ));
-    lines.push((
-        "Desktop",
-        survey
-            .desktop_name
-            .clone()
-            .unwrap_or_else(|| "none found (a server or a console)".to_string()),
-    ));
-    lines.push((
-        "Graphics",
-        if survey.gpus.is_empty() {
-            "none found".to_string()
-        } else {
-            survey
-                .gpus
-                .iter()
-                .map(|gpu| match gpu.as_str() {
-                    "nvidia" => "NVIDIA".to_string(),
-                    "amd" => "AMD".to_string(),
-                    "intel" => "Intel".to_string(),
-                    other => other.to_string(),
-                })
-                .collect::<Vec<_>>()
-                .join(" and ")
-        },
-    ));
-    lines.push((
-        "Machine",
-        if survey.laptop {
-            "a laptop"
-        } else {
-            "a desktop or server"
-        }
-        .to_string(),
-    ));
-    lines
+    setup::lines(survey)
 }
 
 pub fn run_setup(

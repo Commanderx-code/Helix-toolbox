@@ -43,6 +43,22 @@
       </ul>
     {/if}
     <div class="actions">
+      {#if entry.kind === 'profile' && entry.runs.length > 0}
+        <button
+          class="button"
+          title="Queue the profile's entries one by one, to change the plan before it runs"
+          onclick={() => {
+            const added = toolbox.enqueue(entry.runs);
+            toolbox.open({ kind: 'plan' });
+            toolbox.notice = {
+              title: entry.name,
+              text: added === 0 ? 'Its entries are already in the Install Plan.' : `${added} of its entries were added to the Install Plan. Nothing has run.`,
+            };
+          }}
+        >
+          <Icon name="plan" size={15} /> Put its entries in the plan
+        </button>
+      {/if}
       {#if entry.queueable}
         <button class="button" class:primary={!queued} onclick={() => toolbox.toggleQueued(entry.id)}>
           <Icon name={queued ? 'minus' : 'plus'} size={16} />

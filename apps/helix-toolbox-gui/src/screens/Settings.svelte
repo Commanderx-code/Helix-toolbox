@@ -44,6 +44,7 @@
       <h1 class="screen-title">Settings</h1>
       <p class="screen-subtitle">How runs go, shared with the terminal interface.</p>
     </div>
+    <button class="button" onclick={() => (toolbox.wizard = true)}><Icon name="check" size={16} /> Set up this machine…</button>
     <button class="button primary" disabled={!changed || saving} onclick={save}><Icon name="save" size={16} /> Save</button>
   </div>
 

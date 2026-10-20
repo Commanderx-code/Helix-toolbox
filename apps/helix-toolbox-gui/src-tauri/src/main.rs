@@ -114,6 +114,8 @@ struct About {
     overview: Overview,
     /// Whether the command line was found, which native steps need.
     command_line: bool,
+    /// The first start on this machine: the setup wizard opens by itself.
+    first_run: bool,
 }
 
 #[tauri::command]
@@ -122,6 +124,10 @@ fn about(gui: State<Gui>) -> About {
         version: VERSION,
         overview: Overview::gather(&gui.platform),
         command_line: gui.this.is_absolute(),
+        first_run: gui
+            .settings
+            .as_deref()
+            .is_some_and(|path| !settings::set_up(path)),
     }
 }
 
@@ -840,6 +846,126 @@ fn desktop_here() -> desktop::Desktop {
     desktop::detect(&doctor::Here, &|name| std::env::var(name).ok())
 }
 
+// ----- The setup wizard -----
+
+/// The wizard's first pages: the machine, and the workstations to choose from.
+#[derive(Serialize)]
+struct SetupView {
+    machine: Vec<(&'static str, String)>,
+    workstations: Vec<WorkstationView>,
+}
+
+#[derive(Serialize)]
+struct WorkstationView {
+    id: String,
+    name: String,
+    description: String,
+}
+
+/// One entry the wizard suggests, ticked where it can run and is not
+/// installed.
+#[derive(Serialize)]
+struct PickView {
+    id: String,
+    name: String,
+    available: bool,
+    note: Option<String>,
+    ticked: bool,
+}
+
+/// What the wizard learns about this machine, as the command line does.
+fn survey_here(gui: &Gui) -> setup::Survey {
+    setup::survey(
+        &gui.platform,
+        &desktop_here(),
+        helix_toolbox_engine::preflight::gpus(),
+        setup::laptop_here(),
+        &helix_toolbox_platform::binary_exists,
+    )
+}
+
+/// Open the wizard: the machine and the workstations (`catalog/setup.toml`).
+#[tauri::command]
+async fn setup_start(app: AppHandle) -> Result<SetupView, String> {
+    blocking(app, |gui| {
+        let catalog = gui.catalog.read().unwrap();
+        let found = setup::load(catalog.root())?;
+        let survey = survey_here(gui);
+        Ok(SetupView {
+            machine: setup::lines(&survey),
+            workstations: found
+                .workstations
+                .iter()
+                .map(|known| WorkstationView {
+                    id: known.id.clone(),
+                    name: known.name.clone(),
+                    description: known.description.clone(),
+                })
+                .collect(),
+        })
+    })
+    .await?
+}
+
+/// The chosen workstation's entries for this machine; a workstation with no
+/// entries of its own (Custom) offers every workstation's, unticked.
+#[tauri::command]
+async fn setup_choose(app: AppHandle, id: String) -> Result<Vec<PickView>, String> {
+    blocking(app, move |gui| {
+        let catalog = gui.catalog.read().unwrap();
+        let found = setup::load(catalog.root())?;
+        let survey = survey_here(gui);
+        let chosen = found
+            .workstations
+            .iter()
+            .find(|known| known.id == id)
+            .ok_or_else(|| format!("there is no workstation {id}"))?;
+        let custom = chosen.entries.is_empty() && chosen.when.is_empty();
+        let ids = if custom {
+            found.everything(&survey)
+        } else {
+            chosen.entries_for(&survey)
+        };
+        let inventory = gui.inventory.lock().unwrap();
+        let picks = setup::suggestions(&ids, &catalog, &gui.platform)
+            .into_iter()
+            .map(|suggestion| {
+                let status = inventory.as_ref().and_then(|inventory| {
+                    catalog
+                        .find(&suggestion.id)
+                        .and_then(|entry| inventory.status(entry, &gui.platform, &which))
+                        .map(|status| views::status(&status))
+                });
+                let installed = status
+                    .as_ref()
+                    .is_some_and(|status| status.kind != "absent");
+                PickView {
+                    ticked: suggestion.available && !installed && !custom,
+                    note: match status {
+                        Some(status) if installed => Some(format!("installed ({})", status.detail)),
+                        _ => suggestion.note,
+                    },
+                    id: suggestion.id,
+                    name: suggestion.name,
+                    available: suggestion.available,
+                }
+            })
+            .collect();
+        Ok(picks)
+    })
+    .await?
+}
+
+/// Remember that the wizard was offered, so it no longer opens by itself.
+#[tauri::command]
+fn setup_done(gui: State<Gui>) -> Result<(), String> {
+    match &gui.settings {
+        Some(path) => settings::mark_set_up(path)
+            .map_err(|error| format!("the settings could not be saved: {error}")),
+        None => Ok(()),
+    }
+}
+
 /// The running desktop, its appearance, the saved looks and the entries
 /// for it.
 #[tauri::command]
@@ -989,6 +1115,13 @@ fn trace(message: String) {
     eprintln!("drive: {message}");
 }
 
+/// A drive script is done: the program ends.
+#[cfg(debug_assertions)]
+#[tauri::command]
+fn quit(app: AppHandle) {
+    app.exit(0);
+}
+
 fn main() {
     // Before anything reads them: the folders named for HelixForge.
     for problem in helix_toolbox_engine::legacy::move_old_folders() {
@@ -1038,7 +1171,7 @@ fn main() {
                 prepare_channels, prepare_update, list_backups, prepare_restore, drift_targets,
                 drift_check, save_baseline, reliability, trust, read_hardware, prepare_firmware,
                 prepare_smart, read_desktop, save_look, prepare_look, read_settings,
-                save_settings $(, $extra)*
+                save_settings, setup_start, setup_choose, setup_done $(, $extra)*
             ]
         };
     }
@@ -1046,7 +1179,7 @@ fn main() {
     let builder = {
         let script = drive_script(&args);
         builder
-            .invoke_handler(commands![trace])
+            .invoke_handler(commands![trace, quit])
             .on_page_load(move |webview, payload| {
                 if payload.event() == tauri::webview::PageLoadEvent::Finished
                     && let Some(script) = &script

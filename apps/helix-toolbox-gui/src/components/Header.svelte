@@ -1,5 +1,6 @@
 <script lang="ts">
   import emblem from '../../../helix-toolbox/src/tui/emblem.png';
+  import Icon from './Icon.svelte';
   import { toolbox } from '../lib/state.svelte';
 </script>
 
@@ -10,6 +11,9 @@
     <div class="tagline">BUILD • CONFIGURE • OPTIMIZE</div>
   </div>
   <div class="spacer"></div>
+  <button class="button ghost search" title="The command palette: screens, actions and entries" onclick={() => (toolbox.palette = true)}>
+    <Icon name="search" size={15} /> Search… <span class="key">Ctrl K</span>
+  </button>
   {#if toolbox.about}
     <span class="version">v{toolbox.about.version}</span>
   {/if}
@@ -66,6 +70,21 @@
 
   .spacer {
     flex: 1;
+  }
+
+  .search {
+    gap: 8px;
+    color: var(--muted);
+    font-weight: 500;
+  }
+
+  .key {
+    padding: 1px 6px;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--faint);
   }
 
   .version {

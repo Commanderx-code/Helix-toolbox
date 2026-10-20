@@ -7,6 +7,23 @@ export type About = {
   version: string;
   overview: Overview;
   command_line: boolean;
+  /** The first start on this machine: the setup wizard opens by itself. */
+  first_run: boolean;
+};
+
+// The setup wizard
+
+export type SetupView = {
+  machine: [string, string][];
+  workstations: { id: string; name: string; description: string }[];
+};
+
+export type PickView = {
+  id: string;
+  name: string;
+  available: boolean;
+  note: string | null;
+  ticked: boolean;
 };
 
 export type EntryView = {

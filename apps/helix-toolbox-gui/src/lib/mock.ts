@@ -116,8 +116,9 @@ export async function call(command: string, args: Record<string, unknown> = {}):
   switch (command) {
     case 'about':
       return {
-        version: '1.10.0',
+        version: '1.11.0',
         command_line: true,
+        first_run: false,
         overview: {
           rows: [
             ['Distribution', 'Sample Linux'],
@@ -202,6 +203,31 @@ export async function call(command: string, args: Record<string, unknown> = {}):
       return { desktop: { kind: 'kde', name: 'KDE Plasma 6.8.0', session: 'Wayland', display_manager: { name: 'SDDM', files: [], theme: 'breeze' }, appearance: [{ key: 'theme', label: 'Global theme', value: 'Breeze Dark' }], owners: [], blocked: null }, looks: [], suggestions: [] };
     case 'save_look':
       return `${args.name} is saved.`;
+    case 'setup_start':
+      return {
+        machine: [
+          ['System', 'Garuda Linux'],
+          ['Packages', 'pacman, with paru, flatpak'],
+          ['Desktop', 'KDE Plasma 6.8.0 on Wayland'],
+          ['Graphics', 'NVIDIA'],
+          ['Machine', 'a laptop'],
+        ],
+        workstations: [
+          { id: 'developer', name: 'Developer', description: 'Git, a fast search and fuzzy finder, Neovim and VS Code, Docker, a terminal and a diff tool' },
+          { id: 'gaming', name: 'Gaming', description: 'Steam, Lutris and Heroic, WINE and the Proton tools, Discord, and the drivers this machine needs' },
+          { id: 'custom', name: 'Custom', description: 'Every workstation\'s entries, to pick from' },
+        ],
+      };
+    case 'setup_choose':
+      return [
+        { id: 'git', name: 'Git', available: true, note: 'installed (pacman 2.47.0)', ticked: false },
+        { id: 'neovim', name: 'Neovim', available: true, note: null, ticked: args.id !== 'custom' },
+        { id: 'vscode', name: 'VS Code', available: true, note: null, ticked: args.id !== 'custom' },
+        { id: 'jetbrains', name: 'JetBrains Toolbox', available: true, note: 'runs on its own, outside the Install Plan', ticked: args.id !== 'custom' },
+        { id: 'docker', name: 'Docker', available: false, note: 'not offered on this machine', ticked: false },
+      ];
+    case 'setup_done':
+      return undefined;
     case 'read_settings':
     case 'save_settings':
       return { keep_going: args.keepGoing ?? false, snapshots: args.snapshots ?? true, snapshot_tool: 'Snapper', path: '/home/me/.config/helix-toolbox/settings.toml' };

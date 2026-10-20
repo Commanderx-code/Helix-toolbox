@@ -459,3 +459,7 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       drawing of it for menu sizes (`assets/icon-small.svg`)
 - [x] The other screens in the window: Doctor, Updates, Backups, Drift,
       Reliability, Hardware, Desktop, Profiles, Settings, in 1.9
+- [x] The setup wizard and the command palette in the window, and a
+      profile's entries put in the plan, in 1.11
+- [x] The window's smoke test in the Checks workflow
+      (`scripts/gui-smoke.sh`), in 1.11

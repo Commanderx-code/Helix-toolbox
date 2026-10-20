@@ -82,6 +82,42 @@ pub fn save_run_choices(path: &Path, choices: RunChoices) -> std::io::Result<()>
     fs::rename(&staging, path)
 }
 
+/// Whether the setup wizard has been offered on this machine (`set_up`):
+/// no settings file yet means not; a file without the key was saved before
+/// the wizard existed, on a machine already set up.
+pub fn set_up(path: &Path) -> bool {
+    let Some(table) = fs::read_to_string(path)
+        .ok()
+        .and_then(|text| text.parse::<toml::Table>().ok())
+    else {
+        return false;
+    };
+    table
+        .get("set_up")
+        .and_then(toml::Value::as_bool)
+        .unwrap_or(true)
+}
+
+/// Remember that the wizard was offered, leaving the other settings as they
+/// are.
+pub fn mark_set_up(path: &Path) -> std::io::Result<()> {
+    let mut table = fs::read_to_string(path)
+        .ok()
+        .and_then(|text| text.parse::<toml::Table>().ok())
+        .unwrap_or_default();
+    table.insert("set_up".into(), toml::Value::Boolean(true));
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let text = toml::to_string(&table).map_err(std::io::Error::other)?;
+    let staging = path.with_extension("toml.new");
+    fs::write(
+        &staging,
+        format!("# Helix Toolbox interface settings; Settings in the menu changes them.\n{text}"),
+    )?;
+    fs::rename(&staging, path)
+}
+
 /// Pinned entries, kept beside the settings as `favorites.toml`.
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
@@ -213,6 +249,30 @@ mod tests {
         assert!(text.contains("theme = \"neon\""), "{text}");
         assert!(text.contains("icons = false"));
         assert_eq!(run_choices(&path), RunChoices::default());
+    }
+
+    #[test]
+    fn the_wizard_is_offered_until_marked_and_the_mark_keeps_the_rest() {
+        let home = tempfile::tempdir().unwrap();
+        let path = home.path().join("helix-toolbox/settings.toml");
+        // No settings yet: the first start.
+        assert!(!set_up(&path));
+        // Settings from before the wizard existed: a machine already set up.
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "theme = \"ocean\"\nicons = false\n").unwrap();
+        assert!(set_up(&path));
+        fs::write(&path, "theme = \"ocean\"\nset_up = false\n").unwrap();
+        assert!(!set_up(&path));
+        mark_set_up(&path).unwrap();
+        assert!(set_up(&path));
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("theme = \"ocean\""), "{text}");
+        assert!(text.contains("set_up = true"), "{text}");
+        // From nothing, the file is made with only the mark.
+        let fresh = home.path().join("fresh/settings.toml");
+        mark_set_up(&fresh).unwrap();
+        assert!(set_up(&fresh));
+        assert_eq!(run_choices(&fresh), RunChoices::default());
     }
 
     #[test]

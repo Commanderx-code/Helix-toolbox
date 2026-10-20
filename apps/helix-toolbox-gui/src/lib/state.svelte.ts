@@ -68,6 +68,12 @@ class Toolbox {
   /** Something to read, such as a result or an inspection. */
   notice = $state<{ title: string; text: string; mono?: boolean } | null>(null);
   prompt = $state<Prompt | null>(null);
+  /** The setup wizard is open; on the first start it opens by itself. */
+  wizard = $state(false);
+  /** The command palette (Ctrl-K) is open. */
+  palette = $state(false);
+  /** The Updates screen checks online when it next opens, once. */
+  wantOnline = $state(false);
 
   everything = $derived(placed(this.areas));
   byId = $derived(new Map(this.everything.map((place) => [place.entry.id, place])));
@@ -78,10 +84,27 @@ class Toolbox {
       this.about = about;
       this.areas = areas;
       this.favorites = favorites;
+      if (about.first_run) this.wizard = true;
     } catch (error) {
       this.error = String(error);
     }
     await this.refresh();
+  }
+
+  /** Show a screen, from the sidebar, the palette or a quick action. */
+  open(screen: Screen) {
+    this.screen = screen;
+    this.search = '';
+    this.palette = false;
+  }
+
+  /** Show an entry where it is listed, selected. */
+  show(id: string) {
+    const place = this.byId.get(id);
+    if (!place) return;
+    const index = this.areas.findIndex((area) => area.name === place.area);
+    if (index >= 0) this.open({ kind: 'area', index });
+    this.selected = id;
   }
 
   /** Read the catalog again, after a profile was saved. */

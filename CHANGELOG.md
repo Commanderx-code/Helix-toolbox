@@ -4,6 +4,25 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.11.0
+
+- **The setup wizard in the window.** It opens by itself on the first
+  start, as in the terminal interface: this machine, a choice of
+  workstation, then its entries for this machine, ticked where they can
+  run and are not installed, put in the Install Plan for review. The
+  Dashboard and Settings open it again.
+- **The command palette in the window.** `Ctrl K`, or Search in the
+  header: the screens, the actions and every entry in one list, ranked as
+  the terminal interface ranks its search.
+- **A profile's entries in the plan.** A profile's details put its
+  entries in the Install Plan one by one, to change before it runs.
+- **The window is tested on every change.** The Checks workflow opens a
+  debug build on a virtual display and drives it through the wizard, the
+  palette, every screen, a run and a saved profile against the fixture
+  catalog (`scripts/gui-smoke.sh`).
+- **In the engine**, for both interfaces: `setup::lines`,
+  `setup::laptop_here`, `settings::set_up` and `settings::mark_set_up`.
+
 ## v1.10.0
 
 - **Staying up to date.** An Arch package of the window, and a pacman

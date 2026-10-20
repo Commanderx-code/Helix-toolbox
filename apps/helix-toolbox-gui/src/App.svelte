@@ -19,9 +19,22 @@
   import Desktop from './screens/Desktop.svelte';
   import Settings from './screens/Settings.svelte';
   import Dialogs from './components/Dialogs.svelte';
+  import Palette from './components/Palette.svelte';
+  import Wizard from './components/Wizard.svelte';
 
   toolbox.load();
+
+  /** Ctrl-K (or Cmd-K) opens the command palette from anywhere. */
+  function onkeydown(event: KeyboardEvent) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      if (toolbox.prompt || toolbox.confirming || toolbox.running || toolbox.wizard) return;
+      toolbox.palette = !toolbox.palette;
+    }
+  }
 </script>
+
+<svelte:window {onkeydown} />
 
 <div class="app">
   <Header />
@@ -81,6 +94,12 @@
   </div>
 {/if}
 
+{#if toolbox.palette}
+  <Palette />
+{/if}
+{#if toolbox.wizard}
+  <Wizard />
+{/if}
 <Dialogs />
 <ConfirmDialog />
 {#if toolbox.running}

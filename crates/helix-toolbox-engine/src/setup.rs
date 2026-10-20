@@ -100,6 +100,67 @@ pub fn load(root: &Path) -> Result<Setup, String> {
         .map_err(|error| format!("{}: {}", path.display(), printable(error.message())))
 }
 
+/// Whether this machine runs on a battery, by the power supplies the kernel
+/// lists.
+pub fn laptop_here() -> bool {
+    std::fs::read_dir("/sys/class/power_supply")
+        .map(|listing| {
+            listing.flatten().any(|item| {
+                std::fs::read_to_string(item.path().join("type"))
+                    .is_ok_and(|kind| kind.trim() == "Battery")
+            })
+        })
+        .unwrap_or(false)
+}
+
+/// The survey as labeled lines of text, as both interfaces show it.
+pub fn lines(survey: &Survey) -> Vec<(&'static str, String)> {
+    let mut lines = vec![("System", survey.distribution.clone())];
+    lines.push((
+        "Packages",
+        match &survey.package_manager {
+            Some(manager) if survey.tools.is_empty() => manager.clone(),
+            Some(manager) => format!("{manager}, with {}", survey.tools.join(", ")),
+            None => "no package manager Helix Toolbox knows".to_string(),
+        },
+    ));
+    lines.push((
+        "Desktop",
+        survey
+            .desktop_name
+            .clone()
+            .unwrap_or_else(|| "none found (a server or a console)".to_string()),
+    ));
+    lines.push((
+        "Graphics",
+        if survey.gpus.is_empty() {
+            "none found".to_string()
+        } else {
+            survey
+                .gpus
+                .iter()
+                .map(|gpu| match gpu.as_str() {
+                    "nvidia" => "NVIDIA".to_string(),
+                    "amd" => "AMD".to_string(),
+                    "intel" => "Intel".to_string(),
+                    other => other.to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join(" and ")
+        },
+    ));
+    lines.push((
+        "Machine",
+        if survey.laptop {
+            "a laptop"
+        } else {
+            "a desktop or server"
+        }
+        .to_string(),
+    ));
+    lines
+}
+
 /// Look at the machine. `on_path` answers whether a tool is installed.
 pub fn survey(
     platform: &LinuxInfo,
