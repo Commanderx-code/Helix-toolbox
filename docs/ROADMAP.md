@@ -439,8 +439,9 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
 
 ## Logo and banner (done)
 
-- `assets/`: the banner (README), the logo (its emblem is the menu's
-  header), the app icon and the README's screenshots
+- `assets/`: the banner (README), the logo (`icon.svg`, from which
+  `scripts/icons.sh` draws `icon.png`, `logo.png`, the icon sizes and the
+  menu's header emblem) and the README's screenshots
 - The menu's header shows the emblem in terminals with Kitty's graphics or
   Sixel, found by one query at start with a 0.4 second limit; Konsole, tmux,
   screen, the console, plain icons and the compatible theme keep the text
@@ -455,8 +456,8 @@ Office, Waterfox, Zen Browser) gave their Flatpak ID as `binary`; fixed in
       [GUI.md](GUI.md)): the Dashboard, the areas with search, status and
       flags, Favorites, the Install Plan, History, the confirmation, and the
       run in an embedded terminal drawn from those events, in 1.8
-- [x] Window and launcher icons made from `assets/icon.png`, with a flat
-      drawing of it for menu sizes (`assets/icon-small.svg`)
+- [x] Window and launcher icons, and the headers' emblem, all drawn from
+      one logo, `assets/icon.svg`
 - [x] The other screens in the window: Doctor, Updates, Backups, Drift,
       Reliability, Hardware, Desktop, Profiles, Settings, in 1.9
 - [x] The setup wizard and the command palette in the window, and a

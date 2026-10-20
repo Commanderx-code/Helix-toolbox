@@ -1,5 +1,5 @@
 <script lang="ts">
-  import emblem from '../../../../assets/icon-small.svg';
+  import emblem from '../../../../assets/icon.svg';
   import Icon from './Icon.svelte';
   import { toolbox } from '../lib/state.svelte';
 </script>

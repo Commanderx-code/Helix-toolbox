@@ -81,8 +81,8 @@ contents:
     dst: /usr/share/man/man1/
   - src: packaging/helix-toolbox.desktop
     dst: /usr/share/applications/helix-toolbox.desktop
-  # The icon: assets/icon.png at 512 and, from scripts/icons.sh, each size a
-  # menu or panel asks for (the small ones drawn flat, from icon-small.svg).
+  # The icon: assets/icon.png at 512 and each size a menu or panel asks for,
+  # all drawn from assets/icon.svg by scripts/icons.sh.
   - src: assets/icon.png
     dst: /usr/share/icons/hicolor/512x512/apps/helix-toolbox.png
   - src: assets/icons/256x256.png

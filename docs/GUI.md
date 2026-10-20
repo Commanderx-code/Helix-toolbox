@@ -197,9 +197,9 @@ In `src-tauri`, `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and
 when npm and WebKitGTK are installed, and the Checks workflow always.
 `npx tauri build --bundles deb,rpm,appimage` makes the packages, as the
 release does.
-After a change to `assets/icon.png` or `assets/icon-small.svg`, run
-`scripts/icons.sh` from the repository root and commit the sizes it writes.
-The header draws `icon-small.svg` itself, so it changes with the menu icon.
+Every icon is drawn from the logo, `assets/icon.svg`: after a change to it,
+run `scripts/icons.sh` from the repository root and commit what it writes.
+The window's header draws `icon.svg` itself.
 
 The window takes `--catalog-dir DIR`, like the command line, to read a
 catalog from a directory; with `tests/fixtures` it works against the

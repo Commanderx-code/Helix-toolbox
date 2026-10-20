@@ -4,6 +4,14 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.11.3
+
+- **One logo everywhere.** The flat HT tile, `assets/icon.svg`, is the
+  standard logo: `scripts/icons.sh` draws `icon.png`, `logo.png`, every
+  icon size the packages and the window ship, and the terminal
+  interface's header emblem from it, so the menu, the window and the
+  terminal show the same picture.
+
 ## v1.11.2
 
 - **The window's header shows the menu icon.** The flat HT tile from the

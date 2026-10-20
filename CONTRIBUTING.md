@@ -38,7 +38,7 @@ scripts/installers/         the scripts by id: commander/ from the previous tool
 tests/installers/           the installers' Python tests, run against fixtures
 tests/fixtures/             a small catalog for the end-to-end tests
 docs/                       architecture, roadmap, security, migration matrix, walkthrough
-assets/                     the banner, the logo (transparent), the app icon and its menu sizes (icons/, from scripts/icons.sh)
+assets/                     the banner, the logo (icon.svg) and what scripts/icons.sh draws from it: icon.png, logo.png, icons/
 ```
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the crates fit

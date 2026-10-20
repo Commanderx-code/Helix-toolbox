@@ -15,7 +15,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// The emblem of `assets/logo.png` on a clear background, small so the
+/// The logo, `assets/icon.svg`, rendered by `scripts/icons.sh`, small so the
 /// program stays light. The whole banner, at four rows, is too small to read.
 const BANNER: &[u8] = include_bytes!("emblem.png");
 

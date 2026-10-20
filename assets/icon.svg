@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  The icon at menu sizes (16 to 48 pixels), where the detail of icon.png
-  turns to noise: the same tile, letters and strand, drawn flat.
-  scripts/icons.sh renders it into the sizes the packages ship.
+  The Helix Toolbox logo: the tile, the letters and the strand, drawn flat.
+  scripts/icons.sh renders it into icon.png, logo.png, every size the
+  packages ship and the terminal interface's emblem.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
