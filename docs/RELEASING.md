@@ -30,6 +30,21 @@ dotfiles or Myfish repositories report new sources. Nobody tags by hand.
    `helix-toolbox-platform`, `helix-toolbox-catalog`, `helix-toolbox-engine`, then
    `helix-toolbox`. Nothing of this is committed.
 
+## The Arch repository
+
+The `repository` job of the release workflow, after the release is
+published, builds a pacman repository from the release's Arch packages
+(`repo-add`, in an Arch container) and deploys it to GitHub Pages at
+`https://commanderx-code.github.io/Helix-toolbox/{x86_64,aarch64}`, with an
+index page that shows the `pacman.conf` lines. Each release replaces the
+whole site, so the repository has only the latest version. It is not
+signed: users list it with `SigLevel = Optional TrustAll`, and the packages
+are the release's own files, covered by its checksums and attestations.
+
+Pages was turned on once with the build type "GitHub Actions"
+(`gh api -X POST repos/OWNER/REPO/pages -f build_type=workflow`); the job
+needs nothing else, no secret and no branch.
+
 ## crates.io
 
 The library crates exist only so `helix-toolbox` can be published; their

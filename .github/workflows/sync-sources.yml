@@ -178,7 +178,7 @@ jobs:
           path: ${{ runner.temp }}/release/
 
   # The graphical interface's packages, from the same commit, on each
-  # architecture: a Debian package, an RPM and an AppImage.
+  # architecture: a Debian package, an RPM, an AppImage and an Arch package.
   gui:
     needs: sync
     if: needs.sync.outputs.build == 'true'
@@ -218,6 +218,9 @@ jobs:
           npx tauri build --bundles deb,rpm,appimage
           mkdir -p "$RUNNER_TEMP/release"
           cp src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/rpm/*.rpm src-tauri/target/release/bundle/appimage/*.AppImage "$RUNNER_TEMP/release/"
+          # The Arch package, which Tauri has no bundler for.
+          ../../scripts/install-nfpm.sh "$RUNNER_TEMP/bin"
+          PATH="$RUNNER_TEMP/bin:$PATH" ../../scripts/package-gui.sh "$VERSION" src-tauri/target/release/helix-toolbox-gui "$RUNNER_TEMP/release"
           ls -1 "$RUNNER_TEMP/release"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -262,7 +265,7 @@ jobs:
         run: |
           cd /tmp/helix-toolbox-release
           sha256sum helix-toolbox-linux-x86_64 helix-toolbox-linux-aarch64 helix-toolbox_*.deb helix-toolbox-[0-9]*.rpm \
-            helix-toolbox-[0-9]*.pkg.tar.zst helix-toolbox-gui_*.deb helix-toolbox-gui-[0-9]*.rpm helix-toolbox-gui_*.AppImage \
+            helix-toolbox-[0-9]*.pkg.tar.zst helix-toolbox-gui_*.deb helix-toolbox-gui-[0-9]*.rpm helix-toolbox-gui_*.AppImage helix-toolbox-gui-[0-9]*.pkg.tar.zst \
             helixforge-linux-* helixforge_*.deb helixforge-*.rpm helixforge-*.pkg.tar.zst \
             validation.json > SHA256SUMS
           cat SHA256SUMS
@@ -277,10 +280,12 @@ jobs:
             /tmp/helix-toolbox-release/helix-toolbox-gui_*.deb
             /tmp/helix-toolbox-release/helix-toolbox-gui-[0-9]*.rpm
             /tmp/helix-toolbox-release/helix-toolbox-gui_*.AppImage
+            /tmp/helix-toolbox-release/helix-toolbox-gui-[0-9]*.pkg.tar.zst
       - name: Publish the tested Linux builds
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.sync.outputs.version }}
+          REPOSITORY: https://commanderx-code.github.io/Helix-toolbox
         run: |
           revision=$(git rev-parse HEAD)
           tag="v$VERSION"
@@ -305,10 +310,12 @@ jobs:
             printf '```\n\n'
             printf 'The window (docs/GUI.md), which needs the helix-toolbox package above:\n\n'
             printf '```sh\n'
+            printf 'sudo pacman -U helix-toolbox-gui-%s-1-x86_64.pkg.tar.zst   # Arch and derivatives (aarch64 for ARM64)\n' "$VERSION"
             printf 'sudo apt install ./helix-toolbox-gui_%s_amd64.deb      # Debian, Ubuntu (arm64 for ARM64)\n' "$VERSION"
             printf 'sudo dnf install ./helix-toolbox-gui-%s-1.x86_64.rpm   # Fedora, openSUSE (aarch64 for ARM64)\n' "$VERSION"
             printf 'chmod +x helix-toolbox-gui_%s_amd64.AppImage && ./helix-toolbox-gui_%s_amd64.AppImage   # any distribution\n' "$VERSION" "$VERSION"
             printf '```\n\n'
+            printf 'Arch and its derivatives can take both packages from the repository at %s instead, which pacman then updates with the rest of the system (docs/INSTALL.md).\n\n' "$REPOSITORY"
             printf 'Check a download with %s, and where it was built with %s. See docs/INSTALL.md.\n' \
               "\`sha256sum --check --ignore-missing SHA256SUMS\`" \
               "\`gh attestation verify <file> --repo $GITHUB_REPOSITORY\`"
@@ -323,7 +330,7 @@ jobs:
             gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$revision" --draft --title "Helix Toolbox $tag" --notes-file release-notes.md
           fi
           gh release upload "$tag" helix-toolbox-linux-x86_64 helix-toolbox-linux-aarch64 helix-toolbox_*.deb helix-toolbox-[0-9]*.rpm \
-            helix-toolbox-[0-9]*.pkg.tar.zst helix-toolbox-gui_*.deb helix-toolbox-gui-[0-9]*.rpm helix-toolbox-gui_*.AppImage \
+            helix-toolbox-[0-9]*.pkg.tar.zst helix-toolbox-gui_*.deb helix-toolbox-gui-[0-9]*.rpm helix-toolbox-gui_*.AppImage helix-toolbox-gui-[0-9]*.pkg.tar.zst \
             helixforge-linux-* helixforge_*.deb helixforge-*.rpm helixforge-*.pkg.tar.zst \
             validation.json SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
           gh release edit "$tag" --draft=false --latest --repo "$GITHUB_REPOSITORY"
@@ -350,3 +357,63 @@ jobs:
               cargo publish -p "$crate" --allow-dirty
             fi
           done
+
+  # The pacman repository on GitHub Pages, rebuilt from this release's Arch
+  # packages: an Arch system that lists it in pacman.conf updates them with
+  # the rest of the system (docs/INSTALL.md). Nothing is signed; pacman.conf
+  # says so with SigLevel = Optional TrustAll.
+  repository:
+    needs: [sync, publish]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    container: archlinux:base
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*
+          path: /tmp/helix-toolbox-release
+          merge-multiple: true
+      - name: Build the repository from the release's Arch packages
+        env:
+          VERSION: ${{ needs.sync.outputs.version }}
+        run: |
+          for arch in x86_64 aarch64; do
+            mkdir -p "site/$arch"
+            cp /tmp/helix-toolbox-release/helix-toolbox-[0-9]*-"$arch".pkg.tar.zst \
+               /tmp/helix-toolbox-release/helix-toolbox-gui-[0-9]*-"$arch".pkg.tar.zst "site/$arch/"
+            repo-add --quiet "site/$arch/helix-toolbox.db.tar.gz" "site/$arch"/*.pkg.tar.zst
+            # Pages serves files, not the links repo-add leaves.
+            for kind in db files; do
+              rm "site/$arch/helix-toolbox.$kind"
+              cp "site/$arch/helix-toolbox.$kind.tar.gz" "site/$arch/helix-toolbox.$kind"
+            done
+          done
+          cat > site/index.html <<EOF
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>Helix Toolbox packages</title>
+          <h1>Helix Toolbox $VERSION for Arch Linux</h1>
+          <p>A pacman repository with <code>helix-toolbox</code> and <code>helix-toolbox-gui</code>
+          for x86_64 and aarch64, rebuilt by each release of
+          <a href="https://github.com/Commanderx-code/Helix-toolbox">Helix Toolbox</a>.
+          Add it to <code>/etc/pacman.conf</code>:</p>
+          <pre>[helix-toolbox]
+          SigLevel = Optional TrustAll
+          Server = https://commanderx-code.github.io/Helix-toolbox/\$arch</pre>
+          <p>Then <code>sudo pacman -Syu helix-toolbox helix-toolbox-gui</code>. The packages are
+          the release's own files, with checksums and build attestations on the release page.</p>
+          EOF
+          find site -type f | sort
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: site
+      - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+        id: deploy

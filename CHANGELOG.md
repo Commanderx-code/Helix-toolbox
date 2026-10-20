@@ -4,6 +4,19 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.10.0
+
+- **Staying up to date.** An Arch package of the window, and a pacman
+  repository on GitHub Pages that every release rebuilds with both packages
+  for x86_64 and aarch64: listed in `pacman.conf`, it updates them with the
+  rest of the system ([INSTALL.md](docs/INSTALL.md#the-arch-repository)).
+- **The Helix Toolbox update row does more.** With the repository it runs
+  pacman; a distribution package is updated together with the window's
+  package when that is installed; a copy of the program the user keeps
+  somewhere (`~/.local/bin`, say) is replaced by the release's, checked
+  against its SHA256SUMS; and the window run as an AppImage replaces its
+  own file the same way.
+
 ## v1.9.1
 
 - **The icon at menu size.** Both packages ship the icon in every size a

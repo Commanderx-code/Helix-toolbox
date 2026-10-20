@@ -107,7 +107,7 @@ then:
 
 | System | Command |
 | :--- | :--- |
-| Arch, Garuda, CachyOS, EndeavourOS, Manjaro | `sudo pacman -U helix-toolbox-*-x86_64.pkg.tar.zst` |
+| Arch, Garuda, CachyOS, EndeavourOS, Manjaro | the [repository](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/INSTALL.md#the-arch-repository), or `sudo pacman -U helix-toolbox-*-x86_64.pkg.tar.zst` |
 | Debian, Ubuntu, Mint, Pop!_OS | `sudo apt install ./helix-toolbox_*_amd64.deb` |
 | Fedora | `sudo dnf install ./helix-toolbox-*.x86_64.rpm` |
 | openSUSE | `sudo zypper install --allow-unsigned-rpm ./helix-toolbox-*.x86_64.rpm` |
@@ -116,9 +116,12 @@ then:
 | Fedora, Fedora Asahi Remix on ARM64 | `sudo dnf install ./helix-toolbox-*.aarch64.rpm` |
 | openSUSE on ARM64 | `sudo zypper install --allow-unsigned-rpm ./helix-toolbox-*.aarch64.rpm` |
 | Any distribution, with Rust | `cargo install --locked helix-toolbox` |
-| The window, beside one of the above | `helix-toolbox-gui_*.deb`, `helix-toolbox-gui-*.rpm` or the `.AppImage` ([the window](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/GUI.md)) |
+| The window, beside one of the above | `helix-toolbox-gui-*.pkg.tar.zst`, `helix-toolbox-gui_*.deb`, `helix-toolbox-gui-*.rpm` or the `.AppImage` ([the window](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/GUI.md)) |
 
-The packages add shell completions, manual pages and a menu entry. Every
+The packages add shell completions, manual pages and a menu entry. On Arch,
+the repository keeps both packages updated with the system; everywhere else
+the Updates screen's Helix Toolbox row fetches, checks and installs a new
+release, the way the copy was installed. Every
 release file has a SHA-256 sum and a signed build provenance attestation;
 [INSTALL.md](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/INSTALL.md)
 shows how to check them, and how to build from source.

@@ -9,6 +9,7 @@
 | v1.3.0 | Seeing a change before it happens, and the hardware | 2 (system change preview), 5 (hardware and firmware center) (done) |
 | v1.4.0 | First-run setup and the desktop | 3 (setup wizard), 9 (desktop environment manager) (done) |
 | v1.5.0 | Machines without reliable internet | 8 (offline installation bundles) (done) |
+| v1.10.0 | Staying up to date | 10 (the Arch repository), 11 (every copy updates itself) (done) |
 
 The items:
 
@@ -43,6 +44,24 @@ The items:
    and offer the settings, themes, display-manager configuration and
    customization profiles that fit, warning where Home Manager or a
    desktop's own tools own a setting.
+10. The Arch repository: a pacman repository rebuilt by every release, with
+    the command line and the window for x86_64 and aarch64, so that the
+    system's own update keeps them current.
+11. Every copy updates itself: the Updates screen's Helix Toolbox row knows
+    the repository, updates the window's package with the command line's,
+    replaces a copy the user keeps outside any package tool, and the
+    window's AppImage.
+
+## v1.10.0: staying up to date (done)
+
+- [x] An Arch package of the window (`packaging/nfpm-gui.yaml`,
+      `scripts/package-gui.sh`), in the release beside the Debian package,
+      the RPM and the AppImage
+- [x] The pacman repository on GitHub Pages, rebuilt by the release
+      workflow's `repository` job, documented in INSTALL.md
+- [x] The Helix Toolbox update row: pacman through the repository, the
+      window's package with the command line's, a user-owned copy replaced
+      by the release's program, the window's AppImage replaced in place
 
 ## v1.6.0: ARM64 (done)
 

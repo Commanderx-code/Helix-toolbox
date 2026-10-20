@@ -87,6 +87,8 @@ pub struct ThisCopy {
     pub install: Install,
     /// Where a downloaded package waits to be installed.
     pub cache: PathBuf,
+    /// The window asking, run as an AppImage: the file to replace.
+    pub window: Option<PathBuf>,
 }
 
 /// How this copy of Helix Toolbox was installed.
@@ -181,7 +183,17 @@ impl Places {
             install: install_of(&exe, &homes, &checkout),
             exe,
             cache: cache.join("helix-toolbox/release"),
+            window: None,
         });
+        self
+    }
+
+    /// The same, when the window asks from an AppImage at `path` (the
+    /// `APPIMAGE` variable), which its update then replaces.
+    pub fn with_window(mut self, path: Option<PathBuf>) -> Self {
+        if let Some(this) = &mut self.this {
+            this.window = path.filter(|path| path.is_absolute());
+        }
         self
     }
 }
@@ -239,6 +251,66 @@ pub fn program_asset(architecture: &str) -> Option<String> {
         .then(|| format!("helix-toolbox-linux-{architecture}"))
 }
 
+/// Debian's name for `architecture` (x86_64 or aarch64).
+fn debian_architecture(architecture: &str) -> Option<&'static str> {
+    match architecture {
+        "x86_64" => Some("amd64"),
+        "aarch64" => Some("arm64"),
+        _ => None,
+    }
+}
+
+/// The release file a family's package manager installs the window from on
+/// `architecture`. Tauri numbers the Debian package without a release.
+pub fn window_package_asset_for(
+    manager: PackageManager,
+    version: &str,
+    architecture: &str,
+) -> Option<String> {
+    release(version)?;
+    let debian = debian_architecture(architecture)?;
+    match manager {
+        PackageManager::Arch => Some(format!(
+            "helix-toolbox-gui-{version}-1-{architecture}.pkg.tar.zst"
+        )),
+        PackageManager::Debian => Some(format!("helix-toolbox-gui_{version}_{debian}.deb")),
+        PackageManager::Fedora | PackageManager::Suse => {
+            Some(format!("helix-toolbox-gui-{version}-1.{architecture}.rpm"))
+        }
+        _ => None,
+    }
+}
+
+/// The release's AppImage of the window for `architecture`; Tauri names the
+/// x86_64 one amd64.
+pub fn window_asset_for(version: &str, architecture: &str) -> Option<String> {
+    release(version)?;
+    let name = match architecture {
+        "x86_64" => "amd64",
+        "aarch64" => "aarch64",
+        _ => return None,
+    };
+    Some(format!("helix-toolbox-gui_{version}_{name}.AppImage"))
+}
+
+/// Whether the window's package is installed, by the family's package tool.
+fn window_installed(system: &dyn System, manager: PackageManager) -> bool {
+    let command: &[&str] = match manager {
+        PackageManager::Arch => &["pacman", "-Q", "helix-toolbox-gui"],
+        PackageManager::Debian => &["dpkg-query", "-W", "helix-toolbox-gui"],
+        PackageManager::Fedora | PackageManager::Suse => &["rpm", "-q", "helix-toolbox-gui"],
+        _ => return false,
+    };
+    system.run(command).is_some_and(|(ok, _)| ok)
+}
+
+/// Whether pacman knows the helix-toolbox repository (INSTALL.md), which
+/// then updates the packages with the rest of the system.
+fn repository(system: &dyn System) -> bool {
+    read(system, &["pacman-conf", "--repo-list"])
+        .is_some_and(|text| text.lines().any(|line| line.trim() == "helix-toolbox"))
+}
+
 /// Helix Toolbox itself, updated the way it was installed.
 fn this_channel(
     system: &dyn System,
@@ -287,6 +359,20 @@ fn this_channel(
         Some(pending)
     };
     let exe = this.exe.to_string_lossy().into_owned();
+    let cache = this.cache.to_string_lossy().into_owned();
+    let architecture = std::env::consts::ARCH;
+    // A copy outside any package tool's reach that the user owns, and so can
+    // put a newer release in place of.
+    let own = this.install == Install::Other && system.owner(&this.exe) == Some(system.user().0);
+    // GitHub is asked only in an online check, and only for a copy that can
+    // act on the answer.
+    let asks =
+        matches!(this.install, Install::Package | Install::Cargo) || own || this.window.is_some();
+    let newest = if online && asks { latest() } else { None };
+    let fetch = |newest: &str, asset: &str| {
+        words(&[exe.as_str(), "fetch-release", newest, asset, cache.as_str()])
+    };
+    let fetched = |asset: &str| this.cache.join(asset).to_string_lossy().into_owned();
     match &this.install {
         Install::Launcher | Install::Download => {
             channel.pending = Some(Vec::new());
@@ -295,17 +381,17 @@ fn this_channel(
                 this.version
             );
         }
-        Install::Other => {
+        Install::Other if !own => {
             channel.note = format!(
                 "{} at {}, installed in a way Helix Toolbox cannot update; update it the way you installed it",
                 this.version,
                 this.exe.display()
             );
         }
-        Install::Package | Install::Cargo if !online => {
+        Install::Package | Install::Cargo | Install::Other if !online => {
             channel.note = format!("{}; r checks GitHub for a newer release", this.version);
         }
-        Install::Package | Install::Cargo => match latest() {
+        Install::Package | Install::Cargo | Install::Other => match &newest {
             None => {
                 channel.note = format!(
                     "{}; GitHub could not be asked for the latest release",
@@ -313,37 +399,83 @@ fn this_channel(
                 );
             }
             Some(newest) => {
-                channel.pending = behind(&newest);
+                channel.pending = behind(newest);
                 channel.note = format!("{}, the latest release is {newest}", this.version);
                 let waiting = channel.count().unwrap_or(0) > 0;
-                if this.install == Install::Cargo {
-                    if waiting && system.on_path("cargo") {
+                if !waiting {
+                } else if this.install == Install::Cargo {
+                    if system.on_path("cargo") {
                         channel.commands =
                             vec![words(&["cargo", "install", "--locked", "helix-toolbox"])];
                         channel.requires = strings(&["cargo"]);
                     }
-                } else if waiting
-                    && let Some(manager) = platform.manager
-                    && let Some(asset) = package_asset(manager, &newest)
-                {
-                    let cache = this.cache.to_string_lossy().into_owned();
-                    let file = this.cache.join(&asset).to_string_lossy().into_owned();
-                    let install: &[&str] = match manager {
-                        PackageManager::Arch => &["sudo", "pacman", "-U"],
-                        PackageManager::Debian => &["sudo", "apt-get", "install"],
-                        PackageManager::Fedora => &["sudo", "dnf", "install"],
-                        _ => &["sudo", "zypper", "install", "--allow-unsigned-rpm"],
-                    };
-                    let mut install = words(install);
-                    install.push(file);
-                    channel.commands = vec![
-                        vec![exe, "fetch-release".into(), newest.clone(), asset, cache],
-                        install,
-                    ];
-                    channel.requires = strings(&["curl", "sha256sum", "sudo"]);
-                    channel.caveat = Some(format!(
-                        "downloads the {newest} package from {RELEASES}/releases and checks it against the release's SHA256SUMS before installing it"
-                    ));
+                } else if this.install == Install::Other {
+                    // The user's own copy of the program: the newer one goes
+                    // in its place.
+                    if let Some(asset) = program_asset(architecture) {
+                        channel.commands = vec![
+                            fetch(newest, &asset),
+                            words(&["install", "-m", "0755", &fetched(&asset), &exe]),
+                        ];
+                        channel.requires = strings(&["curl", "sha256sum"]);
+                        channel.caveat = Some(format!(
+                            "downloads the {newest} program from {RELEASES}/releases, checks it against the release's SHA256SUMS and puts it in place of {exe}"
+                        ));
+                    }
+                } else if let Some(manager) = platform.manager {
+                    let window = window_installed(system, manager);
+                    if window && let Some(pending) = &mut channel.pending {
+                        pending.push(Pending {
+                            name: "helix-toolbox-gui".into(),
+                            from: Some(this.version.clone()),
+                            to: Some(newest.clone()),
+                        });
+                    }
+                    if manager == PackageManager::Arch && repository(system) {
+                        // The repository updates them with the system.
+                        let mut command =
+                            words(&["sudo", "pacman", "-Syu", "--needed", "helix-toolbox"]);
+                        if window {
+                            command.push("helix-toolbox-gui".into());
+                        }
+                        channel.commands = vec![command];
+                        channel.requires = strings(&["pacman", "sudo"]);
+                        channel.note.push_str(", in the helix-toolbox repository");
+                        channel.caveat = Some(
+                            "updates the whole system, the helix-toolbox repository with it: Arch does not support partial upgrades".into(),
+                        );
+                    } else if let Some(asset) = package_asset(manager, newest) {
+                        let mut assets = vec![asset];
+                        if window
+                            && let Some(asset) =
+                                window_package_asset_for(manager, newest, architecture)
+                        {
+                            assets.push(asset);
+                        }
+                        let install: &[&str] = match manager {
+                            PackageManager::Arch => &["sudo", "pacman", "-U"],
+                            PackageManager::Debian => &["sudo", "apt-get", "install"],
+                            PackageManager::Fedora => &["sudo", "dnf", "install"],
+                            _ => &["sudo", "zypper", "install", "--allow-unsigned-rpm"],
+                        };
+                        let mut install = words(install);
+                        let mut commands = Vec::new();
+                        for asset in &assets {
+                            commands.push(fetch(newest, asset));
+                            install.push(fetched(asset));
+                        }
+                        commands.push(install);
+                        channel.commands = commands;
+                        channel.requires = strings(&["curl", "sha256sum", "sudo"]);
+                        let (what, them) = if assets.len() > 1 {
+                            ("packages", "them")
+                        } else {
+                            ("package", "it")
+                        };
+                        channel.caveat = Some(format!(
+                            "downloads the {newest} {what} from {RELEASES}/releases and checks {them} against the release's SHA256SUMS before installing"
+                        ));
+                    }
                 }
             }
         },
@@ -402,6 +534,35 @@ fn this_channel(
                 "fast-forwards the checkout and builds it; a checkout with local changes or other commits is left alone".into(),
             );
         }
+    }
+    // The window run as an AppImage: the newer one is downloaded, checked
+    // and put in its place, whatever updates the command line.
+    if let (Some(window), Some(newest)) = (&this.window, &newest)
+        && let Some(asset) = window_asset_for(newest, architecture)
+        && !behind(newest).unwrap_or_default().is_empty()
+    {
+        let window = window.to_string_lossy().into_owned();
+        channel.pending.get_or_insert_with(Vec::new).push(Pending {
+            name: "helix-toolbox-gui".into(),
+            from: Some(this.version.clone()),
+            to: Some(newest.clone()),
+        });
+        channel.commands.push(fetch(newest, &asset));
+        channel
+            .commands
+            .push(words(&["install", "-m", "0755", &fetched(&asset), &window]));
+        for tool in ["curl", "sha256sum"] {
+            if !channel.requires.iter().any(|known| known == tool) {
+                channel.requires.push(tool.into());
+            }
+        }
+        let note = format!(
+            "the window's AppImage at {window} is downloaded from the release, checked and replaced the same way"
+        );
+        channel.caveat = Some(match channel.caveat.take() {
+            Some(caveat) => format!("{caveat}; {note}"),
+            None => note,
+        });
     }
     channel
 }
@@ -1019,6 +1180,7 @@ mod tests {
             exe: PathBuf::from("/usr/bin/helix-toolbox"),
             install,
             cache: PathBuf::from("/home/me/.cache/helix-toolbox/release"),
+            window: None,
         }
     }
 
@@ -1103,6 +1265,125 @@ mod tests {
     }
 
     #[test]
+    fn the_window_package_is_fetched_and_installed_with_the_program() {
+        let mut fake = machine();
+        latest(&mut fake, "v1.0.4");
+        fake.commands.insert(
+            "pacman -Q helix-toolbox-gui".into(),
+            (true, "helix-toolbox-gui 1.0.3-1\n".into()),
+        );
+        let channel = only_this(&fake, Install::Package, true);
+        assert_eq!(channel.summary(), "2 updates");
+        assert_eq!(
+            channel.pending.as_ref().unwrap()[1].name,
+            "helix-toolbox-gui"
+        );
+        let arch = std::env::consts::ARCH;
+        let cache = "/home/me/.cache/helix-toolbox/release";
+        let program = format!("helix-toolbox-1.0.4-1-{arch}.pkg.tar.zst");
+        let window = format!("helix-toolbox-gui-1.0.4-1-{arch}.pkg.tar.zst");
+        assert_eq!(
+            channel.command_line(),
+            format!(
+                "/usr/bin/helix-toolbox fetch-release 1.0.4 {program} {cache} && /usr/bin/helix-toolbox fetch-release 1.0.4 {window} {cache} && sudo pacman -U {cache}/{program} {cache}/{window}"
+            )
+        );
+        assert!(channel.caveat.as_deref().unwrap().contains("packages"));
+    }
+
+    #[test]
+    fn with_the_repository_pacman_updates_them_with_the_system() {
+        let mut fake = machine();
+        latest(&mut fake, "v1.0.4");
+        fake.commands.insert(
+            "pacman-conf --repo-list".into(),
+            (true, "garuda\ncore\nextra\nhelix-toolbox\n".into()),
+        );
+        let channel = only_this(&fake, Install::Package, true);
+        assert_eq!(channel.summary(), "1 update");
+        assert_eq!(
+            channel.command_line(),
+            "sudo pacman -Syu --needed helix-toolbox"
+        );
+        assert!(
+            channel.note.ends_with("in the helix-toolbox repository"),
+            "{}",
+            channel.note
+        );
+        assert_eq!(channel.requires, vec!["pacman", "sudo"]);
+        fake.commands.insert(
+            "pacman -Q helix-toolbox-gui".into(),
+            (true, "helix-toolbox-gui 1.0.3-1\n".into()),
+        );
+        let both = only_this(&fake, Install::Package, true);
+        assert_eq!(both.summary(), "2 updates");
+        assert_eq!(
+            both.command_line(),
+            "sudo pacman -Syu --needed helix-toolbox helix-toolbox-gui"
+        );
+        // Up to date: the repository has nothing to do either.
+        latest(&mut fake, "v1.0.3");
+        assert!(only_this(&fake, Install::Package, true).commands.is_empty());
+    }
+
+    #[test]
+    fn the_windows_appimage_is_replaced_beside_whatever_updates_the_program() {
+        let mut fake = machine();
+        latest(&mut fake, "v1.0.4");
+        let mut places = places();
+        let mut copy = this(Install::Package);
+        copy.window = Some(PathBuf::from(
+            "/home/me/AppImages/helix-toolbox-gui.AppImage",
+        ));
+        places.this = Some(copy);
+        let find = |fake: &Fake, online| {
+            overview(fake, &arch(), &places, online)
+                .into_iter()
+                .find(|channel| channel.id == "helixforge")
+                .unwrap()
+        };
+        let channel = find(&fake, true);
+        assert_eq!(channel.summary(), "2 updates");
+        let arch = std::env::consts::ARCH;
+        let cache = "/home/me/.cache/helix-toolbox/release";
+        let appimage = window_asset_for("1.0.4", arch).unwrap();
+        assert!(appimage.ends_with(".AppImage"), "{appimage}");
+        let line = channel.command_line();
+        assert!(
+            line.starts_with("/usr/bin/helix-toolbox fetch-release 1.0.4 helix-toolbox-1.0.4-1-"),
+            "{line}"
+        );
+        assert!(line.ends_with(&format!(
+            "&& /usr/bin/helix-toolbox fetch-release 1.0.4 {appimage} {cache} && install -m 0755 {cache}/{appimage} /home/me/AppImages/helix-toolbox-gui.AppImage"
+        )), "{line}");
+        assert_eq!(channel.requires, vec!["curl", "sha256sum", "sudo"]);
+        assert!(channel.caveat.as_deref().unwrap().contains("AppImage"));
+        // Offline, or up to date: the AppImage is left alone.
+        assert!(find(&fake, false).commands.is_empty());
+        latest(&mut fake, "v1.0.3");
+        let current = find(&fake, true);
+        assert_eq!(current.summary(), "up to date");
+        assert!(current.commands.is_empty());
+        assert_eq!(
+            window_asset_for("1.0.4", "x86_64").as_deref(),
+            Some("helix-toolbox-gui_1.0.4_amd64.AppImage")
+        );
+        assert_eq!(
+            window_asset_for("1.0.4", "aarch64").as_deref(),
+            Some("helix-toolbox-gui_1.0.4_aarch64.AppImage")
+        );
+        assert_eq!(window_asset_for("1.0", "x86_64"), None);
+        assert_eq!(
+            window_package_asset_for(PackageManager::Debian, "1.0.4", "aarch64").as_deref(),
+            Some("helix-toolbox-gui_1.0.4_arm64.deb")
+        );
+        assert_eq!(
+            window_package_asset_for(PackageManager::Fedora, "1.0.4", "x86_64").as_deref(),
+            Some("helix-toolbox-gui-1.0.4-1.x86_64.rpm")
+        );
+    }
+
+    #[test]
     fn package_files_follow_each_family_and_architecture() {
         let file = |manager, architecture| package_asset_for(manager, "1.2.3", architecture);
         assert_eq!(
@@ -1153,9 +1434,27 @@ mod tests {
         assert!(launcher.commands.is_empty());
         assert!(launcher.note.contains("each time it starts"));
 
+        // A copy the user does not own (root's, in /usr/local/bin) is left
+        // to whoever put it there.
+        fake.owners
+            .insert(PathBuf::from("/usr/bin/helix-toolbox"), 0);
         let other = only_this(&fake, Install::Other, true);
         assert_eq!(other.pending, None);
         assert!(other.note.contains("cannot update"), "{}", other.note);
+        fake.owners.clear();
+        // The user's own copy: the newer program goes in its place.
+        let own = only_this(&fake, Install::Other, true);
+        assert_eq!(own.summary(), "1 update");
+        let program = format!("helix-toolbox-linux-{}", std::env::consts::ARCH);
+        assert_eq!(
+            own.command_line(),
+            format!(
+                "/usr/bin/helix-toolbox fetch-release 2.0.0 {program} /home/me/.cache/helix-toolbox/release && install -m 0755 /home/me/.cache/helix-toolbox/release/{program} /usr/bin/helix-toolbox"
+            )
+        );
+        assert!(own.caveat.as_deref().unwrap().contains("in place of"));
+        let offline = only_this(&fake, Install::Other, false);
+        assert!(offline.note.contains("r checks GitHub"), "{}", offline.note);
 
         let root = PathBuf::from("/home/me/Helix-toolbox");
         fake.commands.insert(

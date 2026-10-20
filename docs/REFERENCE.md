@@ -92,11 +92,20 @@ package for this distribution into `~/.cache/helix-toolbox/release`, checking it
 against the release's `SHA256SUMS` (the hidden `helix-toolbox fetch-release`
 command, which takes only a release version and one of the release's own file
 names), then installing it with `pacman -U`, `apt-get install`, `dnf install`
-or `zypper install`. A copy from `cargo install` runs `cargo install --locked
-helix-toolbox` again. A build in a checkout fast-forwards it from GitHub and
-builds it, and leaves a checkout with local changes alone. The launcher and
-`start.sh` fetch the latest release every time they start, so there is
-nothing to run for them.
+or `zypper install`; the window's package (`helix-toolbox-gui`) is fetched and
+installed with it when the package tool says it is installed. On Arch with
+the helix-toolbox repository in `pacman.conf` (INSTALL.md), the row runs
+`pacman -Syu --needed helix-toolbox` (and `helix-toolbox-gui`) instead, which
+updates the system with them. A copy from `cargo install` runs `cargo install
+--locked helix-toolbox` again. A build in a checkout fast-forwards it from
+GitHub and builds it, and leaves a checkout with local changes alone. A copy
+anywhere else that the user owns (`~/.local/bin`, say) is replaced by the
+release's program, fetched and checked the same way, with `install -m 0755`;
+one the user does not own is left to whoever put it there. The window run
+as an AppImage (the `APPIMAGE` variable names the file) has the release's
+AppImage fetched, checked and put in its place, whatever updates the command
+line. The launcher and `start.sh` fetch the latest release every time they
+start, so there is nothing to run for them.
 
 Script entries such as Steam, VS Code or Firefox show the same status when
 they say what they install (most application scripts do), and `u` updates

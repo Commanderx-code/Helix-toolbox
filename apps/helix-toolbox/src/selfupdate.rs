@@ -6,7 +6,9 @@
 
 use anyhow::{Context, Result, bail};
 use helix_toolbox_core::PackageManager;
-use helix_toolbox_engine::updates::{RELEASES, package_asset_for, program_asset};
+use helix_toolbox_engine::updates::{
+    RELEASES, package_asset_for, program_asset, window_asset_for, window_package_asset_for,
+};
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
@@ -30,6 +32,17 @@ fn allowed(version: &str) -> Vec<String> {
         if !packages.is_empty() {
             files.extend(packages);
             files.extend(program_asset(architecture));
+            // The window's packages and AppImage, for its update.
+            files.extend(
+                [
+                    PackageManager::Arch,
+                    PackageManager::Debian,
+                    PackageManager::Fedora,
+                ]
+                .into_iter()
+                .filter_map(|manager| window_package_asset_for(manager, version, architecture)),
+            );
+            files.extend(window_asset_for(version, architecture));
         }
     }
     files
@@ -180,5 +193,15 @@ mod tests {
         assert!(allowed("1.2.3").contains(&"helix-toolbox_1.2.3-1_amd64.deb".to_string()));
         assert!(allowed("1.2.3").contains(&"helix-toolbox-1.2.3-1.aarch64.rpm".to_string()));
         assert!(allowed("1.2.3").contains(&"helix-toolbox-linux-aarch64".to_string()));
+        assert!(allowed("1.2.3").contains(&"helix-toolbox-gui_1.2.3_amd64.deb".to_string()));
+        assert!(
+            allowed("1.2.3").contains(&"helix-toolbox-gui-1.2.3-1-aarch64.pkg.tar.zst".to_string())
+        );
+        assert!(allowed("1.2.3").contains(&"helix-toolbox-gui_1.2.3_aarch64.AppImage".to_string()));
+        assert!(
+            !allowed("1.2.3")
+                .iter()
+                .any(|file| file.contains("SHA256SUMS"))
+        );
     }
 }

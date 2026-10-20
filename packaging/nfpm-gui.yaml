@@ -1,0 +1,54 @@
+# The Arch package of the window, made with nfpm by scripts/package-gui.sh
+# from the binary Tauri built; Tauri itself makes the Debian package, the
+# RPM and the AppImage, and has no Arch bundler. The script stages the
+# binary in target/package-gui-stage.
+name: helix-toolbox-gui
+arch: ${HELIX_TOOLBOX_ARCH}
+platform: linux
+version: ${HELIX_TOOLBOX_VERSION}
+release: 1
+maintainer: Commanderx-code <Commanderx-code@users.noreply.github.com>
+description: |
+  Helix Toolbox in a window.
+  The same catalog, plans, confirmations and runs as the helix-toolbox
+  command line, which it runs for the built-in steps, drawn by WebKitGTK.
+vendor: Helix Toolbox
+homepage: https://github.com/Commanderx-code/Helix-toolbox
+license: MIT
+
+depends:
+  - helix-toolbox
+  - webkit2gtk-4.1
+  - gtk3
+
+archlinux:
+  packager: Commanderx-code <Commanderx-code@users.noreply.github.com>
+
+contents:
+  - src: target/package-gui-stage/helix-toolbox-gui
+    dst: /usr/bin/helix-toolbox-gui
+    file_info:
+      mode: 0755
+  - src: packaging/helix-toolbox-gui.desktop
+    dst: /usr/share/applications/helix-toolbox-gui.desktop
+  # The same icon files the other bundles carry (scripts/icons.sh).
+  - src: apps/helix-toolbox-gui/src-tauri/icons/icon.png
+    dst: /usr/share/icons/hicolor/512x512/apps/helix-toolbox-gui.png
+  - src: apps/helix-toolbox-gui/src-tauri/icons/128x128@2x.png
+    dst: /usr/share/icons/hicolor/256x256/apps/helix-toolbox-gui.png
+  - src: apps/helix-toolbox-gui/src-tauri/icons/128x128.png
+    dst: /usr/share/icons/hicolor/128x128/apps/helix-toolbox-gui.png
+  - src: apps/helix-toolbox-gui/src-tauri/icons/64x64.png
+    dst: /usr/share/icons/hicolor/64x64/apps/helix-toolbox-gui.png
+  - src: apps/helix-toolbox-gui/src-tauri/icons/48x48.png
+    dst: /usr/share/icons/hicolor/48x48/apps/helix-toolbox-gui.png
+  - src: apps/helix-toolbox-gui/src-tauri/icons/32x32.png
+    dst: /usr/share/icons/hicolor/32x32/apps/helix-toolbox-gui.png
+  - src: apps/helix-toolbox-gui/src-tauri/icons/24x24.png
+    dst: /usr/share/icons/hicolor/24x24/apps/helix-toolbox-gui.png
+  - src: apps/helix-toolbox-gui/src-tauri/icons/16x16.png
+    dst: /usr/share/icons/hicolor/16x16/apps/helix-toolbox-gui.png
+  - src: docs/GUI.md
+    dst: /usr/share/doc/helix-toolbox-gui/GUI.md
+  - src: LICENSE
+    dst: /usr/share/licenses/helix-toolbox-gui/LICENSE

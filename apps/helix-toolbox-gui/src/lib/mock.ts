@@ -116,7 +116,7 @@ export async function call(command: string, args: Record<string, unknown> = {}):
   switch (command) {
     case 'about':
       return {
-        version: '1.9.0',
+        version: '1.10.0',
         command_line: true,
         overview: {
           rows: [

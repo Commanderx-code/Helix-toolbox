@@ -145,9 +145,12 @@ its updates beforehand, so its row shows how old its locked packages are, and
 updates with `u`.
 
 The **Helix Toolbox** row updates Helix Toolbox itself, the way it was installed:
-the new package for your distribution (downloaded and checked first), `cargo
-install` again, or a fresh build of your checkout. Copies run through the
-launcher or `start.sh` are always the latest release already.
+the new package for your distribution (downloaded and checked first, or on
+Arch with the repository, with the system), `cargo install` again, a fresh
+build of your checkout, or, for a copy of the program you put somewhere
+yourself, the new program in its place. The window's package is updated
+with it, and the window's AppImage replaced where it is. Copies run through
+the launcher or `start.sh` are always the latest release already.
 
 ## The desktop
 

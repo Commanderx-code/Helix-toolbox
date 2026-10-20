@@ -1,14 +1,10 @@
 [Desktop Entry]
-Categories={{categories}}
-{{#if comment}}
-Comment={{comment}}
-{{/if}}
-Exec={{exec}} {{exec_arg}}
-StartupWMClass={{exec}}
-Icon={{icon}}
-Name=Helix Toolbox
-Terminal=false
 Type=Application
-{{#if mime_type}}
-MimeType={{mime_type}}
-{{/if}}
+Name=Helix Toolbox
+Comment=Build, configure and optimize this machine, in a window
+Exec=helix-toolbox-gui
+StartupWMClass=helix-toolbox-gui
+Icon=helix-toolbox-gui
+Terminal=false
+Categories=System;Settings;
+Keywords=install;packages;setup;dotfiles;update;

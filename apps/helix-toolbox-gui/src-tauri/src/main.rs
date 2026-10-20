@@ -394,7 +394,11 @@ async fn prepare_repair(app: AppHandle, id: String) -> Result<PreparedView, Stri
 
 /// Where this copy of Helix Toolbox is, for the Updates screen's own row.
 fn places(gui: &Gui) -> updates::Places {
-    updates::Places::here().with_this(VERSION, gui.this.clone())
+    // Run as an AppImage, the window knows its file from the variable the
+    // AppImage runtime sets, and its update replaces that file.
+    updates::Places::here()
+        .with_this(VERSION, gui.this.clone())
+        .with_window(std::env::var_os("APPIMAGE").map(std::path::PathBuf::from))
 }
 
 #[derive(Serialize)]
