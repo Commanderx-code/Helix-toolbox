@@ -62,9 +62,9 @@
           <span><StatusBadge status={toolbox.statuses[entry.id]} /></span>
           <Flags field={entry.flags} />
           <div class="order">
-            <button class="button ghost small" title="Earlier" disabled={index === 0} onclick={() => move(index, -1)}>↑</button>
-            <button class="button ghost small" title="Later" disabled={index === queued.length - 1} onclick={() => move(index, 1)}>↓</button>
-            <button class="button ghost small" title="Take out" onclick={() => toolbox.toggleQueued(entry.id)}>
+            <button class="button ghost small" title="Earlier" aria-label="Move {entry.name} earlier" disabled={index === 0} onclick={() => move(index, -1)}>↑</button>
+            <button class="button ghost small" title="Later" aria-label="Move {entry.name} later" disabled={index === queued.length - 1} onclick={() => move(index, 1)}>↓</button>
+            <button class="button ghost small" title="Take out" aria-label="Take {entry.name} out of the plan" onclick={() => toolbox.toggleQueued(entry.id)}>
               <Icon name="x" size={14} />
             </button>
           </div>

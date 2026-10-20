@@ -52,6 +52,19 @@ The items:
     replaces a copy the user keeps outside any package tool, and the
     window's AppImage.
 
+## v1.12.0: the window catches up
+
+- [x] The change preview in the window's confirmation, with files side by
+      side and the pinned source downloaded on request
+- [x] A light theme that follows the desktop's color scheme, or is chosen
+      in Settings (`window_theme` in `settings.toml`)
+- [x] Offline bundles in the window: the Install Plan's entries bundled
+      through `helix-toolbox bundle create` in the run's terminal, and a
+      bundle checked and installed
+- [x] The window by keyboard and screen reader: arrow keys through lists,
+      Space to queue, focus kept in dialogs, labeled controls and 4.5:1
+      contrast, which axe-core checks on every screen in the smoke test
+
 ## v1.10.0: staying up to date (done)
 
 - [x] An Arch package of the window (`packaging/nfpm-gui.yaml`,

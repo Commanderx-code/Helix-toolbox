@@ -591,6 +591,64 @@ pub struct Tools<'a> {
     pub flatpak_key: &'a dyn Fn(&str, bool) -> PathBuf,
 }
 
+/// A new, private scratch folder for pacman's empty database, which
+/// `contents` takes: made here and now, never one that already existed, so
+/// nobody else's files are used.
+pub fn scratch() -> std::io::Result<PathBuf> {
+    use std::os::unix::fs::DirBuilderExt;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.subsec_nanos())
+        .unwrap_or(0);
+    let base = std::env::temp_dir().join(format!(
+        "helix-toolbox-bundle-{}-{nanos}",
+        std::process::id()
+    ));
+    std::fs::DirBuilder::new().mode(0o700).create(&base)?;
+    Ok(base)
+}
+
+/// A plan that makes a bundle in `directory` with the command line at
+/// `program` (`helix-toolbox bundle create`), whose downloads show in the
+/// run's terminal. It installs nothing here. `directory` is absolute, so it
+/// is never read as an option.
+pub fn plan_create(program: &Path, directory: &Path, ids: &[String], complete: bool) -> Plan {
+    let mut words = vec![
+        program.display().to_string(),
+        "bundle".to_string(),
+        "create".to_string(),
+        directory.display().to_string(),
+    ];
+    words.extend(ids.iter().cloned());
+    if complete {
+        words.push("--complete".to_string());
+    }
+    Plan {
+        steps: vec![Step::Shell {
+            id: "bundle-create".to_string(),
+            name: format!(
+                "Make a bundle in {}",
+                printable(&directory.display().to_string())
+            ),
+            program: words
+                .iter()
+                .map(|word| quote(word))
+                .collect::<Vec<_>>()
+                .join(" "),
+            display: printable(&words.join(" ")),
+            requires: Vec::new(),
+            changes: Vec::new(),
+        }],
+        notes: vec![
+            "It downloads the packages into the folder and installs nothing on this machine."
+                .to_string(),
+        ],
+        risk: Risk::Low,
+        depends: vec![Vec::new()],
+        ..Plan::default()
+    }
+}
+
 /// Make a bundle in `directory`, which must be new or empty: the packages,
 /// a copy of `helix-toolbox`, the manifest and the checksums.
 #[allow(clippy::too_many_arguments)]
@@ -2135,5 +2193,34 @@ mod tests {
             verify(&bundle, &platform(PackageManager::Fedora, "fedora")),
             Err(BundleError::Machine(..))
         ));
+    }
+
+    #[test]
+    fn a_bundle_is_made_by_the_command_line_with_quoted_words() {
+        let plan = plan_create(
+            Path::new("/usr/bin/helix-toolbox"),
+            Path::new("/home/me/my bundle"),
+            &["ripgrep".to_string(), "fzf".to_string()],
+            true,
+        );
+        let Step::Shell {
+            program, display, ..
+        } = &plan.steps[0]
+        else {
+            panic!("not a shell step");
+        };
+        assert_eq!(
+            program,
+            "'/usr/bin/helix-toolbox' 'bundle' 'create' '/home/me/my bundle' 'ripgrep' 'fzf' '--complete'"
+        );
+        assert_eq!(
+            display,
+            "/usr/bin/helix-toolbox bundle create /home/me/my bundle ripgrep fzf --complete"
+        );
+        assert!(!plan.privileged);
+        assert_eq!(plan.risk, Risk::Low);
+        let folder = scratch().unwrap();
+        assert!(folder.is_dir());
+        std::fs::remove_dir(&folder).unwrap();
     }
 }

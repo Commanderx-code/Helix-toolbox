@@ -157,7 +157,7 @@ fn folder_bytes(path: &Path) -> u64 {
 /// Each package is checked against the repository's signed metadata as it
 /// downloads.
 fn zypper_download(names: &[String], complete: bool, into: &Path) -> bool {
-    let Ok(scratch) = tempfile_dir() else {
+    let Ok(scratch) = bundle::scratch() else {
         return false;
     };
     let root = scratch.join("root");
@@ -242,7 +242,7 @@ pub fn run(
             for id in &ids {
                 crate::find(catalog, id)?;
             }
-            let scratch = tempfile_dir()?;
+            let scratch = bundle::scratch().context("cannot create a scratch folder")?;
             let found =
                 bundle::contents(&ids, catalog, platform, complete, &doctor::Here, &scratch)?;
             let _ = std::fs::remove_dir_all(&scratch);
@@ -297,7 +297,8 @@ pub fn run(
                 );
             } else if files > 0 || found.flatpaks.is_empty() {
                 println!(
-                    "{files} package files to download{}.",
+                    "{files} package {} to download{}.",
+                    if files == 1 { "file" } else { "files" },
                     if complete {
                         ", every dependency"
                     } else {
@@ -423,23 +424,4 @@ pub fn run(
             crate::confirm_and_run(catalog, platform, &planned, dry_run, yes, "INSTALL")
         }
     }
-}
-
-/// A new, private scratch folder for pacman's empty database: made here
-/// and now, never one that already existed, so nobody else's files are used.
-fn tempfile_dir() -> Result<PathBuf> {
-    use std::os::unix::fs::DirBuilderExt;
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.subsec_nanos())
-        .unwrap_or(0);
-    let base = std::env::temp_dir().join(format!(
-        "helix-toolbox-bundle-{}-{nanos}",
-        std::process::id()
-    ));
-    std::fs::DirBuilder::new()
-        .mode(0o700)
-        .create(&base)
-        .with_context(|| format!("cannot create {}", base.display()))?;
-    Ok(base)
 }

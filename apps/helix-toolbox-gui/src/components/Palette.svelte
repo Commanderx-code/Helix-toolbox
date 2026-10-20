@@ -2,6 +2,7 @@
   // The command palette (Ctrl-K): one searchable list of what the window
   // can do from anywhere, screens, actions and entries, best match first,
   // ranked as the terminal interface ranks them.
+  import { modal } from '../lib/keys';
   import Icon from './Icon.svelte';
   import * as api from '../lib/api';
   import { score } from '../lib/search';
@@ -42,6 +43,7 @@
     { screen: { kind: 'drift' }, label: 'Drift' },
     { screen: { kind: 'reliability' }, label: 'Reliability' },
     { screen: { kind: 'hardware' }, label: 'Hardware' },
+    { screen: { kind: 'bundles' }, label: 'Offline bundles' },
     { screen: { kind: 'desktop' }, label: 'Desktop' },
     { screen: { kind: 'settings' }, label: 'Settings' },
   ]);
@@ -163,7 +165,7 @@
     if (event.target === event.currentTarget) toolbox.palette = false;
   }}
 >
-  <div class="palette card" role="dialog" aria-modal="true" aria-label="Command palette">
+  <div class="palette card" role="dialog" aria-modal="true" aria-label="Command palette" use:modal>
     <div class="field">
       <Icon name="search" size={18} />
       <input bind:this={input} bind:value={query} placeholder="Type a screen, an action or an entry…" onkeydown={onkey} />
@@ -191,7 +193,7 @@
     justify-content: center;
     align-items: flex-start;
     padding-top: 12vh;
-    background: rgba(5, 8, 14, 0.6);
+    background: var(--backdrop);
     z-index: 40;
   }
 
@@ -203,7 +205,7 @@
     padding: 0;
     overflow: hidden;
     border-color: var(--selected-line);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 24px 60px var(--shadow);
   }
 
   .field {
@@ -265,6 +267,10 @@
   .detail {
     color: var(--faint);
     font-size: 12px;
+  }
+
+  .row.current .detail {
+    color: var(--muted);
   }
 
   .empty {

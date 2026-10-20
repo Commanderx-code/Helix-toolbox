@@ -6,11 +6,13 @@ use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, Item};
 use helix_toolbox_engine::{
     backups::Backup,
+    bundle::{BundledEntry, Contents, Manifest},
     confirmation::{Line, Prepared},
     doctor::{Diagnosis, Health},
     execution::ExecutionEvent,
     history::Record,
     inventory::Status,
+    preview::{Certainty, Change, StepPreview, Tag},
     updates::Channel,
 };
 use serde::Serialize;
@@ -153,6 +155,185 @@ pub fn prepared(prepared: &Prepared) -> PreparedView {
             risk: ready.plan.risk.label(),
             privileged: ready.plan.privileged,
         },
+    }
+}
+
+/// What a plan is expected to change, step by step, as the terminal
+/// interface's change preview shows it.
+#[derive(Debug, Serialize)]
+pub struct ChangesView {
+    pub steps: Vec<StepChangesView>,
+    /// A pinned source the plan reads is not downloaded yet; with it, the
+    /// files it writes can be compared.
+    pub download: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StepChangesView {
+    pub name: String,
+    pub changes: Vec<ChangeView>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChangeView {
+    /// known, expected or unknown: how the change is known.
+    pub certainty: &'static str,
+    pub text: String,
+    pub diff: Option<DiffView>,
+}
+
+/// A file now and after the step, the differing rows with three around
+/// each; a null row marks rows left out.
+#[derive(Debug, Serialize)]
+pub struct DiffView {
+    pub path: String,
+    pub changed: bool,
+    pub rows: Vec<Option<RowView>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RowView {
+    pub before: Option<String>,
+    pub after: Option<String>,
+    /// same, changed, removed or added.
+    pub tag: &'static str,
+}
+
+pub fn changes(steps: &[StepPreview], download: bool) -> ChangesView {
+    ChangesView {
+        steps: steps
+            .iter()
+            .map(|step| StepChangesView {
+                name: step.name.clone(),
+                changes: step.changes.iter().map(change).collect(),
+            })
+            .collect(),
+        download,
+    }
+}
+
+fn change(change: &Change) -> ChangeView {
+    ChangeView {
+        certainty: match change.certainty {
+            Certainty::Known => "known",
+            Certainty::Expected => "expected",
+            Certainty::Unknown => "unknown",
+        },
+        text: change.text.clone(),
+        diff: change.diff.as_ref().map(|diff| DiffView {
+            path: diff.path.clone(),
+            changed: diff.changed,
+            rows: diff
+                .hunks(3)
+                .into_iter()
+                .map(|row| {
+                    row.map(|row| RowView {
+                        before: row.before.clone(),
+                        after: row.after.clone(),
+                        tag: match row.tag {
+                            Tag::Same => "same",
+                            Tag::Changed => "changed",
+                            Tag::Removed => "removed",
+                            Tag::Added => "added",
+                        },
+                    })
+                })
+                .collect(),
+        }),
+    }
+}
+
+/// What a bundle of some entries would hold, before anything is
+/// downloaded.
+#[derive(Debug, Serialize)]
+pub struct BundleContentsView {
+    pub entries: Vec<BundledEntryView>,
+    /// Package files to download, not counting their signatures.
+    pub files: usize,
+    /// What dnf or zypper downloads itself, with the dependencies.
+    pub dnf: Vec<String>,
+    pub zypper: Vec<String>,
+    /// Flatpaks copied from this machine's installation.
+    pub flatpaks: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BundledEntryView {
+    pub name: String,
+    pub offline: bool,
+    /// Why it needs the network, if it does.
+    pub network: Option<String>,
+    pub flatpak: Option<String>,
+}
+
+/// A bundle on this machine that matched its checksums. Its text comes
+/// from the bundle, so it is made printable.
+#[derive(Debug, Serialize)]
+pub struct BundleView {
+    pub distribution: String,
+    pub architecture: String,
+    /// The Helix Toolbox it was made with, and whether a release build.
+    pub version: String,
+    pub release: bool,
+    pub created: String,
+    pub complete: bool,
+    pub files: usize,
+    pub bytes: u64,
+    pub flatpaks: Vec<String>,
+    pub entries: Vec<BundledEntryView>,
+}
+
+fn bundled(entry: &BundledEntry) -> BundledEntryView {
+    BundledEntryView {
+        name: helix_toolbox_core::printable(&entry.name),
+        offline: entry.offline,
+        network: entry.network.as_deref().map(helix_toolbox_core::printable),
+        flatpak: entry.flatpak.as_deref().map(helix_toolbox_core::printable),
+    }
+}
+
+pub fn bundle_contents(contents: &Contents) -> BundleContentsView {
+    BundleContentsView {
+        entries: contents.entries.iter().map(bundled).collect(),
+        files: contents
+            .downloads
+            .iter()
+            .filter(|download| !download.file.ends_with(".sig"))
+            .count(),
+        dnf: contents.dnf.clone(),
+        zypper: contents.zypper.clone(),
+        flatpaks: contents
+            .flatpaks
+            .iter()
+            .map(|flatpak| helix_toolbox_core::printable(&flatpak.reference))
+            .collect(),
+    }
+}
+
+pub fn bundle(manifest: &Manifest) -> BundleView {
+    let printable = helix_toolbox_core::printable;
+    BundleView {
+        distribution: printable(&manifest.distribution),
+        architecture: printable(&manifest.architecture),
+        version: printable(&manifest.helixforge),
+        release: manifest.release,
+        created: helix_toolbox_engine::date(manifest.created),
+        complete: manifest.complete,
+        files: manifest.files.len(),
+        bytes: manifest.files.iter().map(|file| file.bytes).sum(),
+        flatpaks: manifest
+            .flatpaks
+            .iter()
+            .map(|flatpak| {
+                format!(
+                    "{} at commit {}, from {}",
+                    printable(&flatpak.reference),
+                    printable(flatpak.commit.get(..12).unwrap_or(&flatpak.commit)),
+                    printable(&flatpak.remote)
+                )
+            })
+            .collect(),
+        entries: manifest.entries.iter().map(bundled).collect(),
     }
 }
 
@@ -410,5 +591,42 @@ mod tests {
         assert_eq!(absent.kind, "absent");
         assert_eq!(absent.label, "Not installed");
         assert_eq!(absent.detail, "would replace vim");
+    }
+
+    #[test]
+    fn a_changed_file_comes_with_its_differing_rows_only() {
+        let before: String = (1..=20).map(|n| format!("line {n}\n")).collect();
+        let after = before.replace("line 2\n", "line two\n");
+        let file = Change {
+            certainty: Certainty::Known,
+            area: helix_toolbox_engine::preview::Area::File,
+            text: "replaces ~/.bashrc".into(),
+            diff: helix_toolbox_engine::preview::diff("~/.bashrc", &before, &after),
+        };
+        let service = Change {
+            certainty: Certainty::Unknown,
+            area: helix_toolbox_engine::preview::Area::Service,
+            text: "may restart a unit it chooses".into(),
+            diff: None,
+        };
+        let steps = [StepPreview {
+            id: "bash".into(),
+            name: "Bash".into(),
+            changes: vec![file, service],
+        }];
+        let value = serde_json::to_value(changes(&steps, true)).unwrap();
+        assert_eq!(value["download"], true);
+        let shown = &value["steps"][0]["changes"];
+        assert_eq!(shown[0]["certainty"], "known");
+        assert_eq!(shown[1]["certainty"], "unknown");
+        assert!(shown[1]["diff"].is_null());
+        let diff = &shown[0]["diff"];
+        assert_eq!(diff["changed"], true);
+        // Line 2 and three on either side; the rest is left out.
+        let rows = diff["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 5);
+        assert_eq!(rows[1]["tag"], "changed");
+        assert_eq!(rows[1]["before"], "line 2");
+        assert_eq!(rows[1]["after"], "line two");
     }
 }

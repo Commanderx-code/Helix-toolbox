@@ -1,7 +1,7 @@
 //! What the interfaces keep in `$XDG_CONFIG_HOME/helix-toolbox/`: the
 //! choices about runs in `settings.toml`, which every interface reads, and
 //! the pinned entries in `favorites.toml`. The terminal interface keeps its
-//! look in the same `settings.toml`.
+//! look in the same `settings.toml`, and the window its theme.
 
 use serde::{Deserialize, Serialize};
 use std::{
@@ -58,28 +58,66 @@ pub fn run_choices(path: &Path) -> RunChoices {
     choices
 }
 
-/// Save the run choices into `settings.toml`, leaving every other setting
-/// in it (the terminal interface's look) as it is.
-pub fn save_run_choices(path: &Path, choices: RunChoices) -> std::io::Result<()> {
+/// Change some settings in `settings.toml`, leaving every other setting in
+/// it as it is: each interface writes only its own.
+pub fn update(path: &Path, change: impl FnOnce(&mut toml::Table)) -> std::io::Result<()> {
     let mut table = fs::read_to_string(path)
         .ok()
         .and_then(|text| text.parse::<toml::Table>().ok())
         .unwrap_or_default();
-    table.insert(
-        "keep_going".into(),
-        toml::Value::Boolean(choices.keep_going),
-    );
-    table.insert("snapshots".into(), toml::Value::Boolean(choices.snapshots));
+    change(&mut table);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
     let text = toml::to_string(&table).map_err(std::io::Error::other)?;
+    // Write beside it and rename, so a crash never leaves half a file.
     let staging = path.with_extension("toml.new");
     fs::write(
         &staging,
         format!("# Helix Toolbox interface settings; Settings in the menu changes them.\n{text}"),
     )?;
     fs::rename(&staging, path)
+}
+
+/// Save the run choices into `settings.toml`, leaving every other setting
+/// in it (the terminal interface's look) as it is.
+pub fn save_run_choices(path: &Path, choices: RunChoices) -> std::io::Result<()> {
+    update(path, |table| {
+        table.insert(
+            "keep_going".into(),
+            toml::Value::Boolean(choices.keep_going),
+        );
+        table.insert("snapshots".into(), toml::Value::Boolean(choices.snapshots));
+    })
+}
+
+/// The window's colors: the desktop's light or dark preference, or always
+/// one of them. The terminal interface's `theme` is its own.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WindowTheme {
+    #[default]
+    System,
+    Dark,
+    Light,
+}
+
+/// The window's theme, `window_theme` in `settings.toml`; a value this
+/// version does not know follows the system.
+pub fn window_theme(path: &Path) -> WindowTheme {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| text.parse::<toml::Table>().ok())
+        .and_then(|table| table.get("window_theme").cloned())
+        .and_then(|value| value.try_into().ok())
+        .unwrap_or_default()
+}
+
+pub fn save_window_theme(path: &Path, theme: WindowTheme) -> std::io::Result<()> {
+    let value = toml::Value::try_from(theme).map_err(std::io::Error::other)?;
+    update(path, |table| {
+        table.insert("window_theme".into(), value);
+    })
 }
 
 /// Whether the setup wizard has been offered on this machine (`set_up`):
@@ -101,21 +139,9 @@ pub fn set_up(path: &Path) -> bool {
 /// Remember that the wizard was offered, leaving the other settings as they
 /// are.
 pub fn mark_set_up(path: &Path) -> std::io::Result<()> {
-    let mut table = fs::read_to_string(path)
-        .ok()
-        .and_then(|text| text.parse::<toml::Table>().ok())
-        .unwrap_or_default();
-    table.insert("set_up".into(), toml::Value::Boolean(true));
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let text = toml::to_string(&table).map_err(std::io::Error::other)?;
-    let staging = path.with_extension("toml.new");
-    fs::write(
-        &staging,
-        format!("# Helix Toolbox interface settings; Settings in the menu changes them.\n{text}"),
-    )?;
-    fs::rename(&staging, path)
+    update(path, |table| {
+        table.insert("set_up".into(), toml::Value::Boolean(true));
+    })
 }
 
 /// Pinned entries, kept beside the settings as `favorites.toml`.
@@ -218,6 +244,24 @@ mod tests {
         let path = favorites_path(&fresh.path().join("settings.toml"));
         save_favorites(&path, &["fzf".into()]).unwrap();
         assert!(!fresh.path().join(OLD_FAVORITES).exists());
+    }
+
+    #[test]
+    fn the_window_theme_is_its_own_setting() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("helix-toolbox/settings.toml");
+        assert_eq!(window_theme(&path), WindowTheme::System);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "theme = \"transparent\"\nkeep_going = true\n").unwrap();
+        save_window_theme(&path, WindowTheme::Light).unwrap();
+        assert_eq!(window_theme(&path), WindowTheme::Light);
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("window_theme = \"light\""), "{text}");
+        assert!(text.contains("theme = \"transparent\""), "{text}");
+        assert!(run_choices(&path).keep_going);
+        // A theme from a later version follows the system.
+        fs::write(&path, "window_theme = \"sepia\"\n").unwrap();
+        assert_eq!(window_theme(&path), WindowTheme::System);
     }
 
     #[test]

@@ -51,7 +51,7 @@
       {:else if view === null}
         <p class="empty-note">Reading the desktop…</p>
       {:else}
-        <h3>This desktop</h3>
+        <h2 class="section">This desktop</h2>
         <p class="big">{title}</p>
         {#if view.desktop.display_manager}
           <p class="muted">
@@ -65,7 +65,7 @@
         {#if view.desktop.blocked}<p class="warning"><Icon name="warning" size={14} /> Not changed here: {view.desktop.blocked}</p>{/if}
 
         {#if view.desktop.appearance.length > 0}
-          <h3>Appearance</h3>
+          <h2 class="section">Appearance</h2>
           <dl class="kv">
             {#each view.desktop.appearance as value (value.key)}
               <dt>{value.label}</dt>
@@ -75,7 +75,7 @@
         {/if}
 
         {#if view.suggestions.length > 0}
-          <h3>For this desktop</h3>
+          <h2 class="section">For this desktop</h2>
           {#each view.suggestions as suggestion (suggestion.id)}
             <div class="line">
               <span class="grow">

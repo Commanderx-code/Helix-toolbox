@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { arrows } from '../lib/keys';
   import Icon from '../components/Icon.svelte';
   import StatusBadge from '../components/StatusBadge.svelte';
   import * as api from '../lib/api';
@@ -71,7 +72,7 @@
         <p class="empty-note">Looking at the update channels…</p>
       {:else}
         <div class="heading-row">Channels · {view.online ? 'checked online' : 'from what the tools already know'}</div>
-        <div class="rows">
+        <div class="rows" use:arrows={{ items: '.row-item', follow: '.row-item' }}>
           {#each view.channels as channel (channel.id)}
             <button class="row-item channel" class:selected={selectedId === channel.id} onclick={() => (selectedId = channel.id)}>
               <span class="name">{channel.name}</span>

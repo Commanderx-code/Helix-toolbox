@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { arrows } from '../lib/keys';
   import Icon from '../components/Icon.svelte';
   import * as api from '../lib/api';
   import { toolbox } from '../lib/state.svelte';
@@ -64,7 +65,7 @@
         <div class="summary">
           {#each counts as [level, count] (level)}<span class="pill {tone(level)}">{count} {level.toLowerCase()}</span>{/each}
         </div>
-        <div class="rows">
+        <div class="rows" use:arrows={{ items: '.row-item', follow: '.row-item' }}>
           {#each rows as row (row.id)}
             <button class="row-item entry" class:selected={selectedId === row.id} onclick={() => (selectedId = row.id)}>
               <span class="pill {tone(row.level)}">{row.level}</span>
@@ -154,7 +155,7 @@
     margin-left: 8px;
     padding: 0 6px;
     border-radius: 4px;
-    background: rgba(255, 120, 140, 0.15);
+    background: color-mix(in srgb, var(--red) 15%, transparent);
     color: var(--red);
     font-size: 11px;
     font-weight: 700;

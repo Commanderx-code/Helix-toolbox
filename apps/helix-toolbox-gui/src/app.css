@@ -1,4 +1,6 @@
-/* The terminal interface's solid theme, as tokens: tui/theme.rs. */
+/* The terminal interface's solid theme, as tokens: tui/theme.rs. The
+   light theme below follows the desktop's preference, unless Settings
+   chose one (data-theme on the root). */
 :root {
   --bg: #0d111a;
   --panel: #141a26;
@@ -9,13 +11,17 @@
   --selected-line: #4e6e94;
   --text: #e7ecfa;
   --muted: #8fa0b3;
-  --faint: #6e7c91;
+  /* Lighter than the terminal's, for 4.5:1 contrast on the panels. */
+  --faint: #7e8ca1;
   --cyan: #68e8f6;
   --purple: #b18bff;
   --green: #78e6a0;
   --yellow: #facc66;
   --red: #ff788c;
   --on-accent: #0b0f1c;
+  --accent-hover: #8cf0fa;
+  --backdrop: rgba(5, 8, 14, 0.7);
+  --shadow: rgba(0, 0, 0, 0.5);
 
   --radius: 8px;
   --radius-small: 5px;
@@ -29,6 +35,54 @@
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --bg: #f3f5fa;
+    --panel: #ffffff;
+    --panel-raised: #eaeef5;
+    --line: #d6dce7;
+    --line-strong: #bcc5d4;
+    --selected: #d9e9fa;
+    --selected-line: #5f8bc2;
+    --text: #161d2b;
+    --muted: #4f5d70;
+    --faint: #5c687a;
+    --cyan: #00788a;
+    --purple: #6538cc;
+    --green: #17773f;
+    --yellow: #865600;
+    --red: #bf2643;
+    --on-accent: #ffffff;
+    --accent-hover: #00606f;
+    --backdrop: rgba(28, 36, 52, 0.35);
+    --shadow: rgba(20, 30, 50, 0.2);
+    color-scheme: light;
+  }
+}
+
+:root[data-theme='light'] {
+  --bg: #f3f5fa;
+  --panel: #ffffff;
+  --panel-raised: #eaeef5;
+  --line: #d6dce7;
+  --line-strong: #bcc5d4;
+  --selected: #d9e9fa;
+  --selected-line: #5f8bc2;
+  --text: #161d2b;
+  --muted: #4f5d70;
+  --faint: #5c687a;
+  --cyan: #00788a;
+  --purple: #6538cc;
+  --green: #17773f;
+  --yellow: #865600;
+  --red: #bf2643;
+  --on-accent: #ffffff;
+  --accent-hover: #00606f;
+  --backdrop: rgba(28, 36, 52, 0.35);
+  --shadow: rgba(20, 30, 50, 0.2);
+  color-scheme: light;
 }
 
 * {
@@ -138,8 +192,8 @@ input {
 }
 
 .button.primary:hover:not(:disabled) {
-  background: #8cf0fa;
-  border-color: #8cf0fa;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .button.danger {
@@ -149,7 +203,7 @@ input {
 }
 
 .button.danger:hover:not(:disabled) {
-  background: rgba(255, 120, 140, 0.12);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
 }
 
 .button.ghost {
@@ -223,7 +277,10 @@ input {
   font-size: 18px;
 }
 
-.pane h3 {
+/* A section of a pane: h3 under the pane's own h2, or h2 where the
+   screen's h1 is the only heading above it. */
+.pane h3,
+.pane h2.section {
   margin: 16px 0 6px;
   font-size: 11px;
   font-weight: 700;

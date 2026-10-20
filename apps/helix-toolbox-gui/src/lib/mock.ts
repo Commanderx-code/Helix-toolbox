@@ -1,7 +1,7 @@
 // Sample answers for working on the interface in a browser, where there is
 // no Tauri side. Nothing here reads or changes the machine.
 
-import type { AreaView, EntryView, ItemView, Prepared, RecordView, RunEvent, StatusView } from './types';
+import type { AreaView, ChangesView, EntryView, ItemView, Prepared, RecordView, RunEvent, StatusView, WindowTheme } from './types';
 
 const entry = (id: string, name: string, description: string, flags = 'I', extra: Partial<EntryView> = {}): ItemView => ({
   type: 'entry',
@@ -110,6 +110,7 @@ function find(id: string, items: ItemView[] = AREAS.flatMap((area) => area.items
 }
 
 let planned: EntryView[] = [];
+let theme: WindowTheme = 'system';
 
 export async function call(command: string, args: Record<string, unknown> = {}): Promise<unknown> {
   await new Promise((resolve) => setTimeout(resolve, 60));
@@ -119,6 +120,7 @@ export async function call(command: string, args: Record<string, unknown> = {}):
         version: '1.11.0',
         command_line: true,
         first_run: false,
+        theme,
         overview: {
           rows: [
             ['Distribution', 'Sample Linux'],
@@ -166,6 +168,46 @@ export async function call(command: string, args: Record<string, unknown> = {}):
       };
       return result;
     }
+    case 'changes':
+    case 'download_sources': {
+      const downloaded = command === 'download_sources';
+      const result: ChangesView = {
+        download: !downloaded,
+        steps: planned.map((entry) => ({
+          name: entry.name,
+          changes:
+            entry.kind === 'package'
+              ? [
+                  { certainty: 'known', text: `installs ${entry.id} 15.2.0-1 from extra (pacman's own answer)`, diff: null },
+                  { certainty: 'expected', text: 'takes effect at once', diff: null },
+                ]
+              : [
+                  {
+                    certainty: downloaded ? 'known' : 'unknown',
+                    text: downloaded
+                      ? 'replaces ~/.config/fish/config.fish'
+                      : 'writes files from the pinned dotfiles source, which is not downloaded yet',
+                    diff: downloaded
+                      ? {
+                          path: '~/.config/fish/config.fish',
+                          changed: true,
+                          rows: [
+                            { before: 'set -g fish_greeting', after: 'set -g fish_greeting', tag: 'same' },
+                            { before: 'set -gx EDITOR nano', after: 'set -gx EDITOR nvim', tag: 'changed' },
+                            { before: null, after: 'starship init fish | source', tag: 'added' },
+                            { before: 'alias ls="ls --color"', after: 'alias ls="ls --color"', tag: 'same' },
+                            null,
+                            { before: 'fish_add_path ~/bin', after: null, tag: 'removed' },
+                          ],
+                        }
+                      : null,
+                  },
+                  { certainty: 'expected', text: 'may restart a unit it chooses (seen in its script)', diff: null },
+                ],
+        })),
+      };
+      return result;
+    }
     case 'runs':
       return RUNS;
     case 'save_profile':
@@ -180,7 +222,7 @@ export async function call(command: string, args: Record<string, unknown> = {}):
       return {
         online: args.online,
         channels: [
-          { id: 'pacman', name: 'Arch packages', count: 58, summary: '58 updates', pending: [{ name: 'linux-zen', from: '7.2.9', to: '7.2.10' }], note: '', command_line: 'sudo pacman -Syu', caveat: null },
+          { id: 'pacman', name: 'Arch packages', count: 58, summary: '58 updates', pending: ['linux-zen', 'mesa', 'firefox', 'kwin', 'plasma-workspace', 'systemd', 'glibc', 'python', 'qt6-base', 'pipewire', 'nvidia-utils', 'libinput', 'curl', 'git'].map((name, index) => ({ name, from: `1.${index}.0`, to: `1.${index}.1` })), note: '', command_line: 'sudo pacman -Syu', caveat: null },
           { id: 'flatpak', name: 'Flatpak (system)', count: 2, summary: '2 updates', pending: [], note: '', command_line: 'flatpak update -y', caveat: null },
           { id: 'helixforge', name: 'Helix Toolbox', count: 0, summary: 'up to date', pending: [], note: '1.8.0; it fetches the latest release each time it starts', command_line: '', caveat: null },
         ],
@@ -228,9 +270,57 @@ export async function call(command: string, args: Record<string, unknown> = {}):
       ];
     case 'setup_done':
       return undefined;
+    case 'bundle_contents':
+      return {
+        entries: (args.ids as string[]).map((id) => {
+          const known = find(id);
+          const offline = known?.kind === 'package';
+          return { name: known?.name ?? id, offline, network: offline ? null : 'a script, which downloads as it runs', flatpak: null };
+        }),
+        files: args.complete ? 41 : 7,
+        dnf: [],
+        zypper: [],
+        flatpaks: [],
+      };
+    case 'prepare_bundle_create':
+      return {
+        kind: 'ready',
+        risk: 'low',
+        privileged: false,
+        header: ['Risk: low', 'Note: It downloads the packages into the folder and installs nothing on this machine.'],
+        lines: [{ name: `Make a bundle in ${args.directory}`, detail: `/usr/bin/helix-toolbox bundle create ${args.directory} ${(args.ids as string[]).join(' ')}` }],
+      } satisfies Prepared;
+    case 'bundle_check':
+      if (!String(args.directory).includes('bundle')) throw new Error(`${args.directory} is not a Helix Toolbox bundle: it has no bundle.toml`);
+      return {
+        distribution: 'Sample Linux',
+        architecture: 'x86_64',
+        version: '1.12.0',
+        release: true,
+        created: '2026-10-20 18:30',
+        complete: false,
+        files: 9,
+        bytes: 48_200_000,
+        flatpaks: [],
+        entries: [
+          { name: 'Ripgrep', offline: true, network: null, flatpak: null },
+          { name: 'Neovim', offline: true, network: null, flatpak: null },
+        ],
+      };
+    case 'prepare_bundle_install':
+      return {
+        kind: 'ready',
+        risk: 'medium',
+        privileged: true,
+        header: ['Risk: medium · asks for your password', 'Note: The packages are checked against the bundle\'s checksums and signatures first.'],
+        lines: [{ name: 'Install the bundle\'s packages', detail: 'sudo pacman -U --needed packages/*.pkg.tar.zst' }],
+      } satisfies Prepared;
+    case 'save_theme':
+      theme = args.theme as WindowTheme;
+      return call('read_settings');
     case 'read_settings':
     case 'save_settings':
-      return { keep_going: args.keepGoing ?? false, snapshots: args.snapshots ?? true, snapshot_tool: 'Snapper', path: '/home/me/.config/helix-toolbox/settings.toml' };
+      return { keep_going: args.keepGoing ?? false, snapshots: args.snapshots ?? true, snapshot_tool: 'Snapper', path: '/home/me/.config/helix-toolbox/settings.toml', theme };
     default:
       return undefined;
   }

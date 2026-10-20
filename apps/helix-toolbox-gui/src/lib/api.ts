@@ -7,6 +7,9 @@ import type {
   About,
   AreaView,
   BackupsView,
+  BundleContents,
+  BundleView,
+  ChangesView,
   DesktopView,
   Diagnosis,
   DriftView,
@@ -21,6 +24,7 @@ import type {
   StatusView,
   TargetView,
   UpdatesView,
+  WindowTheme,
 } from './types';
 
 const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -39,6 +43,8 @@ export const statuses = () => call<Record<string, StatusView>>('statuses');
 export const favorites = () => call<string[]>('favorites');
 export const pin = (id: string, pinned: boolean) => call<string[]>('pin', { id, pinned });
 export const prepare = (ids: string[]) => call<Prepared>('prepare', { ids });
+export const changes = () => call<ChangesView>('changes');
+export const downloadSources = () => call<ChangesView>('download_sources');
 export const cancel = () => call<void>('cancel');
 export const write = (data: string) => call<void>('write', { data });
 export const resize = (rows: number, cols: number) => call<void>('resize', { rows, cols });
@@ -72,6 +78,14 @@ export const desktop = () => call<DesktopView>('read_desktop');
 export const saveLook = (name: string) => call<string>('save_look', { name });
 export const prepareLook = (slug: string) => call<Prepared>('prepare_look', { slug });
 
+export const bundleContents = (ids: string[], complete: boolean) =>
+  call<BundleContents>('bundle_contents', { ids, complete });
+export const prepareBundleCreate = (directory: string, ids: string[], complete: boolean) =>
+  call<Prepared>('prepare_bundle_create', { directory, ids, complete });
+export const bundleCheck = (directory: string) => call<BundleView>('bundle_check', { directory });
+export const prepareBundleInstall = (directory: string, trust: boolean) =>
+  call<Prepared>('prepare_bundle_install', { directory, trust });
+
 export const setupStart = () => call<SetupView>('setup_start');
 export const setupChoose = (id: string) => call<PickView[]>('setup_choose', { id });
 export const setupDone = () => call<void>('setup_done');
@@ -79,6 +93,7 @@ export const setupDone = () => call<void>('setup_done');
 export const settings = () => call<SettingsView>('read_settings');
 export const saveSettings = (keepGoing: boolean, snapshots: boolean) =>
   call<SettingsView>('save_settings', { keepGoing, snapshots });
+export const saveTheme = (theme: WindowTheme) => call<SettingsView>('save_theme', { theme });
 
 /** Run the confirmed plan; `onEvent` gets each event as it comes. */
 export async function run(rows: number, cols: number, onEvent: (event: RunEvent) => void) {

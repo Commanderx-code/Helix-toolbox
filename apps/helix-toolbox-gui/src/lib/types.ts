@@ -9,7 +9,11 @@ export type About = {
   command_line: boolean;
   /** The first start on this machine: the setup wizard opens by itself. */
   first_run: boolean;
+  theme: WindowTheme;
 };
+
+/** The window's colors: the desktop's preference, or always dark or light. */
+export type WindowTheme = 'system' | 'dark' | 'light';
 
 // The setup wizard
 
@@ -54,6 +58,20 @@ export type Line = { name: string; detail: string };
 export type Prepared =
   | { kind: 'nothing' | 'blocked' | 'error'; lines: string[] }
   | { kind: 'ready'; header: string[]; lines: Line[]; risk: string; privileged: boolean };
+
+/** What a plan is expected to change, as the terminal interface's change preview shows it. */
+export type ChangesView = { steps: StepChanges[]; download: boolean };
+
+export type StepChanges = { name: string; changes: ChangeView[] };
+
+export type Certainty = 'known' | 'expected' | 'unknown';
+
+export type ChangeView = { certainty: Certainty; text: string; diff: DiffView | null };
+
+/** A file now and after; a null row marks unchanged rows left out. */
+export type DiffView = { path: string; changed: boolean; rows: (DiffRow | null)[] };
+
+export type DiffRow = { before: string | null; after: string | null; tag: 'same' | 'changed' | 'removed' | 'added' };
 
 export type StepInfo = { index: number; id: string; name: string };
 
@@ -225,4 +243,32 @@ export type SettingsView = {
   snapshots: boolean;
   snapshot_tool: string | null;
   path: string | null;
+  theme: WindowTheme;
+};
+
+// Offline bundles
+
+export type BundledEntry = { name: string; offline: boolean; network: string | null; flatpak: string | null };
+
+/** What a bundle of some entries would hold, before anything is downloaded. */
+export type BundleContents = {
+  entries: BundledEntry[];
+  files: number;
+  dnf: string[];
+  zypper: string[];
+  flatpaks: string[];
+};
+
+/** A bundle that matched its checksums. */
+export type BundleView = {
+  distribution: string;
+  architecture: string;
+  version: string;
+  release: boolean;
+  created: string;
+  complete: boolean;
+  files: number;
+  bytes: number;
+  flatpaks: string[];
+  entries: BundledEntry[];
 };

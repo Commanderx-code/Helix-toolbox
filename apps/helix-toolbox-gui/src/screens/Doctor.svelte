@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { arrows } from '../lib/keys';
   import EntryRow from '../components/EntryRow.svelte';
   import Icon from '../components/Icon.svelte';
   import * as api from '../lib/api';
@@ -64,7 +65,7 @@
       {:else if checks === null}
         <p class="empty-note">Running the health checks…</p>
       {:else}
-        <div class="rows">
+        <div class="rows" use:arrows={{ items: '.row-item', follow: '.row-item' }}>
           {#each checks as check (check.id)}
             <button class="row-item check" class:selected={selectedId === check.id} onclick={() => (selectedId = check.id)}>
               <span class="pill {check.health}">{check.health_label}</span>
@@ -80,7 +81,7 @@
         </div>
         {#if tools.length > 0}
           <div class="heading-row">Reports and tools</div>
-          <div class="rows">
+          <div class="rows" use:arrows={{ items: '.select', follow: '.select' }}>
             {#each tools as item (item.id)}
               {#if item.type === 'entry'}
                 <EntryRow entry={item} />

@@ -29,6 +29,6 @@
 
   .flag.high {
     color: var(--red);
-    border-color: rgba(255, 120, 140, 0.5);
+    border-color: color-mix(in srgb, var(--red) 50%, transparent);
   }
 </style>

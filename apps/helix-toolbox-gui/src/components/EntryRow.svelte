@@ -11,46 +11,46 @@
   const pinned = $derived(toolbox.favorites.includes(entry.id));
 </script>
 
-<div
-  class="row"
-  class:selected={toolbox.selected === entry.id}
-  role="button"
-  tabindex="0"
-  onclick={() => (toolbox.selected = entry.id)}
-  onkeydown={(event) => {
-    if (event.key === 'Enter') toolbox.selected = entry.id;
-    if (event.key === ' ') {
-      event.preventDefault();
-      toolbox.toggleQueued(entry.id);
-    }
-  }}
->
+<div class="row" class:selected={toolbox.selected === entry.id}>
   {#if entry.queueable}
+    <!-- Out of the Tab order: Space on the row queues it. -->
     <button
       class="queue"
       class:queued
+      tabindex="-1"
+      aria-pressed={queued}
+      aria-label={queued ? `Take ${entry.name} out of the Install Plan` : `Add ${entry.name} to the Install Plan`}
       title={queued ? 'Take out of the Install Plan' : 'Add to the Install Plan'}
-      onclick={(event) => {
-        event.stopPropagation();
-        toolbox.toggleQueued(entry.id);
-      }}
+      onclick={() => toolbox.toggleQueued(entry.id)}
     >
       {#if queued}<Icon name="check" size={14} />{/if}
     </button>
   {:else}
-    <span class="alone" title="Runs on its own"><Icon name="play" size={12} /></span>
+    <span class="alone" role="img" aria-label="Runs on its own" title="Runs on its own"><Icon name="play" size={12} /></span>
   {/if}
-  <div class="text">
-    <div class="name">
+  <!-- The whole row selects the entry; Space queues it, as in the terminal interface. -->
+  <button
+    class="select"
+    aria-current={toolbox.selected === entry.id ? 'true' : undefined}
+    aria-describedby="status-{entry.id}"
+    onclick={() => (toolbox.selected = entry.id)}
+    onkeydown={(event) => {
+      if (event.key === ' ' && entry.queueable) {
+        event.preventDefault();
+        toolbox.toggleQueued(entry.id);
+      }
+    }}
+  >
+    <span class="name">
       {entry.name}
-      {#if pinned}<span class="pin"><Icon name="star" size={12} /></span>{/if}
-    </div>
-    <div class="description">
+      {#if pinned}<span class="pin" role="img" aria-label="pinned"><Icon name="star" size={12} /></span>{/if}
+    </span>
+    <span class="description">
       {#if place}<span class="place">{place} ·</span>{/if}
       {entry.description}
-    </div>
-  </div>
-  <span><StatusBadge status={toolbox.statuses[entry.id]} /></span>
+    </span>
+  </button>
+  <span id="status-{entry.id}"><StatusBadge status={toolbox.statuses[entry.id]} /></span>
   <span class="flags"><Flags field={entry.flags} /></span>
 </div>
 
@@ -64,6 +64,12 @@
     border-radius: var(--radius-small);
     border: 1px solid transparent;
     cursor: pointer;
+    position: relative;
+  }
+
+  .row:has(.select:focus-visible) {
+    outline: 2px solid var(--cyan);
+    outline-offset: 1px;
   }
 
   .row:hover {
@@ -87,6 +93,11 @@
     cursor: pointer;
   }
 
+  .queue {
+    position: relative;
+    z-index: 1;
+  }
+
   .queue:hover {
     border-color: var(--cyan);
   }
@@ -103,8 +114,26 @@
     color: var(--faint);
   }
 
-  .text {
+  .select {
+    display: grid;
     min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .select:focus-visible {
+    outline: none;
+  }
+
+  /* The select button covers the row, under the checkbox. */
+  .select::after {
+    content: '';
+    position: absolute;
+    inset: 0;
   }
 
   .name {

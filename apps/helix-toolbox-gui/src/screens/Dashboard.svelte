@@ -97,8 +97,8 @@
     align-items: center;
     padding: 10px 14px;
     border-radius: var(--radius);
-    border: 1px solid rgba(250, 204, 102, 0.5);
-    background: rgba(250, 204, 102, 0.08);
+    border: 1px solid color-mix(in srgb, var(--yellow) 50%, transparent);
+    background: color-mix(in srgb, var(--yellow) 8%, transparent);
     color: var(--yellow);
   }
 

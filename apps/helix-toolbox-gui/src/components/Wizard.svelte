@@ -2,6 +2,7 @@
   // The setup wizard: what this machine is, a choice of workstation, then
   // the entries it suggests, ticked where they are not installed. It ends
   // by putting the ticked entries in the Install Plan; it runs nothing.
+  import { modal } from '../lib/keys';
   import Icon from './Icon.svelte';
   import * as api from '../lib/api';
   import { toolbox } from '../lib/state.svelte';
@@ -89,7 +90,7 @@
 />
 
 <div class="backdrop" role="presentation">
-  <div class="dialog card" role="dialog" aria-modal="true" aria-labelledby="wizard-title" data-page={page}>
+  <div class="dialog card" role="dialog" aria-modal="true" aria-labelledby="wizard-title" data-page={page} use:modal>
     <div class="top">
       <span class="pill">Set up this machine</span>
       <span class="faint">{page === 'machine' ? '1 of 3' : page === 'choose' ? '2 of 3' : '3 of 3'}</span>
@@ -168,7 +169,7 @@
     inset: 0;
     display: grid;
     place-items: center;
-    background: rgba(5, 8, 14, 0.7);
+    background: var(--backdrop);
     z-index: 40;
   }
 
@@ -179,7 +180,7 @@
     max-height: calc(100vh - 80px);
     padding: 22px 24px;
     border-color: var(--selected-line);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 24px 60px var(--shadow);
   }
 
   .top {

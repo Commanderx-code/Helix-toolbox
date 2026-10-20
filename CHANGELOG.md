@@ -4,6 +4,33 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.12.0
+
+- **What a plan changes, in the window.** The confirmation's **What it
+  changes** shows the terminal interface's change preview: each step's
+  expected changes, marked known, expected or not known in advance, and a
+  file now and afterward side by side. A pinned dotfiles source can be
+  downloaded from there to compare the files it writes.
+- **A light theme for the window.** The window follows the desktop's
+  light or dark color scheme, and changes with it; Settings can keep it
+  dark or light instead. The run's terminal stays dark, as programs
+  expect.
+- **Offline bundles in the window.** A new screen bundles the Install
+  Plan's entries for a machine without reliable internet, says first
+  which go offline and what is downloaded, and checks a bundle and
+  installs from it, each after confirmation, as `helix-toolbox bundle`
+  does.
+- **The window without a mouse.** Arrow keys move through the sidebar
+  and every list, selecting as they go; Space queues an entry, as in the
+  terminal interface; each list is one Tab stop. Dialogs take the focus,
+  keep Tab inside and give it back, and the confirmation starts on
+  Cancel. Controls are labeled for screen readers, the run's progress is
+  announced, and the faint text is lighter (dark) or darker (light) for
+  4.5:1 contrast.
+- **The terminal interface keeps the window's settings.** Saving its
+  Settings rewrote `settings.toml` with only its own, which would have
+  dropped the window's theme; it now leaves the others as they are.
+
 ## v1.11.3
 
 - **One logo everywhere.** The flat HT tile, `assets/icon.svg`, is the

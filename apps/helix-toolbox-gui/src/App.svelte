@@ -16,6 +16,7 @@
   import Drift from './screens/Drift.svelte';
   import Reliability from './screens/Reliability.svelte';
   import Hardware from './screens/Hardware.svelte';
+  import Bundles from './screens/Bundles.svelte';
   import Desktop from './screens/Desktop.svelte';
   import Settings from './screens/Settings.svelte';
   import Dialogs from './components/Dialogs.svelte';
@@ -63,6 +64,8 @@
         <Reliability />
       {:else if toolbox.screen.kind === 'hardware'}
         <Hardware />
+      {:else if toolbox.screen.kind === 'bundles'}
+        <Bundles />
       {:else if toolbox.screen.kind === 'desktop'}
         <Desktop />
       {:else if toolbox.screen.kind === 'settings'}
@@ -71,7 +74,7 @@
     </main>
   </div>
   <footer>
-    <span>
+    <span role="status">
       {#if toolbox.checking}
         <span class="spin"><Icon name="refresh" size={13} /></span> Checking what is installed…
       {:else}
@@ -90,7 +93,7 @@
   <div class="toast" role="alert">
     <Icon name="warning" />
     <span>{toolbox.error}</span>
-    <button class="button ghost small" onclick={() => (toolbox.error = null)}><Icon name="x" size={14} /></button>
+    <button class="button ghost small" aria-label="Dismiss" onclick={() => (toolbox.error = null)}><Icon name="x" size={14} /></button>
   </div>
 {/if}
 
@@ -176,7 +179,7 @@
     border: 1px solid var(--red);
     background: var(--panel);
     color: var(--red);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 12px 30px var(--shadow);
     z-index: 30;
   }
 

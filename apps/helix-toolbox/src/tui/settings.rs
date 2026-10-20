@@ -66,18 +66,11 @@ pub fn load(path: &Path) -> Look {
     look
 }
 
+/// Save the look, leaving the settings it does not hold (the window's
+/// theme, a later version's) as they are.
 pub fn save(path: &Path, look: &Look) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let text = toml::to_string(look).map_err(std::io::Error::other)?;
-    // Write beside it and rename, so a crash never leaves half a file.
-    let staging = path.with_extension("toml.new");
-    fs::write(
-        &staging,
-        format!("# Helix Toolbox interface settings; Settings in the menu changes them.\n{text}"),
-    )?;
-    fs::rename(&staging, path)
+    let ours = toml::Table::try_from(look).map_err(std::io::Error::other)?;
+    helix_toolbox_engine::settings::update(path, |table| table.extend(ours))
 }
 
 #[cfg(test)]
@@ -134,5 +127,11 @@ mod tests {
                 ..Look::default()
             }
         );
+        // Saving keeps them too: the window's theme survives the menu's Settings.
+        save(&path, &Look::default()).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.contains("animations = true"), "{text}");
+        assert!(text.contains("[future]"), "{text}");
+        assert!(text.contains("theme = \"solid\""), "{text}");
     }
 }

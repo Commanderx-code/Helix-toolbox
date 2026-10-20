@@ -1,8 +1,9 @@
 #!/bin/sh -e
 
 # Drive a debug build of the window through the setup wizard, the command
-# palette, every screen, a run and a saved profile, against the fixture
-# catalog, and check what the drive script reports.
+# palette, the theme, the keyboard, every screen, a run with its change
+# preview, a saved profile and the offline bundles screen, against the
+# fixture catalog, and check what the drive script reports.
 # usage: scripts/gui-smoke.sh BINARY
 # BINARY is a debug build with the frontend in it (cargo build --features
 # tauri/custom-protocol in apps/helix-toolbox-gui/src-tauri, after npm run
@@ -30,9 +31,21 @@ export HELIX_TOOLBOX_TEST_OUT="$work/marker.txt"
 # WebKitGTK on a virtual display: no GPU, no compositor.
 export GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1
 
+# axe-core, from npm ci, goes in front of the drive script, which checks
+# each screen with it; CI must have it.
+drive=apps/helix-toolbox-gui/tests/drive/smoke.js
+axe=apps/helix-toolbox-gui/node_modules/axe-core/axe.min.js
+if [ -f "$axe" ]; then
+    cat "$axe" "$drive" > "$work/drive.js"
+    drive=$work/drive.js
+elif [ -n "${CI:-}" ]; then
+    echo "$axe is missing; run npm ci in apps/helix-toolbox-gui" >&2
+    exit 1
+fi
+
 status=0
 timeout 240 "$binary" --catalog-dir "$work/catalog" \
-    --drive apps/helix-toolbox-gui/tests/drive/smoke.js 2> "$work/stderr" || status=$?
+    --drive "$drive" 2> "$work/stderr" || status=$?
 grep '^drive: ' "$work/stderr" || true
 if [ "$status" -ne 0 ]; then
     echo "the window exited with status $status" >&2
@@ -45,7 +58,8 @@ if ! grep -qx 'drive: DONE' "$work/stderr"; then
     exit 1
 fi
 # What the steps left behind: the marker the run wrote, the profile the
-# plan was saved as, and the mark that the wizard was offered.
+# plan was saved as, the mark that the wizard was offered and the theme
+# chosen last.
 if ! grep -q '^marker from ' "$work/marker.txt" 2>/dev/null; then
     echo "the run did not write the marker file" >&2
     exit 1
@@ -56,6 +70,10 @@ if ! ls "$work/config/helix-toolbox/profiles/"*.toml >/dev/null 2>&1; then
 fi
 if ! grep -qx 'set_up = true' "$work/config/helix-toolbox/settings.toml" 2>/dev/null; then
     echo "the wizard was not remembered as offered" >&2
+    exit 1
+fi
+if ! grep -qx 'window_theme = "system"' "$work/config/helix-toolbox/settings.toml"; then
+    echo "the theme was not saved" >&2
     exit 1
 fi
 echo "the window's smoke test passed"

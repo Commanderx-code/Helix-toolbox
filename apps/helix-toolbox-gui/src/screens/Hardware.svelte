@@ -68,7 +68,7 @@
       <p class="empty-note">Reading the hardware…</p>
     {:else}
       <section>
-        <h3>Firmware</h3>
+        <h2 class="section">Firmware</h2>
         {#if found.firmware.note}<p class="muted">{found.firmware.note}</p>{/if}
         {#if found.firmware.available}
           <p class="muted">
@@ -88,7 +88,7 @@
       </section>
 
       <section>
-        <h3>Disks</h3>
+        <h2 class="section">Disks</h2>
         {#each found.disks as disk (disk.name)}
           <div class="line">
             <span class="mono disk">{disk.name}</span>
@@ -106,7 +106,7 @@
       </section>
 
       <section>
-        <h3>Temperatures</h3>
+        <h2 class="section">Temperatures</h2>
         {#if found.sensors.length === 0}
           <p class="muted">No temperature sensors found.</p>
         {:else}
@@ -124,7 +124,7 @@
 
       {#if found.batteries.length > 0}
         <section>
-          <h3>Batteries</h3>
+          <h2 class="section">Batteries</h2>
           {#each found.batteries as battery (battery.name)}
             <div class="line">
               <span class="mono disk">{battery.name}</span>
@@ -140,7 +140,7 @@
       {/if}
 
       <section>
-        <h3>Devices</h3>
+        <h2 class="section">Devices</h2>
         <div class="tabs">
           <button class="button" class:primary={showDevices === 'pci'} onclick={() => (showDevices = showDevices === 'pci' ? 'none' : 'pci')}>PCI ({found.pci.length})</button>
           <button class="button" class:primary={showDevices === 'usb'} onclick={() => (showDevices = showDevices === 'usb' ? 'none' : 'usb')}>USB ({found.usb.length})</button>

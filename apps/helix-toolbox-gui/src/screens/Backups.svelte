@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { arrows } from '../lib/keys';
   import Icon from '../components/Icon.svelte';
   import * as api from '../lib/api';
   import { toolbox } from '../lib/state.svelte';
@@ -47,7 +48,7 @@
       {:else if view.backups.length === 0}
         <p class="empty-note">No backups found. Entries that change a file keep the old one beside it, and they appear here.</p>
       {:else}
-        <div class="rows">
+        <div class="rows" use:arrows={{ items: '.row-item', follow: '.row-item' }}>
           {#each view.backups as backup (backup.index)}
             <button class="row-item backup" class:selected={selectedIndex === backup.index} onclick={() => (selectedIndex = backup.index)}>
               <span class="faint"><Icon name={backup.directory ? 'folder' : 'backups'} size={16} /></span>

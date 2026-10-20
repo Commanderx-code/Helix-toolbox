@@ -178,6 +178,8 @@ them; with everything in the bundle, nothing is downloaded. A Flatpak
 installed on the first machine goes in too, with its runtimes, once its
 remote has a collection ID (`bundle create` says how to give Flathub its
 own). Entries that need the network are named so you can run them later.
+In the window, **Offline bundles** does the same: it bundles the Install
+Plan's entries, and checks and installs a bundle from its folder.
 
 ## When something is wrong
 

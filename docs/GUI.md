@@ -67,6 +67,14 @@ decides whether a snapshot is taken first), and each step with the command
 it runs. A plan the checks block opens "Cannot run yet" instead, and
 nothing is changed.
 
+**What it changes**, in the confirmation, is the terminal interface's
+change preview: each step's expected changes to files, packages and
+services, marked ✓ known, ~ expected or ? not known in advance, and a
+file now and afterward **side by side** where the new contents can be
+worked out without writing anything. When a dotfiles entry reads a pinned
+source that is not downloaded yet, **Download the source** fetches it
+(and changes nothing else) so its files can be compared too.
+
 The run opens in its own panel: the steps on the left, the terminal on the
 right. The terminal is a real one, the same pseudo-terminal the terminal
 interface uses: type into it when a step asks something, including the
@@ -100,12 +108,24 @@ The other tools, under **More tools** in the sidebar:
 - **Hardware**: firmware updates through fwupd (typing FIRMWARE first, as
   in the terminal interface), disks with **Check health…** (SMART, after
   confirmation), temperatures, batteries, and the PCI and USB devices.
+- **Offline bundles**: the Install Plan's entries and the packages they
+  need, downloaded with Helix Toolbox into a new folder for a machine of
+  the same distribution without reliable internet. **Check what it
+  needs** says which entries go offline and what is downloaded; **Make
+  the bundle…** runs `helix-toolbox bundle create` in the run's terminal
+  and installs nothing here. **Check it** verifies a bundle (made for this
+  machine, every file matching its checksum); **Install from it…**
+  installs its packages from its files after confirmation.
 - **Desktop**: the running desktop and its appearance, **Save this look**,
   the saved looks put back after confirmation, and the entries for this
   desktop.
 - **Settings**: what happens after a failed step and whether a snapshot
   is taken first, the same `settings.toml` the terminal interface keeps
   its own look in, and **Set up this machine…**, the setup wizard again.
+  **Appearance** chooses the window's theme: **Follow the desktop** (the
+  default: light or dark as the desktop's color scheme is, through GTK,
+  and changing with it), **Dark** or **Light**. It applies at once and is
+  kept as `window_theme`; the run's terminal stays dark in either.
   The Install Plan's **Save as profile** adds a profile to the Profiles
   area; a profile's details have **Put its entries in the plan**, to queue
   its entries one by one and change the plan before it runs.
@@ -129,6 +149,26 @@ Two things work from every screen:
 <p align="center">
   <img src="https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/assets/screenshots/gui-hardware.png" width="820" alt="The window's Hardware screen: firmware, disks with their health check, and the temperature sensors">
 </p>
+
+## The keyboard
+
+Everything works without a mouse:
+
+| Keys | Does |
+| :--- | :--- |
+| `Ctrl K` | the command palette, from any screen |
+| `Tab`, `Shift Tab` | the sidebar, a screen's list, its details and buttons; each list is one stop |
+| `↑` `↓`, `Home` `End` | through the sidebar or a list; in a list the row reached is selected, as the terminal interface's cursor selects |
+| `Space` | on an entry, put it in the Install Plan or take it out, as in the terminal interface |
+| `Enter` | the focused button or row |
+| `Esc` | close a dialog; in the change preview, back to the confirmation |
+| `Ctrl Tab` | out of the run's terminal, where `Tab` is the program's |
+
+A dialog takes the focus when it opens (the confirmation starts on
+**Cancel**, so `Enter` never runs a plan by accident), keeps `Tab` inside
+it, and gives the focus back when it closes. Controls are labeled for
+screen readers, the run's progress and messages are announced as they
+change, and every text color has at least 4.5:1 contrast in both themes.
 
 ## How it is built
 

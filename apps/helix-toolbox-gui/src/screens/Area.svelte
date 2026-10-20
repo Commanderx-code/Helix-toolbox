@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { arrows } from '../lib/keys';
   import EntryDetails from '../components/EntryDetails.svelte';
   import EntryRow from '../components/EntryRow.svelte';
   import ItemList from '../components/ItemList.svelte';
@@ -26,7 +27,7 @@
     <SearchField />
   </div>
   <div class="body">
-    <div class="list card">
+    <div class="list card" use:arrows={{ items: '.select, .group', follow: '.select' }}>
       <div class="columns faint">
         <span></span><span>Entry</span><span>Status</span><span class="right">Flags</span>
       </div>

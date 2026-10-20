@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { arrows } from '../lib/keys';
   import EntryDetails from '../components/EntryDetails.svelte';
   import EntryRow from '../components/EntryRow.svelte';
   import { toolbox } from '../lib/state.svelte';
@@ -12,7 +13,7 @@
     <p class="screen-subtitle">Entries you pinned, here and in the terminal interface.</p>
   </div>
   <div class="body">
-    <div class="list card">
+    <div class="list card" use:arrows={{ items: '.select, .group', follow: '.select' }}>
       {#each pinned as { entry, area, group } (entry.id)}
         <EntryRow {entry} place={group ? `${area} › ${group}` : area} />
       {:else}

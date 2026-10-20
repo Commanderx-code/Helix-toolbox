@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { arrows } from '../lib/keys';
   import Icon, { type IconName } from './Icon.svelte';
   import { toolbox, type Screen } from '../lib/state.svelte';
 
@@ -22,11 +23,11 @@
   }
 </script>
 
-<nav>
+<nav aria-label="Screens" use:arrows={{ items: '.item' }}>
   <div class="section">Main menu</div>
   {@render item({ kind: 'dashboard' }, 'dashboard', 'Dashboard')}
-  {@render item({ kind: 'favorites' }, 'star', 'Favorites', toolbox.favorites.length)}
-  {@render item({ kind: 'plan' }, 'plan', 'Install Plan', toolbox.queue.length, true)}
+  {@render item({ kind: 'favorites' }, 'star', 'Favorites', toolbox.favorites.length, false, 'pinned')}
+  {@render item({ kind: 'plan' }, 'plan', 'Install Plan', toolbox.queue.length, true, 'queued')}
   {@render item({ kind: 'history' }, 'history', 'History')}
 
   <div class="section">Catalog</div>
@@ -38,21 +39,27 @@
 
   <div class="section">More tools</div>
   {@render item({ kind: 'doctor' }, 'doctor', 'Helix Doctor')}
-  {@render item({ kind: 'updates' }, 'refresh', 'Updates', updatesWaiting)}
+  {@render item({ kind: 'updates' }, 'refresh', 'Updates', updatesWaiting, false, 'with an update')}
   {@render item({ kind: 'backups' }, 'backups', 'Backups')}
   {@render item({ kind: 'drift' }, 'drift', 'Drift')}
   {@render item({ kind: 'reliability' }, 'flask', 'Reliability')}
   {@render item({ kind: 'hardware' }, 'chip', 'Hardware')}
+  {@render item({ kind: 'bundles' }, 'package', 'Offline bundles')}
   {@render item({ kind: 'desktop' }, 'monitor', 'Desktop')}
   {@render item({ kind: 'settings' }, 'gear', 'Settings')}
 </nav>
 
-{#snippet item(screen: Screen, icon: IconName, label: string, count = 0, accent = false)}
-  <button class="item" class:active={same(toolbox.screen, screen)} onclick={() => open(screen)}>
+{#snippet item(screen: Screen, icon: IconName, label: string, count = 0, accent = false, counted = '')}
+  <button
+    class="item"
+    class:active={same(toolbox.screen, screen)}
+    aria-current={same(toolbox.screen, screen) ? 'page' : undefined}
+    onclick={() => open(screen)}
+  >
     <Icon name={icon} />
     <span class="label">{label}</span>
     {#if count > 0}
-      <span class="count" class:accent>{count}</span>
+      <span class="count" class:accent aria-label="{count} {counted}">{count}</span>
     {/if}
   </button>
 {/snippet}
