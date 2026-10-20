@@ -211,7 +211,9 @@ jobs:
           VERSION: ${{ needs.sync.outputs.version }}
         working-directory: apps/helix-toolbox-gui
         run: |
-          # The window carries the release's version; the checkout is not committed.
+          # The window and the crates it pins carry the release's version; the
+          # checkout is not committed.
+          python3 -B ../../scripts/stamp-version.py "$VERSION"
           python3 -B ../../scripts/stamp-version.py "$VERSION" src-tauri/Cargo.toml
           npm ci --no-fund --no-audit
           npm run check
