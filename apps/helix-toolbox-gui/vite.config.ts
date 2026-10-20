@@ -9,8 +9,8 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    // The emblem comes from the terminal interface's copy.
-    fs: { allow: ['.', '../helix-toolbox/src/tui'] },
+    // The header's emblem is the menu icon, in the repository's assets.
+    fs: { allow: ['.', '../../assets'] },
   },
   build: {
     target: 'safari16',

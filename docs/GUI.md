@@ -199,6 +199,7 @@ when npm and WebKitGTK are installed, and the Checks workflow always.
 release does.
 After a change to `assets/icon.png` or `assets/icon-small.svg`, run
 `scripts/icons.sh` from the repository root and commit the sizes it writes.
+The header draws `icon-small.svg` itself, so it changes with the menu icon.
 
 The window takes `--catalog-dir DIR`, like the command line, to read a
 catalog from a directory; with `tests/fixtures` it works against the

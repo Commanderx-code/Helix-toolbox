@@ -4,6 +4,12 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.11.2
+
+- **The window's header shows the menu icon.** The flat HT tile from the
+  application menu replaces the detailed emblem beside the name, drawn
+  from `assets/icon-small.svg` so it stays sharp at any scale.
+
 ## v1.11.1
 
 - **Two menu entries that say which is which.** The terminal interface's is

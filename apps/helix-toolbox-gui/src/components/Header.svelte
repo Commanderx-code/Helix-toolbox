@@ -1,5 +1,5 @@
 <script lang="ts">
-  import emblem from '../../../helix-toolbox/src/tui/emblem.png';
+  import emblem from '../../../../assets/icon-small.svg';
   import Icon from './Icon.svelte';
   import { toolbox } from '../lib/state.svelte';
 </script>
@@ -36,7 +36,7 @@
   }
 
   .emblem {
-    height: 52px;
+    height: 48px;
     width: auto;
   }
 
