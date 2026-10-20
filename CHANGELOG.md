@@ -4,6 +4,12 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.11.1
+
+- **Two menu entries that say which is which.** The terminal interface's is
+  now **Helix Toolbox (Terminal)**; the window's stays **Helix Toolbox**,
+  both described as system setup.
+
 ## v1.11.0
 
 - **The setup wizard in the window.** It opens by itself on the first

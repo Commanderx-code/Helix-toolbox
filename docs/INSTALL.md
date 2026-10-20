@@ -12,8 +12,9 @@ current Arch and openSUSE Tumbleweed, or later).
 ## A package
 
 A package puts `helix-toolbox` in `/usr/bin`, with shell completions for bash,
-zsh and fish, manual pages (`man helix-toolbox`), and a menu entry that opens
-it in a terminal. Your package manager then knows it and removes it cleanly.
+zsh and fish, manual pages (`man helix-toolbox`), and a menu entry, **Helix
+Toolbox (Terminal)**, that opens it in a terminal. Your package manager then
+knows it and removes it cleanly.
 Download the file for your distribution from the release, check it (below),
 then:
 
@@ -95,10 +96,11 @@ chmod +x helix-toolbox-gui_1.10.0_amd64.AppImage && ./helix-toolbox-gui_1.10.0_a
 The Updates screen's **Helix Toolbox** row updates the window's package with
 the command line's, and replaces an AppImage in place.
 
-The packages add a menu entry, **Helix Toolbox**. The window is drawn by
-WebKitGTK 4.1, which the Debian and RPM packages install with it; the
-AppImage carries its libraries. It is not on crates.io: building it needs
-the frontend, as [GUI.md](GUI.md) describes.
+The packages add a menu entry, **Helix Toolbox**, beside the command line's
+**Helix Toolbox (Terminal)**. The window is drawn by WebKitGTK 4.1, which the
+Debian and RPM packages install with it; the AppImage carries its libraries.
+It is not on crates.io: building it needs the frontend, as [GUI.md](GUI.md)
+describes.
 
 ## Without installing
 

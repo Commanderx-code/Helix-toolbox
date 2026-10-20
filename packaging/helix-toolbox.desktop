@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Helix Toolbox
+Name=Helix Toolbox (Terminal)
 GenericName=System setup
 Comment=Build, configure and optimize this machine from a terminal menu
 Exec=helix-toolbox
