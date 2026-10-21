@@ -565,7 +565,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: [arch, arch-themes, debian, fedora, opensuse, arch-uefi, arch-iso, steamdeck]
+        distro: [arch, arch-bundle, arch-themes, arch-ctt-themes, debian, fedora, opensuse, arch-uefi, arch-iso, steamdeck]
     name: vm ${{ matrix.distro }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -662,7 +662,7 @@ jobs:
         run: |
           python3 -B scripts/validation-record.py merge validation.json "$GITHUB_RUN_ID" \
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$GITHUB_SHA" parts/*.json
-          python3 -c 'import json; d = json.load(open("validation.json")); assert len(d["images"]) == 12, d; assert all(i["entries"].get("htop") == "verified" for i in d["images"].values()), d; assert sorted(d["vms"]) == ["arch", "arch-iso", "arch-themes", "arch-uefi", "debian", "fedora", "opensuse", "steamdeck"], d'
+          python3 -c 'import json; d = json.load(open("validation.json")); assert len(d["images"]) == 12, d; assert all(i["entries"].get("htop") == "verified" for i in d["images"].values()), d; assert sorted(d["vms"]) == ["arch", "arch-bundle", "arch-ctt-themes", "arch-iso", "arch-themes", "arch-uefi", "debian", "fedora", "opensuse", "steamdeck"], d'
           cat validation.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

@@ -92,6 +92,8 @@ MACHINES = {
     'fedora': {'image': 'fedora', 'family': 'fedora', 'firmware': 'bios'},
     'opensuse': {'image': 'opensuse', 'family': 'opensuse', 'firmware': 'bios'},
     'arch-themes': {'image': 'arch', 'family': 'arch', 'firmware': 'bios'},
+    'arch-ctt-themes': {'image': 'arch', 'family': 'arch', 'firmware': 'bios'},
+    'arch-bundle': {'image': 'arch', 'family': 'arch', 'firmware': 'bios'},
     'arch-uefi': {'image': 'arch', 'family': 'arch', 'firmware': 'uefi'},
     # The live ISO, as root, with an empty disk to install on.
     'arch-iso': {'image': 'archiso', 'family': 'arch', 'firmware': 'uefi', 'live': True, 'chipset': 'q35'},
@@ -1047,11 +1049,17 @@ CASES = {
     'arch': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('plymouth-on', plymouth_on),
              ('plymouth-theme', plymouth_theme), ('plymouth-dotfiles', plymouth_dotfiles),
              ('plymouth-off', plymouth_off), ('apparmor', apparmor), ('sddm', sddm), ('enable-ssd-trim', ssd_trim),
-             ('bootable-usb-creator', bootable_usb), ('bundle-flatpak', flatpak_bundle)],
-    # Every other GRUB theme, Garuda's from its own repository.
+             ('bootable-usb-creator', bootable_usb)],
+    # Flatpak's runtimes take as long to download as the other cases take to
+    # run, so the Flatpak bundle has a machine of its own.
+    'arch-bundle': [('bundle-flatpak', flatpak_bundle)],
+    # Every other GRUB theme, Garuda's from its own repository; the Chris
+    # Titus Tech themes on a second machine, so the two halves run at once.
     'arch-themes': [(entry, grub_theme_case(entry)) for entry in (
-        'grub-cachyos', 'grub-catppuccin', 'grub-tela', 'grub-vimix', 'grub-ctt-bsol', 'grub-ctt-cyberpunk',
-        'grub-ctt-cyberre', 'grub-ctt-dedsec', 'grub-ctt-fallout', 'grub-ctt-minegrub', 'grub-ctt-shodan', 'grub')],
+        'grub-cachyos', 'grub-catppuccin', 'grub-tela', 'grub-vimix', 'grub')],
+    'arch-ctt-themes': [(entry, grub_theme_case(entry)) for entry in (
+        'grub-ctt-bsol', 'grub-ctt-cyberpunk', 'grub-ctt-cyberre', 'grub-ctt-dedsec', 'grub-ctt-fallout',
+        'grub-ctt-minegrub', 'grub-ctt-shodan')],
     'debian': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('plymouth-on', plymouth_on),
                ('plymouth-off', plymouth_off), ('apparmor', apparmor), ('sddm', sddm), ('enable-ssd-trim', ssd_trim)],
     'fedora': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('plymouth-on', plymouth_on),

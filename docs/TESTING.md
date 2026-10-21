@@ -138,7 +138,8 @@ its published checksum:
 |---|---|
 | `arch`, `debian`, `fedora` | the distribution's cloud image on BIOS firmware, with a USB stick plugged into the Arch one |
 | `opensuse` | the openSUSE Tumbleweed cloud image on BIOS firmware, for offline bundles |
-| `arch-themes` | the Arch cloud image on BIOS firmware, for the GRUB themes, with Garuda's repository added for its theme |
+| `arch-bundle` | the Arch cloud image on BIOS firmware, for the Flatpak offline bundle, whose runtimes take a long time to download |
+| `arch-themes`, `arch-ctt-themes` | the Arch cloud image on BIOS firmware, for the GRUB themes, split in two so they run at once, with Garuda's repository added for its theme |
 | `arch-uefi` | the Arch cloud image on UEFI firmware (OVMF) |
 | `arch-iso` | the Arch live ISO on UEFI firmware, as root, with an empty disk |
 | `steamdeck` | the Arch cloud image with firmware that names Valve as the board's maker, as a Steam Deck's does |

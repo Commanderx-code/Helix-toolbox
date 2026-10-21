@@ -20,6 +20,8 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
+      # The dependencies as main last built them; only what changed compiles.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Install shellcheck and fish
         run: sudo apt-get update && sudo apt-get install -y shellcheck fish
       - name: Workflow lint
@@ -71,6 +73,9 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: apps/helix-toolbox-gui/src-tauri -> target
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
@@ -86,12 +91,14 @@ jobs:
           npm ci --no-fund --no-audit
           npm run check
           npm run build
+      # With the smoke test's feature throughout, so the tests and its build
+      # share one compiled Tauri rather than building it twice.
       - name: The window's crate
         working-directory: apps/helix-toolbox-gui/src-tauri
         run: |
           cargo fmt --all -- --check
-          cargo clippy --locked --all-targets -- -D warnings
-          cargo test --locked
+          cargo clippy --locked --all-targets --features tauri/custom-protocol -- -D warnings
+          cargo test --locked --features tauri/custom-protocol
       # The window opened on a virtual display and driven through the setup
       # wizard, the palette, every screen, a run and a saved profile against
       # the fixture catalog (scripts/gui-smoke.sh), a debug build with the
