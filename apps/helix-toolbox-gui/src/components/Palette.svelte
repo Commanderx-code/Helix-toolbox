@@ -95,6 +95,7 @@
       if (withUpdate.length === 0) toolbox.notice = { title: 'Updates', text: 'No entry has an update waiting.' };
       else toolbox.reviewWith(() => api.prepareUpdate(withUpdate), withUpdate);
     });
+    action('Make a bug report', 'report issue problem copy', () => toolbox.makeReport());
     action('Set up this machine', 'wizard first run workstation', () => {
       toolbox.palette = false;
       toolbox.wizard = true;

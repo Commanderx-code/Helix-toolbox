@@ -13,6 +13,7 @@ use helix_toolbox_engine::{
     history::Record,
     inventory::Status,
     preview::{Certainty, Change, StepPreview, Tag},
+    profiles,
     updates::Channel,
 };
 use serde::Serialize;
@@ -50,6 +51,10 @@ pub struct EntryView {
     pub queueable: bool,
     /// Whether it asks questions while it runs.
     pub interactive: bool,
+    /// A package entry that offers removal.
+    pub removable: bool,
+    /// One of the user's own profiles, which can be exported and deleted.
+    pub yours: bool,
     /// The entries a profile runs, in order.
     pub runs: Vec<String>,
 }
@@ -61,19 +66,27 @@ pub fn areas(catalog: &Catalog) -> Vec<AreaView> {
         .map(|tab| AreaView {
             id: tab.id.clone(),
             name: tab.name.clone(),
-            items: tab.items.iter().map(item).collect(),
+            items: tab.items.iter().map(|found| item(found, false)).collect(),
         })
         .collect()
 }
 
-fn item(item: &Item) -> ItemView {
+/// `yours`: inside the user's profiles' group.
+fn item(item: &Item, yours: bool) -> ItemView {
     match item {
-        Item::Entry(entry) => ItemView::Entry(entry_view(entry)),
+        Item::Entry(entry) => ItemView::Entry(EntryView {
+            yours,
+            ..entry_view(entry)
+        }),
         Item::Group(group) => ItemView::Group {
             id: group.id.clone(),
             name: group.name.clone(),
             description: group.description.clone(),
-            items: group.items.iter().map(self::item).collect(),
+            items: group
+                .items
+                .iter()
+                .map(|found| self::item(found, group.id == profiles::GROUP))
+                .collect(),
         },
     }
 }
@@ -95,6 +108,14 @@ pub fn entry_view(entry: &Entry) -> EntryView {
         kind,
         queueable: entry.multi_select,
         interactive,
+        removable: matches!(
+            entry.action,
+            Action::Package {
+                removable: true,
+                ..
+            }
+        ),
+        yours: false,
         runs,
     }
 }
@@ -519,6 +540,16 @@ mod tests {
         let bundle = items.iter().find(|item| item["id"] == "bundle").unwrap();
         assert_eq!(bundle["kind"], "profile");
         assert_eq!(bundle["runs"], json!(["marker", "report"]));
+    }
+
+    #[test]
+    fn a_package_entry_says_whether_it_offers_removal() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/packages");
+        let catalog = Catalog::from_directory(&root, true).expect("the package fixtures load");
+        let sample = catalog.find("fallback-sample").unwrap();
+        assert!(entry_view(sample).removable);
+        let greeter = fixtures();
+        assert!(!entry_view(greeter.find("greeter").unwrap()).removable);
     }
 
     #[test]

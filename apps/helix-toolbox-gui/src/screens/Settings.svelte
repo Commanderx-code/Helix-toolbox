@@ -114,6 +114,13 @@
       </div>
       <p class="faint">The run's terminal stays dark in either theme, as programs expect.</p>
 
+      <h2 class="section">Reporting a problem</h2>
+      <p class="muted">
+        A bug report says which version this is and how it was installed, the system, your settings, the last few runs and the health
+        checks, ready to paste into an issue on GitHub.
+      </p>
+      <button class="button" onclick={() => toolbox.makeReport()}><Icon name="info" size={15} /> Make a bug report…</button>
+
       <h2 class="section">Elsewhere</h2>
       <p class="muted">
         The terminal interface keeps its own theme and icons, under its Settings screen. Favorites and the history are shared with it.

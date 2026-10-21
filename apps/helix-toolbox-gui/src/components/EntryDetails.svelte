@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from './Icon.svelte';
   import StatusBadge from './StatusBadge.svelte';
+  import * as api from '../lib/api';
   import { flags, KINDS } from '../lib/flags';
   import { toolbox } from '../lib/state.svelte';
 
@@ -9,6 +10,34 @@
   const status = $derived(entry ? toolbox.statuses[entry.id] : undefined);
   const queued = $derived(entry ? toolbox.isQueued(entry.id) : false);
   const pinned = $derived(entry ? toolbox.favorites.includes(entry.id) : false);
+  // As the terminal interface's `r`: a package entry that offers removal,
+  // once it is found on this machine.
+  const removable = $derived(entry?.removable && (status?.kind === 'installed' || status?.kind === 'update'));
+
+  async function exportProfile(id: string) {
+    try {
+      const said = await api.exportProfile(id);
+      if (said) toolbox.notice = { title: 'Profile exported', text: said };
+    } catch (error) {
+      toolbox.notice = { title: 'The profile was not exported', text: String(error) };
+    }
+  }
+
+  async function deleteProfile(id: string, name: string) {
+    const word = await toolbox.ask(
+      'Delete the profile',
+      `${name} is deleted from your profiles; the entries it runs stay in the catalog. Export it first to keep a copy. Type DELETE to delete it:`,
+      'DELETE',
+      'DELETE',
+    );
+    if (word !== 'DELETE') return;
+    try {
+      toolbox.notice = { title: 'Profile deleted', text: await api.deleteProfile(id) };
+      await toolbox.profilesChanged(id);
+    } catch (error) {
+      toolbox.notice = { title: 'The profile was not deleted', text: String(error) };
+    }
+  }
 </script>
 
 <aside class="card">
@@ -73,6 +102,23 @@
       >
         <Icon name="play" size={14} /> Run now
       </button>
+      {#if entry.yours}
+        <button class="button" onclick={() => exportProfile(entry.id)}>
+          <Icon name="save" size={14} /> Export…
+        </button>
+        <button class="button danger" onclick={() => deleteProfile(entry.id, entry.name)}>
+          <Icon name="trash" size={14} /> Delete…
+        </button>
+      {/if}
+      {#if removable}
+        <button
+          class="button danger"
+          disabled={toolbox.preparing || toolbox.busy}
+          onclick={() => toolbox.reviewWith(() => api.prepareRemove([entry.id]), [entry.id])}
+        >
+          <Icon name="trash" size={14} /> Remove…
+        </button>
+      {/if}
       <button class="button ghost" title={pinned ? 'Unpin' : 'Pin to Favorites'} onclick={() => toolbox.togglePin(entry.id)}>
         <Icon name="star" size={16} />
         {pinned ? 'Unpin' : 'Pin'}

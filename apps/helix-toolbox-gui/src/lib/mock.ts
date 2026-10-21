@@ -12,6 +12,8 @@ const entry = (id: string, name: string, description: string, flags = 'I', extra
   kind: 'package',
   queueable: true,
   interactive: false,
+  removable: (extra.kind ?? 'package') === 'package',
+  yours: false,
   runs: [],
   ...extra,
 });
@@ -73,6 +75,20 @@ const AREAS: AreaView[] = [
       entry('mirrors', 'Refresh mirrors', 'Rank the fastest package mirrors.', 'MP', { kind: 'script' }),
       entry('cache', 'Clean package cache', 'Keep the last two versions of each package.', 'MP', { kind: 'command' }),
       entry('report', 'System report', 'Write a report of this machine for a bug report.', '', { kind: 'native' }),
+    ],
+  },
+  {
+    id: 'profiles',
+    name: 'Profiles',
+    items: [
+      group('your-profiles', 'Your profiles', 'Saved in /home/me/.config/helix-toolbox/profiles', [
+        entry('profile-my-workstation', 'My workstation', 'Your profile: git, neovim, ripgrep, firefox.', '', {
+          kind: 'profile',
+          yours: true,
+          runs: ['git', 'neovim', 'ripgrep', 'firefox'],
+        }),
+      ]),
+      entry('developer-basics', 'Developer basics', 'Git, Neovim, Ripgrep and fzf.', '', { kind: 'profile', runs: ['git', 'neovim', 'ripgrep', 'fzf'] }),
     ],
   },
 ];
@@ -212,6 +228,33 @@ export async function call(command: string, args: Record<string, unknown> = {}):
       return RUNS;
     case 'save_profile':
       return `${args.name} (${(args.ids as string[]).length} entries) is saved.`;
+    case 'import_profile':
+      return 'Workstation (4 entries) is imported as /home/me/.config/helix-toolbox/profiles/workstation.toml. It is under Profiles, Your profiles.';
+    case 'export_profile':
+      return `${find(args.id as string)?.name} is exported to /home/me/${(args.id as string).replace('profile-', '')}.toml.`;
+    case 'copy_text':
+      await navigator.clipboard?.writeText(args.text as string).catch(() => undefined);
+      return undefined;
+    case 'bug_report':
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      return [
+        '### Helix Toolbox report',
+        '',
+        '- Helix Toolbox: 1.13.0',
+        '- Installed from: package',
+        '- Distribution: Garuda Linux (garuda, like arch)',
+        '- Package manager: pacman (Arch family)',
+        '',
+        '### The window',
+        '',
+        '- Helix Toolbox window: 1.13.0',
+        '- Installed from: package',
+        '- WebKitGTK: 2.50.4',
+        '- Desktop: KDE, wayland session',
+        '- Theme: system',
+      ].join('\n');
+    case 'delete_profile':
+      return `${find(args.id as string)?.name} is deleted.`;
     case 'doctor':
       return [
         { id: 'network', title: 'Network', health: 'good', health_label: 'OK', summary: 'Connected through wlp0s20f3', evidence: [], advice: null, repair: null, entry: null },
@@ -315,6 +358,17 @@ export async function call(command: string, args: Record<string, unknown> = {}):
         header: ['Risk: medium · asks for your password', 'Note: The packages are checked against the bundle\'s checksums and signatures first.'],
         lines: [{ name: 'Install the bundle\'s packages', detail: 'sudo pacman -U --needed packages/*.pkg.tar.zst' }],
       } satisfies Prepared;
+    case 'prepare_remove': {
+      planned = (args.ids as string[]).map((id) => find(id)).filter((e): e is EntryView => !!e);
+      const result: Prepared = {
+        kind: 'ready',
+        risk: 'medium',
+        privileged: true,
+        header: ['Risk: medium · asks for your password'],
+        lines: planned.map((entry) => ({ name: `Remove ${entry.name}`, detail: `sudo pacman -R ${entry.id}` })),
+      };
+      return result;
+    }
     case 'save_theme':
       theme = args.theme as WindowTheme;
       return call('read_settings');

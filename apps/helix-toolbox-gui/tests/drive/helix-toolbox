@@ -1,0 +1,9 @@
+#!/bin/sh
+# A stand-in for the command line in the window's smoke test, put first on
+# the PATH by scripts/gui-smoke.sh: only `report`, with a path under the
+# home folder, which the window must show as ~.
+if [ "$1" != report ]; then
+    echo "the smoke test's stand-in only reports" >&2
+    exit 2
+fi
+printf '### Helix Toolbox report\n\n- Helix Toolbox: the smoke test'"'"'s stand-in\n- Settings: %s/.config/helix-toolbox/settings.toml\n' "$HOME"

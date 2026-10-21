@@ -63,7 +63,8 @@ Open an issue on GitHub; the form asks for:
   installed, the distribution, the tools it found, the terminal, your
   settings, the last few runs and the health checks. It shows your home
   folder as `~` and includes no host name or logs, but read it before
-  posting.
+  posting. In the window, **Make a bug report…** in Settings (or the
+  palette) shows the same, with the window's own details, and copies it.
 
 A run that went right is worth reporting too, above all for the boot,
 login-screen and driver entries, which no container can test: name the

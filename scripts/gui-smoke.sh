@@ -2,8 +2,9 @@
 
 # Drive a debug build of the window through the setup wizard, the command
 # palette, the theme, the keyboard, every screen, a run with its change
-# preview, a saved profile and the offline bundles screen, against the
-# fixture catalog, and check what the drive script reports.
+# preview, the removal of a package entry, a saved profile exported,
+# deleted and imported again, the offline bundles screen and a bug report,
+# against the fixture catalog, and check what the drive script reports.
 # usage: scripts/gui-smoke.sh BINARY
 # BINARY is a debug build with the frontend in it (cargo build --features
 # tauri/custom-protocol in apps/helix-toolbox-gui/src-tauri, after npm run
@@ -18,10 +19,20 @@ cd "$(dirname -- "$0")/.."
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' 0
-# The fixture catalog plus the wizard's workstations; the fixtures
-# themselves have none, so the terminal interface's tests see no wizard.
+# The fixture catalog plus the wizard's workstations, a removable package
+# entry and a Profiles area for the profile the plan is saved as; the
+# fixtures themselves have none of them, so the terminal interface's tests
+# see no wizard and the same entries.
 cp -r tests/fixtures "$work/catalog"
 cp apps/helix-toolbox-gui/tests/drive/setup.toml "$work/catalog/catalog/setup.toml"
+cp apps/helix-toolbox-gui/tests/drive/removable.toml "$work/catalog/catalog/tools/removable.toml"
+printf 'tabs = ["tools", "profiles"]\n' > "$work/catalog/catalog/tabs.toml"
+mkdir "$work/catalog/catalog/profiles"
+printf 'name = "Profiles"\n' > "$work/catalog/catalog/profiles/tab.toml"
+# A stand-in command line that only prints a report, for the bug report.
+mkdir "$work/bin"
+cp apps/helix-toolbox-gui/tests/drive/helix-toolbox "$work/bin/helix-toolbox"
+export PATH="$work/bin:$PATH"
 mkdir -p "$work/home" "$work/config" "$work/state" "$work/data" "$work/cache"
 export HOME="$work/home"
 export XDG_CONFIG_HOME="$work/config" XDG_STATE_HOME="$work/state" \
@@ -30,6 +41,9 @@ export XDG_CONFIG_HOME="$work/config" XDG_STATE_HOME="$work/state" \
 export HELIX_TOOLBOX_TEST_OUT="$work/marker.txt"
 # WebKitGTK on a virtual display: no GPU, no compositor.
 export GDK_BACKEND=x11 WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1
+# A file chooser stays on the virtual display: through the desktop portal
+# it would open on the real one.
+unset GTK_USE_PORTAL
 
 # axe-core, from npm ci, goes in front of the drive script, which checks
 # each screen with it; CI must have it.
@@ -58,14 +72,18 @@ if ! grep -qx 'drive: DONE' "$work/stderr"; then
     exit 1
 fi
 # What the steps left behind: the marker the run wrote, the profile the
-# plan was saved as, the mark that the wizard was offered and the theme
-# chosen last.
+# plan was saved as (imported again after it was deleted) and its export,
+# the mark that the wizard was offered and the theme chosen last.
 if ! grep -q '^marker from ' "$work/marker.txt" 2>/dev/null; then
     echo "the run did not write the marker file" >&2
     exit 1
 fi
 if ! ls "$work/config/helix-toolbox/profiles/"*.toml >/dev/null 2>&1; then
     echo "no profile was saved in $work/config/helix-toolbox/profiles" >&2
+    exit 1
+fi
+if ! grep -q '^name = "Smoke profile"' "$work/config/helix-toolbox/exported.toml" 2>/dev/null; then
+    echo "the profile was not exported" >&2
     exit 1
 fi
 if ! grep -qx 'set_up = true' "$work/config/helix-toolbox/settings.toml" 2>/dev/null; then

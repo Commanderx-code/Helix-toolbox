@@ -4,6 +4,22 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.13.0
+
+- **Remove a package from the window.** An installed package entry that
+  offers removal has **Remove…** in its details, as `r` in the terminal
+  interface and `helix-toolbox remove`: removed by the package manager or
+  Flatpak that installed it, after the same confirmation and change
+  preview.
+- **Your profiles, shared from the window.** A profile of your own has
+  **Export…**, to write it to a file, and **Delete…**; **Import a
+  profile…** in the Profiles area adds one from a file, checked against
+  the catalog. The files are chosen in the desktop's own file chooser.
+- **A bug report from the window.** **Make a bug report…** in Settings,
+  or in the palette, shows what `helix-toolbox report` says, with the
+  window's version, how it was installed, WebKitGTK, the desktop and the
+  theme, and copies it to paste into an issue.
+
 ## v1.12.0
 
 - **What a plan changes, in the window.** The confirmation's **What it

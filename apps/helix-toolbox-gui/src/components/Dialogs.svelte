@@ -1,6 +1,7 @@
 <script lang="ts">
-  // The notice (something to read) and the prompt (a name or a word to
-  // type) that every screen uses, from the shared state.
+  // The notice (something to read), the prompt (a name or a word to type)
+  // and the bug report that every screen uses, from the shared state.
+  import * as api from '../lib/api';
   import { modal } from '../lib/keys';
   import Icon from './Icon.svelte';
   import { toolbox } from '../lib/state.svelte';
@@ -22,6 +23,20 @@
   function submit() {
     if (toolbox.prompt && ready) toolbox.prompt.resolve(answer.trim());
   }
+
+  let copied = $state(false);
+  $effect(() => {
+    if (toolbox.report) copied = false;
+  });
+
+  async function copyReport(text: string) {
+    try {
+      await api.copyText(text);
+      copied = true;
+    } catch (error) {
+      toolbox.error = `The report could not be copied: ${error}`;
+    }
+  }
 </script>
 
 <svelte:window
@@ -29,6 +44,7 @@
     if (event.key !== 'Escape') return;
     if (toolbox.prompt) toolbox.prompt.resolve(null);
     else if (toolbox.notice) toolbox.notice = null;
+    else if (toolbox.report) toolbox.report = null;
   }}
 />
 
@@ -39,6 +55,33 @@
       <pre class:mono={toolbox.notice.mono}>{toolbox.notice.text}</pre>
       <div class="buttons">
         <button class="button primary" onclick={() => (toolbox.notice = null)}>OK</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if toolbox.report}
+  {@const report = toolbox.report}
+  <div class="backdrop" role="presentation">
+    <div class="dialog card" role="dialog" aria-modal="true" aria-labelledby="report-title" use:modal>
+      <h2 id="report-title">Bug report</h2>
+      <p>
+        Paste it into a new issue at <span class="mono">github.com/Commanderx-code/Helix-toolbox/issues</span>, with what happened and how to
+        make it happen again. It shows your home folder as ~ and holds no host name or logs, but read it before posting.
+      </p>
+      {#if report.problem}
+        <p class="problem" role="alert"><Icon name="warning" size={15} /> {report.problem}</p>
+      {:else if report.text === null}
+        <p class="faint" role="status">Gathering the report; the health checks take a few seconds…</p>
+      {:else}
+        <pre class="mono">{report.text}</pre>
+      {/if}
+      <div class="buttons">
+        {#if copied}<span class="copied" role="status"><Icon name="check" size={14} /> Copied</span>{/if}
+        <button class="button" data-autofocus onclick={() => (toolbox.report = null)}>Close</button>
+        <button class="button primary" disabled={report.text === null} onclick={() => report.text && copyReport(report.text)}>
+          <Icon name="save" size={14} /> Copy
+        </button>
       </div>
     </div>
   </div>
@@ -138,8 +181,23 @@
 
   .buttons {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
     gap: 8px;
     margin-top: 16px;
+  }
+
+  .problem {
+    display: flex;
+    gap: 8px;
+    color: var(--red);
+  }
+
+  .copied {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    margin-right: auto;
+    color: var(--green);
   }
 </style>

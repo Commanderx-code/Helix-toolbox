@@ -1,0 +1,16 @@
+# A package entry that offers removal, for the smoke test's Remove button:
+# its command, sh, is on every machine, so the window finds it installed,
+# but no package manager has its package, so the engine's removal plan only
+# says to remove it the way it was installed. Nothing is removed.
+# scripts/gui-smoke.sh adds it to the fixture catalog's Tools.
+name = "Removable Sample"
+description = "A command every machine has, from no package Helix Toolbox knows."
+flags = "I"
+
+[package]
+binary = "sh"
+arch = "helix-toolbox-no-such-package"
+debian = "helix-toolbox-no-such-package"
+fedora = "helix-toolbox-no-such-package"
+suse = "helix-toolbox-no-such-package"
+removable = true

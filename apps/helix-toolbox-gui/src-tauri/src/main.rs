@@ -7,7 +7,7 @@
 mod views;
 
 use helix_toolbox_catalog::Catalog;
-use helix_toolbox_core::{Action, Entry};
+use helix_toolbox_core::{Action, Entry, printable};
 use helix_toolbox_engine::{
     Plan, backups, bundle,
     confirmation::{self, Prepared},
@@ -16,7 +16,7 @@ use helix_toolbox_engine::{
     hardware, history,
     inventory::{Inventory, which},
     overview::Overview,
-    plan, preflight, preview, profiles,
+    plan, plan_removal, preflight, preview, profiles,
     reliability::{self, Evidence},
     settings::{self, RunChoices, WindowTheme},
     setup, trust, updates,
@@ -30,6 +30,7 @@ use std::{
     sync::{Mutex, RwLock},
 };
 use tauri::{AppHandle, Manager, State, ipc::Channel};
+use tauri_plugin_dialog::DialogExt;
 use views::{
     AreaView, BackupView, BundleContentsView, BundleView, ChangesView, ChannelView, DiagnosisView,
     PreparedView, RecordView, StatusView,
@@ -419,6 +420,206 @@ fn save_profile(gui: State<Gui>, name: String, ids: Vec<String>) -> Result<Strin
     ))
 }
 
+/// One of the user's own profiles, by its catalog id: its file and what it
+/// holds.
+fn own_profile(catalog: &Catalog, id: &str) -> Result<(PathBuf, profiles::Profile), String> {
+    let directory = profiles::dir().ok_or("cannot find the configuration folder")?;
+    let slug = id
+        .strip_prefix(profiles::PREFIX)
+        .and_then(profiles::slug)
+        .filter(|slug| id == format!("{}{slug}", profiles::PREFIX))
+        .ok_or_else(|| format!("{} is not one of your profiles", printable(id)))?;
+    let path = directory.join(format!("{slug}.toml"));
+    let profile = profiles::read(&path, catalog).map_err(|error| error.to_string())?;
+    Ok((path, profile))
+}
+
+/// The file chooser, over the window: a profile file to read, or where to
+/// write one. None when it was closed.
+fn choose_profile_file(app: &AppHandle, save_as: Option<String>) -> Option<PathBuf> {
+    let mut chooser = app
+        .dialog()
+        .file()
+        .add_filter("Helix Toolbox profile", &["toml"]);
+    if let Some(window) = app.get_webview_window("main") {
+        chooser = chooser.set_parent(&window);
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        chooser = chooser.set_directory(home);
+    }
+    let chosen = match save_as {
+        Some(name) => chooser
+            .set_title("Export the profile")
+            .set_file_name(name)
+            .blocking_save_file(),
+        None => chooser.set_title("Import a profile").blocking_pick_file(),
+    };
+    chosen.and_then(|chosen| chosen.into_path().ok())
+}
+
+/// Add a profile file to the user's profiles, as `helix-toolbox profile
+/// import` does: from `path`, or a file chosen in the file chooser. None
+/// when the chooser was closed.
+#[tauri::command]
+async fn import_profile(app: AppHandle, path: Option<String>) -> Result<Option<String>, String> {
+    let handle = app.clone();
+    blocking(app, move |gui| {
+        let Some(path) = path
+            .map(PathBuf::from)
+            .or_else(|| choose_profile_file(&handle, None))
+        else {
+            return Ok(None);
+        };
+        let mut catalog = gui.catalog.write().unwrap();
+        let profile = profiles::read(&path, &catalog).map_err(|error| error.to_string())?;
+        let directory = profiles::dir().ok_or("cannot find the configuration folder")?;
+        let saved =
+            profiles::save(&directory, &profile, &catalog).map_err(|error| error.to_string())?;
+        profiles::add_to(&mut catalog, &directory);
+        Ok(Some(format!(
+            "{} ({} entries) is imported as {}. It is under Profiles, Your profiles.",
+            printable(&profile.name),
+            profile.entries.len(),
+            saved.display()
+        )))
+    })
+    .await?
+}
+
+/// Write one of the user's profiles to a file to share, as `helix-toolbox
+/// profile export` does: to `path`, or where the file chooser says. None
+/// when the chooser was closed.
+#[tauri::command]
+async fn export_profile(
+    app: AppHandle,
+    id: String,
+    path: Option<String>,
+) -> Result<Option<String>, String> {
+    let handle = app.clone();
+    blocking(app, move |gui| {
+        let (own, profile) = own_profile(&gui.catalog.read().unwrap(), &id)?;
+        let file_name = own.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let Some(path) = path
+            .map(PathBuf::from)
+            .or_else(|| choose_profile_file(&handle, Some(file_name)))
+        else {
+            return Ok(None);
+        };
+        if path.extension().is_none_or(|extension| extension != "toml") {
+            return Err("A profile is written to a .toml file.".to_string());
+        }
+        profiles::write(&path, &profile).map_err(|error| error.to_string())?;
+        Ok(Some(format!(
+            "{} is exported to {}. On another machine: Import a profile in Profiles, or helix-toolbox profile import.",
+            printable(&profile.name),
+            path.display()
+        )))
+    })
+    .await?
+}
+
+/// Delete one of the user's profiles, as `helix-toolbox profile delete` does.
+#[tauri::command]
+fn delete_profile(gui: State<Gui>, id: String) -> Result<String, String> {
+    let mut catalog = gui.catalog.write().unwrap();
+    let (path, profile) = own_profile(&catalog, &id)?;
+    std::fs::remove_file(&path)
+        .map_err(|error| format!("cannot delete {}: {error}", path.display()))?;
+    if let Some(directory) = profiles::dir() {
+        profiles::add_to(&mut catalog, &directory);
+    }
+    Ok(format!("{} is deleted.", printable(&profile.name)))
+}
+
+// Reporting a problem
+
+/// How the window was installed, from where it runs, as the command line's
+/// report says it of itself.
+fn window_installed_from(exe: &Path) -> &'static str {
+    if std::env::var_os("APPIMAGE").is_some() {
+        "AppImage"
+    } else if exe.starts_with("/usr/bin") || exe.starts_with("/usr/sbin") {
+        "package"
+    } else if exe.components().any(|part| part.as_os_str() == "target") {
+        "source build"
+    } else {
+        "other"
+    }
+}
+
+/// What a bug report needs, to paste into an issue: `helix-toolbox report`,
+/// then the window's own facts. It only reads, and shows the home folder
+/// as `~`.
+#[tauri::command]
+async fn bug_report(app: AppHandle) -> Result<String, String> {
+    blocking(app, |gui| {
+        if !gui.this.is_absolute() {
+            return Err(
+                "The helix-toolbox command was not found beside this program or on the PATH; the report comes from it."
+                    .to_string(),
+            );
+        }
+        let output = std::process::Command::new(&gui.this)
+            .arg("report")
+            .output()
+            .map_err(|error| format!("{} report could not run: {error}", gui.this.display()))?;
+        if !output.status.success() {
+            return Err(format!(
+                "{} report failed: {}",
+                gui.this.display(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
+        let variable = |name: &str| {
+            std::env::var(name)
+                .ok()
+                .filter(|value| !value.is_empty())
+                .map(|value| printable(&value))
+                .unwrap_or_else(|| "unknown".to_string())
+        };
+        let exe = std::env::current_exe().unwrap_or_default();
+        let theme = serde_json::to_value(theme(gui))
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_string))
+            .unwrap_or_default();
+        let window = format!(
+            "\n### The window\n\n- Helix Toolbox window: {}\n- Installed from: {}\n- WebKitGTK: {}\n- Desktop: {}, {} session\n- Theme: {theme}\n",
+            env!("CARGO_PKG_VERSION"),
+            window_installed_from(&exe),
+            tauri::webview_version().unwrap_or_else(|_| "unknown".to_string()),
+            variable("XDG_CURRENT_DESKTOP"),
+            variable("XDG_SESSION_TYPE"),
+        );
+        Ok(without_home(&format!(
+            "{}{window}",
+            String::from_utf8_lossy(&output.stdout).trim_end()
+        )))
+    })
+    .await?
+}
+
+/// Put text on the desktop's clipboard, through GTK on the window's thread:
+/// a page may write there only from a real click.
+#[tauri::command]
+fn copy_text(app: AppHandle, text: String) -> Result<(), String> {
+    app.run_on_main_thread(move || {
+        gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD).set_text(&text);
+    })
+    .map_err(|error| error.to_string())
+}
+
+/// The home folder as `~`, as in the command line's report.
+fn without_home(text: &str) -> String {
+    match std::env::var("HOME")
+        .ok()
+        .map(|home| home.trim_end_matches('/').to_string())
+        .filter(|home| home.len() > 1)
+    {
+        Some(home) => text.replace(&home, "~"),
+        None => text.to_string(),
+    }
+}
+
 // Doctor
 
 /// The health checks, run on this machine.
@@ -531,6 +732,27 @@ async fn prepare_update(app: AppHandle, ids: Vec<String>) -> Result<PreparedView
         let entries: Vec<&Entry> = ids.iter().filter_map(|id| catalog.find(id)).collect();
         let planned = inventory.plan_update(entries, &gui.platform, &which);
         prepare_plan(gui, &catalog, planned)
+    })
+    .await
+}
+
+/// Remove these package entries, through the package manager or Flatpak
+/// that installed them, as the terminal interface's `r` does.
+#[tauri::command]
+async fn prepare_remove(app: AppHandle, ids: Vec<String>) -> Result<PreparedView, String> {
+    blocking(app, move |gui| {
+        let catalog = gui.catalog.read().unwrap();
+        let Some(entries) = ids
+            .iter()
+            .map(|id| catalog.find(id))
+            .collect::<Option<Vec<&Entry>>>()
+        else {
+            return cannot(gui, "That entry is not in the catalog.".into());
+        };
+        match plan_removal(entries, &gui.platform) {
+            Ok(planned) => prepare_plan(gui, &catalog, planned),
+            Err(error) => cannot(gui, error.to_string()),
+        }
     })
     .await
 }
@@ -1375,14 +1597,17 @@ fn main() {
         backups: Mutex::new(Vec::new()),
         hardware: Mutex::new(None),
     };
-    let builder = tauri::Builder::default().manage(gui);
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(gui);
     macro_rules! commands {
         ($($extra:ident),*) => {
             tauri::generate_handler![
                 about, areas, statuses, favorites, pin, prepare, changes, download_sources, cancel,
                 run, write, resize,
-                stop, close_run, runs, save_profile, doctor, prepare_repair, updates,
-                prepare_channels, prepare_update, list_backups, prepare_restore, drift_targets,
+                stop, close_run, runs, save_profile, import_profile, export_profile,
+                delete_profile, bug_report, copy_text, doctor, prepare_repair, updates,
+                prepare_channels, prepare_update, prepare_remove, list_backups, prepare_restore, drift_targets,
                 drift_check, save_baseline, reliability, trust, read_hardware, prepare_firmware,
                 prepare_smart, read_desktop, save_look, prepare_look, read_settings,
                 save_settings, save_theme, bundle_contents, prepare_bundle_create,
@@ -1424,6 +1649,59 @@ mod tests {
         );
         assert_eq!(catalog_dir(&args(&["gui"])), None);
         assert_eq!(catalog_dir(&args(&["gui", "--catalog-dir"])), None);
+    }
+
+    #[test]
+    fn a_profile_is_found_by_its_exact_id_inside_the_profiles_folder() {
+        let catalog = Catalog::from_directory(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures"),
+            true,
+        )
+        .unwrap();
+        for id in [
+            "developer-basics",
+            "profile-../../etc/passwd",
+            "profile-Work",
+            "profile-",
+        ] {
+            let refused = own_profile(&catalog, id).unwrap_err();
+            assert!(
+                refused.contains("is not one of your profiles"),
+                "{id}: {refused}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_report_says_how_the_window_was_installed() {
+        if std::env::var_os("APPIMAGE").is_some() {
+            return;
+        }
+        assert_eq!(
+            window_installed_from(Path::new("/usr/bin/helix-toolbox-gui")),
+            "package"
+        );
+        assert_eq!(
+            window_installed_from(Path::new(
+                "/src/apps/helix-toolbox-gui/src-tauri/target/debug/helix-toolbox-gui"
+            )),
+            "source build"
+        );
+        assert_eq!(
+            window_installed_from(Path::new("/opt/helix/helix-toolbox-gui")),
+            "other"
+        );
+    }
+
+    #[test]
+    fn the_report_shows_the_home_folder_as_a_tilde() {
+        let Some(home) = std::env::var("HOME").ok().filter(|home| home.len() > 1) else {
+            return;
+        };
+        let said = without_home(&format!(
+            "- Settings: {home}/.config/helix-toolbox/settings.toml"
+        ));
+        assert_eq!(said, "- Settings: ~/.config/helix-toolbox/settings.toml");
     }
 
     #[test]

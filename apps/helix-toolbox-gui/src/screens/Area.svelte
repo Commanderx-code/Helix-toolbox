@@ -1,4 +1,6 @@
 <script lang="ts">
+  import * as api from '../lib/api';
+  import Icon from '../components/Icon.svelte';
   import { arrows } from '../lib/keys';
   import EntryDetails from '../components/EntryDetails.svelte';
   import EntryRow from '../components/EntryRow.svelte';
@@ -10,6 +12,17 @@
 
   const area = $derived(toolbox.areas[index]);
   const matches = $derived(toolbox.matches(toolbox.search));
+
+  async function importProfile() {
+    try {
+      const said = await api.importProfile();
+      if (!said) return;
+      await toolbox.profilesChanged();
+      toolbox.notice = { title: 'Profile imported', text: said };
+    } catch (error) {
+      toolbox.notice = { title: 'The profile was not imported', text: String(error) };
+    }
+  }
 </script>
 
 <div class="screen">
@@ -24,7 +37,12 @@
         {/if}
       </p>
     </div>
-    <SearchField />
+    <div class="tools">
+      {#if area?.id === 'profiles' && !toolbox.search}
+        <button class="button" onclick={importProfile}><Icon name="folder" size={15} /> Import a profile…</button>
+      {/if}
+      <SearchField />
+    </div>
   </div>
   <div class="body">
     <div class="list card" use:arrows={{ items: '.select, .group', follow: '.select' }}>
@@ -63,6 +81,12 @@
     align-items: flex-end;
     justify-content: space-between;
     gap: 16px;
+  }
+
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
 
   .body {

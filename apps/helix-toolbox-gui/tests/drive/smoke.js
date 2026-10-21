@@ -249,9 +249,36 @@
     const text = notice.parentElement.querySelector('pre').textContent;
     if (!text.includes('is saved')) throw new Error(text);
     await click('OK');
-    // The fixture catalog has no Profiles area to show it in; the runner
-    // checks the saved file.
     return text.split(' is saved')[0] + ' is saved';
+  });
+
+  await step('your profile is exported, deleted and imported again', async () => {
+    await click('Profiles', document.querySelector('nav'));
+    await until('the Profiles area', () => screenTitle() === 'Profiles');
+    if (!button('Import a profile')) throw new Error('no Import a profile button');
+    const row = await until('the saved profile', () => withText('.list .select', 'Smoke profile'));
+    row.click();
+    const details = await until('the details', () => withText('aside h2', 'Smoke profile')?.closest('aside'));
+    if (!button('Export', details)) throw new Error('no Export button');
+    await accessible('your profile');
+    // The file chooser is the desktop's, out of reach here: the commands
+    // take the file instead, in the scratch settings folder.
+    const { path } = await invoke('read_settings');
+    const file = path.replace(/settings\.toml$/, 'exported.toml');
+    const exported = await invoke('export_profile', { id: 'profile-smoke-profile', path: file });
+    if (!exported?.includes('is exported to')) throw new Error(exported);
+    await click('Delete', details);
+    const input = await until('the confirmation', () => document.querySelector('#prompt-title') && document.querySelector('[role="dialog"] input'));
+    await type(input, 'DELETE');
+    key(input, 'Enter');
+    await until('the notice', () => withText('#notice-title', 'Profile deleted'));
+    await click('OK');
+    await until('the profile gone', () => !withText('.list .select', 'Smoke profile'));
+    const imported = await invoke('import_profile', { path: file });
+    if (!imported?.includes('is imported as')) throw new Error(imported);
+    const areas = await invoke('areas');
+    if (!JSON.stringify(areas).includes('"profile-smoke-profile"')) throw new Error('the imported profile is not in Profiles');
+    return 'exported, deleted, imported';
   });
 
   await step('the Offline bundles screen reads the plan and checks a folder', async () => {
@@ -267,6 +294,41 @@
     await accessible('Offline bundles');
     if (!said.textContent.includes('/nonexistent')) throw new Error(said.textContent.trim());
     return `Marker: ${state}; a missing folder: ${said.textContent.trim()}`;
+  });
+
+  await step('an installed package entry offers removal, which the engine plans', async () => {
+    key(window, 'k', { ctrlKey: true });
+    const input = await until('the palette', () => document.querySelector('[aria-label="Command palette"] input'));
+    await type(input, 'removable sample');
+    key(input, 'Enter');
+    const details = await until('the details', () => withText('aside h2', 'Removable Sample')?.closest('aside'));
+    // The button waits for the status check to find it installed.
+    await click('Remove', details);
+    const title = await until('the confirmation', () => document.querySelector('#confirm-title'));
+    const dialog = title.closest('[role="dialog"]');
+    const said = dialog.textContent;
+    if (!said.includes('not by a package Helix Toolbox knows')) throw new Error(said.trim());
+    await accessible('the removal');
+    await click('OK', dialog);
+    await until('the confirmation to close', () => !document.querySelector('#confirm-title'));
+    return `${title.textContent.trim()}: installed, but not by a package Helix Toolbox knows`;
+  });
+
+  await step('a bug report is gathered from the command line and copied', async () => {
+    await click('Settings', document.querySelector('nav'));
+    await until('Settings', () => screenTitle().startsWith('Settings'));
+    await click('Make a bug report');
+    const dialog = await until('the report', () => document.querySelector('#report-title')?.closest('[role="dialog"]'));
+    const text = await until('the report text', () => dialog.querySelector('pre')?.textContent || dialog.querySelector('[role="alert"]')?.textContent, 30000);
+    if (!text.includes("the smoke test's stand-in")) throw new Error(text);
+    if (!text.includes('### The window') || !text.includes('Helix Toolbox window:')) throw new Error(`no window section: ${text}`);
+    if (!text.includes('- Settings: ~/.config/')) throw new Error(`the home folder is not shown as ~: ${text}`);
+    await accessible('the bug report');
+    await click('Copy', dialog);
+    await until('copied', () => withText('[role="status"]', 'Copied'));
+    await click('Close', dialog);
+    await until('the report to close', () => !document.querySelector('#report-title'));
+    return text.split('\n').find((line) => line.startsWith('- WebKitGTK')) ?? 'gathered and copied';
   });
 
   await trace(window.axe ? `axe-core ${window.axe.version} checked the screens` : 'axe-core was not loaded; nothing was checked for accessibility');

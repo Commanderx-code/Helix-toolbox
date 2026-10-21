@@ -52,7 +52,10 @@ others: `sha256sum --check --ignore-missing SHA256SUMS` and
   queues it in the Install Plan; selecting one shows its details, with
   **Add to plan**, **Run now** and **Pin**. An entry that runs on its own
   (interactive installers, for example) has **Run now** only, as in the
-  terminal interface.
+  terminal interface. A package entry that offers removal and is
+  installed has **Remove…** too, the terminal interface's `r`: the package
+  manager or Flatpak that installed it removes it, after the same
+  confirmation.
 - **Favorites**: the pinned entries, the same `favorites.toml` the
   terminal interface keeps.
 - **Install Plan**: the queue, in the order it will be planned; entries can
@@ -126,9 +129,18 @@ The other tools, under **More tools** in the sidebar:
   default: light or dark as the desktop's color scheme is, through GTK,
   and changing with it), **Dark** or **Light**. It applies at once and is
   kept as `window_theme`; the run's terminal stays dark in either.
+  **Make a bug report…** (also in the palette) shows what
+  `helix-toolbox report` prints, with the window's version, how it was
+  installed, WebKitGTK, the desktop and the theme after it, and copies it
+  to paste into an issue.
   The Install Plan's **Save as profile** adds a profile to the Profiles
   area; a profile's details have **Put its entries in the plan**, to queue
-  its entries one by one and change the plan before it runs.
+  its entries one by one and change the plan before it runs. Your own
+  profiles, under Your profiles, also have **Export…**, which writes one to
+  a file to share, and **Delete…**, once DELETE is typed; **Import a
+  profile…** at the top of the Profiles area adds one from a file, checked
+  against the catalog, as `helix-toolbox profile import` does. Both files
+  are chosen in the desktop's file chooser.
 
 Two things work from every screen:
 
@@ -205,8 +217,11 @@ Its commands:
 | `close_run` | records the run in the history |
 | `runs` | the history |
 | `save_profile` | the Install Plan as a profile |
+| `bug_report`, `copy_text` | `helix-toolbox report` with the window's facts, and text put on the clipboard |
+| `import_profile`, `export_profile`, `delete_profile` | your profiles: one added from a file, written to one, or deleted; the file is chosen in the file chooser unless a path is given |
 | `doctor`, `prepare_repair` | the health checks, and a repair ready to confirm |
 | `updates`, `prepare_channels`, `prepare_update` | the update channels, and updating channels or entries |
+| `prepare_remove` | removing package entries, as the terminal interface's `r` |
 | `list_backups`, `prepare_restore` | the backups, and a restore |
 | `drift_targets`, `drift_check`, `save_baseline` | what to compare with, a comparison, a new baseline |
 | `reliability`, `trust` | how entries are tested, and one entry's inspection |
@@ -252,8 +267,9 @@ is tested where no pointer reaches it. `scripts/gui-smoke.sh BINARY` runs
 `tests/drive/smoke.js` that way against the fixture catalog, with scratch
 folders for the home and settings: the wizard on the first start, the
 palette, every screen, a run of the marker fixture through the
-confirmation and the terminal, and a saved profile; then it checks the
-files those left. The Checks workflow runs it under `xvfb-run` on every
+confirmation and the terminal, a saved profile exported, deleted and
+imported again, the Remove button, and a bug report from a stand-in
+command line; then it checks the files those left. The Checks workflow runs it under `xvfb-run` on every
 change; by hand, inside a virtual session:
 
 ```sh

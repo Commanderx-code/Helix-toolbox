@@ -52,6 +52,14 @@ export const stop = () => call<void>('stop');
 export const closeRun = () => call<void>('close_run');
 export const runs = () => call<RecordView[]>('runs');
 export const saveProfile = (name: string, ids: string[]) => call<string>('save_profile', { name, ids });
+/** Import a profile file, chosen in the file chooser; null when it was closed. */
+export const importProfile = () => call<string | null>('import_profile', { path: null });
+/** Export one of the user's profiles to a file the file chooser names; null when it was closed. */
+export const exportProfile = (id: string) => call<string | null>('export_profile', { id, path: null });
+export const deleteProfile = (id: string) => call<string>('delete_profile', { id });
+/** `helix-toolbox report` and the window's own facts, as Markdown. */
+export const bugReport = () => call<string>('bug_report');
+export const copyText = (text: string) => call<void>('copy_text', { text });
 
 export const doctor = () => call<Diagnosis[]>('doctor');
 export const prepareRepair = (id: string) => call<Prepared>('prepare_repair', { id });
@@ -59,6 +67,7 @@ export const prepareRepair = (id: string) => call<Prepared>('prepare_repair', { 
 export const updates = (online: boolean) => call<UpdatesView>('updates', { online });
 export const prepareChannels = (ids: string[]) => call<Prepared>('prepare_channels', { ids });
 export const prepareUpdate = (ids: string[]) => call<Prepared>('prepare_update', { ids });
+export const prepareRemove = (ids: string[]) => call<Prepared>('prepare_remove', { ids });
 
 export const backups = () => call<BackupsView>('list_backups');
 export const prepareRestore = (index: number) => call<Prepared>('prepare_restore', { index });
