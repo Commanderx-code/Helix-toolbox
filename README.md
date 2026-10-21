@@ -1,6 +1,7 @@
 <p align="center">
   <img src="https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/assets/banner.png" width="820" alt="Helix Toolbox: build, configure, optimize">
 </p>
+</p>
 
 <p align="center"><strong>BUILD • CONFIGURE • OPTIMIZE</strong></p>
 
