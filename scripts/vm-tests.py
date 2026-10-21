@@ -976,6 +976,45 @@ def flatpak_bundle(machine, shots):
         machine.relaunch()
 
 
+# A notify-send that writes down what it was asked to show.
+NOTIFY_SEND = """#!/bin/sh
+[ "$1" = --help ] && exit 0
+printf '%s\\n' "$@" > /tmp/hf-notified
+"""
+
+
+def update_notifications(machine, shots):
+    """The update notifications' timer under the user's own systemd: turned
+    on, its check run once by systemd itself, and turned off again."""
+    # The user's systemd stays up between logins, as it does on a desktop.
+    machine.ssh('sudo loginctl enable-linger "$USER"')
+    machine.ssh('sudo tee /usr/local/bin/notify-send >/dev/null && sudo chmod 755 /usr/local/bin/notify-send',
+                stdin=NOTIFY_SEND)
+    machine.ssh('./helix-toolbox notifications on')
+    user = 'systemctl --user'
+    if not machine.ok(f'{user} is-enabled helix-toolbox-updates.timer && {user} is-active helix-toolbox-updates.timer'):
+        raise RuntimeError('the timer is not enabled and running')
+    if not machine.ok(f'{user} list-timers helix-toolbox-updates.timer --no-legend | grep -q helix-toolbox-updates.service'):
+        raise RuntimeError('no check is scheduled')
+    # The check, as the timer starts it; a oneshot service, so this waits.
+    machine.ssh(f'{user} start helix-toolbox-updates.service')
+    result = machine.ssh(f'{user} show -P Result helix-toolbox-updates.service').stdout.strip()
+    said = machine.ssh('sudo journalctl _SYSTEMD_USER_UNIT=helix-toolbox-updates.service -b --no-pager -o cat').stdout
+    if result != 'success':
+        raise RuntimeError(f'the check ended with {result}:\n{said[-1500:]}')
+    if 'updates are waiting' in said or 'update is waiting' in said:
+        told = machine.ssh('cat /tmp/hf-notified').stdout
+        if '--app-name=Helix Toolbox' not in told:
+            raise RuntimeError(f'the check said updates wait but showed no notification:\n{said[-1500:]}\n{told}')
+    elif 'Nothing is waiting' not in said:
+        raise RuntimeError(f'the check did not finish:\n{said[-1500:]}')
+    log(f'  the check: {said.strip().splitlines()[-1] if said.strip() else "(nothing)"}')
+    machine.ssh('./helix-toolbox notifications off')
+    if machine.ok(f'{user} is-active helix-toolbox-updates.timer') or machine.ok(
+            'test -e ~/.config/systemd/user/helix-toolbox-updates.timer'):
+        raise RuntimeError('turning notifications off left the timer behind')
+
+
 def zypper_bundle(machine, shots):
     """zypper downloads a bundle as the user, without root, and it installs
     with no network."""
@@ -1076,7 +1115,7 @@ CASES = {
                ('plymouth-off', plymouth_off), ('selinux', selinux), ('sddm', sddm), ('enable-ssd-trim', ssd_trim)],
     'arch-uefi': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('limine-cachyos', limine_cachyos),
                   ('limine-garuda', limine_garuda)],
-    'opensuse': [('bundle-zypper', zypper_bundle)],
+    'opensuse': [('bundle-zypper', zypper_bundle), ('update-notifications', update_notifications)],
     'arch-iso': [('arch-server-setup', server_setup)],
     'steamdeck': [('linux-neptune-for-steamdeck', linux_neptune)],
     # What also applies on ARM64 boards and servers that boot through UEFI.

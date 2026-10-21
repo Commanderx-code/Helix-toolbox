@@ -125,6 +125,10 @@ The other tools, under **More tools** in the sidebar:
 - **Settings**: what happens after a failed step and whether a snapshot
   is taken first, the same `settings.toml` the terminal interface keeps
   its own look in, and **Set up this machine…**, the setup wizard again.
+  **Tell me when updates are waiting** turns the update notifications on
+  or off at once, as `helix-toolbox notifications on` does (GUIDE.md): a
+  timer of the user's own checks every 6 hours and shows a desktop
+  notification, whose **Show updates** opens this window on Updates.
   **Appearance** chooses the window's theme: **Follow the desktop** (the
   default: light or dark as the desktop's color scheme is, through GTK,
   and changing with it), **Dark** or **Light**. It applies at once and is
@@ -228,6 +232,7 @@ Its commands:
 | `read_hardware`, `prepare_firmware`, `prepare_smart` | the hardware, a firmware update, a disk's health check |
 | `read_desktop`, `save_look`, `prepare_look` | the desktop and its looks, saving one, putting one back |
 | `read_settings`, `save_settings` | the run choices |
+| `save_notifications` | the update notifications' timer on or off |
 | `setup_start`, `setup_choose`, `setup_done` | the wizard: the machine and the workstations, a workstation's entries for this machine, remembering it was offered |
 
 Every `prepare_*` command answers like `prepare`, with a plan waiting for
@@ -256,7 +261,8 @@ Every icon is drawn from the logo, `assets/icon.svg`: after a change to it,
 run `scripts/icons.sh` from the repository root and commit what it writes.
 The window's header draws `icon.svg` itself.
 
-The window takes `--catalog-dir DIR`, like the command line, to read a
+The window takes `--updates` to open on the Updates screen, as a click on
+the update notification starts it, and `--catalog-dir DIR`, like the command line, to read a
 catalog from a directory; with `tests/fixtures` it works against the
 fixture entries (a marker file, a failing command, a greeter that asks for
 a name), so the whole flow can be tried without changing anything. Debug
@@ -268,8 +274,9 @@ is tested where no pointer reaches it. `scripts/gui-smoke.sh BINARY` runs
 folders for the home and settings: the wizard on the first start, the
 palette, every screen, a run of the marker fixture through the
 confirmation and the terminal, a saved profile exported, deleted and
-imported again, the Remove button, and a bug report from a stand-in
-command line; then it checks the files those left. The Checks workflow runs it under `xvfb-run` on every
+imported again, the Remove button, a bug report from a stand-in
+command line, and the update notifications turned on and off with a
+stand-in `systemctl`; then it checks the files those left. The Checks workflow runs it under `xvfb-run` on every
 change; by hand, inside a virtual session:
 
 ```sh

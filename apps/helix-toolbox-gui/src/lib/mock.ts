@@ -127,6 +127,7 @@ function find(id: string, items: ItemView[] = AREAS.flatMap((area) => area.items
 
 let planned: EntryView[] = [];
 let theme: WindowTheme = 'system';
+let notifications = false;
 
 export async function call(command: string, args: Record<string, unknown> = {}): Promise<unknown> {
   await new Promise((resolve) => setTimeout(resolve, 60));
@@ -137,6 +138,7 @@ export async function call(command: string, args: Record<string, unknown> = {}):
         command_line: true,
         first_run: false,
         theme,
+        open_updates: false,
         overview: {
           rows: [
             ['Distribution', 'Sample Linux'],
@@ -372,9 +374,14 @@ export async function call(command: string, args: Record<string, unknown> = {}):
     case 'save_theme':
       theme = args.theme as WindowTheme;
       return call('read_settings');
+    case 'save_notifications':
+      notifications = args.on as boolean;
+      return notifications
+        ? 'Helix Toolbox now checks every 6 hours, and soon after you log in, and shows a notification when updates are waiting; a click on it opens Updates here. It never updates anything itself.'
+        : 'Update notifications are off.';
     case 'read_settings':
     case 'save_settings':
-      return { keep_going: args.keepGoing ?? false, snapshots: args.snapshots ?? true, snapshot_tool: 'Snapper', path: '/home/me/.config/helix-toolbox/settings.toml', theme };
+      return { keep_going: args.keepGoing ?? false, snapshots: args.snapshots ?? true, snapshot_tool: 'Snapper', path: '/home/me/.config/helix-toolbox/settings.toml', theme, notifications };
     default:
       return undefined;
   }

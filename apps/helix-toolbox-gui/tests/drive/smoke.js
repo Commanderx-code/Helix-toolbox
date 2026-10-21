@@ -331,6 +331,27 @@
     return text.split('\n').find((line) => line.startsWith('- WebKitGTK')) ?? 'gathered and copied';
   });
 
+  await step('update notifications turn on and off from Settings', async () => {
+    await click('Settings', document.querySelector('nav'));
+    await until('Settings', () => screenTitle().startsWith('Settings'));
+    const box = () => withText('label.toggle', 'Tell me when updates are waiting')?.querySelector('input');
+    (await until('the notifications switch', () => box() && !box().disabled && box())).click();
+    const told = await until('what turning on did', () => document.querySelector('#notice-title')?.closest('[role="dialog"]'));
+    if (!told.textContent.includes('every 6 hours')) throw new Error(told.textContent);
+    await accessible('Settings with notifications on');
+    await click('OK', told);
+    if ((await invoke('read_settings')).notifications !== true) throw new Error('they are not on');
+    await until('the switch on', () => box()?.checked && !box().disabled);
+    box().click();
+    const start = Date.now();
+    while ((await invoke('read_settings')).notifications !== false) {
+      if (Date.now() - start > 20000) throw new Error('they are not off');
+      await sleep(200);
+    }
+    await until('the switch off', () => box() && !box().checked && !box().disabled);
+    return 'on, then off';
+  });
+
   await trace(window.axe ? `axe-core ${window.axe.version} checked the screens` : 'axe-core was not loaded; nothing was checked for accessibility');
   await trace(failed ? 'DONE with failures' : 'DONE');
   await sleep(300);

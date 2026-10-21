@@ -71,6 +71,47 @@ jobs:
           name: packages-aarch64
           path: dist/
 
+  # The window's packages, built as the release builds them, for the
+  # window job to install.
+  build-window:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-22.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    name: build-window ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Install WebKitGTK and the other libraries Tauri needs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: The Debian package, the RPM, the AppImage and the Arch package
+        working-directory: apps/helix-toolbox-gui
+        run: |
+          npm ci --no-fund --no-audit
+          npx tauri build --bundles deb,rpm,appimage
+          mkdir -p "$RUNNER_TEMP/window"
+          cp src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/rpm/*.rpm src-tauri/target/release/bundle/appimage/*.AppImage "$RUNNER_TEMP/window/"
+          ../../scripts/install-nfpm.sh "$RUNNER_TEMP/bin"
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' ../../Cargo.toml | head -n 1)
+          PATH="$RUNNER_TEMP/bin:$PATH" ../../scripts/package-gui.sh "$version" src-tauri/target/release/helix-toolbox-gui "$RUNNER_TEMP/window"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: window-${{ matrix.arch }}
+          path: ${{ runner.temp }}/window/
+
   # Arch Linux ARM has no image on Docker Hub: its own root file system,
   # checked against its build key, becomes one here
   # (scripts/arch-arm-tests.sh).
@@ -472,6 +513,35 @@ jobs:
           grep -q '^Helix Toolbox: Flathub finished, but Missing Sample is not installed' missing.txt
           hf history --limit 1 | grep -q 'failed | Missing Sample | exit 1'
           rm /usr/bin/flatpak
+      - name: Update notifications, with stand-ins for systemd and the desktop
+        run: |
+          # No user systemd runs in a container (the openSUSE VM has one): a
+          # systemctl and a notify-send that only write down what they were
+          # asked.
+          mkdir -p stand-ins
+          # The stand-ins' own text, expanded when they run.
+          # shellcheck disable=SC2016
+          printf '#!/bin/sh\necho "$*" >> "%s/systemctl.log"\n' "$PWD" > stand-ins/systemctl
+          # shellcheck disable=SC2016
+          printf '#!/bin/sh\n[ "$1" = --help ] && exit 0\nprintf "%%s\\n" "$@" > "%s/notified.txt"\n' "$PWD" > stand-ins/notify-send
+          chmod +x stand-ins/*
+          export PATH="$PWD/stand-ins:$PATH" XDG_CONFIG_HOME="$PWD/notify-config" XDG_STATE_HOME="$PWD/notify-state"
+          units=notify-config/systemd/user
+          bin/helix-toolbox notifications on
+          bin/helix-toolbox notifications | grep -q '^Update notifications: on'
+          test -L $units/timers.target.wants/helix-toolbox-updates.timer
+          grep -qx -- '--user start helix-toolbox-updates.timer' systemctl.log
+          # systemd's own reading of the units, where the image has it.
+          if [ -x /usr/bin/systemd-analyze ]; then
+            /usr/bin/systemd-analyze verify $units/helix-toolbox-updates.timer $units/helix-toolbox-updates.service
+          fi
+          bin/helix-toolbox notifications check | tee check.txt
+          if grep -q 'waiting$' check.txt; then
+            grep -qx -- '--app-name=Helix Toolbox' notified.txt
+          fi
+          bin/helix-toolbox notifications off
+          test ! -e $units/helix-toolbox-updates.timer
+          test ! -e $units/timers.target.wants/helix-toolbox-updates.timer
       - name: Script and native entries
         run: |
           bin/helix-toolbox run system-report machine-summary --yes | tee report.txt
@@ -558,6 +628,137 @@ jobs:
   # whose firmware says it is a Steam Deck. The Arch and openSUSE machines
   # also install offline bundles with no network.
   # The screens captured while they boot are kept for a person to look at.
+  # The window on each distribution: its AppImage opened without WebKitGTK
+  # installed, then its package installed with the command line's by the distribution's
+  # package tool, which finds WebKitGTK and the rest, opened on a virtual
+  # display and removed.
+  window:
+    needs: [build, build-arm64, build-window]
+    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: archlinux:latest
+            family: Arch
+          - image: debian:stable
+            family: Debian
+          - image: ubuntu:24.04
+            family: Debian
+          - image: ubuntu:22.04
+            family: Debian
+          - image: fedora:latest
+            family: Fedora
+          - image: opensuse/tumbleweed:latest
+            family: openSUSE
+          - image: debian:stable
+            family: Debian
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+          - image: ubuntu:24.04
+            family: Debian
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+          - image: fedora:latest
+            family: Fedora
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+          - image: opensuse/tumbleweed:latest
+            family: openSUSE
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+    container: ${{ matrix.image }}
+    name: window on ${{ matrix.image }}${{ matrix.arch && ' on aarch64' || '' }}
+    steps:
+      - name: A virtual display, and xdotool to find the window on it
+        run: |
+          case "${{ matrix.family }}" in
+            Arch) pacman -Syu --noconfirm --needed xorg-server-xvfb xorg-xauth xdotool ;;
+            Debian) apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y xvfb xauth xdotool ;;
+            Fedora) dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth xdotool which ;;
+            openSUSE) zypper --non-interactive install xvfb-run xauth xdotool which ;;
+          esac
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ matrix.arch && 'packages-aarch64' || 'packages' }}
+          path: packages
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: window-${{ matrix.arch || 'x86_64' }}
+          path: window
+      - name: The AppImage opens where WebKitGTK is not installed
+        env:
+          # No FUSE in a container: the AppImage unpacks itself instead.
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          # What a desktop has whatever runs on it, and what AppImages
+          # therefore leave out (fontconfig, X11, OpenGL, libgpg-error): GTK 3
+          # and Mesa, and libgpg-error, which Debian's image lacks. Not
+          # WebKitGTK, which the AppImage brings.
+          case "${{ matrix.family }}" in
+            Arch) pacman -S --noconfirm --needed gtk3 mesa ;;
+            Debian) DEBIAN_FRONTEND=noninteractive apt-get install -y libgtk-3-0 libgl1 libegl1 libgbm1 libgpg-error0 ;;
+            Fedora) dnf install -y gtk3 mesa-libGL mesa-libEGL mesa-libgbm ;;
+            openSUSE) zypper --non-interactive install libgtk-3-0 Mesa-libGL1 Mesa-libEGL1 libgbm1 ;;
+          esac
+          if ldconfig -p | grep -q 'libwebkit2gtk-4\.1\.so'; then
+            echo "WebKitGTK is installed, so this would not show the AppImage brings it" >&2
+            exit 1
+          fi
+          ls -l window
+          case "${{ matrix.arch }}" in
+            aarch64) appimage=$(echo window/helix-toolbox-gui_*_aarch64.AppImage) ;;
+            *) appimage=$(echo window/helix-toolbox-gui_*_amd64.AppImage) ;;
+          esac
+          chmod +x "$appimage"
+          xvfb-run -a scripts/window-opens.sh "$appimage"
+      - name: The window's package installs with the command line's, opens and removes cleanly
+        # Whatever the AppImage did.
+        if: ${{ !cancelled() }}
+        run: |
+          case "${{ matrix.arch }}" in
+            aarch64) arch=aarch64 debian=arm64 ;;
+            *) arch=x86_64 debian=amd64 ;;
+          esac
+          case "${{ matrix.family }}" in
+            Arch)
+              pacman -U --noconfirm packages/helix-toolbox-*-$arch.pkg.tar.zst window/helix-toolbox-gui-*-$arch.pkg.tar.zst
+              pacman -Ql helix-toolbox-gui > files.txt ;;
+            Debian)
+              apt-get install -y ./packages/helix-toolbox_*_$debian.deb ./window/helix-toolbox-gui_*_$debian.deb
+              dpkg -L helix-toolbox-gui > files.txt ;;
+            Fedora)
+              dnf install -y ./packages/helix-toolbox-*.$arch.rpm ./window/helix-toolbox-gui-*.$arch.rpm
+              rpm -ql helix-toolbox-gui > files.txt ;;
+            openSUSE)
+              # Neither package is signed with a key zypper knows.
+              zypper --non-interactive install --allow-unsigned-rpm ./packages/helix-toolbox-*.$arch.rpm ./window/helix-toolbox-gui-*.$arch.rpm
+              rpm -ql helix-toolbox-gui > files.txt ;;
+          esac
+          test "$(readlink -f "$(command -v helix-toolbox-gui)")" = /usr/bin/helix-toolbox-gui
+          for file in /usr/bin/helix-toolbox-gui /usr/share/applications/helix-toolbox-gui.desktop \
+              /usr/share/icons/hicolor/128x128/apps/helix-toolbox-gui.png; do
+            grep -qE "^(helix-toolbox-gui )?$file\$" files.txt
+          done
+          grep -qx 'Exec=helix-toolbox-gui' /usr/share/applications/helix-toolbox-gui.desktop
+          # Every library it links to is there.
+          if ldd /usr/bin/helix-toolbox-gui | grep 'not found'; then
+            exit 1
+          fi
+          xvfb-run -a scripts/window-opens.sh helix-toolbox-gui
+          case "${{ matrix.family }}" in
+            Arch) pacman -R --noconfirm helix-toolbox-gui helix-toolbox ;;
+            Debian) apt-get remove -y helix-toolbox-gui helix-toolbox ;;
+            Fedora) dnf remove -y helix-toolbox-gui helix-toolbox ;;
+            openSUSE) zypper --non-interactive remove helix-toolbox-gui helix-toolbox ;;
+          esac
+          hash -r
+          test ! -e /usr/bin/helix-toolbox-gui
+          test ! -e /usr/share/applications/helix-toolbox-gui.desktop
+
   vm:
     needs: build
     runs-on: ubuntu-latest

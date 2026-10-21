@@ -7,6 +7,7 @@ mod drift;
 mod inspect;
 mod json;
 mod logging;
+mod notify;
 mod report;
 mod selfupdate;
 mod setup;
@@ -260,6 +261,14 @@ enum Command {
     /// like any entry: helix-toolbox run profile-<name>.
     #[command(subcommand)]
     Profile(ProfileCommand),
+    /// Tell you on the desktop when updates are waiting: a systemd user
+    /// timer checks every 6 hours, as helix-toolbox updates --online does,
+    /// and shows a notification when something new waits. It never updates
+    /// anything itself. Without a subcommand, says whether it is on.
+    Notifications {
+        #[command(subcommand)]
+        action: Option<NotificationsCommand>,
+    },
     /// Show recent runs.
     History {
         #[arg(long, default_value_t = 20)]
@@ -309,6 +318,16 @@ enum ProfileCommand {
     Import { file: PathBuf },
     /// Delete one of your profiles.
     Delete { name: String },
+}
+
+#[derive(Subcommand)]
+enum NotificationsCommand {
+    /// Write the timer into your systemd user folder and start it.
+    On,
+    /// Stop the timer and remove it.
+    Off,
+    /// Look for updates now and tell of new ones; the timer runs this.
+    Check,
 }
 
 #[derive(clap::Args, Clone, Debug, Default)]
@@ -379,6 +398,7 @@ fn main() -> Result<()> {
         | Command::Completions { .. }
         | Command::Manpages { .. }
         | Command::FetchRelease { .. }
+        | Command::Notifications { .. }
             if as_json =>
         {
             bail!(
@@ -1003,6 +1023,12 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        Command::Notifications { action } => match action {
+            None => notify::status(),
+            Some(NotificationsCommand::On) => notify::on(),
+            Some(NotificationsCommand::Off) => notify::off(),
+            Some(NotificationsCommand::Check) => notify::check(&platform),
+        },
         Command::Report { no_checks } => {
             let found = report::gather(&platform, !no_checks);
             if as_json {

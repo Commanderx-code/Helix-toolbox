@@ -22,6 +22,7 @@ use helix_toolbox_engine::{
     confirmation::{self, Prepared},
     doctor, drift, history,
     inventory::{Inventory, Status, which},
+    notifications,
     overview::Overview,
     plan, plan_removal, preflight, profiles, reliability, updates,
 };
@@ -453,6 +454,11 @@ pub struct App {
     set_up: bool,
     /// The wizard's workstations, by index, while it is open.
     wizard_ids: Vec<String>,
+    /// Where the update notifications' timer is kept; none in tests unless
+    /// one says.
+    notices: Option<notifications::Places>,
+    /// Runs `systemctl --user`; tests answer for it.
+    systemctl: fn(&[&str]) -> Option<bool>,
 }
 
 /// A plan of the queue as it was, from when it was made, with what the
@@ -539,6 +545,8 @@ impl App {
             looks_dir: None,
             set_up: true,
             wizard_ids: Vec::new(),
+            notices: None,
+            systemctl: |_| None,
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -577,6 +585,8 @@ impl App {
         self.set_up = look.set_up || path.is_none();
         self.snapshot_tool = backups::Snapshots::here();
         self.settings_path = path;
+        self.notices = notifications::Places::here();
+        self.systemctl = notifications::systemctl;
         self
     }
 
@@ -2079,6 +2089,16 @@ impl App {
                     (None, _) => "not set up here".to_string(),
                     (Some(tool), true) => format!("yes ({})", tool.label()),
                     (Some(_), false) => "no".to_string(),
+                },
+            ),
+            (
+                "Tell me when updates are waiting".to_string(),
+                match &self.notices {
+                    None => "not available here".to_string(),
+                    Some(places) if notifications::is_on(places) => {
+                        format!("yes, {}", notifications::EVERY)
+                    }
+                    Some(_) => "no".to_string(),
                 },
             ),
             ("Setup wizard".to_string(), "Enter opens it".to_string()),
@@ -5030,8 +5050,56 @@ impl App {
                 self.snapshots = !self.snapshots;
                 self.save_look();
             }
-            6 => self.open_wizard(false),
+            6 => self.toggle_notifications(),
+            7 => self.open_wizard(false),
             _ => {}
+        }
+    }
+
+    /// Turn the update notifications' timer on or off.
+    fn toggle_notifications(&mut self) {
+        let Some(places) = self.notices.clone() else {
+            return;
+        };
+        let told = if notifications::is_on(&places) {
+            notifications::turn_off(&places, &self.systemctl).map(|()| None)
+        } else {
+            std::env::current_exe()
+                .map_err(|error| format!("cannot tell where this program is: {error}"))
+                .and_then(|program| {
+                    notifications::turn_on(
+                        &places,
+                        &program,
+                        notifications::window_here().as_deref(),
+                        &self.systemctl,
+                    )
+                })
+                .map(|started| {
+                    Some(match started {
+                        notifications::Started::Now => format!(
+                            "Helix Toolbox now checks {}, and soon after you log in, and shows a notification when updates are waiting. It never updates anything itself.\n\nThe same setting turns it off again.",
+                            notifications::EVERY
+                        ),
+                        notifications::Started::AtLogin => "The checks are set up, but systemd's user manager did not answer, so they start at your next login.".to_string(),
+                    })
+                })
+        };
+        match told {
+            Ok(None) => {}
+            Ok(Some(text)) => {
+                self.popup = Some(Popup::Text(TextPopup::new(
+                    "Update notifications",
+                    text,
+                    true,
+                )));
+            }
+            Err(error) => {
+                self.popup = Some(Popup::Text(TextPopup::new(
+                    "Update notifications",
+                    format!("They could not be turned on or off: {error}"),
+                    true,
+                )));
+            }
         }
     }
 
@@ -6268,6 +6336,37 @@ mod tests {
         press(&mut app, KeyCode::Char('j'));
         press(&mut app, KeyCode::Enter);
         assert!(app.skip_confirmation);
+    }
+
+    #[test]
+    fn settings_turn_the_update_notifications_on_and_off() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut app = app();
+        app.open_screen(Screen::Settings);
+        app.focus = Focus::Main;
+        app.main_state.select(Some(6));
+        assert!(screen(&mut app, 120, 40).contains("not available here"));
+        press(&mut app, KeyCode::Enter);
+        assert!(app.popup.is_none(), "nothing to turn on without a home");
+        let places = notifications::Places {
+            units: directory.path().join("systemd/user"),
+            told: directory.path().join("notified.txt"),
+        };
+        app.notices = Some(places.clone());
+        app.systemctl = |_| Some(true);
+        press(&mut app, KeyCode::Enter);
+        assert!(notifications::is_on(&places));
+        assert!(screen(&mut app, 120, 40).contains("Helix Toolbox now checks"));
+        press(&mut app, KeyCode::Esc);
+        assert!(screen(&mut app, 120, 40).contains("yes, every 6 hours"));
+        press(&mut app, KeyCode::Enter);
+        assert!(!notifications::is_on(&places));
+        assert!(app.popup.is_none());
+        // Without systemd it says so, and nothing is written.
+        app.systemctl = |_| None;
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 120, 40).contains("could not be turned on"));
+        assert!(!places.units.join(notifications::TIMER).exists());
     }
 
     #[test]

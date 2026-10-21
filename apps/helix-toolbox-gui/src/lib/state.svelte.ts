@@ -90,6 +90,7 @@ class Toolbox {
       this.areas = areas;
       this.favorites = favorites;
       if (about.first_run) this.wizard = true;
+      else if (about.open_updates) this.open({ kind: 'updates' });
     } catch (error) {
       this.error = String(error);
     }

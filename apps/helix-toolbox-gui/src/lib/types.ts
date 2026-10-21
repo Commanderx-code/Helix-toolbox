@@ -10,6 +10,8 @@ export type About = {
   /** The first start on this machine: the setup wizard opens by itself. */
   first_run: boolean;
   theme: WindowTheme;
+  /** Started from the update notification: open on Updates. */
+  open_updates: boolean;
 };
 
 /** The window's colors: the desktop's preference, or always dark or light. */
@@ -248,6 +250,8 @@ export type SettingsView = {
   snapshot_tool: string | null;
   path: string | null;
   theme: WindowTheme;
+  /** Whether update notifications are on; null with no home folder for their timer. */
+  notifications: boolean | null;
 };
 
 // Offline bundles

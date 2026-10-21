@@ -24,6 +24,7 @@ pub mod hardware;
 pub mod history;
 pub mod inventory;
 pub mod legacy;
+pub mod notifications;
 pub mod overview;
 pub mod preflight;
 pub mod preview;

@@ -16,6 +16,7 @@
   let keepGoing = $state(false);
   let snapshots = $state(true);
   let saving = $state(false);
+  let switching = $state(false);
 
   const changed = $derived(view !== null && (keepGoing !== view.keep_going || snapshots !== view.snapshots));
 
@@ -38,6 +39,20 @@
       if (view) view.theme = saved.theme;
     } catch (error) {
       toolbox.error = String(error);
+    }
+  }
+
+  /** Notifications turn on or off at once: they are a timer, not a setting to save. */
+  async function switchNotifications(on: boolean) {
+    switching = true;
+    try {
+      const told = await api.saveNotifications(on);
+      if (on) toolbox.notice = { title: 'Update notifications', text: told };
+    } catch (error) {
+      toolbox.error = `Update notifications could not be turned ${on ? 'on' : 'off'}: ${error}`;
+    } finally {
+      switching = false;
+      await load();
     }
   }
 
@@ -89,6 +104,27 @@
               With {view.snapshot_tool}, when a plan is risky or changes privileged files, the kernel or disks. Backups says how to restore one.
             {:else}
               No snapshot tool (Snapper or Timeshift) is set up on this machine.
+            {/if}
+          </span>
+        </span>
+      </label>
+
+      <h2 class="section">Updates</h2>
+      <label class="toggle" class:off={view.notifications === null}>
+        <input
+          type="checkbox"
+          checked={view.notifications === true}
+          disabled={view.notifications === null || switching}
+          onchange={(event) => switchNotifications(event.currentTarget.checked)}
+        />
+        <span>
+          <span class="title">Tell me when updates are waiting</span>
+          <span class="detail">
+            {#if view.notifications === null}
+              There is no home folder to keep the check's timer in.
+            {:else}
+              A desktop notification, checked every 6 hours and soon after you log in, the way Updates checks online. It never updates
+              anything itself. This applies at once, and the terminal interface shares it.
             {/if}
           </span>
         </span>

@@ -34,13 +34,14 @@ package; `cargo install --locked helix-toolbox` for a Cargo install.
 
 ## From Commander Toolbox
 
-HelixForge replaces Commander Toolbox, a Linutil fork, which is now archived;
-the dotfiles `toolbox` command opens HelixForge. This matrix records every
-entry of the old catalog and where it went. Status values:
+HelixForge (Helix Toolbox's name before 1.7) replaces Commander Toolbox, a
+Linutil fork, which is now archived; the dotfiles `toolbox` command opens
+Helix Toolbox. This matrix records every entry of the old catalog and where
+it went. Status values:
 
 - **done**: available in HelixForge with the same behavior
 - **partial**: available with a difference noted
-- **planned**: not yet available; the old toolbox remains the stable way to run it
+- **dropped**: left out, with the reason
 
 Both parts of the old catalog have come across. The Commander installers
 live under `scripts/installers/commander/` with their Python tests; the
@@ -109,7 +110,7 @@ install, and stay scripts.
 | System Diagnostics | Utilities / Toolbox Maintenance | Maintenance | done: `scripts/installers/commander/`, same script and tests |
 | Config Backup Restore | Utilities / Toolbox Maintenance | Maintenance | done: `scripts/installers/commander/`, same script and tests |
 | Toolbox Updater | Utilities / Toolbox Maintenance | Maintenance | dropped: HelixForge updates through its releases (Milestone 3) |
-| Installation History | Utilities / Toolbox Maintenance | Maintenance | done (history command and record; a screen is planned) |
+| Installation History | Utilities / Toolbox Maintenance | Maintenance | done: the `history` command and record, and the History screen in the menu and the window |
 | Driverless Printer Setup | Utilities / Printers | Maintenance | done: `scripts/installers/commander/`, same script and tests |
 
 ## General catalog
@@ -308,9 +309,9 @@ install, and stay scripts.
 | Shared shell helpers (`common-script.sh`, `common-service-script.sh`) | done, under `scripts/shared/` |
 | Commander installer tests (Python) | done, under `tests/installers/`; the three menu-format tests were replaced by the catalog loader's own checks |
 | Dotfiles and Myfish source sync | done: `scripts/sync-sources.py` renders catalog files and the workflow publishes releases |
-| Releases and the `start.sh` launcher | done, pending the first run on GitHub |
+| Releases and the `start.sh` launcher | done: every release is built, tested and published by the release workflow |
 | Dashboard, history and settings screens | done (Milestone 2) |
-| Graphical interface | planned (Milestone 5) |
+| Graphical interface | done: the window, `helix-toolbox-gui`, since 1.8 ([GUI.md](GUI.md)) |
 
 ## Where the general catalog went
 

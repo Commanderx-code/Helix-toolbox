@@ -4,6 +4,22 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.14.0
+
+- **Told when updates are waiting.** **Tell me when updates are waiting**
+  in Settings, in the window and the terminal interface, or
+  `helix-toolbox notifications on`, sets up a timer of your own that
+  checks soon after you log in and every 6 hours, as Updates checks
+  online, and shows a desktop notification when something new is
+  waiting. **Show updates** on it opens the window on Updates. It never
+  updates anything itself; `helix-toolbox notifications off` removes it.
+- **The window's packages, tested on every distribution.** Each change
+  now installs the window's Debian package, RPM and Arch package with
+  the command line's on Arch, Debian, Ubuntu 22.04 and 24.04, Fedora and
+  openSUSE, on x86_64 and ARM64, opens it and removes it, and opens the
+  AppImage on each where WebKitGTK is not installed, before a release is
+  published.
+
 ## v1.13.0
 
 - **Remove a package from the window.** An installed package entry that

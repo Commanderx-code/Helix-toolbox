@@ -103,6 +103,7 @@ export const settings = () => call<SettingsView>('read_settings');
 export const saveSettings = (keepGoing: boolean, snapshots: boolean) =>
   call<SettingsView>('save_settings', { keepGoing, snapshots });
 export const saveTheme = (theme: WindowTheme) => call<SettingsView>('save_theme', { theme });
+export const saveNotifications = (on: boolean) => call<string>('save_notifications', { on });
 
 /** Run the confirmed plan; `onEvent` gets each event as it comes. */
 export async function run(rows: number, cols: number, onEvent: (event: RunEvent) => void) {

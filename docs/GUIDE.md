@@ -152,6 +152,16 @@ yourself, the new program in its place. The window's package is updated
 with it, and the window's AppImage replaced where it is. Copies run through
 the launcher or `start.sh` are always the latest release already.
 
+To be told when updates are waiting, turn on **Tell me when updates are
+waiting** in Settings, in the window or the menu, or run `helix-toolbox
+notifications on`. A timer of your own (systemd's, in
+`~/.config/systemd/user`) then checks soon after you log in and every 6
+hours, online the way `r` does, and shows a desktop notification when
+something new is waiting; it tells of the same updates once. Its **Show
+updates** button opens the window on Updates. It never updates anything
+itself. `helix-toolbox notifications off`, or the same setting, removes the
+timer.
+
 ## The desktop
 
 **Desktop** shows the desktop and its login screen, the theme, icons,
@@ -214,6 +224,7 @@ helix-toolbox search editor          # find entries
 helix-toolbox status                 # what is installed, updated or managed
 helix-toolbox run git ripgrep --dry-run
 helix-toolbox updates --online       # what every package tool has waiting
+helix-toolbox notifications on       # a desktop notification when updates wait
 helix-toolbox doctor                 # the health checks
 helix-toolbox report                 # for a bug report
 ```
@@ -227,6 +238,7 @@ helix-toolbox report                 # for a bug report
 | `~/.config/helix-toolbox/profiles/` | Your profiles |
 | `~/.config/helix-toolbox/baselines/` | Your baselines, for Drift |
 | `~/.config/helix-toolbox/looks/` | Your saved desktop looks |
-| `~/.local/state/helix-toolbox/` | History and saved logs |
+| `~/.local/state/helix-toolbox/` | History, saved logs, and the updates last told of |
+| `~/.config/systemd/user/helix-toolbox-updates.*` | The update notifications' timer, when they are on |
 
 Removing Helix Toolbox leaves them; delete them to start afresh.

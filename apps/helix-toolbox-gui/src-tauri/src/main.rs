@@ -15,6 +15,7 @@ use helix_toolbox_engine::{
     execution::{Execution, Options},
     hardware, history,
     inventory::{Inventory, which},
+    notifications,
     overview::Overview,
     plan, plan_removal, preflight, preview, profiles,
     reliability::{self, Evidence},
@@ -59,6 +60,8 @@ struct Gui {
     channels: Mutex<Vec<updates::Channel>>,
     backups: Mutex<Vec<backups::Backup>>,
     hardware: Mutex<Option<hardware::Hardware>>,
+    /// Started with `--updates`, as a click on the update notification does.
+    open_updates: bool,
 }
 
 /// The command line beside this program, else on the PATH.
@@ -119,6 +122,9 @@ struct About {
     /// The first start on this machine: the setup wizard opens by itself.
     first_run: bool,
     theme: WindowTheme,
+    /// Open on the Updates screen: the window was started from the update
+    /// notification.
+    open_updates: bool,
 }
 
 #[tauri::command]
@@ -132,6 +138,7 @@ fn about(gui: State<Gui>) -> About {
             .as_deref()
             .is_some_and(|path| !settings::set_up(path)),
         theme: theme(&gui),
+        open_updates: gui.open_updates,
     }
 }
 
@@ -1474,6 +1481,9 @@ struct SettingsView {
     /// Where the settings are kept.
     path: Option<String>,
     theme: WindowTheme,
+    /// Whether update notifications are on; None where there is no home
+    /// to keep their timer in.
+    notifications: Option<bool>,
 }
 
 #[tauri::command]
@@ -1489,7 +1499,41 @@ fn read_settings(gui: State<Gui>) -> SettingsView {
         snapshot_tool: backups::Snapshots::here().map(backups::Snapshots::label),
         path: gui.settings.as_ref().map(|path| path.display().to_string()),
         theme: theme(&gui),
+        notifications: notifications::Places::here().map(|places| notifications::is_on(&places)),
     }
+}
+
+/// Turn the update notifications on or off, as `helix-toolbox
+/// notifications` does; the timer runs the command line, and a click on a
+/// notification opens this window. What happened, to tell.
+#[tauri::command]
+async fn save_notifications(app: AppHandle, on: bool) -> Result<String, String> {
+    blocking(app, move |gui| {
+        let places =
+            notifications::Places::here().ok_or("there is no home folder to keep the timer in")?;
+        if !on {
+            notifications::turn_off(&places, &notifications::systemctl)?;
+            return Ok("Update notifications are off.".to_string());
+        }
+        // An AppImage runs from a mount that goes away; its own file stays.
+        let window = std::env::var_os("APPIMAGE")
+            .map(PathBuf::from)
+            .or_else(|| std::env::current_exe().ok());
+        let started = notifications::turn_on(
+            &places,
+            &gui.this,
+            window.as_deref(),
+            &notifications::systemctl,
+        )?;
+        Ok(match started {
+            notifications::Started::Now => format!(
+                "Helix Toolbox now checks {}, and soon after you log in, and shows a notification when updates are waiting; a click on it opens Updates here. It never updates anything itself.",
+                notifications::EVERY
+            ),
+            notifications::Started::AtLogin => "The checks are set up, but systemd's user manager did not answer, so they start at your next login.".to_string(),
+        })
+    })
+    .await?
 }
 
 /// Save the run choices, leaving the terminal interface's look as it is.
@@ -1596,6 +1640,7 @@ fn main() {
         channels: Mutex::new(Vec::new()),
         backups: Mutex::new(Vec::new()),
         hardware: Mutex::new(None),
+        open_updates: args.iter().any(|arg| arg == "--updates"),
     };
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -1610,7 +1655,7 @@ fn main() {
                 prepare_channels, prepare_update, prepare_remove, list_backups, prepare_restore, drift_targets,
                 drift_check, save_baseline, reliability, trust, read_hardware, prepare_firmware,
                 prepare_smart, read_desktop, save_look, prepare_look, read_settings,
-                save_settings, save_theme, bundle_contents, prepare_bundle_create,
+                save_settings, save_notifications, save_theme, bundle_contents, prepare_bundle_create,
                 bundle_check, prepare_bundle_install, setup_start, setup_choose, setup_done $(, $extra)*
             ]
         };

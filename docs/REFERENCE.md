@@ -107,6 +107,27 @@ AppImage fetched, checked and put in its place, whatever updates the command
 line. The launcher and `start.sh` fetch the latest release every time they
 start, so there is nothing to run for them.
 
+**Update notifications** (Settings in the menu and the window, or
+`helix-toolbox notifications on`) write two units of the user's own,
+`helix-toolbox-updates.timer` and `helix-toolbox-updates.service`, into
+`$XDG_CONFIG_HOME/systemd/user`, enable the timer with the same link
+`systemctl --user enable` makes, and start it; no password is asked. The
+timer starts the service 10 minutes after the user's systemd starts (at
+login) and every 6 hours after that, each time up to 10 minutes later at
+random. The service runs `helix-toolbox notifications check`: the Updates
+overview, online, as `helix-toolbox updates --online` reads it. When
+something waits that the last notification did not tell of (the package
+names and new versions it told of are kept in
+`$XDG_STATE_HOME/helix-toolbox/notified.txt`), it shows a notification with
+`notify-send`, or with `gdbus` where libnotify is missing. With libnotify
+0.7.10 or later and the window installed, the notification has a **Show
+updates** button and waits up to 30 minutes for it, which opens the window
+with `--updates`, on the Updates screen; the service names the window it
+was turned on from (an AppImage by its file), else `helix-toolbox-gui` on
+the PATH. The check never updates anything. `helix-toolbox notifications
+off` stops the timer and removes the units and `notified.txt`. A machine
+without systemd gets no files and says so.
+
 Script entries such as Steam, VS Code or Firefox show the same status when
 they say what they install (most application scripts do), and `u` updates
 that package; a script entry without it shows only its flags and is updated
@@ -396,6 +417,7 @@ helix-toolbox status                     # every package entry: installed, updat
 helix-toolbox update --dry-run           # what updating every entry with an update would run
 helix-toolbox updates --online           # what each package tool has waiting
 helix-toolbox updates --apply --dry-run  # what updating those channels would run
+helix-toolbox notifications on           # tell me on the desktop when updates wait; off, check, or nothing for whether it is on
 helix-toolbox plan git system-report     # what running entries would do
 helix-toolbox run git --dry-run          # the plan, nothing changed
 helix-toolbox run git                    # runs after you type RUN, asked on the terminal even when piped
