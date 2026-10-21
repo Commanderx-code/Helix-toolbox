@@ -225,6 +225,16 @@ release, distribution, family, architecture, complete, entries, files,
 flatpak}` (`flatpak`, the Flatpaks in the same form, only in format 2), each
 file `{path, sha256, bytes, source, assurance}`.
 
+## hardware_report
+
+`report --worked <entry>`: `{entries: [{id, name}], machine, system,
+version, date, records, toml, issue}`. `machine` is `{distribution,
+desktop, model, graphics, kernel, architecture, virtualized}` (`graphics` a
+list of cards with their drivers; unknown values `null`), and `system` the
+line made from it. `records` are the `[[hardware]]` records it asks for,
+`{entry, system, version, date, note}` (`note` left out when empty), and
+`toml` the same as TOML; `issue` is the link to the new issue, filled in.
+
 ## profile list
 
 `{profiles: [{id, name, description, entries}]}`, `id` being what `run`

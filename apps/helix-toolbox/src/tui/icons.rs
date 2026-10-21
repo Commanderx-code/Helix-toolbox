@@ -19,6 +19,7 @@ pub enum Icon {
     Reliability,
     Hardware,
     Desktop,
+    Bundles,
     Settings,
     Area,
     Group,
@@ -51,6 +52,7 @@ impl Icon {
                 Icon::Reliability => "\u{f0c3}",    // flask
                 Icon::Hardware => "\u{f2db}",       // microchip
                 Icon::Desktop => "\u{f108}",        // desktop
+                Icon::Bundles => "\u{f1c6}",        // file archive
                 Icon::Settings => "\u{f013}",       // cog
                 Icon::Area => "\u{f07b}",           // folder
                 Icon::Group => "\u{f07b}",          // folder

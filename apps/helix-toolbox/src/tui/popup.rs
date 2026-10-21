@@ -312,6 +312,10 @@ pub struct InputPopup {
     title: String,
     prompt: String,
     value: String,
+    /// The longest answer, in characters.
+    limit: usize,
+    /// What Enter does, for the hint line.
+    verb: &'static str,
 }
 
 impl InputPopup {
@@ -320,7 +324,27 @@ impl InputPopup {
             title: title.into(),
             prompt: prompt.into(),
             value: String::new(),
+            limit: 60,
+            verb: "Save",
         }
+    }
+
+    /// Start with this answer, to change or keep.
+    pub fn with_value(mut self, value: impl Into<String>) -> Self {
+        self.value = value.into();
+        self
+    }
+
+    /// Take a path: longer than a name.
+    pub fn path(mut self) -> Self {
+        self.limit = 1024;
+        self
+    }
+
+    /// Call Enter this in the hints.
+    pub fn answering(mut self, verb: &'static str) -> Self {
+        self.verb = verb;
+        self
     }
 
     /// Enter gives the answer (when it is not blank), Escape cancels.
@@ -333,7 +357,7 @@ impl InputPopup {
                 Answer::Typing
             }
             KeyCode::Char(character)
-                if !character.is_control() && self.value.chars().count() < 60 =>
+                if !character.is_control() && self.value.chars().count() < self.limit =>
             {
                 self.value.push(character);
                 Answer::Typing
@@ -344,7 +368,7 @@ impl InputPopup {
 
     /// `area` shrunk to the question's height, centered in it.
     pub fn fitted(&self, area: Rect) -> Rect {
-        let height = 7.min(area.height);
+        let height = 8.min(area.height);
         Rect::new(
             area.x,
             area.y + (area.height - height) / 2,
@@ -365,14 +389,15 @@ impl InputPopup {
             Block::default().style(theme.card()),
             Block::bordered().inner(area),
         );
+        // A long path shows its end, where the typing is.
+        let room = Block::bordered().inner(area).width.saturating_sub(1) as usize;
+        let skip = self.value.chars().count().saturating_sub(room);
+        let shown: String = self.value.chars().skip(skip).collect();
         let text = Text::from(vec![
             Line::from(self.prompt.as_str()),
             Line::from(""),
             Line::from(vec![
-                Span::styled(
-                    self.value.as_str(),
-                    Style::default().fg(theme.entry()).bold(),
-                ),
+                Span::styled(shown, Style::default().fg(theme.entry()).bold()),
                 Span::styled("▏", Style::default().fg(theme.focused())),
             ]),
         ]);
@@ -385,7 +410,10 @@ impl InputPopup {
     pub fn hints(&self) -> (&'static str, Vec<Hint>) {
         (
             "Question",
-            vec![Hint::new(&["Enter"], "Save"), Hint::new(&["Esc"], "Cancel")],
+            vec![
+                Hint::new(&["Enter"], self.verb),
+                Hint::new(&["Esc"], "Cancel"),
+            ],
         )
     }
 }

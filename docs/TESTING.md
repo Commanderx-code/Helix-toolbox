@@ -14,7 +14,7 @@ package installs happen only in the Distributions workflow's containers.
 | Screen tests | `apps/helix-toolbox/src/tui/` | the interface drawn into a test backend: keys, screens, popups, the small-terminal warning |
 | Engine end to end | `apps/helix-toolbox/tests/end_to_end.rs` | fixture plans run through the mock runner and a real shell |
 | Program in a terminal | `apps/helix-toolbox/tests/terminal.rs` | the built `helix-toolbox` driven through a pseudo-terminal, below |
-| The window | `apps/helix-toolbox-gui`, `scripts/gui-smoke.sh` | the frontend type-checked and built, the crate's tests of the shapes the window reads, and the smoke test: a debug build opened on a virtual display and driven through the setup wizard, the command palette, the theme, the keyboard, every screen, a run with its change preview, a saved profile exported, deleted and imported again, the offline bundles screen, the removal of a package entry, a bug report and the update notifications turned on and off against the fixture catalog, with axe-core checking each screen and dialog for labels, roles and contrast ([GUI.md](GUI.md)) |
+| The window | `apps/helix-toolbox-gui`, `scripts/gui-smoke.sh` | the frontend type-checked and built, the crate's tests of the shapes the window reads, and the smoke test: a debug build opened on a virtual display and driven through the setup wizard, the command palette, the theme, the keyboard, every screen, a run with its change preview, a saved profile exported, deleted and imported again, the offline bundles screen, the removal of a package entry, a bug report, a hardware report and the update notifications turned on and off against the fixture catalog, with axe-core checking each screen and dialog for labels, roles and contrast ([GUI.md](GUI.md)) |
 | Installer tests | `tests/installers/` | the Commander installers against stand-in commands and temporary homes |
 | Shellcheck | `scripts/verify.sh` | every shared helper and installer, with errors gated for the general catalog |
 | Workflow lint | `scripts/verify.sh` | actionlint over every workflow, including the shell in each step |
@@ -218,6 +218,15 @@ lists the installer tests that cover each entry with stand-ins, the
 critical entries, and runs reported from virtual and real machines.
 `tests/installers/test_validation.py` checks that every entry and test that
 file names exists.
+
+Reports from real machines arrive as **It worked on my machine** issues,
+which Helix Toolbox fills in from a run that worked (`report --worked`, or
+**Report it worked…** and `w` in History and Reliability).
+`scripts/accept-hardware-report.py ISSUE [--dry-run]` reads one with `gh`,
+checks that both of its boxes are ticked and that each record names a
+catalog entry, a version and a date, takes the System line from the form
+and what the reporter checked as the note, and adds the records to
+`catalog/validation.toml`, for a pull request that closes the issue.
 
 ## Release checks
 

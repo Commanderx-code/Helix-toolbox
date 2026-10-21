@@ -108,6 +108,12 @@ export type RunEvent =
   | { event: 'warning'; message: string }
   | ({ event: 'completed' | 'interrupted' } & Finished);
 
+/** A report that a run worked on this machine, and the issue it fills in. */
+export type HardwareReport = {
+  text: string;
+  url: string;
+};
+
 export type RecordView = {
   date: string;
   unix_timestamp: number;

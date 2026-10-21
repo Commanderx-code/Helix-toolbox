@@ -97,8 +97,9 @@ depend on first. Profiles lists the built-in ones. To make your own, queue
 what a machine needs (applications, the Myfish shell, dotfiles
 configurations, tweaks) and press `s` on the Install Plan to name it. It is
 saved in `~/.config/helix-toolbox/profiles/` and appears under Profiles, **Your
-profiles**. `helix-toolbox profile export` and `import` move it to another
-machine.
+profiles**. There `x` exports it to a file to take to another machine, where
+`o` in Profiles imports it, and `Delete` deletes it. `helix-toolbox profile
+export` and `import` do the same on the command line.
 
 ## How far to trust an entry
 
@@ -109,7 +110,9 @@ stand-in commands), **VM Tested** or **Hardware Tested** (reported from a
 virtual or real machine), or **Not Yet Validated**. Entries that could stop a
 machine booting, logging in or showing a display come first, marked `!`;
 those are the ones to have a snapshot or a live USB ready for. If you run
-one successfully, reporting it helps everyone ([REPORTING.md](REPORTING.md)).
+one successfully, reporting it helps everyone: `w` on the entry, or on its
+run in History, opens the report, and `o` there opens the issue in your
+browser, filled in ([REPORTING.md](REPORTING.md)).
 
 `v` on an entry opens the **trust inspector**: where its installer comes
 from, its checksum and license, what checks the packages it installs (pacman
@@ -188,8 +191,8 @@ them; with everything in the bundle, nothing is downloaded. A Flatpak
 installed on the first machine goes in too, with its runtimes, once its
 remote has a collection ID (`bundle create` says how to give Flathub its
 own). Entries that need the network are named so you can run them later.
-In the window, **Offline bundles** does the same: it bundles the Install
-Plan's entries, and checks and installs a bundle from its folder.
+In the menu and the window, **Offline bundles** does the same: it bundles the
+Install Plan's entries, and checks and installs a bundle from its folder.
 
 ## When something is wrong
 

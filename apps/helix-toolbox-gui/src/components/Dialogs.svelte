@@ -29,6 +29,33 @@
     if (toolbox.report) copied = false;
   });
 
+  let opened = $state(false);
+  let workedCopied = $state(false);
+  $effect(() => {
+    if (toolbox.worked) {
+      opened = false;
+      workedCopied = false;
+    }
+  });
+
+  async function openIssue(url: string) {
+    try {
+      await api.openIssue(url);
+      opened = true;
+    } catch (error) {
+      toolbox.error = `The issue could not be opened: ${error}`;
+    }
+  }
+
+  async function copyWorked(text: string, url: string) {
+    try {
+      await api.copyText(`${text}\nThe issue, filled in:\n\n${url}\n`);
+      workedCopied = true;
+    } catch (error) {
+      toolbox.error = `The report could not be copied: ${error}`;
+    }
+  }
+
   async function copyReport(text: string) {
     try {
       await api.copyText(text);
@@ -45,6 +72,7 @@
     if (toolbox.prompt) toolbox.prompt.resolve(null);
     else if (toolbox.notice) toolbox.notice = null;
     else if (toolbox.report) toolbox.report = null;
+    else if (toolbox.worked) toolbox.worked = null;
   }}
 />
 
@@ -82,6 +110,27 @@
         <button class="button primary" disabled={report.text === null} onclick={() => report.text && copyReport(report.text)}>
           <Icon name="save" size={14} /> Copy
         </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if toolbox.worked}
+  {@const worked = toolbox.worked}
+  <div class="backdrop" role="presentation">
+    <div class="dialog card" role="dialog" aria-modal="true" aria-labelledby="worked-title" use:modal>
+      <h2 id="worked-title">Hardware report</h2>
+      <p>
+        No container or virtual machine can test real graphics, firmware or a Steam Deck, so a run that worked on your machine is worth reporting. Open the issue to
+        send it, filled in from this report: GitHub asks you to sign in, and the form asks what you checked. Nothing is sent until you submit it there.
+      </p>
+      <pre class="mono">{worked.text}</pre>
+      <div class="buttons">
+        {#if opened}<span class="copied" role="status"><Icon name="check" size={14} /> Open in your browser</span>
+        {:else if workedCopied}<span class="copied" role="status"><Icon name="check" size={14} /> Copied</span>{/if}
+        <button class="button" data-autofocus onclick={() => (toolbox.worked = null)}>Close</button>
+        <button class="button" onclick={() => copyWorked(worked.text, worked.url)}><Icon name="save" size={14} /> Copy</button>
+        <button class="button primary" onclick={() => openIssue(worked.url)}><Icon name="external" size={14} /> Open the issue</button>
       </div>
     </div>
   </div>

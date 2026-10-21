@@ -344,7 +344,7 @@ fn batteries(system: &dyn System) -> Vec<Battery> {
     found
 }
 
-fn pci(system: &dyn System) -> Vec<Device> {
+pub(crate) fn pci(system: &dyn System) -> Vec<Device> {
     let Some((true, text)) = system.run(&["lspci", "-nnk"]) else {
         return Vec::new();
     };

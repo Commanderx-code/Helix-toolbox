@@ -5,7 +5,8 @@
 
 use std::path::Path;
 
-use helix_toolbox_engine::{doctor, history, inventory::which, updates};
+use helix_toolbox_catalog::Catalog;
+use helix_toolbox_engine::{doctor, hardware_report, history, inventory::which, updates};
 use helix_toolbox_platform::LinuxInfo;
 use serde_json::{Value, json};
 
@@ -92,6 +93,27 @@ pub fn gather(platform: &LinuxInfo, checks: bool) -> Value {
         "health_checks": health,
     });
     without_home(report)
+}
+
+/// A hardware report of an entry's last successful run on this machine,
+/// for `report --worked`.
+pub fn worked(
+    catalog: &Catalog,
+    platform: &LinuxInfo,
+    id: &str,
+    note: &str,
+) -> anyhow::Result<hardware_report::Report> {
+    let entry = crate::find(catalog, id)?;
+    let runs = history::read(1000)?;
+    let Some(record) = hardware_report::last_success(&runs, &entry.id) else {
+        anyhow::bail!(
+            "no successful run of {} is in this machine's history; a hardware report comes from a run that worked here",
+            entry.name
+        );
+    };
+    let machine = hardware_report::machine(&doctor::Here, platform, &crate::setup::desktop_here());
+    hardware_report::prepare(record, Some(&entry.id), machine, crate::VERSION, note)
+        .map_err(anyhow::Error::msg)
 }
 
 /// Show the home directory as `~` everywhere in the report.

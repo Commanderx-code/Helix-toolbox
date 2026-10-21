@@ -30,12 +30,16 @@ printf 'tabs = ["tools", "profiles"]\n' > "$work/catalog/catalog/tabs.toml"
 mkdir "$work/catalog/catalog/profiles"
 printf 'name = "Profiles"\n' > "$work/catalog/catalog/profiles/tab.toml"
 # A stand-in command line that only prints a report, for the bug report,
-# and a systemctl that only writes down what the update notifications ask
-# of systemd.
+# a systemctl that only writes down what the update notifications ask of
+# systemd, an xdg-open that writes down the link instead of opening a
+# browser, and a real machine for the hardware report, as the workflow's
+# runners are virtual.
 mkdir "$work/bin"
 cp apps/helix-toolbox-gui/tests/drive/helix-toolbox "$work/bin/helix-toolbox"
 printf '#!/bin/sh\necho "$*" >> "%s/systemctl.log"\n' "$work" > "$work/bin/systemctl"
-chmod +x "$work/bin/systemctl"
+printf '#!/bin/sh\necho "$*" >> "%s/xdg-open.log"\n' "$work" > "$work/bin/xdg-open"
+printf '#!/bin/sh\necho none\nexit 1\n' > "$work/bin/systemd-detect-virt"
+chmod +x "$work/bin/systemctl" "$work/bin/xdg-open" "$work/bin/systemd-detect-virt"
 export PATH="$work/bin:$PATH"
 mkdir -p "$work/home" "$work/config" "$work/state" "$work/data" "$work/cache"
 export HOME="$work/home"
@@ -106,6 +110,11 @@ if ! grep -qx -- '--user start helix-toolbox-updates.timer' "$work/systemctl.log
 fi
 if [ -e "$work/config/systemd/user/helix-toolbox-updates.timer" ]; then
     echo "turning the update notifications off left the timer behind" >&2
+    exit 1
+fi
+# The hardware report's issue went to the browser, filled in.
+if ! grep -q '^https://github.com/Commanderx-code/Helix-toolbox/issues/new?template=hardware_report.yml&.*records=' "$work/xdg-open.log" 2>/dev/null; then
+    echo "the hardware report's issue was not opened" >&2
     exit 1
 fi
 echo "the window's smoke test passed"

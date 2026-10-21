@@ -34,7 +34,7 @@ contents:
   # The same icon files the other bundles carry (scripts/icons.sh).
   - src: apps/helix-toolbox-gui/src-tauri/icons/icon.png
     dst: /usr/share/icons/hicolor/512x512/apps/helix-toolbox-gui.png
-  - src: apps/helix-toolbox-gui/src-tauri/icons/128x128@2x.png
+  - src: apps/helix-toolbox-gui/src-tauri/icons/256x256.png
     dst: /usr/share/icons/hicolor/256x256/apps/helix-toolbox-gui.png
   - src: apps/helix-toolbox-gui/src-tauri/icons/128x128.png
     dst: /usr/share/icons/hicolor/128x128/apps/helix-toolbox-gui.png

@@ -4,7 +4,7 @@
 
 import * as api from './api';
 import { applyTheme } from './theme';
-import type { About, AreaView, EntryView, ItemView, Prepared, StatusView } from './types';
+import type { About, AreaView, EntryView, HardwareReport, ItemView, Prepared, StatusView } from './types';
 
 export type Screen =
   | { kind: 'dashboard' }
@@ -72,6 +72,8 @@ class Toolbox {
   prompt = $state<Prompt | null>(null);
   /** The bug report being shown: its text once gathered, or what went wrong. */
   report = $state<{ text: string | null; problem: string | null } | null>(null);
+  /** The hardware report being shown, before it is sent. */
+  worked = $state<HardwareReport | null>(null);
   /** The setup wizard is open; on the first start it opens by itself. */
   wizard = $state(false);
   /** The command palette (Ctrl-K) is open. */
@@ -246,6 +248,16 @@ class Toolbox {
       if (this.report) this.report = { text, problem: null };
     } catch (error) {
       if (this.report) this.report = { text: null, problem: String(error) };
+    }
+  }
+
+  /** A report that a run worked here: the run at `at`, or the last one of
+   * `entry` that worked. */
+  async reportWorked(at: number | null, entry: string | null) {
+    try {
+      this.worked = await api.hardwareReport(at, entry);
+    } catch (error) {
+      this.notice = { title: 'No hardware report', text: String(error) };
     }
   }
 

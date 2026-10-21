@@ -102,6 +102,11 @@
           <button class="button" onclick={() => toolbox.tell(`Trust: ${selected.name}`, () => api.trust(selected.id), true)}>
             <Icon name="eye" size={15} /> Where it comes from
           </button>
+          {#if selected.assessment.here !== null}
+            <button class="button" onclick={() => toolbox.reportWorked(null, selected.id)}>
+              <Icon name="check" size={15} /> Report it worked…
+            </button>
+          {/if}
         </div>
       {:else}
         <p class="faint">Select an entry to see how it was tested.</p>

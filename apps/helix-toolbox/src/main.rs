@@ -279,8 +279,17 @@ enum Command {
     /// health checks. It only reads, and shows the home directory as ~.
     Report {
         /// Leave out the health checks, which take a few seconds.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "worked")]
         no_checks: bool,
+        /// Report instead that this entry worked on this machine, for its
+        /// Hardware Tested record: from its last successful run here, with a
+        /// link that opens the issue filled in. Nothing is sent by itself.
+        #[arg(long, value_name = "ENTRY")]
+        worked: Option<String>,
+        /// With --worked: what you checked, such as "the login screen came up
+        /// after a reboot".
+        #[arg(long, requires = "worked", default_value = "")]
+        note: String,
     },
     /// Write the catalog walkthrough as Markdown.
     Docgen { file: PathBuf },
@@ -1029,7 +1038,39 @@ fn main() -> Result<()> {
             Some(NotificationsCommand::Off) => notify::off(),
             Some(NotificationsCommand::Check) => notify::check(&platform),
         },
-        Command::Report { no_checks } => {
+        Command::Report {
+            worked: Some(id),
+            note,
+            ..
+        } => {
+            let found = report::worked(&load(false)?, &platform, &id, &note)?;
+            if as_json {
+                json::print(
+                    "hardware_report",
+                    serde_json::json!({
+                        "entries": found.entries.iter().map(|(id, name)| serde_json::json!({
+                            "id": id,
+                            "name": name,
+                        })).collect::<Vec<_>>(),
+                        "machine": found.machine,
+                        "system": found.machine.system(),
+                        "version": found.version,
+                        "date": found.date,
+                        "records": found.claims,
+                        "toml": found.records(),
+                        "issue": found.issue_url(),
+                    }),
+                );
+            } else {
+                println!(
+                    "{}\nOpen this to send it; GitHub asks you to sign in, and the form asks what you checked:\n\n{}",
+                    found.text(),
+                    found.issue_url()
+                );
+            }
+            Ok(())
+        }
+        Command::Report { no_checks, .. } => {
             let found = report::gather(&platform, !no_checks);
             if as_json {
                 json::print("report", found);

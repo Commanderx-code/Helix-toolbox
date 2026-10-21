@@ -1,0 +1,67 @@
+name: It worked on my machine
+description: An entry ran and worked on real hardware; it becomes a Hardware Tested record.
+title: "Hardware report: "
+labels: [hardware-report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Containers and virtual machines cannot test graphics drivers, firmware, login screens on real displays or a real Steam Deck, so a run that worked on your machine is the only way those entries become **Hardware Tested**.
+
+        Helix Toolbox fills this form in: **Report it worked…** in the window's History or Reliability, `w` on a run in the terminal interface's History or Reliability, or `helix-toolbox report --worked <entry>`. It reads the entry, the system and the version from this machine's history; nothing is sent until you submit this.
+  - type: input
+    id: entries
+    attributes:
+      label: Entries
+      description: The entries that ran, with their ids.
+      placeholder: NVIDIA drivers (nvidia-open)
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: The distribution, desktop, model and graphics, as the report gives them.
+      placeholder: Garuda Linux, KDE Plasma 6.5.0 (wayland), Lenovo ThinkPad T15p Gen 2i, NVIDIA GeForce GTX 1650 Mobile / Max-Q (nvidia)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Helix Toolbox version
+      placeholder: "1.15.0"
+    validations:
+      required: true
+  - type: input
+    id: date
+    attributes:
+      label: When it ran
+      placeholder: "2026-10-21"
+    validations:
+      required: true
+  - type: textarea
+    id: checked
+    attributes:
+      label: What you checked
+      description: What shows it worked, above all after a reboot for a boot, login-screen or driver entry.
+      placeholder: |
+        Rebooted; the login screen came up with the new theme. nvidia-smi lists the card and the desktop runs on it.
+    validations:
+      required: true
+  - type: textarea
+    id: records
+    attributes:
+      label: The record
+      description: Made by Helix Toolbox, for catalog/validation.toml. Leave it as it is; correct the System line above if it is wrong.
+      render: toml
+    validations:
+      required: true
+  - type: checkboxes
+    id: real
+    attributes:
+      label: Before you submit
+      options:
+        - label: This ran on a real machine, not in a virtual machine or a container.
+          required: true
+        - label: The run finished, and what it set up still works after a reboot.
+          required: true

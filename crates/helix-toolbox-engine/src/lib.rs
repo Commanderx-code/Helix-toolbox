@@ -21,6 +21,7 @@ pub mod doctor;
 pub mod drift;
 pub mod execution;
 pub mod hardware;
+pub mod hardware_report;
 pub mod history;
 pub mod inventory;
 pub mod legacy;

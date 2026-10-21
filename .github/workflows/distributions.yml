@@ -671,6 +671,7 @@ jobs:
     name: window on ${{ matrix.image }}${{ matrix.arch && ' on aarch64' || '' }}
     steps:
       - name: A virtual display, and xdotool to find the window on it
+        id: display
         run: |
           case "${{ matrix.family }}" in
             Arch) pacman -Syu --noconfirm --needed xorg-server-xvfb xorg-xauth xdotool ;;
@@ -682,10 +683,12 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        id: packages
         with:
           name: ${{ matrix.arch && 'packages-aarch64' || 'packages' }}
           path: packages
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        id: window
         with:
           name: window-${{ matrix.arch || 'x86_64' }}
           path: window
@@ -716,8 +719,9 @@ jobs:
           chmod +x "$appimage"
           xvfb-run -a scripts/window-opens.sh "$appimage"
       - name: The window's package installs with the command line's, opens and removes cleanly
-        # Whatever the AppImage did.
-        if: ${{ !cancelled() }}
+        # Whatever the AppImage did, once the display and the packages are
+        # there: without them this step would only add errors of its own.
+        if: ${{ !cancelled() && steps.display.outcome == 'success' && steps.packages.outcome == 'success' && steps.window.outcome == 'success' }}
         run: |
           case "${{ matrix.arch }}" in
             aarch64) arch=aarch64 debian=arm64 ;;
@@ -740,9 +744,14 @@ jobs:
           esac
           test "$(readlink -f "$(command -v helix-toolbox-gui)")" = /usr/bin/helix-toolbox-gui
           for file in /usr/bin/helix-toolbox-gui /usr/share/applications/helix-toolbox-gui.desktop \
-              /usr/share/icons/hicolor/128x128/apps/helix-toolbox-gui.png; do
+              /usr/share/icons/hicolor/128x128/apps/helix-toolbox-gui.png \
+              /usr/share/icons/hicolor/256x256/apps/helix-toolbox-gui.png; do
             grep -qE "^(helix-toolbox-gui )?$file\$" files.txt
           done
+          # Every icon in a folder of the icon theme's own sizes.
+          if grep -E '/icons/hicolor/[^/]*@' files.txt; then
+            exit 1
+          fi
           grep -qx 'Exec=helix-toolbox-gui' /usr/share/applications/helix-toolbox-gui.desktop
           # Every library it links to is there.
           if ldd /usr/bin/helix-toolbox-gui | grep 'not found'; then

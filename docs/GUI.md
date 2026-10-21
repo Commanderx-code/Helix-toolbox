@@ -60,7 +60,9 @@ others: `sha256sum --check --ignore-missing SHA256SUMS` and
   terminal interface keeps.
 - **Install Plan**: the queue, in the order it will be planned; entries can
   be moved or taken out. **Review and run** has the engine plan it.
-- **History**: past runs from every interface, newest first.
+- **History**: past runs from every interface, newest first. A run that
+  worked has **Report it worked…**: a hardware report of it, to read,
+  copy or open as an issue in the browser, filled in.
 
 Before a run, the confirmation shows what the terminal interface shows:
 the risk and whether the run asks for your password, the findings of the
@@ -107,7 +109,8 @@ The other tools, under **More tools** in the sidebar:
   the entries that would put back what is missing (add them to the plan
   or run them), and **Save this machine as a baseline**.
 - **Reliability**: how far each entry has been tested, critical ones
-  first, with **Where it comes from**, the trust inspection.
+  first, with **Where it comes from**, the trust inspection, and **Report
+  it worked…** for an entry that ran here.
 - **Hardware**: firmware updates through fwupd (typing FIRMWARE first, as
   in the terminal interface), disks with **Check health…** (SMART, after
   confirmation), temperatures, batteries, and the PCI and USB devices.
@@ -222,6 +225,7 @@ Its commands:
 | `runs` | the history |
 | `save_profile` | the Install Plan as a profile |
 | `bug_report`, `copy_text` | `helix-toolbox report` with the window's facts, and text put on the clipboard |
+| `hardware_report`, `open_issue` | `helix-toolbox report --worked` for a run or an entry, and its issue opened by `xdg-open`, outside the AppImage's own libraries |
 | `import_profile`, `export_profile`, `delete_profile` | your profiles: one added from a file, written to one, or deleted; the file is chosen in the file chooser unless a path is given |
 | `doctor`, `prepare_repair` | the health checks, and a repair ready to confirm |
 | `updates`, `prepare_channels`, `prepare_update` | the update channels, and updating channels or entries |
@@ -275,7 +279,8 @@ folders for the home and settings: the wizard on the first start, the
 palette, every screen, a run of the marker fixture through the
 confirmation and the terminal, a saved profile exported, deleted and
 imported again, the Remove button, a bug report from a stand-in
-command line, and the update notifications turned on and off with a
+command line, a hardware report of the run whose issue goes to a stand-in
+`xdg-open`, and the update notifications turned on and off with a
 stand-in `systemctl`; then it checks the files those left. The Checks workflow runs it under `xvfb-run` on every
 change; by hand, inside a virtual session:
 

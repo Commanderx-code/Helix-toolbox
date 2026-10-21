@@ -257,6 +257,27 @@ export async function call(command: string, args: Record<string, unknown> = {}):
       ].join('\n');
     case 'delete_profile':
       return `${find(args.id as string)?.name} is deleted.`;
+    case 'hardware_report':
+      return {
+        text: [
+          'A report that Git worked on this machine, on 2026-10-21.',
+          '',
+          'System: Garuda Linux, KDE Plasma 6.5.0 (wayland), Lenovo ThinkPad T15p Gen 2i, NVIDIA GeForce GTX 1650 Mobile / Max-Q (nvidia)',
+          'Kernel: 7.2.11-1-garuda, x86_64',
+          'Helix Toolbox: 1.15.0',
+          '',
+          'The record it asks for, in catalog/validation.toml:',
+          '',
+          '[[hardware]]',
+          'entry = "git"',
+          'system = "Garuda Linux, KDE Plasma 6.5.0 (wayland), Lenovo ThinkPad T15p Gen 2i, NVIDIA GeForce GTX 1650 Mobile / Max-Q (nvidia)"',
+          'version = "1.15.0"',
+          'date = "2026-10-21"',
+        ].join('\n'),
+        url: 'https://github.com/Commanderx-code/Helix-toolbox/issues/new?template=hardware_report.yml',
+      };
+    case 'open_issue':
+      return undefined;
     case 'doctor':
       return [
         { id: 'network', title: 'Network', health: 'good', health_label: 'OK', summary: 'Connected through wlp0s20f3', evidence: [], advice: null, repair: null, entry: null },

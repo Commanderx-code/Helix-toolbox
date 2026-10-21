@@ -14,13 +14,14 @@ import type {
   Diagnosis,
   DriftView,
   Hardware,
+  HardwareReport,
   PickView,
   Prepared,
   RecordView,
-  SetupView,
   ReliabilityView,
   RunEvent,
   SettingsView,
+  SetupView,
   StatusView,
   TargetView,
   UpdatesView,
@@ -60,6 +61,8 @@ export const deleteProfile = (id: string) => call<string>('delete_profile', { id
 /** `helix-toolbox report` and the window's own facts, as Markdown. */
 export const bugReport = () => call<string>('bug_report');
 export const copyText = (text: string) => call<void>('copy_text', { text });
+export const hardwareReport = (at: number | null, entry: string | null) => call<HardwareReport>('hardware_report', { at, entry });
+export const openIssue = (url: string) => call<void>('open_issue', { url });
 
 export const doctor = () => call<Diagnosis[]>('doctor');
 export const prepareRepair = (id: string) => call<Prepared>('prepare_repair', { id });

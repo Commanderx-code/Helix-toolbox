@@ -18,9 +18,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, Item};
 use helix_toolbox_engine::{
-    EngineError, Plan, backups,
+    EngineError, Plan, backups, bundle,
     confirmation::{self, Prepared},
-    doctor, drift, history,
+    doctor, drift, hardware_report, history,
     inventory::{Inventory, Status, which},
     notifications,
     overview::Overview,
@@ -36,7 +36,11 @@ use ratatui::{
     widgets::{Block, List, ListState, Padding, Paragraph, Wrap},
 };
 use ratatui_image::{Image, protocol::Protocol};
-use std::{collections::HashMap, sync::mpsc};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::mpsc,
+};
 
 const MIN_WIDTH: u16 = 100;
 const MIN_HEIGHT: u16 = 25;
@@ -76,7 +80,7 @@ Sidebar and Dashboard
   j / k             move                         Enter / l   open the screen or quick action
 
 Areas (Applications and the other catalog screens)
-  j / k             move                         Enter / l   open a group or run an entry
+  Enter / l         open a group or run an entry o / x / Del  Profiles: import, export, delete
   h                 parent group, or the sidebar Space       add to or remove from the install plan
   d                 description                  p           preview the script or command
   r                 remove an installed package  v           where it comes from (trust)
@@ -90,9 +94,10 @@ Install Plan
 History, Backups, Doctor, Hardware, Desktop, Updates, Drift, Reliability, Settings
   Enter             log / restore / details / change   r   reload or check again; f repair; u / U update
   Hardware: f       update firmware (type FIRMWARE)    s   SMART check;  Backups: e  side by side
-  Desktop: s        save the look; Enter puts a saved one back      Settings: the setup wizard
+  Desktop: s        save the look; Enter puts a saved one back      Settings: wizard, bug report
   Drift: b          compare with another         s   save this machine; Space / a plan what is missing
   Reliability: i    critical or untested only    v   where the entry comes from
+  History, Reliability: w  report that it worked here, for a Hardware Tested record
 
 Running window
   Ctrl-C            stop; again, kill what is left  Enter / q   close when finished
@@ -120,6 +125,8 @@ enum Screen {
     Hardware,
     /// The desktop environment, its look and the entries for it.
     Desktop,
+    /// Offline bundles: made from the Install Plan, installed from a folder.
+    Bundles,
     Settings,
 }
 
@@ -148,6 +155,64 @@ enum Popup {
     Wizard(Box<Wizard>),
     /// The name to save the desktop's look under.
     LookName(InputPopup),
+    /// A path or a word, and what it answers.
+    Ask(InputPopup, Asked),
+    /// A hardware report to read, and the issue it fills in.
+    HardwareReport(TextPopup, String),
+}
+
+/// What an `Ask` popup's answer is for.
+#[derive(Clone, Debug)]
+enum Asked {
+    /// The profile file to import.
+    ImportProfile,
+    /// Where to export the profile with this id.
+    ExportProfile(String),
+    /// "yes", to delete the profile with this id.
+    DeleteProfile(String),
+    /// The folder to make a bundle in.
+    MakeFolder,
+    /// The bundle to install from.
+    InstallFolder,
+}
+
+/// A line of the Offline bundles screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BundleRow {
+    MakeHeading,
+    Entries,
+    Folder,
+    Complete,
+    Contents,
+    Make,
+    InstallHeading,
+    Source,
+    Trust,
+    Check,
+    Install,
+}
+
+const BUNDLE_ROWS: [BundleRow; 11] = [
+    BundleRow::MakeHeading,
+    BundleRow::Entries,
+    BundleRow::Folder,
+    BundleRow::Complete,
+    BundleRow::Contents,
+    BundleRow::Make,
+    BundleRow::InstallHeading,
+    BundleRow::Source,
+    BundleRow::Trust,
+    BundleRow::Check,
+    BundleRow::Install,
+];
+
+/// Bundle work that asks the package manager or reads every file: done on
+/// the tick after its notice is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BundleTask {
+    Contents,
+    Check,
+    Install,
 }
 
 /// A line of the Desktop screen.
@@ -199,6 +264,8 @@ enum Act {
     RunPlan,
     ClearPlan,
     SaveProfile,
+    ImportProfile,
+    Report,
     UpdateEntries,
     Theme,
     Icons,
@@ -459,6 +526,25 @@ pub struct App {
     notices: Option<notifications::Places>,
     /// Runs `systemctl --user`; tests answer for it.
     systemctl: fn(&[&str]) -> Option<bool>,
+    /// The folder to make a bundle in, as typed.
+    bundle_folder: String,
+    /// Every dependency, not only what this machine lacks.
+    bundle_complete: bool,
+    /// The bundle to install from, as typed.
+    bundle_source: String,
+    /// Take the bundle's word for what it holds.
+    bundle_trust: bool,
+    /// Bundle work waiting for its notice to be drawn.
+    bundle_due: Option<BundleTask>,
+    /// A bug report being gathered in the background, if any.
+    reporting: Option<mpsc::Receiver<String>>,
+    /// Where the bug report is saved; none in tests unless one says.
+    reports_dir: Option<PathBuf>,
+    /// Opens a link in the browser; tests answer for it.
+    opener: fn(&str) -> Result<(), String>,
+    /// The machine a hardware report names, in tests; read each time
+    /// otherwise.
+    machine: Option<hardware_report::Machine>,
 }
 
 /// A plan of the queue as it was, from when it was made, with what the
@@ -547,6 +633,15 @@ impl App {
             wizard_ids: Vec::new(),
             notices: None,
             systemctl: |_| None,
+            bundle_folder: "~/helix-toolbox-bundle".to_string(),
+            bundle_complete: false,
+            bundle_source: String::new(),
+            bundle_trust: false,
+            bundle_due: None,
+            reporting: None,
+            reports_dir: None,
+            opener: |_| Err("there is no browser here".to_string()),
+            machine: None,
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -587,6 +682,8 @@ impl App {
         self.settings_path = path;
         self.notices = notifications::Places::here();
         self.systemctl = notifications::systemctl;
+        self.reports_dir = history::state_dir();
+        self.opener = open_link;
         self
     }
 
@@ -791,6 +888,7 @@ impl App {
             Screen::Reliability => self.reliability_rows.len(),
             Screen::Hardware => self.hardware_rows.len(),
             Screen::Desktop => self.desktop_rows.len(),
+            Screen::Bundles => BUNDLE_ROWS.len(),
             Screen::Doctor => self.diagnoses.len() + self.doctor_entries().len(),
             Screen::Settings => self.settings().len(),
         }
@@ -871,6 +969,21 @@ impl App {
     /// Whether something changed without a key press: a finished check, or
     /// a run's events.
     pub fn needs_redraw(&mut self) -> bool {
+        if let Some(task) = self.bundle_due.take() {
+            self.do_bundle_task(task);
+            return true;
+        }
+        if let Some(receiver) = &self.reporting {
+            match receiver.try_recv() {
+                Ok(report) => {
+                    self.reporting = None;
+                    self.show_report(&report);
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.reporting = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
         if let Some(receiver) = &self.examining {
             match receiver.try_recv() {
                 Ok(diagnoses) => {
@@ -962,6 +1075,7 @@ impl App {
             Screen::Reliability => Icon::Reliability,
             Screen::Hardware => Icon::Hardware,
             Screen::Desktop => Icon::Desktop,
+            Screen::Bundles => Icon::Bundles,
             Screen::Favorites => Icon::Favorites,
             Screen::Doctor => Icon::Doctor,
             Screen::Settings => Icon::Settings,
@@ -1038,16 +1152,20 @@ impl App {
             Screen::Reliability => self.draw_reliability(frame, main),
             Screen::Hardware => self.draw_hardware(frame, main),
             Screen::Desktop => self.draw_desktop(frame, main),
+            Screen::Bundles => self.draw_bundles(frame, main),
             Screen::Doctor => self.draw_doctor(frame, main),
             Screen::Settings => self.draw_settings(frame, main),
         }
         match &mut self.popup {
-            Some(Popup::Text(popup)) => popup.draw(frame, centered(main, 95, 95), self.theme),
+            Some(Popup::Text(popup) | Popup::HardwareReport(popup, _)) => {
+                popup.draw(frame, centered(main, 95, 95), self.theme)
+            }
             Some(
                 Popup::ProfileName(popup)
                 | Popup::BaselineName(popup)
                 | Popup::FirmwareWord(popup)
-                | Popup::LookName(popup),
+                | Popup::LookName(popup)
+                | Popup::Ask(popup, _),
             ) => {
                 let area = popup.fitted(centered(main, 80, 70));
                 popup.draw(frame, area, self.theme)
@@ -2103,6 +2221,10 @@ impl App {
             ),
             ("Setup wizard".to_string(), "Enter opens it".to_string()),
             (
+                "Bug report, to paste into an issue".to_string(),
+                "Enter makes one".to_string(),
+            ),
+            (
                 "Log level (HELIX_TOOLBOX_LOG)".to_string(),
                 crate::logging::requested().unwrap_or_else(|| "info".to_string()),
             ),
@@ -2186,11 +2308,17 @@ impl App {
     fn hints(&self) -> (&'static str, Vec<Hint>) {
         match &self.popup {
             Some(Popup::Text(popup)) => return popup.hints(),
+            Some(Popup::HardwareReport(popup, _)) => {
+                let (title, mut list) = popup.hints();
+                list.insert(0, Hint::new(&["o"], "Open the issue"));
+                return (title, list);
+            }
             Some(
                 Popup::ProfileName(popup)
                 | Popup::BaselineName(popup)
                 | Popup::FirmwareWord(popup)
-                | Popup::LookName(popup),
+                | Popup::LookName(popup)
+                | Popup::Ask(popup, _),
             ) => return popup.hints(),
             Some(Popup::Wizard(popup)) => return popup.hints(),
             Some(Popup::Palette(popup)) => return popup.hints(),
@@ -2232,6 +2360,10 @@ impl App {
                             list.push(Hint::new(&["d"], "Describe"));
                             list.push(Hint::new(&["p"], "Preview"));
                             list.push(Hint::new(&["v"], "Trust"));
+                            if own_profile(entry) {
+                                list.push(Hint::new(&["x"], "Export"));
+                                list.push(Hint::new(&["Del"], "Delete"));
+                            }
                             list.push(Hint::new(
                                 &["*"],
                                 if self.favorites.contains(&entry.id) {
@@ -2244,6 +2376,9 @@ impl App {
                         None => {}
                     }
                     list.push(Hint::new(&["i"], self.filter_hint()));
+                    if self.in_profiles() {
+                        list.push(Hint::new(&["o"], "Import"));
+                    }
                 }
                 Screen::Plan => {
                     list.push(Hint::new(&["Enter"], "Run plan"));
@@ -2256,6 +2391,14 @@ impl App {
                 }
                 Screen::History => {
                     list.push(Hint::new(&["Enter"], "Show log"));
+                    if self
+                        .main_state
+                        .selected()
+                        .and_then(|index| self.records.get(index))
+                        .is_some_and(|record| record.success)
+                    {
+                        list.push(Hint::new(&["w"], "Report it worked"));
+                    }
                     list.push(Hint::new(&["r"], "Reload"));
                 }
                 Screen::Doctor => {
@@ -2337,9 +2480,16 @@ impl App {
                 }
                 Screen::Reliability => {
                     list.push(Hint::new(&["↑↓"], "Navigate"));
-                    if !self.reliability_rows.is_empty() {
+                    if let Some((_, _, assessment)) = self
+                        .main_state
+                        .selected()
+                        .and_then(|index| self.reliability_rows.get(index))
+                    {
                         list.push(Hint::new(&["Enter"], "Details"));
                         list.push(Hint::new(&["v"], "Trust"));
+                        if assessment.here.is_some() {
+                            list.push(Hint::new(&["w"], "Report it worked"));
+                        }
                     }
                     list.push(Hint::new(
                         &["i"],
@@ -2358,6 +2508,21 @@ impl App {
                         list.push(Hint::new(&["d"], "Details"));
                     }
                     list.push(Hint::new(&["r"], "Reload"));
+                }
+                Screen::Bundles => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    let verb = match self.selected_bundle_row() {
+                        Some(BundleRow::Entries) => "Install Plan",
+                        Some(BundleRow::Folder | BundleRow::Source) => "Change",
+                        Some(BundleRow::Complete | BundleRow::Trust) => "Switch",
+                        Some(BundleRow::Contents | BundleRow::Check) => "Check",
+                        Some(BundleRow::Make) => "Make",
+                        Some(BundleRow::Install) => "Install",
+                        _ => "",
+                    };
+                    if !verb.is_empty() {
+                        list.push(Hint::new(&["Enter"], verb));
+                    }
                 }
                 Screen::Settings => list.push(Hint::new(&["Enter"], "Change")),
             },
@@ -2378,6 +2543,20 @@ impl App {
         match &mut self.popup {
             Some(Popup::Text(popup)) => {
                 if popup.handle_key(key) {
+                    self.popup = None;
+                }
+                return true;
+            }
+            Some(Popup::HardwareReport(popup, url)) => {
+                if matches!(key.code, KeyCode::Char('o') | KeyCode::Char('O')) {
+                    let text = match (self.opener)(url) {
+                        Ok(()) => "The issue is open in your browser, filled in from the report. Say there what you checked, then submit it.".to_string(),
+                        Err(error) => format!(
+                            "It could not be opened: {error}\n\nThe link is in ~/.local/state/helix-toolbox/hardware-report.md, or helix-toolbox report --worked prints it."
+                        ),
+                    };
+                    self.popup = Some(Popup::Text(TextPopup::new("Hardware report", text, true)));
+                } else if popup.handle_key(key) {
                     self.popup = None;
                 }
                 return true;
@@ -2409,6 +2588,21 @@ impl App {
                     WizardOutcome::Queue(ids) => {
                         self.close_wizard();
                         self.queue_from_wizard(&ids);
+                    }
+                }
+                return true;
+            }
+            Some(Popup::Ask(popup, asked)) => {
+                if control_c {
+                    return false;
+                }
+                match popup.handle_key(key) {
+                    Answer::Typing => {}
+                    Answer::Canceled => self.popup = None,
+                    Answer::Given(text) => {
+                        let asked = asked.clone();
+                        self.popup = None;
+                        self.answered(asked, &text);
                     }
                 }
                 return true;
@@ -2672,6 +2866,44 @@ impl App {
                     }
                 }
                 KeyCode::Char(' ') => self.toggle_queue(),
+                KeyCode::Char('o') if self.in_profiles() => {
+                    self.popup = Some(Popup::Ask(
+                        InputPopup::new(
+                            "Import a profile",
+                            "The profile file to add to your profiles, such as ~/Downloads/work.toml:",
+                        )
+                        .path()
+                        .answering("Import"),
+                        Asked::ImportProfile,
+                    ));
+                }
+                KeyCode::Char('x') => {
+                    if let Some(entry) = self.selected_entry().filter(|entry| own_profile(entry)) {
+                        let slug = entry.id.trim_start_matches(profiles::PREFIX);
+                        self.popup = Some(Popup::Ask(
+                            InputPopup::new(
+                                format!("Export {}", entry.name),
+                                "The file to write it to, to share or keep:",
+                            )
+                            .with_value(format!("~/{slug}.toml"))
+                            .path()
+                            .answering("Export"),
+                            Asked::ExportProfile(entry.id.clone()),
+                        ));
+                    }
+                }
+                KeyCode::Delete | KeyCode::Char('X') => {
+                    if let Some(entry) = self.selected_entry().filter(|entry| own_profile(entry)) {
+                        self.popup = Some(Popup::Ask(
+                            InputPopup::new(
+                                format!("Delete {}", entry.name),
+                                "Its file in ~/.config/helix-toolbox/profiles is removed. Type yes to delete it:",
+                            )
+                            .answering("Delete"),
+                            Asked::DeleteProfile(entry.id.clone()),
+                        ));
+                    }
+                }
                 KeyCode::Char('r') | KeyCode::Char('R') => {
                     if let Some(entry) = self.selected_entry().cloned()
                         && removable(&entry)
@@ -2746,6 +2978,16 @@ impl App {
             },
             Screen::History => match key.code {
                 KeyCode::Enter => self.show_log(),
+                KeyCode::Char('w') => {
+                    if let Some(record) = self
+                        .main_state
+                        .selected()
+                        .and_then(|index| self.records.get(index))
+                        .cloned()
+                    {
+                        self.report_worked(&record, None);
+                    }
+                }
                 KeyCode::Char('r') => self.reload_history(),
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
@@ -2882,6 +3124,27 @@ impl App {
                     self.main_state.select(Some(0));
                     self.reload_reliability();
                 }
+                KeyCode::Char('w') => {
+                    if let Some((id, name, _)) = self
+                        .main_state
+                        .selected()
+                        .and_then(|index| self.reliability_rows.get(index))
+                        .cloned()
+                    {
+                        match hardware_report::last_success(&self.run_history(), &id).cloned() {
+                            Some(record) => self.report_worked(&record, Some(&id)),
+                            None => {
+                                self.popup = Some(Popup::Text(TextPopup::new(
+                                    "Not run here",
+                                    format!(
+                                        "A hardware report comes from a run that worked on this machine, and {name} has no successful run in this machine's history."
+                                    ),
+                                    true,
+                                )))
+                            }
+                        }
+                    }
+                }
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
@@ -2928,6 +3191,13 @@ impl App {
                     }
                 }
                 KeyCode::Char('r') => self.reload_backups(),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::Bundles => match key.code {
+                KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') | KeyCode::Right => {
+                    self.bundle_enter()
+                }
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
@@ -3227,11 +3497,10 @@ impl App {
                 TextPopup::new(
                     "Profile saved",
                     format!(
-                        "{} ({} entries) is saved as {}.\n\nIt is under Profiles, Your profiles: Enter runs it, Space queues it. To share it: helix-toolbox profile export \"{}\".",
+                        "{} ({} entries) is saved as {}.\n\nIt is under Profiles, Your profiles: Enter runs it, Space queues it, x exports it to a file to share.",
                         profile.name,
                         profile.entries.len(),
                         path.display(),
-                        profile.name
                     ),
                     true,
                 )
@@ -3562,7 +3831,7 @@ impl App {
                 Act::Open(item.screen),
             );
         }
-        let actions: [(&str, &str, Act); 14] = [
+        let actions: [(&str, &str, Act); 16] = [
             (
                 "Check updates online",
                 "updates refresh",
@@ -3605,6 +3874,8 @@ impl App {
                 "queue",
                 Act::SaveProfile,
             ),
+            ("Import a profile", "profile file", Act::ImportProfile),
+            ("Make a bug report", "issue problem report", Act::Report),
             (
                 "Update every entry with an update",
                 "upgrade packages",
@@ -3737,6 +4008,19 @@ impl App {
                     )));
                 }
             }
+            Act::ImportProfile => {
+                if let Some(index) = self
+                    .catalog
+                    .tabs
+                    .iter()
+                    .position(|tab| tab.id == "profiles")
+                {
+                    self.open_screen(Screen::Area(index));
+                    self.focus = Focus::Main;
+                    self.handle_main_key(&KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE));
+                }
+            }
+            Act::Report => self.make_report(),
             Act::UpdateEntries => {
                 let waiting: Vec<Entry> = self
                     .catalog
@@ -4808,6 +5092,11 @@ impl App {
                 text.push_str(&format!("  {line}\n"));
             }
         }
+        if assessment.here.is_some() && assessment.level != reliability::Level::HardwareTested {
+            text.push_str(
+                "\nIt ran here: w reports that it worked, so that it can become Hardware Tested.\n",
+            );
+        }
         text.push_str(&format!(
             "\nv shows where {id} comes from and what checks it."
         ));
@@ -5052,6 +5341,7 @@ impl App {
             }
             6 => self.toggle_notifications(),
             7 => self.open_wizard(false),
+            8 => self.make_report(),
             _ => {}
         }
     }
@@ -5101,6 +5391,560 @@ impl App {
                 )));
             }
         }
+    }
+
+    // ----- Profiles -----
+
+    /// Whether the Profiles area is open.
+    fn in_profiles(&self) -> bool {
+        self.current_area()
+            .is_some_and(|index| self.catalog.tabs[index].id == "profiles")
+    }
+
+    fn profiles_directory(&self) -> Option<PathBuf> {
+        self.profiles_dir.clone().or_else(profiles::dir)
+    }
+
+    /// Read the user's profiles into the catalog again. The Profiles area
+    /// stays in the group it was in, wherever that group moved, or goes
+    /// back to the top when the group is gone.
+    fn refresh_profiles(&mut self, directory: &Path) {
+        let group_id = |catalog: &Catalog, index: usize, group: usize| match catalog.tabs[index]
+            .items
+            .get(group)
+        {
+            Some(Item::Group(group)) => Some(group.id.clone()),
+            _ => None,
+        };
+        let area = self
+            .catalog
+            .tabs
+            .iter()
+            .position(|tab| tab.id == "profiles");
+        let inside = area.and_then(|index| {
+            let (group, _) = *self.areas[index].path.first()?;
+            group_id(&self.catalog, index, group)
+        });
+        profiles::add_to(&mut self.catalog, directory);
+        self.menu = build_menu(&self.catalog);
+        if let (Some(index), Some(inside)) = (area, inside) {
+            let moved = (0..self.catalog.tabs[index].items.len())
+                .find(|&group| group_id(&self.catalog, index, group).as_deref() == Some(&inside));
+            match moved {
+                Some(group) => self.areas[index].path[0].0 = group,
+                None => {
+                    self.areas[index].path.clear();
+                    self.main_state.select(Some(0));
+                }
+            }
+        }
+        self.update_rows();
+    }
+
+    /// One of the user's profiles by its catalog id: its file and what it
+    /// holds.
+    fn read_own_profile(&self, id: &str) -> Result<(PathBuf, profiles::Profile), String> {
+        let directory = self
+            .profiles_directory()
+            .ok_or("cannot find the configuration folder")?;
+        let slug = id
+            .strip_prefix(profiles::PREFIX)
+            .and_then(profiles::slug)
+            .filter(|slug| id == format!("{}{slug}", profiles::PREFIX))
+            .ok_or_else(|| {
+                format!(
+                    "{} is not one of your profiles",
+                    helix_toolbox_core::printable(id)
+                )
+            })?;
+        let path = directory.join(format!("{slug}.toml"));
+        let profile = profiles::read(&path, &self.catalog).map_err(|error| error.to_string())?;
+        Ok((path, profile))
+    }
+
+    /// Do what an `Ask` popup was answered for.
+    fn answered(&mut self, asked: Asked, text: &str) {
+        let (title, said) = match asked {
+            Asked::ImportProfile => ("Profile imported", self.import_profile(text)),
+            Asked::ExportProfile(id) => ("Profile exported", self.export_profile(&id, text)),
+            Asked::DeleteProfile(id) if text.trim().eq_ignore_ascii_case("yes") => {
+                ("Profile deleted", self.delete_profile(&id))
+            }
+            Asked::DeleteProfile(_) => (
+                "Not deleted",
+                Err("Deleting needs the word yes. The profile is kept.".to_string()),
+            ),
+            Asked::MakeFolder => {
+                self.bundle_folder = text.trim().to_string();
+                return;
+            }
+            Asked::InstallFolder => {
+                self.bundle_source = text.trim().to_string();
+                return;
+            }
+        };
+        self.popup = Some(Popup::Text(match said {
+            Ok(text) => TextPopup::new(title, text, true),
+            Err(error) => TextPopup::new(
+                if title == "Not deleted" {
+                    title
+                } else {
+                    "It did not work"
+                },
+                error,
+                true,
+            ),
+        }));
+    }
+
+    /// Add a profile file to the user's profiles, as `helix-toolbox profile
+    /// import` does.
+    fn import_profile(&mut self, text: &str) -> Result<String, String> {
+        let path = typed_path(text)?;
+        let profile = profiles::read(&path, &self.catalog).map_err(|error| error.to_string())?;
+        let directory = self
+            .profiles_directory()
+            .ok_or("cannot find the configuration folder")?;
+        let saved = profiles::save(&directory, &profile, &self.catalog)
+            .map_err(|error| error.to_string())?;
+        self.refresh_profiles(&directory);
+        Ok(format!(
+            "{} ({} entries) is imported as {}.\n\nIt is under Profiles, Your profiles: Enter runs it, Space queues it.",
+            helix_toolbox_core::printable(&profile.name),
+            profile.entries.len(),
+            saved.display()
+        ))
+    }
+
+    /// Write one of the user's profiles to a file, as `helix-toolbox profile
+    /// export` does.
+    fn export_profile(&mut self, id: &str, text: &str) -> Result<String, String> {
+        let (_, profile) = self.read_own_profile(id)?;
+        let path = typed_path(text)?;
+        if path.extension().is_none_or(|extension| extension != "toml") {
+            return Err("A profile is written to a .toml file.".to_string());
+        }
+        profiles::write(&path, &profile).map_err(|error| error.to_string())?;
+        Ok(format!(
+            "{} is exported to {}.\n\nOn another machine: o in Profiles imports it, or helix-toolbox profile import.",
+            helix_toolbox_core::printable(&profile.name),
+            path.display()
+        ))
+    }
+
+    /// Delete one of the user's profiles, as `helix-toolbox profile delete`
+    /// does; it leaves the Install Plan and the favorites too.
+    fn delete_profile(&mut self, id: &str) -> Result<String, String> {
+        let (path, profile) = self.read_own_profile(id)?;
+        std::fs::remove_file(&path)
+            .map_err(|error| format!("cannot delete {}: {error}", path.display()))?;
+        self.queue.retain(|entry| entry.id != id);
+        if let Some(directory) = self.profiles_directory() {
+            self.refresh_profiles(&directory);
+        }
+        Ok(format!(
+            "{} is deleted.",
+            helix_toolbox_core::printable(&profile.name)
+        ))
+    }
+
+    // ----- Bug report -----
+
+    /// Gather a bug report in the background: the health checks take a few
+    /// seconds.
+    fn make_report(&mut self) {
+        let platform = self.platform.clone();
+        let checks = self.examine_here;
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(crate::report::markdown(&crate::report::gather(
+                &platform, checks,
+            )));
+        });
+        self.reporting = Some(receiver);
+        self.popup = Some(Popup::Text(TextPopup::new(
+            "Bug report",
+            "Gathering the report; the health checks take a few seconds…",
+            true,
+        )));
+    }
+
+    /// Show the gathered report, and keep a copy to paste from.
+    fn show_report(&mut self, report: &str) {
+        let saved = self.reports_dir.as_ref().map(|directory| {
+            let path = directory.join("bug-report.md");
+            std::fs::create_dir_all(directory)
+                .and_then(|()| std::fs::write(&path, report))
+                .map(|()| path)
+        });
+        let kept = match saved {
+            Some(Ok(path)) => {
+                let shown = path.display().to_string();
+                let home = std::env::var("HOME").unwrap_or_default();
+                let shown = match shown.strip_prefix(&home) {
+                    Some(rest) if home.len() > 1 => format!("~{rest}"),
+                    _ => shown,
+                };
+                format!("It is saved as {shown}, to copy from or attach.\n\n")
+            }
+            Some(Err(error)) => format!("It could not be saved: {error}\n\n"),
+            None => String::new(),
+        };
+        let text = format!(
+            "Paste it into a new issue at github.com/Commanderx-code/Helix-toolbox/issues, with what happened and how to make it happen again. It shows your home folder as ~ and holds no host name or logs, but read it before posting. {kept}{report}"
+        );
+        // Over anything but a run or a question.
+        if matches!(self.popup, None | Some(Popup::Text(_))) {
+            self.popup = Some(Popup::Text(TextPopup::new("Bug report", text, true)));
+        }
+    }
+
+    // ----- Hardware reports -----
+
+    /// A report that a run worked on this machine, to read, then send as an
+    /// issue from the browser.
+    fn report_worked(&mut self, record: &history::Record, only: Option<&str>) {
+        let machine = match (&self.machine, self.examine_here) {
+            (Some(machine), _) => machine.clone(),
+            (None, true) => hardware_report::machine(
+                &doctor::Here,
+                &self.platform,
+                &crate::setup::desktop_here(),
+            ),
+            (None, false) => hardware_report::Machine::default(),
+        };
+        let report = match hardware_report::prepare(record, only, machine, crate::VERSION, "") {
+            Ok(report) => report,
+            Err(why) => {
+                self.popup = Some(Popup::Text(TextPopup::new("No hardware report", why, true)));
+                return;
+            }
+        };
+        let url = report.issue_url();
+        let text = report.text();
+        if let Some(directory) = &self.reports_dir {
+            let kept = std::fs::create_dir_all(directory).and_then(|()| {
+                std::fs::write(
+                    directory.join("hardware-report.md"),
+                    format!("{text}\nThe issue, filled in:\n\n{url}\n"),
+                )
+            });
+            if let Err(error) = kept {
+                tracing::warn!(%error, "the hardware report was not saved");
+            }
+        }
+        self.popup = Some(Popup::HardwareReport(
+            TextPopup::new(
+                "Hardware report",
+                format!(
+                    "{text}\no opens the issue in your browser, filled in; GitHub asks you to sign in, and the form asks what you checked. Nothing is sent until you submit it there."
+                ),
+                true,
+            ),
+            url,
+        ));
+    }
+
+    // ----- Offline bundles -----
+
+    fn selected_bundle_row(&self) -> Option<BundleRow> {
+        BUNDLE_ROWS.get(self.main_state.selected()?).copied()
+    }
+
+    /// A row's label and value; headings have no value.
+    fn bundle_row(&self, row: BundleRow) -> (String, String) {
+        let yes_no = |on: bool| if on { "yes" } else { "no" }.to_string();
+        match row {
+            BundleRow::MakeHeading => ("Make a bundle".to_string(), String::new()),
+            BundleRow::Entries => (
+                "Entries".to_string(),
+                match self.queue.len() {
+                    0 => "none: the Install Plan is empty".to_string(),
+                    1 => "1 from the Install Plan".to_string(),
+                    count => format!("{count} from the Install Plan"),
+                },
+            ),
+            BundleRow::Folder => (
+                "Folder, new or empty".to_string(),
+                self.bundle_folder.clone(),
+            ),
+            BundleRow::Complete => ("Every dependency".to_string(), yes_no(self.bundle_complete)),
+            BundleRow::Contents => ("Check what it needs".to_string(), String::new()),
+            BundleRow::Make => ("Make the bundle".to_string(), String::new()),
+            BundleRow::InstallHeading => ("Install from a bundle".to_string(), String::new()),
+            BundleRow::Source => (
+                "The bundle's folder".to_string(),
+                if self.bundle_source.is_empty() {
+                    "not chosen".to_string()
+                } else {
+                    self.bundle_source.clone()
+                },
+            ),
+            BundleRow::Trust => (
+                "Take the bundle's word for what it holds".to_string(),
+                yes_no(self.bundle_trust),
+            ),
+            BundleRow::Check => ("Check it".to_string(), String::new()),
+            BundleRow::Install => ("Install from it".to_string(), String::new()),
+        }
+    }
+
+    /// What a row is for.
+    fn bundle_help(&self, row: BundleRow) -> String {
+        match row {
+            BundleRow::MakeHeading => format!(
+                "The Install Plan's entries and the packages they need for {}, downloaded with Helix Toolbox into a folder. Nothing is installed here.",
+                self.platform.pretty_name
+            ),
+            BundleRow::Entries if self.queue.is_empty() => {
+                "Queue the entries to bundle first: Space on an entry puts it in the Install Plan. Enter opens the Install Plan.".to_string()
+            }
+            BundleRow::Entries => format!(
+                "{}. Enter opens the Install Plan.",
+                self.queue
+                    .iter()
+                    .map(|entry| entry.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            BundleRow::Folder => "Where to download to: a new or empty folder. Enter changes it.".to_string(),
+            BundleRow::Complete => "Every dependency makes a larger bundle, for a machine set up less than this one. Off, only what this machine lacks.".to_string(),
+            BundleRow::Contents => "Asks the package manager what the bundle would download, and downloads nothing.".to_string(),
+            BundleRow::Make => "Downloads into the folder once you confirm, with Helix Toolbox itself. Copy the folder over; on the other machine, inside it: ./helix-toolbox bundle install .".to_string(),
+            BundleRow::InstallHeading => "A bundle is checked first: made for this distribution and architecture, and every file matching its checksum. Then its packages install from its files, without downloading, all together.".to_string(),
+            BundleRow::Source => "The bundle's folder, such as /run/media/you/USB/helix-toolbox-bundle. Enter changes it.".to_string(),
+            BundleRow::Trust => "Install Debian packages this machine's repository index does not know, and add a Flatpak remote this machine lacks with the bundle's copy of its key. Only for a bundle you made yourself.".to_string(),
+            BundleRow::Check => "Checks what the bundle was made for and every file's checksum, and installs nothing.".to_string(),
+            BundleRow::Install => "Checks the bundle, then shows the plan to confirm.".to_string(),
+        }
+    }
+
+    fn bundle_enter(&mut self) {
+        let Some(row) = self.selected_bundle_row() else {
+            return;
+        };
+        match row {
+            BundleRow::Entries => {
+                self.open_screen(Screen::Plan);
+                self.focus = Focus::Main;
+            }
+            BundleRow::Folder => {
+                self.popup = Some(Popup::Ask(
+                    InputPopup::new(
+                        "Make a bundle",
+                        "The folder to download into, new or empty:",
+                    )
+                    .with_value(self.bundle_folder.clone())
+                    .path()
+                    .answering("Keep"),
+                    Asked::MakeFolder,
+                ));
+            }
+            BundleRow::Complete => self.bundle_complete = !self.bundle_complete,
+            BundleRow::Contents | BundleRow::Make if self.queue.is_empty() => {
+                self.popup = Some(Popup::Text(TextPopup::new(
+                    "The Install Plan is empty",
+                    "Queue the entries to bundle in the Install Plan first: Space on an entry puts it there.",
+                    true,
+                )));
+            }
+            BundleRow::Contents => self.start_bundle_task(
+                BundleTask::Contents,
+                "Asking the package manager what the bundle needs…",
+            ),
+            BundleRow::Make => self.make_bundle(),
+            BundleRow::Source => {
+                self.popup = Some(Popup::Ask(
+                    InputPopup::new("Install from a bundle", "The bundle's folder:")
+                        .with_value(self.bundle_source.clone())
+                        .path()
+                        .answering("Keep"),
+                    Asked::InstallFolder,
+                ));
+            }
+            BundleRow::Trust => self.bundle_trust = !self.bundle_trust,
+            BundleRow::Check | BundleRow::Install if self.bundle_source.trim().is_empty() => {
+                self.popup = Some(Popup::Text(TextPopup::new(
+                    "No bundle chosen",
+                    "Choose the bundle's folder first, on the row above.",
+                    true,
+                )));
+            }
+            BundleRow::Check => self.start_bundle_task(
+                BundleTask::Check,
+                "Checking every file in the bundle against its checksum…",
+            ),
+            BundleRow::Install => self.start_bundle_task(
+                BundleTask::Install,
+                "Checking every file in the bundle against its checksum…",
+            ),
+            BundleRow::MakeHeading | BundleRow::InstallHeading => {}
+        }
+    }
+
+    /// Show what is being done; it is done on the next tick.
+    fn start_bundle_task(&mut self, task: BundleTask, notice: &str) {
+        self.popup = Some(Popup::Text(TextPopup::new("Offline bundles", notice, true)));
+        self.bundle_due = Some(task);
+    }
+
+    fn do_bundle_task(&mut self, task: BundleTask) {
+        let said = |title: &str, text: String| Some(Popup::Text(TextPopup::new(title, text, true)));
+        match task {
+            BundleTask::Contents => {
+                let ids: Vec<String> = self.queue.iter().map(|entry| entry.id.clone()).collect();
+                let found = bundle::scratch()
+                    .map_err(|error| format!("cannot create a scratch folder: {error}"))
+                    .and_then(|scratch| {
+                        let found = bundle::contents(
+                            &ids,
+                            &self.catalog,
+                            &self.platform,
+                            self.bundle_complete,
+                            &doctor::Here,
+                            &scratch,
+                        );
+                        let _ = std::fs::remove_dir_all(&scratch);
+                        found.map_err(|error| error.to_string())
+                    });
+                self.popup = match found {
+                    Ok(found) => {
+                        let mut lines = crate::bundle::contents_lines(&found, self.bundle_complete);
+                        if !found.entries.iter().any(|entry| entry.offline) {
+                            lines.push(String::new());
+                            lines.push(
+                                "None of these entries can be bundled; they all need the network."
+                                    .to_string(),
+                            );
+                        }
+                        said("What the bundle needs", lines.join("\n"))
+                    }
+                    Err(error) => said("Cannot tell what it needs", error),
+                };
+            }
+            BundleTask::Check => {
+                let checked = typed_path(&self.bundle_source).and_then(|directory| {
+                    bundle::verify(&directory, &self.platform)
+                        .map(|manifest| crate::bundle::manifest_lines(&directory, &manifest))
+                        .map_err(|error| error.to_string())
+                });
+                self.popup = match checked {
+                    Ok(lines) => said("The bundle checks out", lines.join("\n")),
+                    Err(error) => said("The bundle does not check out", error),
+                };
+            }
+            BundleTask::Install => {
+                let planned = typed_path(&self.bundle_source).and_then(|directory| {
+                    let manifest = bundle::verify(&directory, &self.platform)
+                        .map_err(|error| error.to_string())?;
+                    bundle::plan_install(
+                        &directory,
+                        &manifest,
+                        &[],
+                        &self.platform,
+                        &doctor::Here,
+                        self.bundle_trust,
+                    )
+                    .map_err(|error| error.to_string())
+                });
+                self.popup = None;
+                match planned {
+                    Ok(planned) => self.confirm_plan(Ok(planned)),
+                    Err(error) => self.popup = said("Cannot install from it", error),
+                }
+            }
+        }
+    }
+
+    /// Plan making a bundle of the Install Plan, which the command line does
+    /// in the running window.
+    fn make_bundle(&mut self) {
+        let ids: Vec<String> = self.queue.iter().map(|entry| entry.id.clone()).collect();
+        let planned = typed_path(&self.bundle_folder).and_then(|directory| {
+            if std::fs::read_dir(&directory).is_ok_and(|mut listing| listing.next().is_some()) {
+                return Err(bundle::BundleError::NotEmpty(directory).to_string());
+            }
+            let this = std::env::current_exe()
+                .map_err(|error| format!("cannot tell where this program is: {error}"))?;
+            Ok(bundle::plan_create(
+                &this,
+                &directory,
+                &ids,
+                self.bundle_complete,
+            ))
+        });
+        match planned {
+            Ok(planned) => self.confirm_plan(Ok(planned)),
+            Err(error) => {
+                self.popup = Some(Popup::Text(TextPopup::new(
+                    "Cannot make the bundle",
+                    error,
+                    true,
+                )))
+            }
+        }
+    }
+
+    fn draw_bundles(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Offline bundles",
+            "Packages downloaded here, for a machine of this distribution without internet.",
+        );
+        let help = self
+            .selected_bundle_row()
+            .map(|row| self.bundle_help(row))
+            .unwrap_or_default();
+        let width = (inner.width.saturating_sub(4) as usize).max(1);
+        let height = help.chars().count().div_ceil(width).max(1) as u16 + 2;
+        let parts = Layout::vertical([
+            Constraint::Min(6),
+            Constraint::Length(1),
+            Constraint::Length(height),
+        ])
+        .split(inner);
+        let focused = self.focus == Focus::Main;
+        let room = parts[0].width.saturating_sub(6) as usize;
+        let items: Vec<Line> = BUNDLE_ROWS
+            .iter()
+            .map(|&row| {
+                let (label, value) = self.bundle_row(row);
+                if matches!(row, BundleRow::MakeHeading | BundleRow::InstallHeading) {
+                    return Line::styled(label, Style::default().fg(self.theme.group()).bold());
+                }
+                let label = format!("  {label}");
+                let value = if value.chars().count() + label.chars().count() + 2 > room {
+                    // A long path shows its end.
+                    let keep = room.saturating_sub(label.chars().count() + 3);
+                    let skip = value.chars().count().saturating_sub(keep);
+                    format!("…{}", value.chars().skip(skip).collect::<String>())
+                } else {
+                    value
+                };
+                let gap = room.saturating_sub(label.chars().count() + value.chars().count());
+                Line::from(vec![
+                    Span::styled(label, Style::default().fg(self.theme.entry())),
+                    Span::raw(" ".repeat(gap)),
+                    Span::styled(value, Style::default().fg(self.theme.focused()).bold()),
+                ])
+            })
+            .collect();
+        self.fill(frame, parts[0]);
+        let list = List::new(items)
+            .block(self.card("Offline bundles"))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused))
+            .scroll_padding(1);
+        frame.render_stateful_widget(list, parts[0], &mut self.main_state);
+        self.fill(frame, parts[2]);
+        frame.render_widget(
+            Paragraph::new(help)
+                .block(self.card("About this"))
+                .style(Style::default().fg(self.theme.muted()))
+                .wrap(Wrap { trim: true }),
+            parts[2],
+        );
     }
 
     /// Plan entries; ask before running what can run.
@@ -5445,6 +6289,49 @@ fn restorable(kind: drift::Kind) -> bool {
     !matches!(kind, drift::Kind::Added | drift::Kind::Version)
 }
 
+/// Open a link in the desktop's browser, without waiting for it.
+fn open_link(url: &str) -> Result<(), String> {
+    std::process::Command::new("xdg-open")
+        .arg(url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|mut child| {
+            // Reaped when it exits, so that it leaves nothing behind.
+            std::thread::spawn(move || child.wait());
+        })
+        .map_err(|error| format!("xdg-open could not run: {error}"))
+}
+
+/// One of the user's own profiles, which can be exported and deleted.
+fn own_profile(entry: &Entry) -> bool {
+    entry.id.starts_with(profiles::PREFIX) && matches!(entry.action, Action::Profile { .. })
+}
+
+/// A path as the user typed it: `~` is the home folder; anything else must
+/// be a full path.
+fn typed_path(text: &str) -> Result<PathBuf, String> {
+    let text = text.trim();
+    let home = || {
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or_else(|| "there is no home folder".to_string())
+    };
+    let path = match text.strip_prefix("~/") {
+        Some(rest) => home()?.join(rest),
+        None if text == "~" => home()?,
+        None => PathBuf::from(text),
+    };
+    if text.is_empty() || !path.is_absolute() {
+        return Err(format!(
+            "Give the full path, starting with / or ~/, not {}.",
+            helix_toolbox_core::printable(text)
+        ));
+    }
+    Ok(path)
+}
+
 fn removable(entry: &Entry) -> bool {
     matches!(
         entry.action,
@@ -5530,6 +6417,11 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
     menu.push(MenuItem {
         label: "Backups".into(),
         screen: Screen::Backups,
+        section: "MORE TOOLS",
+    });
+    menu.push(MenuItem {
+        label: "Offline bundles".into(),
+        screen: Screen::Bundles,
         section: "MORE TOOLS",
     });
     menu.push(MenuItem {
@@ -5738,6 +6630,168 @@ mod tests {
         let entry = app.catalog.find("profile-dev-box").unwrap();
         assert!(
             matches!(&entry.action, Action::Profile { entries } if entries == &["git", "meld"])
+        );
+    }
+
+    /// Replace what an `Ask` popup holds with `text`.
+    fn answer(app: &mut App, text: &str) {
+        for _ in 0..200 {
+            press(app, KeyCode::Backspace);
+        }
+        type_text(app, text);
+        press(app, KeyCode::Enter);
+    }
+
+    #[test]
+    fn your_profiles_are_imported_exported_and_deleted_in_the_profiles_area() {
+        let mut app = app();
+        let directory = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        app.profiles_dir = Some(directory.path().to_path_buf());
+        app.queue = vec![app.catalog.find("git").unwrap().clone()];
+        app.save_profile("Dev Box");
+        app.popup = None;
+        let area = area_of(&app, "profile-dev-box");
+        app.open_screen(Screen::Area(area));
+        app.focus = Focus::Main;
+        assert!(screen(&mut app, 140, 40).contains("o Import"));
+        // Into Your profiles, then onto the profile.
+        press(&mut app, KeyCode::Enter);
+        app.main_state.select(Some(1));
+        assert_eq!(app.selected_entry().unwrap().id, "profile-dev-box");
+        let shown = screen(&mut app, 140, 40);
+        assert!(shown.contains("x Export"), "{shown}");
+
+        press(&mut app, KeyCode::Char('x'));
+        assert!(screen(&mut app, 140, 40).contains("~/dev-box.toml"));
+        let exported = elsewhere.path().join("shared.toml");
+        answer(&mut app, &exported.display().to_string());
+        assert!(screen(&mut app, 140, 40).contains("Profile exported"));
+        assert!(std::fs::read_to_string(&exported).unwrap().contains("git"));
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Char('x'));
+        answer(&mut app, "shared.toml");
+        assert!(screen(&mut app, 140, 40).contains("Give the full path"));
+        press(&mut app, KeyCode::Esc);
+
+        // Deleting needs the word.
+        press(&mut app, KeyCode::Delete);
+        answer(&mut app, "no");
+        assert!(screen(&mut app, 140, 40).contains("Not deleted"));
+        assert!(directory.path().join("dev-box.toml").exists());
+        press(&mut app, KeyCode::Esc);
+        app.queue = vec![app.catalog.find("profile-dev-box").unwrap().clone()];
+        press(&mut app, KeyCode::Delete);
+        answer(&mut app, "yes");
+        assert!(screen(&mut app, 140, 40).contains("Profile deleted"));
+        assert!(!directory.path().join("dev-box.toml").exists());
+        assert!(app.catalog.find("profile-dev-box").is_none());
+        assert!(app.queue.is_empty(), "it leaves the Install Plan");
+        assert!(app.areas[area].path.is_empty(), "its group is gone");
+        press(&mut app, KeyCode::Esc);
+
+        // And it comes back from the exported file.
+        press(&mut app, KeyCode::Char('o'));
+        answer(&mut app, &exported.display().to_string());
+        assert!(screen(&mut app, 140, 40).contains("Profile imported"));
+        assert!(app.catalog.find("profile-dev-box").is_some());
+        assert!(directory.path().join("dev-box.toml").exists());
+    }
+
+    #[test]
+    fn offline_bundles_are_made_from_the_install_plan_and_checked_before_installing() {
+        let mut app = app();
+        let folder = tempfile::tempdir().unwrap();
+        app.open_screen(Screen::Bundles);
+        app.focus = Focus::Main;
+        let shown = screen(&mut app, 140, 40);
+        for text in [
+            "Offline bundles",
+            "Make a bundle",
+            "Install from a bundle",
+            "none: the Install Plan is empty",
+            "~/helix-toolbox-bundle",
+        ] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+        let row = |wanted: BundleRow| BUNDLE_ROWS.iter().position(|&row| row == wanted);
+        app.main_state.select(row(BundleRow::Make));
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 140, 40).contains("The Install Plan is empty"));
+        press(&mut app, KeyCode::Esc);
+
+        app.queue = vec![app.catalog.find("git").unwrap().clone()];
+        app.main_state.select(row(BundleRow::Folder));
+        press(&mut app, KeyCode::Enter);
+        let target = folder.path().join("bundle");
+        answer(&mut app, &target.display().to_string());
+        assert_eq!(app.bundle_folder, target.display().to_string());
+        app.main_state.select(row(BundleRow::Complete));
+        press(&mut app, KeyCode::Enter);
+        assert!(app.bundle_complete);
+        app.main_state.select(row(BundleRow::Make));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let planned = app.pending.as_ref().unwrap();
+        let command = planned.steps[0].display();
+        assert!(
+            command.contains("bundle create") && command.contains("--complete"),
+            "{command}"
+        );
+        press(&mut app, KeyCode::Char('n'));
+        // A folder with something in it is not used.
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("keep.txt"), "mine").unwrap();
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 140, 40).contains("Cannot make the bundle"));
+        press(&mut app, KeyCode::Esc);
+
+        // Installing checks the bundle first.
+        app.main_state.select(row(BundleRow::Install));
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 140, 40).contains("No bundle chosen"));
+        press(&mut app, KeyCode::Esc);
+        app.main_state.select(row(BundleRow::Source));
+        press(&mut app, KeyCode::Enter);
+        answer(&mut app, &target.display().to_string());
+        app.main_state.select(row(BundleRow::Check));
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 140, 40).contains("Checking every file"));
+        assert!(app.needs_redraw());
+        assert!(screen(&mut app, 140, 40).contains("The bundle does not check out"));
+        press(&mut app, KeyCode::Esc);
+        app.main_state.select(row(BundleRow::Install));
+        press(&mut app, KeyCode::Enter);
+        assert!(app.needs_redraw());
+        assert!(screen(&mut app, 140, 40).contains("Cannot install from it"));
+        assert!(app.pending.is_none());
+    }
+
+    #[test]
+    fn settings_make_a_bug_report_and_keep_a_copy() {
+        let mut app = app();
+        let directory = tempfile::tempdir().unwrap();
+        app.reports_dir = Some(directory.path().to_path_buf());
+        app.open_screen(Screen::Settings);
+        app.focus = Focus::Main;
+        app.main_state.select(Some(8));
+        assert!(screen(&mut app, 120, 40).contains("Bug report, to paste into an issue"));
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 120, 40).contains("Gathering the report"));
+        let start = std::time::Instant::now();
+        while app.reporting.is_some() && start.elapsed() < std::time::Duration::from_secs(20) {
+            app.needs_redraw();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let shown = screen(&mut app, 120, 40);
+        assert!(shown.contains("Paste it into a new issue"), "{shown}");
+        let saved = std::fs::read_to_string(directory.path().join("bug-report.md")).unwrap();
+        assert!(saved.contains("### Helix Toolbox report"), "{saved}");
+        let (choices, _) = app.palette_choices();
+        assert!(
+            choices
+                .iter()
+                .any(|choice| choice.label == "Make a bug report")
         );
     }
 
@@ -6319,6 +7373,94 @@ mod tests {
         assert!(text.contains("exit 1"));
         press(&mut app, KeyCode::Enter);
         assert!(screen(&mut app, 120, 40).contains("No log was saved"));
+    }
+
+    #[test]
+    fn a_run_that_worked_becomes_a_hardware_report_to_send() {
+        let state = tempfile::tempdir().unwrap();
+        let reports = tempfile::tempdir().unwrap();
+        let mut app = app();
+        app.reports_dir = Some(reports.path().to_path_buf());
+        app.machine = Some(hardware_report::Machine {
+            distribution: "Garuda Linux".into(),
+            model: Some("Lenovo ThinkPad T15p Gen 2i".into()),
+            graphics: vec!["NVIDIA GeForce GTX 1650 Mobile / Max-Q (nvidia)".into()],
+            architecture: "x86_64".into(),
+            ..Default::default()
+        });
+        history::record_in(
+            state.path(),
+            &[("git".into(), "Git".into())],
+            false,
+            "exit 1",
+            None,
+        )
+        .unwrap();
+        history::record_in(
+            state.path(),
+            &[("git".into(), "Git".into()), ("meld".into(), "Meld".into())],
+            true,
+            "exit status 0",
+            None,
+        )
+        .unwrap();
+        app.records = history::read_in(state.path(), 10).unwrap();
+        app.open_screen(Screen::History);
+        app.records = history::read_in(state.path(), 10).unwrap();
+        app.focus = Focus::Main;
+        let successful = app
+            .records
+            .iter()
+            .position(|record| record.success)
+            .unwrap();
+        app.main_state.select(Some(1 - successful));
+        assert!(!screen(&mut app, 140, 40).contains("Report it worked"));
+        press(&mut app, KeyCode::Char('w'));
+        assert!(screen(&mut app, 140, 40).contains("No hardware report"));
+        press(&mut app, KeyCode::Esc);
+
+        app.main_state.select(Some(successful));
+        assert!(screen(&mut app, 140, 40).contains("w Report it worked"));
+        press(&mut app, KeyCode::Char('w'));
+        let shown = screen(&mut app, 140, 40);
+        assert!(shown.contains("[[hardware]]"), "{shown}");
+        assert!(shown.contains("o Open the issue"), "{shown}");
+        let Some(Popup::HardwareReport(_, url)) = &app.popup else {
+            panic!("no hardware report");
+        };
+        assert!(url.starts_with(hardware_report::ISSUES));
+        assert!(
+            url.contains("entry%20%3D%20%22meld%22"),
+            "both entries: {url}"
+        );
+        let saved = std::fs::read_to_string(reports.path().join("hardware-report.md")).unwrap();
+        assert!(saved.contains(url.as_str()));
+        app.opener = |url| {
+            if url.starts_with(hardware_report::ISSUES) {
+                Ok(())
+            } else {
+                Err("not the issue".into())
+            }
+        };
+        press(&mut app, KeyCode::Char('o'));
+        assert!(screen(&mut app, 140, 40).contains("open in your browser"));
+        press(&mut app, KeyCode::Esc);
+
+        // From Reliability, one entry's.
+        app.open_screen(Screen::Reliability);
+        app.focus = Focus::Main;
+        let row = app
+            .reliability_rows
+            .iter()
+            .position(|(id, _, _)| id == "meld")
+            .unwrap();
+        app.main_state.select(Some(row));
+        assert!(screen(&mut app, 140, 40).contains("w Report it worked"));
+        press(&mut app, KeyCode::Char('w'));
+        let Some(Popup::HardwareReport(_, url)) = &app.popup else {
+            panic!("no hardware report");
+        };
+        assert!(url.contains("entry%20%3D%20%22meld%22") && !url.contains("%22git%22"));
     }
 
     #[test]

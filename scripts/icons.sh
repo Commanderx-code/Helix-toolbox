@@ -24,12 +24,12 @@ for size in 16 22 24 32 48 64 128 256; do
     render "$size" "$out/${size}x${size}.png"
 done
 
-# The window bundles its own copies; Tauri reads each file's size from its
-# name, and 128x128@2x is the 256-pixel one.
-for size in 16 24 32 48 64 128; do
+# The window bundles its own copies. Tauri installs each in the folder of
+# its size, and a name ending in @2x in a high-density one (256x256@2)
+# that desktops do not look in, so the 256-pixel one is named for its size.
+for size in 16 24 32 48 64 128 256; do
     cp "$out/${size}x${size}.png" "$window/${size}x${size}.png"
 done
-cp "$out/256x256.png" "$window/128x128@2x.png"
 cp assets/icon.png "$window/icon.png"
 
 # Four rows high in the terminal's header; 160 pixels keeps it sharp there.

@@ -13,7 +13,7 @@ use helix_toolbox_engine::{
     confirmation::{self, Prepared},
     desktop, doctor, drift,
     execution::{Execution, Options},
-    hardware, history,
+    hardware, hardware_report, history,
     inventory::{Inventory, which},
     notifications,
     overview::Overview,
@@ -624,6 +624,112 @@ fn without_home(text: &str) -> String {
     {
         Some(home) => text.replace(&home, "~"),
         None => text.to_string(),
+    }
+}
+
+// Hardware reports
+
+#[derive(Serialize)]
+struct HardwareReportView {
+    text: String,
+    /// The new issue, filled in from the report.
+    url: String,
+}
+
+/// A report that a run worked on this machine: the run at `at` (in Unix
+/// seconds), or else the last successful run of `entry`; of the run's
+/// entries, only `entry` when it is given.
+#[tauri::command]
+async fn hardware_report(
+    app: AppHandle,
+    at: Option<u64>,
+    entry: Option<String>,
+) -> Result<HardwareReportView, String> {
+    blocking(app, move |gui| {
+        let runs = history::read(1000)
+            .map_err(|error| format!("the history could not be read: {error}"))?;
+        let record = match (at, &entry) {
+            (Some(at), _) => runs.iter().find(|record| record.unix_timestamp == at),
+            (None, Some(id)) => hardware_report::last_success(&runs, id),
+            (None, None) => None,
+        }
+        .ok_or("That run is not in this machine's history.")?;
+        let machine = hardware_report::machine(&doctor::Here, &gui.platform, &desktop_here());
+        let report = hardware_report::prepare(
+            record,
+            entry.as_deref(),
+            machine,
+            env!("CARGO_PKG_VERSION"),
+            "",
+        )?;
+        Ok(HardwareReportView {
+            text: report.text(),
+            url: report.issue_url(),
+        })
+    })
+    .await?
+}
+
+/// Open a hardware report's issue in the desktop's browser.
+#[tauri::command]
+fn open_issue(url: String) -> Result<(), String> {
+    if !url.starts_with(&format!("{}?", hardware_report::ISSUES)) {
+        return Err("That is not a link to a Helix Toolbox issue.".to_string());
+    }
+    let mut command = std::process::Command::new("xdg-open");
+    command
+        .arg(&url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    if let Some(appdir) = std::env::var_os("APPDIR").filter(|appdir| appdir.len() > 1) {
+        let appdir = appdir.to_string_lossy().into_owned();
+        for (name, value) in std::env::vars_os() {
+            match outside(&value.to_string_lossy(), &appdir) {
+                Outside::Keep => {}
+                Outside::Set(value) => {
+                    command.env(name, value);
+                }
+                Outside::Remove => {
+                    command.env_remove(name);
+                }
+            }
+        }
+        // The AppImage's start sets its own theme for its own GTK.
+        for name in ["APPDIR", "APPIMAGE", "ARGV0", "OWD", "GTK_THEME"] {
+            command.env_remove(name);
+        }
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("xdg-open could not run: {error}"))?;
+    // Reaped when it exits.
+    std::thread::spawn(move || child.wait());
+    Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Outside {
+    Keep,
+    Set(String),
+    Remove,
+}
+
+/// A variable as a program of the desktop's should see it, outside the
+/// AppImage the window runs from: paths into it taken out of a list, and
+/// a single path into it removed.
+fn outside(value: &str, appdir: &str) -> Outside {
+    if !value.contains(appdir) {
+        return Outside::Keep;
+    }
+    let kept: Vec<&str> = value
+        .split(':')
+        .filter(|part| !part.is_empty() && !part.starts_with(appdir))
+        .collect();
+    if kept.is_empty() || !value.contains(':') {
+        Outside::Remove
+    } else {
+        Outside::Set(kept.join(":"))
     }
 }
 
@@ -1651,7 +1757,8 @@ fn main() {
                 about, areas, statuses, favorites, pin, prepare, changes, download_sources, cancel,
                 run, write, resize,
                 stop, close_run, runs, save_profile, import_profile, export_profile,
-                delete_profile, bug_report, copy_text, doctor, prepare_repair, updates,
+                delete_profile, bug_report, copy_text, hardware_report, open_issue, doctor,
+                prepare_repair, updates,
                 prepare_channels, prepare_update, prepare_remove, list_backups, prepare_restore, drift_targets,
                 drift_check, save_baseline, reliability, trust, read_hardware, prepare_firmware,
                 prepare_smart, read_desktop, save_look, prepare_look, read_settings,
@@ -1735,6 +1842,27 @@ mod tests {
         assert_eq!(
             window_installed_from(Path::new("/opt/helix/helix-toolbox-gui")),
             "other"
+        );
+    }
+
+    #[test]
+    fn programs_of_the_desktop_get_the_environment_without_the_appimage() {
+        let appdir = "/tmp/.mount_helixAbc";
+        assert_eq!(outside("/usr/share", appdir), Outside::Keep);
+        assert_eq!(
+            outside(
+                "/tmp/.mount_helixAbc/usr/share:/usr/share:/usr/local/share",
+                appdir
+            ),
+            Outside::Set("/usr/share:/usr/local/share".to_string())
+        );
+        assert_eq!(
+            outside("/tmp/.mount_helixAbc//usr/lib/gtk-3.0", appdir),
+            Outside::Remove
+        );
+        assert_eq!(
+            outside("/tmp/.mount_helixAbc/usr/share:", appdir),
+            Outside::Remove
         );
     }
 

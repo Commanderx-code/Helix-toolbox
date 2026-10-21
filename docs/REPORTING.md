@@ -63,14 +63,24 @@ Open an issue on GitHub; the form asks for:
   installed, the distribution, the tools it found, the terminal, your
   settings, the last few runs and the health checks. It shows your home
   folder as `~` and includes no host name or logs, but read it before
-  posting. In the window, **Make a bug report…** in Settings (or the
-  palette) shows the same, with the window's own details, and copies it.
+  posting. In the menu, Settings' **Bug report** row (or `Ctrl-K`) shows the
+  same and keeps a copy in `~/.local/state/helix-toolbox/bug-report.md`; in
+  the window, **Make a bug report…** in Settings (or the palette) shows it
+  with the window's own details, and copies it.
 
 A run that went right is worth reporting too, above all for the boot,
-login-screen and driver entries, which no container can test: name the
-entry, the system and graphics hardware, the Helix Toolbox version and the date,
-and it becomes a **Hardware Tested** or **VM Tested** record in
-`catalog/validation.toml`, shown on the Reliability screen to everyone.
+login-screen and driver entries, which no container can test. Helix Toolbox
+writes the report: **Report it worked…** on a run in the window's History
+(or on an entry in Reliability), `w` in the same places in the menu, or
+`helix-toolbox report --worked <entry>`. It takes the entry, the date and
+the version from this machine's history and names the distribution, the
+desktop, the model and the graphics with their drivers, never a serial
+number, the host name or you. It refuses a run that failed and a virtual
+machine or container. It opens the **It worked on my machine** issue form
+filled in; say there what you checked, above all after a reboot, and submit
+it. Once a maintainer has checked it (`scripts/accept-hardware-report.py`),
+it becomes a **Hardware Tested** record in `catalog/validation.toml`, shown
+on the Reliability screen to everyone.
 
 A run that went wrong is easier to fix with the exact entry, its log and the
 report than with any description. Ideas and missing entries are welcome too:

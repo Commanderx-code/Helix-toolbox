@@ -223,6 +223,99 @@ fn dnf_download(names: &[String], complete: bool, into: &Path) -> bool {
     command.status().is_ok_and(|status| status.success())
 }
 
+/// What a bundle of these entries would hold and how it is downloaded, line
+/// by line, as `bundle create` says it and the menu shows it.
+pub fn contents_lines(found: &bundle::Contents, complete: bool) -> Vec<String> {
+    let mut lines: Vec<String> = found
+        .entries
+        .iter()
+        .map(|entry| match (&entry.network, &entry.flatpak) {
+            (None, Some(id)) => format!("Offline: {} (the Flatpak {id})", printable(&entry.name)),
+            (None, None) => format!("Offline: {}", printable(&entry.name)),
+            (Some(why), _) => format!("Needs the network: {} ({why})", printable(&entry.name)),
+        })
+        .collect();
+    let files = found
+        .downloads
+        .iter()
+        .filter(|download| !download.file.ends_with(".sig"))
+        .count();
+    if !found.dnf.is_empty() {
+        lines.push(format!(
+            "dnf downloads {} with their dependencies.",
+            found.dnf.join(", ")
+        ));
+    } else if !found.zypper.is_empty() {
+        lines.push(format!(
+            "zypper downloads {} with {}, as you, without root.",
+            found.zypper.join(", "),
+            if complete {
+                "every dependency"
+            } else {
+                "the dependencies this machine lacks"
+            }
+        ));
+    } else if files > 0 || found.flatpaks.is_empty() {
+        lines.push(format!(
+            "{files} package {} to download{}.",
+            if files == 1 { "file" } else { "files" },
+            if complete {
+                ", every dependency"
+            } else {
+                ", with the dependencies this machine lacks"
+            }
+        ));
+    }
+    if !found.flatpaks.is_empty() {
+        lines.push(format!(
+            "flatpak create-usb copies {}, with the runtimes they need, from this machine's installation.",
+            found
+                .flatpaks
+                .iter()
+                .map(|flatpak| printable(&flatpak.reference))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    lines
+}
+
+/// What a checked bundle holds, line by line, as `bundle verify` says it.
+pub fn manifest_lines(directory: &Path, manifest: &bundle::Manifest) -> Vec<String> {
+    let mut lines = vec![format!(
+        "{}: made for {} {} with Helix Toolbox {}{}; {} files, every one matching its checksum.",
+        directory.display(),
+        printable(&manifest.distribution),
+        printable(&manifest.architecture),
+        printable(&manifest.helixforge),
+        if manifest.release {
+            " (a release build)"
+        } else {
+            ""
+        },
+        manifest.files.len()
+    )];
+    for flatpak in &manifest.flatpaks {
+        lines.push(format!(
+            "  Flatpak: {} at commit {}, from {}",
+            printable(&flatpak.reference),
+            &flatpak.commit[..12],
+            printable(&flatpak.remote)
+        ));
+    }
+    for entry in &manifest.entries {
+        lines.push(match &entry.network {
+            None => format!("  Offline: {}", printable(&entry.name)),
+            Some(why) => format!(
+                "  Needs the network: {} ({})",
+                printable(&entry.name),
+                printable(why)
+            ),
+        });
+    }
+    lines
+}
+
 pub fn run(
     command: BundleCommand,
     catalog: &Catalog,
@@ -264,58 +357,8 @@ pub fn run(
                 );
                 return Ok(());
             }
-            for entry in &found.entries {
-                match (&entry.network, &entry.flatpak) {
-                    (None, Some(id)) => {
-                        println!("Offline: {} (the Flatpak {id})", printable(&entry.name))
-                    }
-                    (None, None) => println!("Offline: {}", printable(&entry.name)),
-                    (Some(why), _) => {
-                        println!("Needs the network: {} ({why})", printable(&entry.name))
-                    }
-                }
-            }
-            let files = found
-                .downloads
-                .iter()
-                .filter(|download| !download.file.ends_with(".sig"))
-                .count();
-            if !found.dnf.is_empty() {
-                println!(
-                    "dnf downloads {} with their dependencies.",
-                    found.dnf.join(", ")
-                );
-            } else if !found.zypper.is_empty() {
-                println!(
-                    "zypper downloads {} with {}, as you, without root.",
-                    found.zypper.join(", "),
-                    if complete {
-                        "every dependency"
-                    } else {
-                        "the dependencies this machine lacks"
-                    }
-                );
-            } else if files > 0 || found.flatpaks.is_empty() {
-                println!(
-                    "{files} package {} to download{}.",
-                    if files == 1 { "file" } else { "files" },
-                    if complete {
-                        ", every dependency"
-                    } else {
-                        ", with the dependencies this machine lacks"
-                    }
-                );
-            }
-            if !found.flatpaks.is_empty() {
-                println!(
-                    "flatpak create-usb copies {}, with the runtimes they need, from this machine's installation.",
-                    found
-                        .flatpaks
-                        .iter()
-                        .map(|flatpak| printable(&flatpak.reference))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
+            for line in contents_lines(&found, complete) {
+                println!("{line}");
             }
             if dry_run {
                 for download in &found.downloads {
@@ -368,36 +411,8 @@ pub fn run(
                 );
                 return Ok(());
             }
-            println!(
-                "{}: made for {} {} with Helix Toolbox {}{}; {} files, every one matching its checksum.",
-                directory.display(),
-                printable(&manifest.distribution),
-                printable(&manifest.architecture),
-                printable(&manifest.helixforge),
-                if manifest.release {
-                    " (a release build)"
-                } else {
-                    ""
-                },
-                manifest.files.len()
-            );
-            for flatpak in &manifest.flatpaks {
-                println!(
-                    "  Flatpak: {} at commit {}, from {}",
-                    printable(&flatpak.reference),
-                    &flatpak.commit[..12],
-                    printable(&flatpak.remote)
-                );
-            }
-            for entry in &manifest.entries {
-                match &entry.network {
-                    None => println!("  Offline: {}", printable(&entry.name)),
-                    Some(why) => println!(
-                        "  Needs the network: {} ({})",
-                        printable(&entry.name),
-                        printable(why)
-                    ),
-                }
+            for line in manifest_lines(&directory, &manifest) {
+                println!("{line}");
             }
             Ok(())
         }

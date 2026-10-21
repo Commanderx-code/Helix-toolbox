@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from '../components/Icon.svelte';
   import * as api from '../lib/api';
+  import { toolbox } from '../lib/state.svelte';
   import type { RecordView } from '../lib/types';
 
   let records = $state<RecordView[] | null>(null);
@@ -35,7 +36,7 @@
     {:else}
       <table>
         <thead>
-          <tr><th>When</th><th>Entries</th><th>Result</th></tr>
+          <tr><th>When</th><th>Entries</th><th>Result</th><th>Report</th></tr>
         </thead>
         <tbody>
           {#each records as record, index (index)}
@@ -48,9 +49,16 @@
                   {record.result}
                 </span>
               </td>
+              <td class="report">
+                {#if record.success}
+                  <button class="button ghost" title="Report that this run worked on this machine" onclick={() => toolbox.reportWorked(record.unix_timestamp, null)}>
+                    Report it worked…
+                  </button>
+                {/if}
+              </td>
             </tr>
           {:else}
-            <tr><td colspan="3" class="faint">Nothing has run yet.</td></tr>
+            <tr><td colspan="4" class="faint">Nothing has run yet.</td></tr>
           {/each}
         </tbody>
       </table>
@@ -117,6 +125,14 @@
 
   .result.success {
     color: var(--green);
+  }
+
+  .report {
+    width: 1%;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    text-align: right;
+    white-space: nowrap;
   }
 
   .problem {

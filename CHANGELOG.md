@@ -4,6 +4,27 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.15.0
+
+- **The terminal interface catches up with the window.** It has an
+  **Offline bundles** screen, which bundles the Install Plan's entries
+  into a folder and checks or installs a bundle from one. In Profiles,
+  `x` exports one of your profiles to a file, `Delete` deletes it and
+  `o` imports one. Settings makes a **bug report**, shown to read and
+  kept in `~/.local/state/helix-toolbox/bug-report.md` to paste into an
+  issue.
+- **It worked on my machine.** Graphics drivers, firmware, login screens
+  and the Steam Deck can only be tested on real hardware, so a run that
+  worked can now be reported in a few steps: **Report it worked…** on a run
+  in the window's History or an entry in Reliability, `w` in the same places
+  in the terminal interface, or `helix-toolbox report --worked <entry>`. The
+  report names the distribution, desktop, model and graphics with their
+  drivers (no serial numbers, host name or user) and opens a new issue form
+  filled in; once checked, it becomes the entry's **Hardware Tested**
+  record. It is refused for a run that failed and in a virtual machine.
+- The window's 256-pixel icon is installed where desktops look for it,
+  not in a `256x256@2` folder they skip.
+
 ## v1.14.0
 
 - **Told when updates are waiting.** **Tell me when updates are waiting**

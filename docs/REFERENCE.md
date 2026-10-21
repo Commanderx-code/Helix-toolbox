@@ -152,6 +152,9 @@ entries) and press `s` on the Install Plan to save it under a name. It is a
 TOML file in `~/.config/helix-toolbox/profiles/` and appears under Profiles,
 **Your profiles**, where `Enter` runs it and `Space` queues it, like the
 built-in ones; its entries run in order, after what they depend on.
+In the menu's Profiles area, `x` on one of your profiles exports it to a
+file, `Delete` deletes it (after you type yes) and `o` imports a profile
+file; the window has the same as buttons. On the command line:
 `helix-toolbox profile list`, `export <name> [file]`, `import <file>` (which
 refuses a profile naming entries this catalog does not have) and `delete
 <name>`; `helix-toolbox run profile-<name>` runs one.
@@ -281,6 +284,12 @@ remote's address (Flathub's); any other, and a remote this machine lacks,
 which is added with the bundle's copy of its key, only with
 `--trust-bundle`, since nothing here vouches for them.
 
+**Offline bundles** in the menu and the window does the same from the
+Install Plan: it says what a bundle of the queued entries would download,
+makes one in a folder you name (with every dependency or only what this
+machine lacks), and checks a bundle's folder or installs from it, with the
+bundle's word taken only when you switch that on.
+
 ## What a change will do
 
 Before a plan runs, `e` (on the Install Plan, in the confirmation, or on a
@@ -338,7 +347,7 @@ changes):
 
 | Level | Means |
 |---|---|
-| Hardware Tested | a tester ran it on a real machine and reported it |
+| Hardware Tested | a tester ran it on a real machine and reported it (`helix-toolbox report --worked`) |
 | VM Tested | the Distributions workflow ran it for real in a virtual machine (Arch, Debian or Fedora, on BIOS or UEFI firmware, or the Arch live ISO), rebooted into the result and checked it |
 | Container Tested | the Distributions workflow ran it in distribution containers and Helix Toolbox verified the result there |
 | Stand-in Tested | installer tests run its script against stand-in commands and files, on every change and in each container |
@@ -351,6 +360,16 @@ stand-in tests and reports only. `i` shows only critical or only untested
 entries, `Enter` the evidence. Before a critical entry with no more than
 stand-in tests runs, its confirmation says so. `helix-toolbox reliability
 [--critical]` prints the same.
+
+An entry that ran here can be reported as working: `w` on it, or on its run
+in History (**Report it worked…** in the window), or `helix-toolbox report
+--worked <entry> [--note "what you checked"]`. The report gives the entry,
+the date and version of its last successful run here, and the
+distribution, desktop, model and graphics cards with their drivers (no
+serial numbers, host name or user), with the `[[hardware]]` record it asks
+for and a link that opens the issue form filled in. It is refused for a run
+that failed and in a virtual machine or a container. Nothing is sent until
+you submit the issue.
 
 `v` on any entry (or `helix-toolbox trust <id>`) opens the **trust inspector**:
 the installer's origin (Helix Toolbox's own installers, Linutil's, or commands
@@ -441,6 +460,7 @@ helix-toolbox history                    # recent runs
 helix-toolbox docgen docs/walkthrough.md # the catalog as Markdown
 helix-toolbox status --json              # any reading command, or a --dry-run plan, as JSON
 helix-toolbox report                     # what a bug report needs, to paste into an issue
+helix-toolbox report --worked sddm       # that an entry worked here, for its Hardware Tested record
 ```
 
 `--json` prints one JSON document for other programs instead of text; it

@@ -331,6 +331,21 @@
     return text.split('\n').find((line) => line.startsWith('- WebKitGTK')) ?? 'gathered and copied';
   });
 
+  await step('a run that worked becomes a hardware report, and its issue opens', async () => {
+    await click('History', document.querySelector('nav'));
+    await until('History', () => screenTitle().startsWith('History'));
+    await click('Report it worked', await until('a run that worked', () => withText('tr', 'Marker')));
+    const dialog = await until('the report', () => document.querySelector('#worked-title')?.closest('[role="dialog"]'));
+    const text = dialog.querySelector('pre')?.textContent ?? '';
+    if (!text.includes('[[hardware]]') || !text.includes('entry = "marker"')) throw new Error(text);
+    await accessible('the hardware report');
+    await click('Open the issue', dialog);
+    await until('opened', () => withText('[role="status"]', 'Open in your browser'));
+    await click('Close', dialog);
+    await until('the report to close', () => !document.querySelector('#worked-title'));
+    return text.split('\n').find((line) => line.startsWith('System:')) ?? 'reported';
+  });
+
   await step('update notifications turn on and off from Settings', async () => {
     await click('Settings', document.querySelector('nav'));
     await until('Settings', () => screenTitle().startsWith('Settings'));
