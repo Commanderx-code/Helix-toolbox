@@ -781,21 +781,31 @@ def bootable_usb(machine, shots):
     if written != image.read_bytes():
         raise RuntimeError('the stick does not hold the image')
     for kind in ('bios', 'uefi'):
-        log_file = machine.work / f'usb-{kind}.log'
-        log_file.unlink(missing_ok=True)
-        command = ['qemu-system-x86_64', '-enable-kvm', '-m', '512', '-display', 'none', '-nic', 'none',
-                   '-drive', f'file={machine.work / "usb.img"},format=raw,if=none,id=stick,readonly=on,file.locking=off',
-                   '-device', 'qemu-xhci', '-device', 'usb-storage,drive=stick,bootindex=0',
-                   '-serial', f'file:{log_file}']
-        command[1:1] = firmware_options(kind, machine.work / f'usb-vars-{kind}.fd')
-        with subprocess.Popen(command) as qemu:
-            deadline = time.time() + 90
-            while time.time() < deadline and b'hf-usb-booted' not in (
-                    log_file.read_bytes() if log_file.exists() else b''):
-                time.sleep(1)
-            qemu.kill()
-        if b'hf-usb-booted' not in log_file.read_bytes():
-            raise RuntimeError(f'the stick did not boot on {kind.upper()} firmware')
+        # It boots in seconds; on a runner slowed by its neighbors the
+        # firmware has taken minutes, so a stick that does not come up gets
+        # a second start before it counts as not booting.
+        for attempt in (1, 2):
+            log_file = machine.work / f'usb-{kind}.log'
+            log_file.unlink(missing_ok=True)
+            command = ['qemu-system-x86_64', '-enable-kvm', '-m', '512', '-display', 'none', '-nic', 'none',
+                       '-drive', f'file={machine.work / "usb.img"},format=raw,if=none,id=stick,readonly=on,file.locking=off',
+                       '-device', 'qemu-xhci', '-device', 'usb-storage,drive=stick,bootindex=0',
+                       '-serial', f'file:{log_file}']
+            command[1:1] = firmware_options(kind, machine.work / f'usb-vars-{kind}.fd')
+            with subprocess.Popen(command) as qemu:
+                deadline = time.time() + 180
+                while time.time() < deadline and b'hf-usb-booted' not in (
+                        log_file.read_bytes() if log_file.exists() else b''):
+                    time.sleep(1)
+                qemu.kill()
+            said = log_file.read_bytes() if log_file.exists() else b''
+            if b'hf-usb-booted' in said:
+                break
+            if attempt == 1:
+                log(f'the stick did not boot on {kind.upper()} firmware in 180 s; starting it again')
+        else:
+            tail = ANSI.sub('', said[-600:].decode(errors='replace')).strip()
+            raise RuntimeError(f'the stick did not boot on {kind.upper()} firmware, twice; the serial line ended:\n{tail}')
 
 
 # Run by the installed system once it is up, to report its state where the
