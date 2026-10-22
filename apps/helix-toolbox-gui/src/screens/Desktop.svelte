@@ -35,6 +35,7 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Desktop</h1>
       <p class="screen-subtitle">The running desktop and its appearance; looks can be saved and put back.</p>
     </div>

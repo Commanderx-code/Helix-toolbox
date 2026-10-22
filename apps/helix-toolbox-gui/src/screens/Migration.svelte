@@ -84,6 +84,7 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Migration</h1>
       <p class="screen-subtitle">Take this machine to another one or another distribution: export what it has, then open the file there.</p>
     </div>

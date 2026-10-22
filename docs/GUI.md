@@ -42,9 +42,14 @@ others: `sha256sum --check --ignore-missing SHA256SUMS` and
 
 ## The screens
 
-- **Dashboard**: how many package entries are installed or have an update
-  waiting, what is queued and pinned, the machine's facts (the same as the
-  terminal interface's System Overview), and the quick actions.
+Each screen's header names where it sits in the sidebar above its title,
+with the screen's buttons beside it.
+
+- **Dashboard**: a welcome by your account's full name (else your login
+  name), a card saying what Helix Toolbox is for on this distribution, how
+  many package entries are installed or have an update waiting, what is
+  queued and pinned, the machine's facts (the same as the terminal
+  interface's System Overview), and the quick actions.
 - **The areas** (Applications, Configurations and the rest of the
   catalog): the entries in their groups, each with its status (Installed,
   Update, Managed, Not installed, from where and at which version) and its
@@ -91,7 +96,14 @@ the checks of the package steps appear below, and **Close** records the run
 in the history. Entries that finished leave the Install Plan; the others
 stay.
 
-The other tools, under **More tools** in the sidebar:
+The other tools, under **More tools** in the sidebar, in four groups that
+open and close: **Health** (Helix Doctor, Hardware, Performance, Services,
+Storage), **Upkeep** (Updates, Drift, Reliability), **Safekeeping**
+(Backups, Restic, Recovery, Migration, Offline bundles) and **Workspace**
+(Repositories, Home Manager, Configs, Desktop). The group of the screen
+shown opens by itself, and the window remembers which you left open; a
+closed group shows how many updates wait inside it. Settings stays below
+them.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/assets/screenshots/gui-doctor.png" width="820" alt="The window's Helix Doctor screen: the health checks with their state, and what the selected one found">

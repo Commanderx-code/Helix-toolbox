@@ -42,13 +42,14 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Helix Doctor</h1>
       <p class="screen-subtitle">The checks only read the system; a repair runs after its own confirmation.</p>
     </div>
     <div class="screen-buttons">
       {#if checks}
-        <span class="pill problem">{counts.problem} problems</span>
-        <span class="pill notice">{counts.notice} notices</span>
+        <span class="pill problem">{counts.problem} {counts.problem === 1 ? 'problem' : 'problems'}</span>
+        <span class="pill notice">{counts.notice} {counts.notice === 1 ? 'notice' : 'notices'}</span>
         <span class="pill good">{counts.good} OK</span>
       {/if}
       <button class="button" disabled={examining} onclick={examine}>

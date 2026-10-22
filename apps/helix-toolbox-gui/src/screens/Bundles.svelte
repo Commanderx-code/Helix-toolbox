@@ -74,6 +74,7 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Offline bundles</h1>
       <p class="screen-subtitle">For a machine of the same distribution without reliable internet: packages downloaded here, installed there.</p>
     </div>

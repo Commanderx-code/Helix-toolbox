@@ -141,6 +141,7 @@ export async function call(command: string, args: Record<string, unknown> = {}):
         first_run: false,
         theme,
         opens: null,
+        person: 'Sample',
         overview: {
           rows: [
             ['Distribution', 'Sample Linux'],

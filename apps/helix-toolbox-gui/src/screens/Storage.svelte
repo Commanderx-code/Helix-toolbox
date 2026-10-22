@@ -47,6 +47,7 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Storage</h1>
       <p class="screen-subtitle">Where the space goes and what can be cleaned; each cleanup shows its plan and asks first.</p>
     </div>

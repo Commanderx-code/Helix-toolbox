@@ -9,6 +9,7 @@
 
 <div class="screen">
   <div>
+    <p class="screen-eyebrow">{toolbox.section}</p>
     <h1 class="screen-title">Favorites</h1>
     <p class="screen-subtitle">Entries you pinned, here and in the terminal interface.</p>
   </div>

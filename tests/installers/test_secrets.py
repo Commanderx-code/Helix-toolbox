@@ -90,10 +90,12 @@ class EncryptionToolTests(unittest.TestCase):
         (folder / 'a.txt').write_text('a\n')
         (folder / 'sub/b.txt').write_text('b\n')
         sealed, opened = self.root / 'sealed', self.root / 'opened'
-        self.run_tool(['1', str(folder), str(sealed), 'pw', 'pw', '', '2', str(sealed), str(opened), 'pw', '', '3'])
+        # A password no temporary path or option can contain by chance.
+        secret = 'Plum-Kestrel-42'
+        self.run_tool(['1', str(folder), str(sealed), secret, secret, '', '2', str(sealed), str(opened), secret, '', '3'])
         self.assertEqual((opened / 'a.txt').read_text(), 'a\n')
         self.assertEqual((opened / 'sub/b.txt').read_text(), 'b\n')
-        self.assertNotIn('pw', self.calls.read_text().replace('-pbkdf2', '').replace('-pass', ''))
+        self.assertNotIn(secret, self.calls.read_text())
 
 
 class PasswordPromptTests(unittest.TestCase):

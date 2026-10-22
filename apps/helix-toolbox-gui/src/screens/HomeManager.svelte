@@ -40,6 +40,7 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Home Manager</h1>
       <p class="screen-subtitle">Its configuration and generations. Building, switching and going back are plans you review first.</p>
     </div>

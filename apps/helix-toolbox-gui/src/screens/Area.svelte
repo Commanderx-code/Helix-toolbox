@@ -28,6 +28,7 @@
 <div class="screen">
   <div class="top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">{toolbox.search ? 'Search' : area?.name}</h1>
       <p class="screen-subtitle">
         {#if toolbox.search}

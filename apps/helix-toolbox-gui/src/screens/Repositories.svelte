@@ -122,6 +122,7 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Repositories</h1>
       <p class="screen-subtitle">The Git repositories under your project folders. Reading changes nothing; every change is reviewed first.</p>
     </div>

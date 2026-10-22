@@ -68,7 +68,7 @@
 
   await step('the window loaded', async () => {
     await until('the sidebar', () => all('nav .item').length >= 8);
-    await until('the dashboard', () => screenTitle() === 'Dashboard');
+    await until('the dashboard', () => screenTitle().startsWith('Welcome back'));
     return `${all('nav .item').length} sidebar items`;
   });
 
@@ -195,11 +195,42 @@
     await until('the focus back on Marker', () => document.activeElement === marker);
   });
 
+  await step('the sidebar groups its tools, opening and closing each group', async () => {
+    const nav = document.querySelector('nav');
+    const groups = [...nav.querySelectorAll('button.group')];
+    if (groups.length !== 4) throw new Error(`${groups.length} groups`);
+    const upkeep = groups.find((group) => group.textContent.includes('Upkeep'));
+    const tools = document.getElementById(upkeep.getAttribute('aria-controls'));
+    const was = upkeep.getAttribute('aria-expanded');
+    upkeep.click();
+    await until('the group to change', () => upkeep.getAttribute('aria-expanded') !== was);
+    if ((upkeep.getAttribute('aria-expanded') === 'true') === tools.hidden) throw new Error('aria-expanded and the list disagree');
+    if (upkeep.getAttribute('aria-expanded') === 'true') upkeep.click();
+    await until('the group to close', () => tools.hidden);
+    await accessible('a closed group');
+    return groups.map((group) => group.textContent.trim()).join(', ');
+  });
+
+  // A tool in a closed group is reached as a person would: by opening it.
+  async function openScreen(name) {
+    const nav = document.querySelector('nav');
+    const item = await until(`a "${name}" item`, () => [...nav.querySelectorAll('.item:not(.group)')].find((node) => node.textContent.trim().startsWith(name)));
+    const tools = item.closest('.tools');
+    if (tools?.hidden) {
+      nav.querySelector(`[aria-controls="${tools.id}"]`).click();
+      await until(`the ${name} group to open`, () => !tools.hidden);
+    }
+    item.click();
+    await sleep(150);
+  }
+
   const screens = ['Updates','Backups', 'Drift', 'Reliability', 'Hardware', 'Services', 'Storage', 'Performance', 'Recovery', 'Migration', 'Restic', 'Repositories', 'Home Manager', 'Configs', 'Desktop', 'History', 'Favorites', 'Dashboard'];
   for (const name of screens) {
     await step(`the ${name} screen opens`, async () => {
-      await click(name, document.querySelector('nav'));
-      await until(`the ${name} screen`, () => screenTitle().startsWith(name));
+      await openScreen(name);
+      const title = name === 'Dashboard' ? 'Welcome back' : name;
+      await until(`the ${name} screen`, () => screenTitle().startsWith(title));
+      if (!document.querySelector('.screen-eyebrow')?.textContent.trim()) throw new Error('no section label above the title');
       // What it reads has arrived, or it said what went wrong.
       await until('the screen settled', () => !withText('.empty-note', '…') && !withText('.empty-note', 'Reading'), 30000);
       await accessible(name);
@@ -282,7 +313,7 @@
   });
 
   await step('the Offline bundles screen reads the plan and checks a folder', async () => {
-    await click('Offline bundles', document.querySelector('nav'));
+    await openScreen('Offline bundles');
     await until('the bundles screen', () => screenTitle() === 'Offline bundles');
     await click('Check what it needs');
     const marker = await until('the contents', () => withText('.entries li', 'Marker'), 60000);
@@ -332,7 +363,7 @@
   });
 
   await step('a service change and a cleanup are planned and reviewed, and nothing runs', async () => {
-    await click('Services', document.querySelector('nav'));
+    await openScreen('Services');
     await until('Services', () => screenTitle().startsWith('Services'));
     const row = await until('a unit', () => document.querySelector('.row-item.unit'), 30000);
     row.click();
@@ -346,7 +377,7 @@
     await accessible('a service change under review');
     await click('Cancel', dialog);
     await until('the review to close', () => !document.querySelector('#confirm-title'));
-    await click('Storage', document.querySelector('nav'));
+    await openScreen('Storage');
     await until('Storage', () => screenTitle().startsWith('Storage'));
     await until('the storage read', () => document.querySelector('.items') || withText('.empty-note', 'Error'), 60000);
     const clean = [...document.querySelectorAll('.items .button')].find((button) => !button.disabled);
@@ -361,7 +392,7 @@
   });
 
   await step('a boot hint and the recovery checks are reviewed, and nothing runs', async () => {
-    await click('Performance', document.querySelector('nav'));
+    await openScreen('Performance');
     await until('Performance', () => screenTitle().startsWith('Performance'));
     await until('the boot read', () => withText('.part h2', 'This boot'), 60000);
     const off = await until('the hint to turn waiting online off', () => [...document.querySelectorAll('.hints .button')].find((button) => button.textContent.includes('Turn it off')), 30000);
@@ -371,14 +402,14 @@
     await accessible('a boot hint under review');
     await click('Cancel', review);
     await until('the review to close', () => !document.querySelector('#confirm-title'));
-    await click('Recovery', document.querySelector('nav'));
+    await openScreen('Recovery');
     await until('Recovery', () => screenTitle().startsWith('Recovery'));
     await until('the checks', () => withText('.part h2', 'Configuration backups'), 30000);
     return 'the wait-online hint was reviewed; recovery checks shown; nothing ran';
   });
 
   await step('this machine is exported, and a migration from another distribution is read and reviewed, and nothing runs', async () => {
-    await click('Migration', document.querySelector('nav'));
+    await openScreen('Migration');
     await until('Migration', () => screenTitle().startsWith('Migration'));
     await until('this machine read', () => button('Export'), 60000);
     // As with the profile, the file chooser is out of reach: the commands
@@ -414,7 +445,7 @@
   });
 
   await step('restic snapshots are browsed and searched, a restore and a recovery test reviewed, the timer turned on and off, and nothing runs', async () => {
-    await click('Restic', document.querySelector('nav'));
+    await openScreen('Restic');
     await until('Restic', () => screenTitle().startsWith('Restic'));
     // scripts/gui-smoke.sh's stand-in restic answers with one snapshot.
     const snapshot = await until('the snapshots', () => withText('[aria-label="Snapshots"] li', 'b6f77f6d'), 30000);
@@ -453,7 +484,7 @@
   });
 
   await step('a repository is opened, its diff shown, a stage and a task reviewed, and nothing runs', async () => {
-    await click('Repositories', document.querySelector('nav'));
+    await openScreen('Repositories');
     await until('Repositories', () => screenTitle().startsWith('Repositories'));
     // scripts/gui-smoke.sh made it under the scratch home's projects folder.
     const open = await until('the scratch repository', () => withText('.open .name', 'sample')?.closest('button'), 60000);
@@ -484,7 +515,7 @@
   });
 
   await step('a configuration field is changed, checked and saved, and its backup reviewed', async () => {
-    await click('Configs', document.querySelector('nav'));
+    await openScreen('Configs');
     await until('Configs', () => screenTitle().startsWith('Configs'));
     const card = await until('the Ghostty card', () => document.querySelector('[aria-label="Ghostty\'s configuration"]'), 30000);
     // The stand-in ghostty of scripts/gui-smoke.sh checks it.
@@ -533,7 +564,7 @@
   });
 
   await step('Home Manager generations are shown, a build and going back reviewed, the timed backup set from Settings, and nothing runs', async () => {
-    await click('Home Manager', document.querySelector('nav'));
+    await openScreen('Home Manager');
     await until('Home Manager', () => screenTitle().startsWith('Home Manager'));
     // scripts/gui-smoke.sh's stand-in home-manager lists two generations.
     const generations = await until('the generations', () => document.querySelector('[aria-label="Generations"]'), 30000);

@@ -128,6 +128,42 @@ struct About {
     /// The screen to open on (updates, doctor or drift): the window was
     /// started from a notification.
     opens: Option<&'static str>,
+    /// What to call the person signed in: their account's full name, else
+    /// their login name.
+    person: Option<String>,
+}
+
+/// The signed-in account's full name from the passwd database, else its
+/// login name with a capital first letter.
+fn person() -> Option<String> {
+    let login = std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .ok()
+        .filter(|login| !login.is_empty())?;
+    let passwd = std::fs::read_to_string("/etc/passwd").unwrap_or_default();
+    person_in(&passwd, &login)
+}
+
+fn person_in(passwd: &str, login: &str) -> Option<String> {
+    let full = passwd
+        .lines()
+        .map(|line| line.split(':').collect::<Vec<_>>())
+        .find(|fields| fields.first() == Some(&login))
+        .and_then(|fields| {
+            fields
+                .get(4)
+                .map(|gecos| gecos.split(',').next().unwrap_or("").trim().to_string())
+        })
+        .filter(|name| !name.is_empty());
+    let name = full.unwrap_or_else(|| {
+        let mut chars = login.chars();
+        chars
+            .next()
+            .map(|first| first.to_uppercase().chain(chars).collect())
+            .unwrap_or_default()
+    });
+    let name = printable(&name);
+    (!name.is_empty()).then_some(name)
 }
 
 #[tauri::command]
@@ -142,6 +178,7 @@ fn about(gui: State<Gui>) -> About {
             .is_some_and(|path| !settings::set_up(path)),
         theme: theme(&gui),
         opens: gui.opens,
+        person: person(),
     }
 }
 
@@ -3069,6 +3106,14 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_person_is_their_full_name_else_their_login() {
+        let passwd = "root:x:0:0:root:/root:/bin/bash\nsam:x:1000:1000:Sam Rivera,,,:/home/sam:/bin/fish\nkit:x:1001:1001::/home/kit:/bin/sh\n";
+        assert_eq!(person_in(passwd, "sam").as_deref(), Some("Sam Rivera"));
+        assert_eq!(person_in(passwd, "kit").as_deref(), Some("Kit"));
+        assert_eq!(person_in(passwd, "ghost").as_deref(), Some("Ghost"));
+    }
 
     #[test]
     fn the_catalog_directory_comes_from_its_option() {

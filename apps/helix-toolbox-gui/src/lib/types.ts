@@ -12,6 +12,8 @@ export type About = {
   theme: WindowTheme;
   /** Started from a notification: the screen to open on. */
   opens: 'updates' | 'doctor' | 'drift' | null;
+  /** What to call the person signed in: their full name, else their login. */
+  person: string | null;
 };
 
 /** The window's colors: the desktop's preference, or always dark or light. */

@@ -92,6 +92,7 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Settings</h1>
       <p class="screen-subtitle">How runs go, shared with the terminal interface, and how the window looks.</p>
     </div>

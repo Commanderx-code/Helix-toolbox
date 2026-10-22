@@ -123,6 +123,7 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Restic</h1>
       <p class="screen-subtitle">Backups of your own files: the snapshots, a file's history, restores into a new folder and recovery tests.</p>
     </div>

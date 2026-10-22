@@ -28,6 +28,7 @@
 <div class="screen">
   <div class="top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Install Plan</h1>
       <p class="screen-subtitle">Review planned changes before they run. Steps that need another come after it.</p>
     </div>

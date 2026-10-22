@@ -85,6 +85,7 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Services</h1>
       <p class="screen-subtitle">systemd's units and what starts at login. Each change asks first and says what it costs.</p>
     </div>

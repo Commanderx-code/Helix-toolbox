@@ -108,6 +108,7 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Performance</h1>
       <p class="screen-subtitle">How long the boot took and where the time went, and the machine now. It only reads; each boot is recorded to compare with later ones.</p>
     </div>

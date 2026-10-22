@@ -55,6 +55,7 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Hardware</h1>
       <p class="screen-subtitle">Firmware, disks, temperatures and batteries, read from the system; changes ask first.</p>
     </div>

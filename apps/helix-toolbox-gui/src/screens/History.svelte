@@ -22,6 +22,7 @@
 <div class="screen">
   <div class="top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">History</h1>
       <p class="screen-subtitle">Past runs, newest first, from every Helix Toolbox interface.</p>
     </div>

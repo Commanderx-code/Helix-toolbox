@@ -4,6 +4,17 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.22.0
+
+- **The window looks like Command Center.** The Dashboard welcomes you by
+  name, with a card in Command Center's style saying what Helix Toolbox is
+  for on your distribution, and its counts as cards with icons, above the
+  System Overview and the quick actions. Every screen's header names where
+  it sits in the sidebar above a larger title, with its buttons beside it.
+  More tools are in four groups that open and close (Health, Upkeep,
+  Safekeeping and Workspace); the group of the screen shown opens by
+  itself, and the window remembers the rest.
+
 ## v1.21.1
 
 - **Offline bundles check what they install.** An RPM in a bundle must

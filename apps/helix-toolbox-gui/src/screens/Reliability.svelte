@@ -38,6 +38,7 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Reliability</h1>
       <p class="screen-subtitle">{view?.summary ?? 'How far each entry has been tested, critical ones first.'}</p>
     </div>

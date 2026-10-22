@@ -82,6 +82,7 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Configs</h1>
       <p class="screen-subtitle">Ghostty's and Fastfetch's configuration. Each save is checked and shown first, and the file there now is kept as a backup.</p>
     </div>

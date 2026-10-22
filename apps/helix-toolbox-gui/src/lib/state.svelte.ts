@@ -3,6 +3,7 @@
 // lives in RunPanel.
 
 import * as api from './api';
+import { sectionOf } from './nav';
 import { applyTheme } from './theme';
 import type { About, AreaView, EntryView, HardwareReport, ItemView, Prepared, StatusView } from './types';
 
@@ -108,6 +109,11 @@ class Toolbox {
       this.error = String(error);
     }
     await this.refresh();
+  }
+
+  /** The small label above the screen's title. */
+  get section() {
+    return sectionOf(this.screen);
   }
 
   /** Show a screen, from the sidebar, the palette or a quick action. */

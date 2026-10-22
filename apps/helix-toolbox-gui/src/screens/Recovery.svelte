@@ -38,6 +38,7 @@
 <div class="screen">
   <div class="screen-top">
     <div>
+      <p class="screen-eyebrow">{toolbox.section}</p>
       <h1 class="screen-title">Recovery</h1>
       <p class="screen-subtitle">Whether this machine could be brought back after a bad update or a lost disk. It only reads.</p>
     </div>

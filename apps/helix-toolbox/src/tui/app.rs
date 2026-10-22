@@ -5460,10 +5460,14 @@ impl App {
                     .filter(|diagnosis| diagnosis.health == health)
                     .count()
             };
-            format!(
-                "Checks · {} problems · {} notices · {} OK{}",
+            let (problems, notices) = (
                 count(doctor::Health::Problem),
                 count(doctor::Health::Notice),
+            );
+            format!(
+                "Checks · {problems} {} · {notices} {} · {} OK{}",
+                if problems == 1 { "problem" } else { "problems" },
+                if notices == 1 { "notice" } else { "notices" },
                 count(doctor::Health::Good),
                 if self.examining.is_some() {
                     " (checking again…)"
@@ -15569,7 +15573,7 @@ mod tests {
         app.focus = Focus::Main;
         let shown = screen(&mut app, 160, 40);
         assert!(
-            shown.contains("Checks · 1 problems · 1 notices · 2 OK"),
+            shown.contains("Checks · 1 problem · 1 notice · 2 OK"),
             "{shown}"
         );
         // The repair's commands are shown before f runs them.
