@@ -225,6 +225,16 @@ Drift baseline to rebuild a new machine from. `c` looks inside the newest
 snapshot as root, reading only; `f` runs an entry that sets the missing
 part up.
 
+## A new machine
+
+Before you move to a new machine or another distribution, `e` in
+**Migration** (or **Export…** in the window) writes what this one has to a
+file. Copy it over, install Helix Toolbox there, and open it with `o`: it
+lists what it would install, through that distribution's own packages,
+what is there already, and what it cannot bring, such as packages another
+distribution names differently, so you can look for them yourself. `a`
+reviews the plan before anything is installed.
+
 ## A machine without internet
 
 On a machine of the same distribution that is online, `helix-toolbox bundle

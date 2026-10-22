@@ -195,7 +195,7 @@
     await until('the focus back on Marker', () => document.activeElement === marker);
   });
 
-  const screens = ['Updates','Backups', 'Drift', 'Reliability', 'Hardware', 'Services', 'Storage', 'Performance', 'Recovery', 'Desktop', 'History', 'Favorites', 'Dashboard'];
+  const screens = ['Updates','Backups', 'Drift', 'Reliability', 'Hardware', 'Services', 'Storage', 'Performance', 'Recovery', 'Migration', 'Desktop', 'History', 'Favorites', 'Dashboard'];
   for (const name of screens) {
     await step(`the ${name} screen opens`, async () => {
       await click(name, document.querySelector('nav'));
@@ -375,6 +375,42 @@
     await until('Recovery', () => screenTitle().startsWith('Recovery'));
     await until('the checks', () => withText('.part h2', 'Configuration backups'), 30000);
     return 'the wait-online hint was reviewed; recovery checks shown; nothing ran';
+  });
+
+  await step('this machine is exported, and a migration from another distribution is read and reviewed, and nothing runs', async () => {
+    await click('Migration', document.querySelector('nav'));
+    await until('Migration', () => screenTitle().startsWith('Migration'));
+    await until('this machine read', () => button('Export'), 60000);
+    // As with the profile, the file chooser is out of reach: the commands
+    // take the file, in the scratch settings folder, where
+    // scripts/gui-smoke.sh also wrote a migration made on Fedora.
+    const { path } = await invoke('read_settings');
+    const exported = await invoke('export_migration', { path: path.replace(/settings\.toml$/, 'migration.toml') });
+    if (!exported?.includes('are written to')) throw new Error(exported);
+    const input = await until('the file field', () => document.querySelector('.field input'));
+    await type(input, path.replace(/settings\.toml$/, 'from-fedora.toml'));
+    await click('Read it');
+    const part = await until('the migration read', () => withText('.part h2', 'From Fedora Linux 43')?.closest('.part'), 30000);
+    const install = part.querySelector('[aria-label="To install"]');
+    const unavailable = part.querySelector('[aria-label="Cannot be installed here"]');
+    if (!install?.textContent.includes('Marker')) throw new Error(`to install: ${install?.textContent.trim()}`);
+    // The Flatpak is installed where Flatpak is; the workflow's runner has
+    // none, and the fixture catalog no entry that installs it.
+    if (!install.textContent.includes('com.example.Tool') && !unavailable?.textContent.includes('Flatpak is not installed here')) {
+      throw new Error(`the Flatpak is neither to install nor said to need Flatpak: ${part.textContent.trim()}`);
+    }
+    if (!unavailable?.textContent.includes('not-in-this-catalog')) {
+      throw new Error('the unknown entry is not listed as unavailable');
+    }
+    if (!withText('.items li', 'htop')) throw new Error('the Fedora package is not listed');
+    await accessible('a migration read here');
+    await click('Install', part);
+    const review = await until('the review', () => document.querySelector('#confirm-title')?.closest('[role="dialog"]'), 30000);
+    if (!review.textContent.includes('Marker')) throw new Error(review.textContent);
+    await accessible('a migration under review');
+    await click(button('Cancel', review) ? 'Cancel' : 'OK', review);
+    await until('the review to close', () => !document.querySelector('#confirm-title'));
+    return `exported; ${install.querySelectorAll('li').length} to install reviewed; nothing ran`;
   });
 
   await step('an entry is checked now, without changing anything', async () => {

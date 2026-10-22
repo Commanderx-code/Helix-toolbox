@@ -377,6 +377,38 @@ export type PerformanceView = {
 
 export type RecoveryView = { checks: Diagnosis[]; snapshots: string | null };
 
+// Migration
+
+/** What a machine had, as a migration file holds it. */
+export type Migration = {
+  version: number;
+  from: string;
+  family?: string;
+  architecture: string;
+  made: number;
+  entries: string[];
+  flatpaks: string[];
+  packages: string[];
+};
+
+export type MigrationExportView = { migration: Migration; file_name: string; packages_known: boolean };
+
+export type Standing = 'install' | 'here' | 'unavailable' | 'yours';
+
+export type MigrationItem = { kind: 'entry' | 'flatpak' | 'package'; id: string; name: string; standing: Standing; detail: string };
+
+/** A migration file read on this machine. */
+export type TranslationView = {
+  path: string;
+  migration: Migration;
+  same_family: boolean;
+  items: MigrationItem[];
+  install: number;
+  here: number;
+  unavailable: number;
+  yours: number;
+};
+
 // Offline bundles
 
 export type BundledEntry = { name: string; offline: boolean; network: string | null; flatpak: string | null };

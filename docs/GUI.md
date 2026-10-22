@@ -133,6 +133,11 @@ The other tools, under **More tools** in the sidebar:
 - **Recovery**: each readiness check with what it found; **Check
   snapshots…** reviews the read-only snapshot check, and **Set it up
   with…** an entry that would help.
+- **Migration**: what this machine has, with **Export…** to write it to a
+  file through the file chooser, and **Open…** (or a path typed in and
+  **Read it**) to read one made on another machine: what it would install here, what is here already, what
+  cannot be, and the packages left to you, with **Install…** to review the
+  plan.
 - **Offline bundles**: the Install Plan's entries and the packages they
   need, downloaded with Helix Toolbox into a new folder for a machine of
   the same distribution without reliable internet. **Check what it
@@ -249,6 +254,7 @@ Its commands:
 | `read_storage`, `prepare_clean` | `helix-toolbox storage`: the space, what can be cleaned, and a cleanup's plan |
 | `read_performance`, `compare_boots` | `helix-toolbox performance`: this boot, recorded, with the machine now and the boots recorded; one boot beside another |
 | `read_recovery`, `prepare_snapshot_check` | `helix-toolbox recovery`: the readiness checks, and the snapshot check's plan |
+| `read_migration_export`, `export_migration`, `open_migration`, `prepare_migration` | `helix-toolbox migrate`: what this machine would export, written to a file, a migration file read here, and its install plan; the file is chosen in the file chooser unless a path is given |
 | `check_entry` | `helix-toolbox verify` for one entry, as text: **Check it now** in an entry's details |
 | `hardware_report`, `open_issue` | `helix-toolbox report --worked` for a run or an entry, and its issue opened by `xdg-open`, outside the AppImage's own libraries |
 | `import_profile`, `export_profile`, `delete_profile` | your profiles: one added from a file, written to one, or deleted; the file is chosen in the file chooser unless a path is given |

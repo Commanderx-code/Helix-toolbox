@@ -1,7 +1,7 @@
 // Sample answers for working on the interface in a browser, where there is
 // no Tauri side. Nothing here reads or changes the machine.
 
-import type { AreaView, ChangesView, EntryView, ItemView, PerformanceView, Prepared, RecordView, RecoveryView, RunEvent, ServicesView, StatusView, StorageView, WindowTheme } from './types';
+import type { AreaView, ChangesView, EntryView, ItemView, Migration, MigrationExportView, PerformanceView, Prepared, RecordView, RecoveryView, RunEvent, TranslationView, ServicesView, StatusView, StorageView, WindowTheme } from './types';
 
 const entry = (id: string, name: string, description: string, flags = 'I', extra: Partial<EntryView> = {}): ItemView => ({
   type: 'entry',
@@ -501,6 +501,54 @@ export async function call(command: string, args: Record<string, unknown> = {}):
           { id: 'own-files', title: 'Your own files', health: 'notice', health_label: 'Notice', summary: 'Nothing Helix Toolbox knows of backs up your home folder', evidence: [], advice: 'A backup program such as Pika Backup, Déjà Dup, Borg or restic, copying to another disk, keeps your own files when the disk does not.', repair: null, entry: null },
         ],
       } satisfies RecoveryView;
+    case 'read_migration_export':
+    case 'export_migration': {
+      const migration: Migration = {
+        version: 1,
+        from: 'Garuda Linux',
+        family: 'arch',
+        architecture: 'x86_64',
+        made: 1_792_000_000,
+        entries: ['git', 'neovim', 'ripgrep', 'firefox'],
+        flatpaks: ['com.spotify.Client', 'org.gimp.GIMP'],
+        packages: ['htop', 'yt-dlp', 'paru'],
+      };
+      if (command === 'export_migration') {
+        return `4 entries, 2 Flatpaks and 3 packages of yours are written to ${args.path ?? '/home/me/helix-toolbox-migration-2026-10-22.toml'}.`;
+      }
+      return { migration, file_name: 'helix-toolbox-migration-2026-10-22.toml', packages_known: true } satisfies MigrationExportView;
+    }
+    case 'open_migration':
+      return {
+        path: (args.path as string | null) ?? '/home/me/helix-toolbox-migration-2026-10-14.toml',
+        migration: { version: 1, from: 'Fedora Linux 43', family: 'fedora', architecture: 'x86_64', made: 1_792_000_000, entries: [], flatpaks: [], packages: [] },
+        same_family: false,
+        items: [
+          { kind: 'entry', id: 'kitty', name: 'Kitty', standing: 'install', detail: 'its script' },
+          { kind: 'flatpak', id: 'com.spotify.Client', name: 'com.spotify.Client', standing: 'install', detail: 'Flathub' },
+          { kind: 'entry', id: 'htop', name: 'htop', standing: 'install', detail: 'pacman; for htop there' },
+          { kind: 'entry', id: 'git', name: 'Git', standing: 'here', detail: 'pacman lists git' },
+          { kind: 'entry', id: 'vlc', name: 'vlc', standing: 'unavailable', detail: 'not in the catalog here' },
+          { kind: 'package', id: 'python3-requests', name: 'python3-requests', standing: 'yours', detail: 'named as on Fedora Linux 43; look for what Garuda Linux calls it' },
+          { kind: 'package', id: 'tree', name: 'tree', standing: 'yours', detail: "pacman's repositories here have a package of this name; check it is the same" },
+        ],
+        install: 3,
+        here: 1,
+        unavailable: 1,
+        yours: 2,
+      } satisfies TranslationView;
+    case 'prepare_migration':
+      return {
+        kind: 'ready',
+        risk: 'medium',
+        privileged: true,
+        header: ['Risk: medium · asks for your password'],
+        lines: [
+          { name: 'Kitty', detail: '/bin/sh -e kitty-setup.sh' },
+          { name: 'com.spotify.Client', detail: 'sudo flatpak install flathub com.spotify.Client' },
+          { name: 'htop', detail: 'sudo pacman -S --needed htop' },
+        ],
+      } satisfies Prepared;
     case 'prepare_snapshot_check':
       return {
         kind: 'ready',

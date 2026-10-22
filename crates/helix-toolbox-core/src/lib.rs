@@ -96,6 +96,19 @@ impl PackageNames {
         }
     }
 
+    /// The family's name to set.
+    pub fn for_manager_mut(&mut self, manager: PackageManager) -> &mut Option<String> {
+        match manager {
+            PackageManager::Arch => &mut self.arch,
+            PackageManager::Debian => &mut self.debian,
+            PackageManager::Fedora => &mut self.fedora,
+            PackageManager::Suse => &mut self.suse,
+            PackageManager::Alpine => &mut self.alpine,
+            PackageManager::Void => &mut self.void,
+            PackageManager::Solus => &mut self.solus,
+        }
+    }
+
     /// Every family with its package name, for listings and validation.
     pub fn all(&self) -> [(&'static str, Option<&str>); 7] {
         [

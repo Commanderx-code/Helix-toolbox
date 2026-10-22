@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.18.0"
+version = "1.19.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
@@ -20,10 +20,10 @@ authors = ["Commanderx-code"]
 [workspace.dependencies]
 # The crates of this workspace, published together at the same version;
 # scripts/stamp-version.py keeps these in step with the version above.
-helix-toolbox-catalog = { path = "crates/helix-toolbox-catalog", version = "=1.18.0" }
-helix-toolbox-core = { path = "crates/helix-toolbox-core", version = "=1.18.0" }
-helix-toolbox-engine = { path = "crates/helix-toolbox-engine", version = "=1.18.0" }
-helix-toolbox-platform = { path = "crates/helix-toolbox-platform", version = "=1.18.0" }
+helix-toolbox-catalog = { path = "crates/helix-toolbox-catalog", version = "=1.19.0" }
+helix-toolbox-core = { path = "crates/helix-toolbox-core", version = "=1.19.0" }
+helix-toolbox-engine = { path = "crates/helix-toolbox-engine", version = "=1.19.0" }
+helix-toolbox-platform = { path = "crates/helix-toolbox-platform", version = "=1.19.0" }
 anyhow = "1"
 clap = { version = "4.5", features = ["derive"] }
 # The poll(2) event source: the default edge-triggered one can leave a key

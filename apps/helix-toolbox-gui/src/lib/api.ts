@@ -21,6 +21,8 @@ import type {
   Prepared,
   RecordView,
   RecoveryView,
+  MigrationExportView,
+  TranslationView,
   ReliabilityView,
   RunEvent,
   ServiceDetails,
@@ -99,6 +101,12 @@ export const performance = () => call<PerformanceView>('read_performance');
 export const compareBoots = (before: string, after: string) => call<Comparison>('compare_boots', { before, after });
 export const recovery = () => call<RecoveryView>('read_recovery');
 export const prepareSnapshotCheck = () => call<Prepared>('prepare_snapshot_check');
+export const migrationExport = () => call<MigrationExportView>('read_migration_export');
+/** Write this machine's migration to `path`, or where the file chooser says; null when it was closed. */
+export const exportMigration = (path: string | null = null) => call<string | null>('export_migration', { path });
+/** Read a migration file from `path`, or one the file chooser names; null when it was closed. */
+export const openMigration = (path: string | null = null) => call<TranslationView | null>('open_migration', { path });
+export const prepareMigration = (path: string) => call<Prepared>('prepare_migration', { path });
 
 export const hardware = () => call<Hardware>('read_hardware');
 export const prepareFirmware = (index: number) => call<Prepared>('prepare_firmware', { index });

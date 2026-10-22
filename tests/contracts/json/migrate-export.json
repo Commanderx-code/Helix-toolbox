@@ -1,0 +1,20 @@
+{
+  "command": "string",
+  "data": {
+    "architecture": "string",
+    "entries": [],
+    "family": "string",
+    "flatpaks": [
+      "string"
+    ],
+    "from": "string",
+    "made": "number",
+    "packages": [
+      "string"
+    ],
+    "version": "number"
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

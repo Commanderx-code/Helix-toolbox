@@ -464,6 +464,42 @@ rolls nothing back and takes or removes nothing, and asks first. `f` runs
 the entry a check names. `helix-toolbox recovery` (`--check-snapshots`
 with `--dry-run` and `--yes`, confirmed by typing CHECK) does the same.
 
+## Migration
+
+**Migration** moves what this machine has to another machine or
+distribution. `e` exports it to a file (`helix-toolbox-migration-<date>.toml`
+in your home folder unless you name another), reading only:
+
+- the catalog entries one of whose own packages is installed: the
+  family's package or, on Arch, its AUR package;
+- the Flatpak applications no entry covers, and those of an entry installed
+  only as its Flatpak, so the other machine gets the same;
+- the packages you installed yourself that no entry covers, as the package
+  manager records them (`pacman -Qqe`, `apt-mark showmanual`, `dnf
+  repoquery --userinstalled`, zypper's packages less those it installed as
+  dependencies, `/etc/apk/world`, `xbps-query -m`).
+
+`o` opens a migration file and says what each thing in it means here,
+under four headings. **To install**: an entry through this distribution's
+own package (or the AUR, or its Flatpak), a Flatpak from Flathub (after the
+Flatpak entry, when Flatpak is missing), and, when both machines are of the
+same family, a package the repositories here have by its name. **Here
+already**: what is installed, an entry's Flatpak included. **Cannot be
+installed here**: an entry this catalog lacks or that has no package for
+this distribution, and Flatpaks where Flatpak is missing and no entry
+installs it. **Left to you**: the packages of another family, with
+whether the repositories here have one of the same name (it may not be
+the same software), and packages of this family the repositories do not
+have, such as ones from the AUR. A package another catalog had no entry
+for becomes the entry this one has for it. The repositories are read from
+the metadata already on the machine, with no network.
+
+`a` (or `Enter` on a row to install) reviews the plan of the first list,
+which continues past a failed install; `d` shows a row's details, `r` reads
+it again. `helix-toolbox migrate export [file]`, `migrate show <file>` and
+`migrate apply <file>` (`--dry-run`, `--yes`, confirmed by typing MIGRATE)
+do the same.
+
 ## Reliability and trust
 
 **Reliability** lists every entry with how far it has been tested, the
@@ -582,6 +618,8 @@ helix-toolbox startup off <file>         # what the desktop starts at login, for
 helix-toolbox storage                    # where the space goes; storage clean <item> frees some
 helix-toolbox performance                # this boot, the machine now, and the boot before; boots, compare
 helix-toolbox recovery                   # snapshots, kernels, backups; --check-snapshots looks inside, as root
+helix-toolbox migrate export [file]      # what this machine has, to take to another
+helix-toolbox migrate show <file>        # what a migration means here; migrate apply installs it
 helix-toolbox reliability --critical     # how far the boot, login and driver entries are tested
 helix-toolbox trust sddm                 # where an entry comes from and what checks it
 helix-toolbox doctor                     # health checks, read-only

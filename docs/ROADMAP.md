@@ -52,6 +52,15 @@ The items:
     replaces a copy the user keeps outside any package tool, and the
     window's AppImage.
 
+## v1.19.0: moving machines
+
+- [x] A migration hub: what this machine has, exported to a file, and that
+      file read on another machine or distribution: catalog entries
+      installed through its packages, Flatpaks from Flathub, a family's
+      packages by name within it, and the rest listed for the user;
+      applied for real in the distribution containers, and a Flatpak
+      exported and planned from Flathub on an Arch machine
+
 ## v1.18.0: performance and recovery
 
 - [x] A performance and boot analyzer: the boot's parts, what the login

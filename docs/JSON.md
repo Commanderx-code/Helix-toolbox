@@ -284,6 +284,22 @@ first. `performance compare` is `comparison`: `{before, after, phases:
 `machine-record`; a check that does not apply here is left out), and the
 snapshot tool set up (`Snapper`, `Timeshift`) or `null`.
 
+## migration
+
+`migrate show <file>`: `{from, family, architecture, made, same_family,
+counts: {install, here, unavailable, yours}, items: [{kind, id, name,
+standing, detail}]}`. `family` is the package family the file was made on
+(`arch`, `debian`, `fedora`, `suse`, `alpine`, `void`, `solus`) or `null`;
+`made` is in seconds since 1970. `kind` is `entry`, `flatpak` or
+`package`; `standing` is `install`, `here`, `unavailable` or `yours`, and
+`detail` says where it comes from here or why it does not.
+
+## migrate-export
+
+`migrate export`: the migration the file would hold, `{version, from,
+family, architecture, made, entries, flatpaks, packages}`, entry ids,
+Flatpak ids and package names; nothing is written.
+
 ## hardware_report
 
 `report --worked <entry>`: `{entries: [{id, name}], machine, system,

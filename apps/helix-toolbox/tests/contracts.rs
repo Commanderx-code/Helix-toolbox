@@ -1,7 +1,7 @@
 //! What docs/STABILITY.md promises for 1.x, checked against the program:
 //! the `--json` shapes only gain fields (each command's saved in
 //! tests/contracts/json), and the files an earlier 1.x wrote (in
-//! tests/contracts/files, as 1.0, 1.1 and 1.4 wrote them) are read by this
+//! tests/contracts/files, as 1.0, 1.1, 1.4 and 1.19 wrote them) are read by this
 //! one. HELIX_TOOLBOX_BLESS_CONTRACTS=1 saves the shape of a command that
 //! has none yet; a saved shape is never rewritten by the test.
 
@@ -92,7 +92,9 @@ fn lost(saved: &Value, now: &Value, at: &str, into: &mut Vec<String>) {
 fn json_shapes_only_gain_fields() {
     let home = tempfile::tempdir().unwrap();
     let directory = root().join("tests/contracts/json");
-    let commands: [(&str, &[&str]); 16] = [
+    let migration = root().join("tests/contracts/files/migration-1.19.toml");
+    let migration = migration.to_str().unwrap();
+    let commands: [(&str, &[&str]); 18] = [
         ("system", &["system"]),
         ("list", &["list"]),
         ("search", &["search", "marker"]),
@@ -109,6 +111,8 @@ fn json_shapes_only_gain_fields() {
         ("performance", &["performance"]),
         ("performance-boots", &["performance", "boots"]),
         ("recovery", &["recovery"]),
+        ("migrate-export", &["migrate", "export"]),
+        ("migration", &["migrate", "show", migration]),
     ];
     let mut problems = Vec::new();
     for (name, args) in commands {

@@ -9,6 +9,7 @@ mod inspect;
 mod json;
 mod logging;
 mod manage;
+mod migrate;
 mod notify;
 mod report;
 mod selfupdate;
@@ -268,6 +269,14 @@ enum Command {
         /// With --check-snapshots: skip the confirmation phrase.
         #[arg(long)]
         yes: bool,
+    },
+    /// Move to another machine or distribution: export what this one has to
+    /// a file, then on the other one see what it means there and install
+    /// it. Catalog entries and Flatpaks translate; the other packages you
+    /// installed are listed for you when the families differ.
+    Migrate {
+        #[command(subcommand)]
+        action: migrate::MigrateCommand,
     },
     /// The hardware and firmware: fwupd's devices and the firmware updates it
     /// knows of, disks, temperatures, batteries, PCI and USB devices. It only
@@ -972,6 +981,7 @@ fn main() -> Result<()> {
             &platform,
             as_json,
         ),
+        Command::Migrate { action } => migrate::migrate(action, &load(false)?, &platform, as_json),
         Command::Hardware {
             smart,
             firmware,

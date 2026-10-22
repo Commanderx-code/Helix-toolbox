@@ -223,6 +223,11 @@ impl Inventory {
         }
     }
 
+    /// The installed Flatpak applications.
+    pub fn flatpak_ids(&self) -> Vec<String> {
+        self.flatpaks.keys().cloned().collect()
+    }
+
     /// A package's installed version, when the snapshot has it.
     pub fn version(&self, probe: &Probe) -> Option<String> {
         match probe {

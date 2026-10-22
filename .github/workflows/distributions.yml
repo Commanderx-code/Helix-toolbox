@@ -615,6 +615,44 @@ jobs:
             exit 1
           fi
           grep -q 'neither Snapper' refused.txt
+      - name: A migration exported and read back, and two applied for real
+        run: |
+          # What this container has: everything it names is here already.
+          bin/helix-toolbox migrate export migration.toml
+          grep -q '^# A Helix Toolbox migration' migration.toml
+          bin/helix-toolbox --json migrate show migration.toml > here.json
+          python3 -c 'import json
+          d = json.load(open("here.json"))["data"]
+          assert d["same_family"], d
+          assert d["counts"]["install"] == 0 and d["counts"]["unavailable"] == 0, d["counts"]
+          assert "ripgrep" in [item["id"] for item in d["items"] if item["kind"] == "entry"], d["items"]'
+          # htop removed again, for the migration to bring back.
+          case "${{ matrix.family }}" in
+            Arch) own=arch other=fedora; pacman -R --noconfirm htop ;;
+            Debian) own=debian other=arch; apt-get remove -y htop ;;
+            Fedora) own=fedora other=arch; dnf remove -y htop ;;
+            openSUSE) own=suse other=arch; zypper -n remove htop ;;
+          esac
+          if command -v htop; then exit 1; fi
+          # From another family: the entry translates to this one's package;
+          # that family's package and an entry this catalog lacks are left
+          # out.
+          printf 'version = 1\nfrom = "Elsewhere"\nfamily = "%s"\narchitecture = "%s"\nmade = 0\nentries = ["htop", "no-such-entry"]\npackages = ["python-not-here"]\n' "$other" "$(uname -m)" > other.toml
+          bin/helix-toolbox migrate show other.toml | tee other.txt
+          grep -q '^Cannot be installed here (1):' other.txt
+          grep -q '^Left to you (1):' other.txt
+          yes | bin/helix-toolbox migrate apply other.toml --yes | tee applied.txt
+          grep -qE '^Verified: htop: (pacman|dpkg|dnf|zypper) lists htop' applied.txt
+          command -v htop
+          # Within the family a package the repositories here have is
+          # installed by its name.
+          printf 'version = 1\nfrom = "Elsewhere"\nfamily = "%s"\narchitecture = "%s"\nmade = 0\npackages = ["tree"]\n' "$own" "$(uname -m)" > own.toml
+          bin/helix-toolbox --json migrate show own.toml > own.json
+          python3 -c 'import json
+          items = json.load(open("own.json"))["data"]["items"]
+          assert [(item["id"], item["standing"]) for item in items] in ([("tree", "install")], [("tree", "here")]), items'
+          yes | bin/helix-toolbox migrate apply own.toml --yes
+          command -v tree
       - name: Script and native entries
         run: |
           bin/helix-toolbox run system-report machine-summary --yes | tee report.txt

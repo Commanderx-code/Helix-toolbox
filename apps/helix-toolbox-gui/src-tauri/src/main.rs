@@ -15,6 +15,7 @@ use helix_toolbox_engine::{
     execution::{Execution, Options},
     hardware, hardware_report, history,
     inventory::{Inventory, which},
+    migration::{self, Standing},
     notifications,
     overview::Overview,
     performance, plan, plan_removal, preflight, preview, profiles, recovery,
@@ -446,10 +447,27 @@ fn own_profile(catalog: &Catalog, id: &str) -> Result<(PathBuf, profiles::Profil
 /// The file chooser, over the window: a profile file to read, or where to
 /// write one. None when it was closed.
 fn choose_profile_file(app: &AppHandle, save_as: Option<String>) -> Option<PathBuf> {
+    let title = match save_as {
+        Some(_) => "Export the profile",
+        None => "Import a profile",
+    };
+    choose_toml(app, "Helix Toolbox profile", title, save_as)
+}
+
+/// A TOML file chosen in the desktop's file chooser, starting in the home
+/// folder: one to write under `save_as`, or one to read. None when the
+/// chooser was closed.
+fn choose_toml(
+    app: &AppHandle,
+    filter: &str,
+    title: &str,
+    save_as: Option<String>,
+) -> Option<PathBuf> {
     let mut chooser = app
         .dialog()
         .file()
-        .add_filter("Helix Toolbox profile", &["toml"]);
+        .add_filter(filter, &["toml"])
+        .set_title(title);
     if let Some(window) = app.get_webview_window("main") {
         chooser = chooser.set_parent(&window);
     }
@@ -457,11 +475,8 @@ fn choose_profile_file(app: &AppHandle, save_as: Option<String>) -> Option<PathB
         chooser = chooser.set_directory(home);
     }
     let chosen = match save_as {
-        Some(name) => chooser
-            .set_title("Export the profile")
-            .set_file_name(name)
-            .blocking_save_file(),
-        None => chooser.set_title("Import a profile").blocking_pick_file(),
+        Some(name) => chooser.set_file_name(name).blocking_save_file(),
+        None => chooser.blocking_pick_file(),
     };
     chosen.and_then(|chosen| chosen.into_path().ok())
 }
@@ -1437,6 +1452,132 @@ async fn prepare_snapshot_check(app: AppHandle) -> Result<PreparedView, String> 
     .await
 }
 
+// Migration
+
+/// What a migration of this machine holds, as `helix-toolbox migrate
+/// export` writes it.
+#[derive(Serialize)]
+struct MigrationExportView {
+    migration: migration::Migration,
+    /// The dated name the file chooser suggests.
+    file_name: String,
+    /// Whether the packages the user installed could be told apart.
+    packages_known: bool,
+}
+
+#[tauri::command]
+async fn read_migration_export(app: AppHandle) -> Result<MigrationExportView, String> {
+    blocking(app, |gui| {
+        let catalog = gui.catalog.read().unwrap();
+        let found = migration::gather(&catalog.entries(), &gui.platform, history::now());
+        MigrationExportView {
+            file_name: migration::file_name(&found),
+            migration: found,
+            packages_known: migration::chosen(gui.platform.manager).is_some(),
+        }
+    })
+    .await
+}
+
+/// Write this machine's migration to `path`, or where the file chooser
+/// says, as `helix-toolbox migrate export` does. None when the chooser was
+/// closed.
+#[tauri::command]
+async fn export_migration(app: AppHandle, path: Option<String>) -> Result<Option<String>, String> {
+    let handle = app.clone();
+    blocking(app, move |gui| {
+        let found = {
+            let catalog = gui.catalog.read().unwrap();
+            migration::gather(&catalog.entries(), &gui.platform, history::now())
+        };
+        let Some(path) = path.map(PathBuf::from).or_else(|| {
+            choose_toml(
+                &handle,
+                "Helix Toolbox migration",
+                "Export this machine",
+                Some(migration::file_name(&found)),
+            )
+        }) else {
+            return Ok(None);
+        };
+        if path.extension().is_none_or(|extension| extension != "toml") {
+            return Err("A migration is written to a .toml file.".to_string());
+        }
+        migration::write(&path, &found).map_err(|error| error.to_string())?;
+        Ok(Some(format!(
+            "{} entries, {} Flatpaks and {} packages of yours are written to {}. On the other machine: Open… in Migration, or helix-toolbox migrate show.",
+            found.entries.len(),
+            found.flatpaks.len(),
+            found.packages.len(),
+            path.display()
+        )))
+    })
+    .await?
+}
+
+/// A migration file read on this machine, as `helix-toolbox migrate show`.
+#[derive(Serialize)]
+struct TranslationView {
+    path: String,
+    #[serde(flatten)]
+    translation: migration::Translation,
+    install: usize,
+    here: usize,
+    unavailable: usize,
+    yours: usize,
+}
+
+/// Read a migration file from `path`, or one chosen in the file chooser.
+/// None when the chooser was closed.
+#[tauri::command]
+async fn open_migration(
+    app: AppHandle,
+    path: Option<String>,
+) -> Result<Option<TranslationView>, String> {
+    let handle = app.clone();
+    blocking(app, move |gui| {
+        let Some(path) = path
+            .map(PathBuf::from)
+            .or_else(|| choose_toml(&handle, "Helix Toolbox migration", "Open a migration", None))
+        else {
+            return Ok(None);
+        };
+        let catalog = gui.catalog.read().unwrap();
+        let translation = migration::read_here(&path, &catalog.entries(), &gui.platform)
+            .map_err(|error| error.to_string())?;
+        Ok(Some(TranslationView {
+            path: path.display().to_string(),
+            install: translation.count(Standing::Install),
+            here: translation.count(Standing::Here),
+            unavailable: translation.count(Standing::Unavailable),
+            yours: translation.count(Standing::Yours),
+            translation,
+        }))
+    })
+    .await?
+}
+
+/// The plan that installs what a migration file marks Install, as
+/// `helix-toolbox migrate apply` makes it.
+#[tauri::command]
+async fn prepare_migration(app: AppHandle, path: String) -> Result<PreparedView, String> {
+    blocking(app, move |gui| {
+        let catalog = gui.catalog.read().unwrap();
+        let entries = catalog.entries();
+        let planned = migration::read_here(Path::new(&path), &entries, &gui.platform)
+            .map_err(|error| error.to_string())
+            .and_then(|translation| {
+                migration::plan_here(&translation, &entries, &gui.platform)
+                    .map_err(|error| error.to_string())
+            });
+        match planned {
+            Ok(planned) => prepare_plan(gui, &catalog, planned),
+            Err(why) => cannot(gui, why),
+        }
+    })
+    .await
+}
+
 // Hardware
 
 /// Firmware, disks, sensors, batteries and devices, read from this machine.
@@ -2078,6 +2219,7 @@ fn main() {
                 prepare_channels, prepare_update, prepare_remove, list_backups, prepare_restore, drift_targets, check_entry, read_services, service_details,
                 prepare_service, prepare_autostart, read_storage, prepare_clean,
                 read_performance, compare_boots, read_recovery, prepare_snapshot_check,
+                read_migration_export, export_migration, open_migration, prepare_migration,
                 drift_check, save_baseline, reliability, trust, read_hardware, prepare_firmware,
                 prepare_smart, read_desktop, save_look, prepare_look, read_settings,
                 save_settings, save_watch, save_theme, bundle_contents, prepare_bundle_create,

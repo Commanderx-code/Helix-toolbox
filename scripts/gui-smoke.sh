@@ -3,8 +3,10 @@
 # Drive a debug build of the window through the setup wizard, the command
 # palette, the theme, the keyboard, every screen, a run with its change
 # preview, the removal of a package entry, a saved profile exported,
-# deleted and imported again, the offline bundles screen, a bug report and
-# the update notifications turned on and off, against the fixture catalog, and check what the drive script reports.
+# deleted and imported again, the offline bundles screen, a migration
+# exported and one read, a bug report and the update notifications turned
+# on and off, against the fixture catalog, and check what the drive script
+# reports.
 # usage: scripts/gui-smoke.sh BINARY
 # BINARY is a debug build with the frontend in it (cargo build --features
 # tauri/custom-protocol in apps/helix-toolbox-gui/src-tauri, after npm run
@@ -63,6 +65,14 @@ mkdir -p "$work/home" "$work/config" "$work/state" "$work/data" "$work/cache"
 export HOME="$work/home"
 export XDG_CONFIG_HOME="$work/config" XDG_STATE_HOME="$work/state" \
     XDG_DATA_HOME="$work/data" XDG_CACHE_HOME="$work/cache"
+# A migration made on Fedora, for the Migration screen to read: a fixture
+# entry it installs, one this catalog lacks, a Flatpak and a package.
+mkdir -p "$work/config/helix-toolbox"
+printf '%s\n' 'version = 1' 'from = "Fedora Linux 43"' 'family = "fedora"' \
+    'architecture = "x86_64"' 'made = 1792000000' \
+    'entries = ["marker", "not-in-this-catalog"]' \
+    'flatpaks = ["com.example.Tool"]' 'packages = ["htop"]' \
+    > "$work/config/helix-toolbox/from-fedora.toml"
 # The marker fixture writes here, which shows the run really ran.
 export HELIX_TOOLBOX_TEST_OUT="$work/marker.txt"
 # WebKitGTK on a virtual display: no GPU, no compositor.
@@ -118,6 +128,10 @@ if ! grep -qx 'set_up = true' "$work/config/helix-toolbox/settings.toml" 2>/dev/
 fi
 if ! grep -qx 'window_theme = "system"' "$work/config/helix-toolbox/settings.toml"; then
     echo "the theme was not saved" >&2
+    exit 1
+fi
+if ! head -n 1 "$work/config/helix-toolbox/migration.toml" 2>/dev/null | grep -q '^# A Helix Toolbox migration'; then
+    echo "this machine's migration was not exported" >&2
     exit 1
 fi
 # The notifications' timer was started and stopped, and its files are gone.

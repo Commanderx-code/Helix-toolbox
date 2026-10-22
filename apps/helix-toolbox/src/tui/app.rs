@@ -18,10 +18,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, Item};
 use helix_toolbox_engine::{
-    EngineError, Plan, backups, bundle,
+    EngineError, Machine, Plan, Probe, backups, bundle,
     confirmation::{self, Prepared},
     doctor, drift, hardware_report, history,
     inventory::{Inventory, Status, which},
+    migration::{self, Standing, Translation},
     notifications,
     overview::Overview,
     performance, plan, plan_removal, preflight, profiles, recovery, reliability,
@@ -78,9 +79,7 @@ const HELP: &str = "Everywhere
   Tab / Shift-Tab   next / previous screen       t   next theme (remembered)
   /                 search every area            ?   this help
   Ctrl-K            commands, by name            q / Ctrl-C  quit
-
-Sidebar and Dashboard
-  j / k             move                         Enter / l   open the screen or quick action
+  j / k             move in the sidebar          Enter / l   open the screen or quick action
 
 Areas (Applications and the other catalog screens)
   Enter / l         open a group or run an entry o / x / Del  Profiles: import, export, delete
@@ -102,6 +101,7 @@ History, Backups, Doctor, Hardware, Desktop, Updates, Drift, Reliability, Settin
   Reliability: i    critical or untested only    v   trust;  w (and History)  report it worked here
   Services: s start/stop  e enable/disable  R restart  i which  f filter   Storage: Enter cleans
   Performance: b an earlier boot  Enter acts on a hint   Recovery: c check snapshots  f set up
+  Migration: e export this machine  o open a migration file  a install what it can   d details
 
 Running window
   Ctrl-C            stop; again, kill what is left  Enter / q   close when finished
@@ -139,6 +139,8 @@ enum Screen {
     Performance,
     /// Whether the machine could be brought back after a bad update.
     Recovery,
+    /// What this machine has, to take elsewhere, and a migration brought here.
+    Migration,
     Settings,
 }
 
@@ -206,6 +208,18 @@ enum PerformanceRow {
 /// A reading of the performance, with the boots recorded so far.
 type PerformanceReading = (performance::Performance, Vec<performance::Boot>);
 
+/// A line of the Migration screen.
+#[derive(Clone, Debug)]
+enum MigrationRow {
+    Heading(String),
+    Text(String),
+    /// A thing the opened migration names, by its place in the translation.
+    Item(usize),
+}
+
+/// A migration file read here, or why it could not be.
+type MigrationOpened = (PathBuf, Result<Translation, String>);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Focus {
     Sidebar,
@@ -252,6 +266,10 @@ enum Asked {
     InstallFolder,
     /// What the Services screen's names must have.
     ServiceFilter,
+    /// Where to write this machine's migration.
+    ExportMigration,
+    /// The migration file to read here.
+    OpenMigration,
 }
 
 /// A line of the Offline bundles screen.
@@ -641,6 +659,13 @@ pub struct App {
     reading_performance: Option<mpsc::Receiver<PerformanceReading>>,
     /// Recovery readiness, as last checked.
     recovery_found: Vec<doctor::Diagnosis>,
+    /// What a migration of this machine would hold, as last read.
+    migration_here: Option<migration::Migration>,
+    reading_migration: Option<mpsc::Receiver<migration::Migration>>,
+    /// The migration file opened, and what it means here.
+    migration_opened: Option<(PathBuf, Translation)>,
+    opening_migration: Option<mpsc::Receiver<MigrationOpened>>,
+    migration_rows: Vec<MigrationRow>,
 }
 
 /// A plan of the queue as it was, from when it was made, with what the
@@ -750,6 +775,11 @@ impl App {
             performance_rows: Vec::new(),
             reading_performance: None,
             recovery_found: Vec::new(),
+            migration_here: None,
+            reading_migration: None,
+            migration_opened: None,
+            opening_migration: None,
+            migration_rows: Vec::new(),
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -1001,6 +1031,7 @@ impl App {
             Screen::Storage => self.storage_rows.len(),
             Screen::Performance => self.performance_rows.len(),
             Screen::Recovery => self.recovery_found.len(),
+            Screen::Migration => self.migration_rows.len(),
             Screen::Doctor => self.diagnoses.len() + self.doctor_entries().len(),
             Screen::Settings => self.settings().len(),
         }
@@ -1090,6 +1121,13 @@ impl App {
         if screen == Screen::Recovery {
             self.reload_recovery();
         }
+        if screen == Screen::Migration {
+            if self.migration_here.is_none() {
+                self.read_migration();
+            } else {
+                self.build_migration_rows();
+            }
+        }
         self.update_rows();
     }
 
@@ -1140,6 +1178,29 @@ impl App {
                     return true;
                 }
                 Err(mpsc::TryRecvError::Disconnected) => self.reading_performance = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(receiver) = &self.reading_migration {
+            match receiver.try_recv() {
+                Ok(found) => {
+                    self.migration_here = Some(found);
+                    self.reading_migration = None;
+                    self.build_migration_rows();
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.reading_migration = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(receiver) = &self.opening_migration {
+            match receiver.try_recv() {
+                Ok((path, read)) => {
+                    self.opening_migration = None;
+                    self.opened_migration(path, read);
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.opening_migration = None,
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }
@@ -1236,6 +1297,7 @@ impl App {
             Screen::Storage => Icon::Storage,
             Screen::Performance => Icon::Performance,
             Screen::Recovery => Icon::Recovery,
+            Screen::Migration => Icon::Migration,
             Screen::Favorites => Icon::Favorites,
             Screen::Doctor => Icon::Doctor,
             Screen::Settings => Icon::Settings,
@@ -1317,6 +1379,7 @@ impl App {
             Screen::Storage => self.draw_storage(frame, main),
             Screen::Performance => self.draw_performance(frame, main),
             Screen::Recovery => self.draw_recovery(frame, main),
+            Screen::Migration => self.draw_migration(frame, main),
             Screen::Doctor => self.draw_doctor(frame, main),
             Screen::Settings => self.draw_settings(frame, main),
         }
@@ -2785,6 +2848,22 @@ impl App {
                     }
                     list.push(Hint::new(&["r"], "Check again"));
                 }
+                Screen::Migration => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    if self.selected_migration_item().is_some() {
+                        list.push(Hint::new(&["d"], "Details"));
+                    }
+                    list.push(Hint::new(&["e"], "Export"));
+                    list.push(Hint::new(&["o"], "Open a file"));
+                    if self
+                        .migration_opened
+                        .as_ref()
+                        .is_some_and(|(_, translation)| translation.count(Standing::Install) > 0)
+                    {
+                        list.push(Hint::new(&["a"], "Install"));
+                    }
+                    list.push(Hint::new(&["r"], "Read again"));
+                }
                 Screen::Settings => list.push(Hint::new(&["Enter"], "Change")),
             },
         }
@@ -3020,6 +3099,9 @@ impl App {
                     }
                     if self.screen == Screen::Recovery {
                         self.reload_recovery();
+                    }
+                    if self.screen == Screen::Migration {
+                        self.reload_migration();
                     }
                 }
                 return true;
@@ -3575,6 +3657,49 @@ impl App {
                     }
                 },
                 KeyCode::Char('r') => self.reload_recovery(),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::Migration => match key.code {
+                KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+                    match self.selected_migration_item() {
+                        Some(item) if item.standing == Standing::Install => self.apply_migration(),
+                        Some(_) => self.describe_migration(),
+                        None => {}
+                    }
+                }
+                KeyCode::Char('d') => self.describe_migration(),
+                KeyCode::Char('e') => {
+                    let name = self
+                        .migration_here
+                        .as_ref()
+                        .map(migration::file_name)
+                        .unwrap_or_else(|| "helix-toolbox-migration.toml".to_string());
+                    self.popup = Some(Popup::Ask(
+                        InputPopup::new(
+                            "Export this machine",
+                            "The file to write its entries, Flatpaks and packages to, to take to the other machine:",
+                        )
+                        .with_value(format!("~/{name}"))
+                        .path()
+                        .answering("Export"),
+                        Asked::ExportMigration,
+                    ));
+                }
+                KeyCode::Char('o') => {
+                    let mut ask = InputPopup::new(
+                        "Open a migration",
+                        "The migration file made on the other machine, such as ~/helix-toolbox-migration.toml:",
+                    )
+                    .path()
+                    .answering("Open");
+                    if let Some((path, _)) = &self.migration_opened {
+                        ask = ask.with_value(path.display().to_string());
+                    }
+                    self.popup = Some(Popup::Ask(ask, Asked::OpenMigration));
+                }
+                KeyCode::Char('a') => self.apply_migration(),
+                KeyCode::Char('r') => self.reload_migration(),
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
@@ -5921,6 +6046,17 @@ impl App {
                 self.build_service_rows();
                 return;
             }
+            Asked::ExportMigration => ("Migration exported", self.export_migration(text)),
+            Asked::OpenMigration => {
+                match typed_path(text) {
+                    Ok(path) => self.open_migration(path),
+                    Err(error) => {
+                        self.popup =
+                            Some(Popup::Text(TextPopup::new("It did not work", error, true)))
+                    }
+                }
+                return;
+            }
         };
         self.popup = Some(Popup::Text(match said {
             Ok(text) => TextPopup::new(title, text, true),
@@ -7086,6 +7222,305 @@ impl App {
         frame.render_stateful_widget(list, inner, &mut self.main_state);
     }
 
+    // ----- Migration -----
+
+    /// What planning asks of the machine in tests: nothing is installed
+    /// but Flatpak, so what a test sees never depends on this machine.
+    fn test_machine() -> Machine<'static> {
+        Machine {
+            holds: &|_: &Probe| false,
+            on_path: &|tool: &str| tool == "flatpak",
+        }
+    }
+
+    /// Read in the background what a migration of this machine would hold.
+    fn read_migration(&mut self) {
+        if !self.examine_here {
+            self.build_migration_rows();
+            return;
+        }
+        let entries: Vec<Entry> = self.catalog.entries().into_iter().cloned().collect();
+        let platform = self.platform.clone();
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let refs: Vec<&Entry> = entries.iter().collect();
+            let _ = sender.send(migration::gather(&refs, &platform, history::now()));
+        });
+        self.reading_migration = Some(receiver);
+        self.build_migration_rows();
+    }
+
+    /// Read this machine again, and the opened migration with it.
+    fn reload_migration(&mut self) {
+        self.read_migration();
+        if let Some((path, _)) = self.migration_opened.clone() {
+            self.open_migration(path);
+        }
+    }
+
+    /// Read a migration file and what it means here, in the background.
+    fn open_migration(&mut self, path: PathBuf) {
+        if !self.examine_here {
+            let read = migration::read(&path)
+                .map(|read| {
+                    migration::translate(
+                        read,
+                        &self.catalog.entries(),
+                        &self.platform,
+                        Self::test_machine(),
+                        None,
+                    )
+                })
+                .map_err(|error| error.to_string());
+            self.opened_migration(path, read);
+            return;
+        }
+        let entries: Vec<Entry> = self.catalog.entries().into_iter().cloned().collect();
+        let platform = self.platform.clone();
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let refs: Vec<&Entry> = entries.iter().collect();
+            let read =
+                migration::read_here(&path, &refs, &platform).map_err(|error| error.to_string());
+            let _ = sender.send((path, read));
+        });
+        self.opening_migration = Some(receiver);
+        self.build_migration_rows();
+    }
+
+    fn opened_migration(&mut self, path: PathBuf, read: Result<Translation, String>) {
+        match read {
+            Ok(translation) => {
+                self.migration_opened = Some((path, translation));
+                self.build_migration_rows();
+            }
+            Err(error) => {
+                self.build_migration_rows();
+                self.popup = Some(Popup::Text(TextPopup::new(
+                    "Cannot open the migration",
+                    error,
+                    true,
+                )));
+            }
+        }
+    }
+
+    /// Write what this machine has to a file, as `helix-toolbox migrate
+    /// export` does.
+    fn export_migration(&mut self, text: &str) -> Result<String, String> {
+        let path = typed_path(text)?;
+        if path.extension().is_none_or(|extension| extension != "toml") {
+            return Err("A migration is written to a .toml file.".to_string());
+        }
+        let found = match &self.migration_here {
+            Some(found) => found.clone(),
+            None if self.examine_here => {
+                migration::gather(&self.catalog.entries(), &self.platform, history::now())
+            }
+            None => return Err("What this machine has is still being read.".to_string()),
+        };
+        migration::write(&path, &found).map_err(|error| error.to_string())?;
+        Ok(format!(
+            "{} entries, {} Flatpaks and {} packages of yours are written to {}.\n\nOn the other machine: o in Migration opens it, or helix-toolbox migrate show.",
+            found.entries.len(),
+            found.flatpaks.len(),
+            found.packages.len(),
+            path.display()
+        ))
+    }
+
+    /// Plan what the opened migration marks Install, to review and run.
+    fn apply_migration(&mut self) {
+        let Some((_, translation)) = &self.migration_opened else {
+            self.popup = Some(Popup::Text(TextPopup::new(
+                "No migration open",
+                "o opens a migration file made on the other machine; then a installs what it can here.",
+                true,
+            )));
+            return;
+        };
+        if translation.count(Standing::Install) == 0 {
+            self.popup = Some(Popup::Text(TextPopup::new(
+                "Nothing to install",
+                "Everything the migration names is here already, cannot be installed here, or is left to you.",
+                true,
+            )));
+            return;
+        }
+        let entries = self.catalog.entries();
+        let planned = if self.examine_here {
+            migration::plan_here(translation, &entries, &self.platform)
+        } else {
+            migration::plan(translation, &entries, &self.platform, Self::test_machine())
+        };
+        self.confirm_plan(planned);
+    }
+
+    fn selected_migration_item(&self) -> Option<&migration::Item> {
+        let MigrationRow::Item(index) = self.migration_rows.get(self.main_state.selected()?)?
+        else {
+            return None;
+        };
+        self.migration_opened.as_ref()?.1.items.get(*index)
+    }
+
+    fn describe_migration(&mut self) {
+        let Some(item) = self.selected_migration_item() else {
+            return;
+        };
+        let kind = migration_kind(item.kind);
+        let next = match item.standing {
+            Standing::Install => "a installs it with the rest, after you review the plan.",
+            Standing::Here => "Nothing to do: it is here already.",
+            Standing::Unavailable => "Helix Toolbox has no way to install it here.",
+            Standing::Yours => {
+                "It is left to you: install what this distribution calls it, if you want it."
+            }
+        };
+        let text = format!(
+            "{} ({kind}): {}.\n\n{next}",
+            helix_toolbox_core::printable(&item.id),
+            helix_toolbox_core::printable(&item.detail)
+        );
+        self.popup = Some(Popup::Text(TextPopup::new(
+            helix_toolbox_core::printable(&item.name),
+            text,
+            true,
+        )));
+    }
+
+    fn build_migration_rows(&mut self) {
+        let mut rows = vec![MigrationRow::Heading("This machine".into())];
+        rows.push(MigrationRow::Text(match &self.migration_here {
+            Some(found) => format!(
+                "{} entries, {} Flatpaks and {} packages of yours, from {}",
+                found.entries.len(),
+                found.flatpaks.len(),
+                found.packages.len(),
+                found.from
+            ),
+            None if self.reading_migration.is_some() => "Reading what this machine has…".into(),
+            None => "Press r to read what this machine has.".into(),
+        }));
+        rows.push(MigrationRow::Text(
+            "e writes it to a file to take to another machine; o opens one made elsewhere.".into(),
+        ));
+        if self.opening_migration.is_some() {
+            rows.push(MigrationRow::Heading("Opening the migration…".into()));
+        }
+        if let Some((path, translation)) = &self.migration_opened {
+            let read = &translation.migration;
+            rows.push(MigrationRow::Heading(format!(
+                "From {} ({}), made {}{}",
+                read.from,
+                read.architecture,
+                timestamp(read.made),
+                if translation.same_family {
+                    ", the same family"
+                } else {
+                    ""
+                }
+            )));
+            rows.push(MigrationRow::Text(path.display().to_string()));
+            for standing in [
+                Standing::Install,
+                Standing::Here,
+                Standing::Unavailable,
+                Standing::Yours,
+            ] {
+                let count = translation.count(standing);
+                if count == 0 {
+                    continue;
+                }
+                rows.push(MigrationRow::Heading(format!(
+                    "{} ({count})",
+                    match standing {
+                        Standing::Install => "To install",
+                        Standing::Here => "Here already",
+                        Standing::Unavailable => "Cannot be installed here",
+                        Standing::Yours => "Left to you",
+                    }
+                )));
+                rows.extend(
+                    translation
+                        .items
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, item)| item.standing == standing)
+                        .map(|(index, _)| MigrationRow::Item(index)),
+                );
+            }
+        }
+        self.migration_rows = rows;
+        self.clamp_main();
+    }
+
+    fn draw_migration(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Migration",
+            "Take this machine's applications to another machine or distribution. Exporting only reads.",
+        );
+        self.fill(frame, inner);
+        let focused = self.focus == Focus::Main;
+        let items_of = self
+            .migration_opened
+            .as_ref()
+            .map(|(_, translation)| translation.items.as_slice())
+            .unwrap_or_default();
+        let name_width = items_of
+            .iter()
+            .map(|item| item.name.chars().count())
+            .max()
+            .unwrap_or(0)
+            .min(36)
+            + 2;
+        let mut items: Vec<Line> = Vec::new();
+        for row in &self.migration_rows {
+            items.push(match row {
+                MigrationRow::Heading(text) => {
+                    Line::styled(text.clone(), Style::default().fg(self.theme.group()).bold())
+                }
+                MigrationRow::Text(text) => {
+                    Line::styled(format!("  {text}"), Style::default().fg(self.theme.muted()))
+                }
+                MigrationRow::Item(index) => {
+                    let item = &items_of[*index];
+                    let color = match item.standing {
+                        Standing::Install => self.theme.entry(),
+                        Standing::Here => self.theme.success(),
+                        Standing::Unavailable => self.theme.failure(),
+                        Standing::Yours => self.theme.warning(),
+                    };
+                    Line::from(vec![
+                        Span::styled(
+                            format!(
+                                "  {:<name_width$}",
+                                helix_toolbox_core::printable(&item.name)
+                            ),
+                            Style::default().fg(color),
+                        ),
+                        Span::styled(
+                            format!("{:<9}", migration_kind(item.kind)),
+                            Style::default().fg(self.theme.muted()),
+                        ),
+                        Span::styled(
+                            helix_toolbox_core::printable(&item.detail),
+                            Style::default().fg(self.theme.muted()),
+                        ),
+                    ])
+                }
+            });
+        }
+        let list = List::new(items)
+            .block(self.card("Migration"))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused))
+            .scroll_padding(1);
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
+    }
+
     // ----- Offline bundles -----
 
     fn selected_bundle_row(&self) -> Option<BundleRow> {
@@ -7881,6 +8316,11 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
         section: "MORE TOOLS",
     });
     menu.push(MenuItem {
+        label: "Migration".into(),
+        screen: Screen::Migration,
+        section: "MORE TOOLS",
+    });
+    menu.push(MenuItem {
         label: "Offline bundles".into(),
         screen: Screen::Bundles,
         section: "MORE TOOLS",
@@ -7891,6 +8331,15 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
         section: "MORE TOOLS",
     });
     menu
+}
+
+/// How the Migration screen names a kind of thing.
+fn migration_kind(kind: migration::Kind) -> &'static str {
+    match kind {
+        migration::Kind::Entry => "entry",
+        migration::Kind::Flatpak => "Flatpak",
+        migration::Kind::Package => "package",
+    }
 }
 
 /// A date and time for a list; UTC is fine there.
@@ -9261,6 +9710,149 @@ mod tests {
         app.main_state.select(Some(2));
         press(&mut app, KeyCode::Char('f'));
         assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+    }
+
+    /// A migration made on Fedora, written where a test can open it.
+    fn fedora_migration(directory: &Path) -> PathBuf {
+        let path = directory.join("from-fedora.toml");
+        std::fs::write(
+            &path,
+            "version = 1\nfrom = \"Fedora Linux 43\"\nfamily = \"fedora\"\narchitecture = \"x86_64\"\nmade = 0\nentries = [\"git\", \"no-such-entry\"]\nflatpaks = [\"com.spotify.Client\"]\npackages = [\"python3-requests\"]\n",
+        )
+        .unwrap();
+        path
+    }
+
+    #[test]
+    fn the_migration_screen_says_what_a_migration_means_here() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = fedora_migration(directory.path());
+        let mut app = app();
+        app.migration_here = Some(migration::Migration {
+            version: migration::VERSION,
+            from: "Garuda Linux".into(),
+            entries: vec!["git".into()],
+            flatpaks: vec!["org.kde.haruna".into()],
+            packages: vec!["htop".into(), "nano".into()],
+            ..Default::default()
+        });
+        app.open_screen(Screen::Migration);
+        app.focus = Focus::Main;
+        let shown = screen(&mut app, 140, 40);
+        for text in [
+            "Migration",
+            "This machine",
+            "1 entries, 1 Flatpaks and 2 packages of yours, from Garuda Linux",
+            "e Export",
+            "o Open a file",
+        ] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+        press(&mut app, KeyCode::Char('o'));
+        assert!(matches!(
+            app.popup,
+            Some(Popup::Ask(_, Asked::OpenMigration))
+        ));
+        type_text(&mut app, &path.display().to_string());
+        press(&mut app, KeyCode::Enter);
+        assert!(app.popup.is_none());
+        let shown = screen(&mut app, 140, 40);
+        for text in [
+            "From Fedora Linux 43 (x86_64), made 1970-01-01 00:00 UTC",
+            "To install (2)",
+            "Git",
+            "com.spotify.Client",
+            "Flathub",
+            "Cannot be installed here (1)",
+            "no-such-entry",
+            "not in the catalog here",
+            "Left to you (1)",
+            "python3-requests",
+            "named as on Fedora Linux 43; look for what Garuda Linux calls it",
+            "a Install",
+        ] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+        // d tells of the selected one.
+        let left = app
+            .migration_rows
+            .iter()
+            .position(|row| {
+                matches!(row, MigrationRow::Item(index)
+                    if app.migration_opened.as_ref().unwrap().1.items[*index].id == "python3-requests")
+            })
+            .unwrap();
+        app.main_state.select(Some(left));
+        press(&mut app, KeyCode::Char('d'));
+        let shown = screen(&mut app, 140, 40);
+        assert!(shown.contains("It is left to you"), "{shown}");
+        press(&mut app, KeyCode::Esc);
+        // A file that is not a migration says why.
+        std::fs::write(directory.path().join("bad.toml"), "packages = 1\n").unwrap();
+        press(&mut app, KeyCode::Char('o'));
+        for _ in 0..path.display().to_string().len() {
+            press(&mut app, KeyCode::Backspace);
+        }
+        type_text(
+            &mut app,
+            &directory.path().join("bad.toml").display().to_string(),
+        );
+        press(&mut app, KeyCode::Enter);
+        let shown = screen(&mut app, 140, 40);
+        assert!(shown.contains("Cannot open the migration"), "{shown}");
+        // The one opened before stays.
+        assert!(app.migration_opened.is_some());
+    }
+
+    #[test]
+    fn the_migration_screen_installs_what_it_can_after_review() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = fedora_migration(directory.path());
+        let mut app = app();
+        app.open_screen(Screen::Migration);
+        app.focus = Focus::Main;
+        // Nothing open yet: a says how to open one.
+        press(&mut app, KeyCode::Char('a'));
+        assert!(screen(&mut app, 140, 40).contains("No migration open"));
+        press(&mut app, KeyCode::Esc);
+        app.open_migration(path);
+        press(&mut app, KeyCode::Char('a'));
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let shown = screen(&mut app, 140, 40);
+        for text in ["sudo pacman -S --needed git", "2. com.spotify.Client"] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+        assert!(!shown.contains("python3-requests"), "{shown}");
+        // Declined, nothing runs.
+        press(&mut app, KeyCode::Char('n'));
+        assert!(!matches!(app.popup, Some(Popup::Running(_))));
+        // Enter on a row to install plans the same.
+        let install = app
+            .migration_rows
+            .iter()
+            .position(|row| matches!(row, MigrationRow::Item(0)))
+            .unwrap();
+        app.main_state.select(Some(install));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        press(&mut app, KeyCode::Char('n'));
+        // e writes this machine's migration where it is told.
+        app.migration_here = Some(migration::Migration {
+            version: migration::VERSION,
+            from: "Garuda Linux".into(),
+            packages: vec!["htop".into()],
+            ..Default::default()
+        });
+        press(&mut app, KeyCode::Char('e'));
+        assert!(matches!(
+            app.popup,
+            Some(Popup::Ask(_, Asked::ExportMigration))
+        ));
+        let target = directory.path().join("out.toml");
+        app.answered(Asked::ExportMigration, &target.display().to_string());
+        let written = migration::read(&target).unwrap();
+        assert_eq!(written.packages, ["htop"]);
+        assert!(screen(&mut app, 140, 40).contains("Migration exported"));
     }
 
     #[test]

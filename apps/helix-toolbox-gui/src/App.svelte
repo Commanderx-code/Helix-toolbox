@@ -19,6 +19,7 @@
   import Storage from './screens/Storage.svelte';
   import Performance from './screens/Performance.svelte';
   import Recovery from './screens/Recovery.svelte';
+  import Migration from './screens/Migration.svelte';
   import Hardware from './screens/Hardware.svelte';
   import Bundles from './screens/Bundles.svelte';
   import Desktop from './screens/Desktop.svelte';
@@ -74,6 +75,8 @@
         <Performance />
       {:else if toolbox.screen.kind === 'recovery'}
         <Recovery />
+      {:else if toolbox.screen.kind === 'migration'}
+        <Migration />
       {:else if toolbox.screen.kind === 'hardware'}
         <Hardware />
       {:else if toolbox.screen.kind === 'bundles'}

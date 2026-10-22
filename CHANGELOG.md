@@ -4,6 +4,22 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.19.0
+
+- **Migration.** **Migration**, in the window and the terminal interface,
+  takes what this machine has to another machine or distribution.
+  **Export…** writes a file naming the catalog entries installed here, the
+  Flatpaks and the packages you installed yourself that no entry covers.
+  On the other machine, **Open…** reads it and says what each means there:
+  an entry is installed through that distribution's own package, a Flatpak
+  from Flathub, and a package by its name when both are of the same
+  family. What cannot be installed there, and the packages of another
+  family, are listed for you, with whether the repositories there have a
+  package of the same name. **Install…** reviews the plan, which keeps
+  going past a failed install. An application you had only as a Flatpak
+  comes back as that Flatpak. `helix-toolbox migrate` (`export`, `show`,
+  `apply`) does the same.
+
 ## v1.18.0
 
 - **Performance.** **Performance**, in the window and the terminal

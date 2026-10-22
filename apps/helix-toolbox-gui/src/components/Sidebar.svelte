@@ -48,6 +48,7 @@
   {@render item({ kind: 'storage' }, 'disk', 'Storage')}
   {@render item({ kind: 'performance' }, 'chart', 'Performance')}
   {@render item({ kind: 'recovery' }, 'lifebuoy', 'Recovery')}
+  {@render item({ kind: 'migration' }, 'swap', 'Migration')}
   {@render item({ kind: 'bundles' }, 'package', 'Offline bundles')}
   {@render item({ kind: 'desktop' }, 'monitor', 'Desktop')}
   {@render item({ kind: 'settings' }, 'gear', 'Settings')}

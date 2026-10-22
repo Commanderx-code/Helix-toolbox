@@ -78,6 +78,10 @@ settings, profiles and history over ([what changed](https://github.com/Commander
   started at login, each change told what it costs first; and where the disk
   space goes, with what each cleanup frees. Snapshots and bootable kernels
   are never cleaned.
+- **Migration**: what this machine has, written to a file and read on
+  another machine or distribution: catalog entries become that
+  distribution's packages, Flatpaks come from Flathub, and the packages
+  that do not translate are listed for you.
 - **Performance and recovery**: how long the boot took and where the time
   went, each boot beside an earlier one with the runs in between; and
   whether the machine could be brought back: snapshots and booting one, a

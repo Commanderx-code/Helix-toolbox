@@ -1,0 +1,9 @@
+# A Helix Toolbox migration: helix-toolbox migrate show <file>, then migrate apply <file>
+version = 1
+from = "Void Linux"
+family = "void"
+architecture = "x86_64"
+made = 1792600000
+entries = ["marker", "gone"]
+flatpaks = ["com.example.Tool"]
+packages = ["htop"]

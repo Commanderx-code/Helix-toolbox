@@ -1,0 +1,28 @@
+{
+  "command": "string",
+  "data": {
+    "architecture": "string",
+    "counts": {
+      "here": "number",
+      "install": "number",
+      "unavailable": "number",
+      "yours": "number"
+    },
+    "family": "string",
+    "from": "string",
+    "items": [
+      {
+        "detail": "string",
+        "id": "string",
+        "kind": "string",
+        "name": "string",
+        "standing": "string"
+      }
+    ],
+    "made": "number",
+    "same_family": "boolean"
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}
