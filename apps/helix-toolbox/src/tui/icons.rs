@@ -34,6 +34,8 @@ pub enum Icon {
     Group,
     Entry,
     Queued,
+    /// An entry that runs on its own and cannot be queued.
+    Alone,
     Search,
     Overview,
     Chevron,
@@ -76,6 +78,7 @@ impl Icon {
                 Icon::Group => "\u{f07b}",          // folder
                 Icon::Entry => "\u{f10c}",          // circle outline
                 Icon::Queued => "\u{f058}",         // check circle
+                Icon::Alone => "\u{f04b}",          // play
                 Icon::Search => "\u{f002}",         // magnifier
                 Icon::Overview => "\u{f108}",       // desktop
                 Icon::Chevron => "\u{f054}",        // chevron right
@@ -86,6 +89,7 @@ impl Icon {
                 Icon::Group => "[D]",
                 Icon::Entry => "[*]",
                 Icon::Queued => "[*]",
+                Icon::Alone => "[>]",
                 Icon::Chevron => ">",
                 Icon::Logo => "⬡",
                 _ => "",

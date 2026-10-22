@@ -35,9 +35,18 @@ pub struct TextPopup {
     scroll: (u16, u16),
     line_count: u16,
     visible_lines: u16,
+    /// What `c` copies, for a report.
+    copy: Option<String>,
+    /// What the last copy said, along the bottom.
+    note: Option<String>,
 }
 
 impl TextPopup {
+    /// What the popup is titled.
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
     pub fn new(title: impl Into<String>, text: impl Into<String>, wrap: bool) -> Self {
         let text = text.into();
         Self {
@@ -47,7 +56,24 @@ impl TextPopup {
             wrap,
             scroll: (0, 0),
             visible_lines: 0,
+            copy: None,
+            note: None,
         }
+    }
+
+    /// `c` copies `text`, such as the report the window shows.
+    pub fn copying(mut self, text: impl Into<String>) -> Self {
+        self.copy = Some(text.into());
+        self
+    }
+
+    pub fn copyable(&self) -> Option<&str> {
+        self.copy.as_deref()
+    }
+
+    /// Say along the bottom how the copy went.
+    pub fn noted(&mut self, note: impl Into<String>) {
+        self.note = Some(note.into());
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect, theme: Theme) {
@@ -57,6 +83,10 @@ impl TextPopup {
             .title(format!(" {} ", self.title))
             .title_alignment(Alignment::Center)
             .title_style(Style::default().fg(theme.title()).bold());
+        let block = match &self.note {
+            Some(note) => block.title_bottom(Line::from(format!(" {note} ")).centered()),
+            None => block,
+        };
         self.visible_lines = block.inner(area).height;
         let mut paragraph = Paragraph::new(self.text.as_str())
             .block(block)
@@ -70,6 +100,12 @@ impl TextPopup {
             Block::bordered().inner(area),
         );
         frame.render_widget(paragraph, area);
+    }
+
+    /// How far down the text is scrolled.
+    #[cfg(test)]
+    pub fn scroll(&self) -> u16 {
+        self.scroll.0
     }
 
     /// Returns true when the window should close.
@@ -95,15 +131,16 @@ impl TextPopup {
     }
 
     pub fn hints(&self) -> (&'static str, Vec<Hint>) {
-        (
-            "Text",
-            vec![
-                Hint::new(&["Enter", "q", "Esc"], "Close"),
-                Hint::new(&["k", "Up"], "Scroll up"),
-                Hint::new(&["j", "Down"], "Scroll down"),
-                Hint::new(&["Page up", "Page down"], "Scroll by page"),
-            ],
-        )
+        let mut list = vec![
+            Hint::new(&["Enter", "q", "Esc"], "Close"),
+            Hint::new(&["k", "Up"], "Scroll up"),
+            Hint::new(&["j", "Down"], "Scroll down"),
+            Hint::new(&["Page up", "Page down"], "Scroll by page"),
+        ];
+        if self.copy.is_some() {
+            list.insert(1, Hint::new(&["c"], "Copy"));
+        }
+        ("Text", list)
     }
 }
 

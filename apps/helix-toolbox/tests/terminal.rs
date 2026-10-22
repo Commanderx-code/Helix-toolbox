@@ -160,6 +160,34 @@ impl Terminal {
             .unwrap();
     }
 
+    /// Where `text` is first drawn at or right of `column`, as the column
+    /// and row of its first cell.
+    fn locate(&self, text: &str, column: u16) -> (u16, u16) {
+        let parser = self.screen.lock().unwrap();
+        let screen = parser.screen();
+        let (_, cols) = screen.size();
+        for (row, line) in screen.rows(0, cols).enumerate() {
+            let cells: Vec<char> = line.chars().collect();
+            let wanted: Vec<char> = text.chars().collect();
+            let found = (column as usize..cells.len().saturating_sub(wanted.len() - 1))
+                .find(|&at| cells[at..at + wanted.len()] == wanted[..]);
+            if let Some(at) = found {
+                return (at as u16, row as u16);
+            }
+        }
+        panic!("{text:?} is not on the screen:\n{}", screen.contents());
+    }
+
+    /// A left click at a cell, pressed and released, as SGR mouse reports.
+    fn click(&mut self, (column, row): (u16, u16)) {
+        self.keys(&format!("\x1b[<0;{};{}M", column + 1, row + 1));
+        self.keys(&format!("\x1b[<0;{};{}m", column + 1, row + 1));
+    }
+
+    fn mouse_reported(&self) -> bool {
+        self.screen.lock().unwrap().screen().mouse_protocol_mode() != vt100::MouseProtocolMode::None
+    }
+
     fn wait_for_exit(&mut self) -> u32 {
         let start = Instant::now();
         loop {
@@ -418,6 +446,39 @@ fn the_menu_runs_fixture_entries_from_the_keyboard() {
 }
 
 #[test]
+fn the_mouse_opens_a_screen_and_asks_before_running_what_it_clicks() {
+    let home = tempfile::tempdir().unwrap();
+    let mut tui = fixture_menu(home.path());
+    tui.wait_until("the mouse to be reported", |_| tui.mouse_reported());
+    // The sidebar's Tools, then Marker twice: selected, then asked about.
+    let tools = tui.locate("Tools", 0);
+    tui.click(tools);
+    tui.wait_for(&["Marker", "Sleeper", "Failing"]);
+    let marker = tui.locate("Marker", tools.0 + 20);
+    tui.click(marker);
+    tui.click(marker);
+    tui.wait_for(&["CONFIRM", "[Y] Run", "Marker"]);
+    // A click beside the confirmation answers nothing; n declines.
+    tui.click((2, 2));
+    tui.wait_for(&["CONFIRM"]);
+    tui.keys("n");
+    tui.wait_until("the confirmation to close", |screen| {
+        !screen.contains("CONFIRM")
+    });
+    assert!(
+        !home.path().join("marker.txt").exists(),
+        "a click must not run the entry"
+    );
+    // The wheel moves through the list, and q's hint quits, the terminal
+    // no longer reporting the mouse.
+    tui.keys(&format!("\x1b[<65;{};{}M", marker.0 + 1, marker.1 + 1));
+    let quit = tui.locate("q Quit", 0);
+    tui.click(quit);
+    assert_eq!(tui.wait_for_exit(), 0);
+    assert!(!tui.mouse_reported(), "the mouse is still reported");
+}
+
+#[test]
 fn ctrl_c_in_the_confirmation_leaves_without_running() {
     let home = tempfile::tempdir().unwrap();
     let catalog = fixtures();
@@ -520,6 +581,46 @@ fn the_menu_starts_when_standard_input_is_a_pipe_as_with_curl_into_sh() {
     tui.keys(ESC);
     tui.keys("q");
     assert_eq!(tui.wait_for_exit(), 0);
+}
+
+#[test]
+fn the_menu_opens_on_the_screen_asked_for() {
+    let home = tempfile::tempdir().unwrap();
+    let catalog = fixtures();
+    let mut tui = Terminal::start(
+        &[
+            "--catalog-dir",
+            catalog.to_str().unwrap(),
+            "tui",
+            "--bypass-root",
+            "--screen",
+            "plan",
+        ],
+        home.path(),
+        40,
+        120,
+    );
+    tui.wait_for(&["SYSTEM READY", "Nothing is queued"]);
+    tui.keys("q");
+    assert_eq!(tui.wait_for_exit(), 0);
+    // A name it does not know is said before the terminal is taken over.
+    let mut tui = Terminal::start(
+        &[
+            "--catalog-dir",
+            catalog.to_str().unwrap(),
+            "tui",
+            "--bypass-root",
+            "--screen",
+            "nowhere",
+        ],
+        home.path(),
+        40,
+        120,
+    );
+    assert_ne!(tui.wait_for_exit(), 0);
+    let said = tui.contents();
+    assert!(said.contains("there is no screen named nowhere"), "{said}");
+    assert!(said.contains("updates"), "{said}");
 }
 
 #[test]
@@ -1337,6 +1438,9 @@ fn unfinished_entries_stay_in_the_install_plan_after_a_run() {
     tui.wait_for(&["CONFIRM", "After a failed step: stop"]);
     tui.keys("y");
     tui.wait_for(&["FAILED", "0 of 2 steps done"]);
+    // Beside the terminal, each step: the failed one with its exit status,
+    // and the result under it.
+    tui.wait_for(&["✗ Failing exit 9", "– Marker", "Result: exit 9"]);
     tui.keys("\r");
     tui.wait_for(&[
         "Not everything finished",

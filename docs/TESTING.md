@@ -65,6 +65,10 @@ emulator and types keys. It checks:
 - resizing while an entry runs, the too-small warning and recovery, and a
   key pressed together with a resize being read at once
 - `Ctrl-C` in the confirmation leaving without running
+- the mouse, as SGR mouse reports: a click on the sidebar opening a screen,
+  two on an entry opening its confirmation and nothing more, a click beside
+  it answering nothing, the wheel, and a click on the `q` hint quitting with
+  the terminal no longer reporting the mouse
 - a killed Helix Toolbox's unpacked copy being removed by the next start, and a
   clean exit removing its own
 - refusing to open the menu without a terminal, and opening it when standard

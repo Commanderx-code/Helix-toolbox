@@ -6,6 +6,7 @@ use super::{
     effects::{EffectsPopup, Outcome as EffectsOutcome},
     hints::Hint,
     icons::Icon,
+    mouse::{self, Hits, Target},
     palette::{Choice, Outcome, Palette},
     popup::{Answer, ConfirmPopup, Decision, InputPopup, TextPopup, centered},
     running::RunningView,
@@ -14,7 +15,7 @@ use super::{
     wizard::{Outcome as WizardOutcome, Pick, Wizard},
 };
 use crate::TuiArgs;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, Item};
 use helix_toolbox_engine::{
@@ -41,10 +42,11 @@ use ratatui::{
     style::{Color, Style},
     symbols::border,
     text::{Line, Span, Text},
-    widgets::{Block, List, ListState, Padding, Paragraph, Wrap},
+    widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wrap},
 };
 use ratatui_image::{Image, protocol::Protocol};
 use std::{
+    cell::RefCell,
     collections::HashMap,
     path::{Path, PathBuf},
     sync::mpsc,
@@ -82,39 +84,36 @@ Risk in a plan: D, K and SI are high; installs, services and anything privileged
 const HELP: &str = "Everywhere
   Tab / Shift-Tab   next / previous screen       t   next theme (remembered)
   /                 search every area            ?   this help
-  Ctrl-K            commands, by name            q / Ctrl-C  quit
+  Ctrl-K            commands, by name            q / Ctrl-C  quit        Ctrl-R  check installed again
   j / k             move in the sidebar          Enter / l   open the screen or quick action
-
+  Mouse             click to open or select, again for Enter; wheel scrolls; Shift-drag selects text
 Areas (Applications and the other catalog screens)
   Enter / l         open a group or run an entry o / x / Del  Profiles: import, export, delete
   h                 parent group, or the sidebar Space       add to or remove from the install plan
-  d                 description                  p           preview the script or command
+  d / e             details / profile into plan  p           preview the script or command
   r / c             remove a package / check it  v           where it comes from (trust)
   u                 update the entry             U           update every entry with an update
   g                 flags guide     *   pin a favorite     i   show all, installed or updates
-
-Install Plan   Enter run it   x / Del remove one   c clear   s save as a profile   e what it changes
-
+Install Plan   Enter run it   x / Del remove one   K / J move   c clear   s save as profile   e changes
 History, Backups, Doctor, Hardware, Desktop, Updates, Drift, Reliability, Settings
   Enter             log / restore / details / change   r   reload or check again; f repair; u / U update
   Hardware: f       update firmware (type FIRMWARE)    s   SMART check;  Backups: e  side by side
   Desktop: s        save the look; Enter puts a saved one back      Settings: wizard, bug report
-  Drift: b          compare with another         s   save this machine; Space / a plan what is missing
+  Drift: b          compare with another      s save this machine;  Space / a plan, R run the missing
+  Doctor: d details, and Space p v * on its reports   Updates: Enter on an entry updates it
   Reliability: i    critical or untested only    v   trust;  w (and History)  report it worked here
-  Services: s start/stop  e enable/disable  R restart  i which  f filter   Storage: Enter cleans
+  Services: s start/stop  e enable/disable  R restart  d info  i view  f filter   Storage: Enter cleans
   Performance: b an earlier boot  Enter acts on a hint   Recovery: c check snapshots  f set up
   Migration: e export  o open  a install   Home Manager: b build  s switch  Enter go back  p pull
-  Restic: Enter browse  R restore  b back up  c check  s history  n baseline  v test it  w timer
-  Configs: Enter change a field or put a backup back   E your editor on the whole file
-  Repositories: Enter open/diff/run  Space stage  c commit  b branch  s stash  F p P sync
+  Restic: Enter browse  R/F restore  b back up  c check  s history  i case  n/v baseline/test  w/W timer
+  Configs: Enter change a field (a draft) or put a backup back  c check  s save  x discard  E editor
+  Repositories: Enter open/diff/run  Space / A stage  c commit  b branch  s stash  F p P sync  n task
 
-Running window
-  Ctrl-C            stop; again, kill what is left  Enter / q   close when finished
-  l                 save the log                 Page up / down   scroll
+Running window   Ctrl-C stop, again kill   Enter / q close   l save the log   Page up / down scroll
 ";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Screen {
+pub(super) enum Screen {
     Dashboard,
     Area(usize),
     Plan,
@@ -189,6 +188,17 @@ impl ServiceView {
     }
 }
 
+/// The selected line of the Updates screen.
+#[derive(Clone, Debug)]
+enum UpdateRow {
+    Nothing,
+    Channel,
+    /// A package entry with an update.
+    Entry(Box<Entry>),
+    /// The line that updates every entry with an update.
+    Every,
+}
+
 /// A line of the Services screen.
 #[derive(Clone, Debug)]
 enum ServiceRow {
@@ -251,6 +261,11 @@ struct ConfigPart {
     loaded: Option<Result<configs::Loaded, String>>,
     checked: Option<Checked>,
     history: Vec<backups::Backup>,
+    /// Changes not saved yet, as the window's draft: fields changed one by
+    /// one, then checked and saved once.
+    draft: Option<String>,
+    /// What the checks said of the draft, once asked.
+    draft_checked: Option<Checked>,
 }
 
 /// A private copy of a configuration for the user's editor, which the
@@ -382,6 +397,8 @@ enum Asked {
     ResticHistory,
     /// The new folder to restore this snapshot (and only this path) into.
     ResticRestore(String, Option<String>),
+    /// The snapshot to restore, and only this path of it, typed.
+    ResticRestoreFrom,
     /// The file to record a baseline of.
     ResticBaseline,
     /// The snapshot to test the baseline with this id against.
@@ -441,9 +458,20 @@ enum BundleTask {
 #[derive(Clone, Debug)]
 enum DesktopRow {
     Heading(String),
-    Info { text: String, details: String },
-    Entry { id: String, text: String },
-    Look { slug: String, text: String },
+    Info {
+        text: String,
+        details: String,
+    },
+    /// A suggested entry, with what is worth knowing about it here.
+    Entry {
+        id: String,
+        text: String,
+        note: Option<String>,
+    },
+    Look {
+        slug: String,
+        text: String,
+    },
 }
 
 /// A confirmation's header and its steps with their commands.
@@ -489,8 +517,11 @@ enum Act {
     ImportProfile,
     Report,
     UpdateEntries,
+    /// Check again how package entries stand.
+    CheckStatuses,
     Theme,
     Icons,
+    Mouse,
     Help,
     Quit,
 }
@@ -557,7 +588,13 @@ impl DriftTarget {
 #[derive(Clone)]
 enum Row {
     Up,
-    Group { index: usize, name: String },
+    Group {
+        index: usize,
+        name: String,
+        description: String,
+        /// How many items it holds, as the window counts them.
+        count: usize,
+    },
     Entry(Box<Entry>),
 }
 
@@ -617,20 +654,87 @@ struct AreaState {
     selected: usize,
 }
 
-const QUICK_ICONS: [Icon; 5] = [
-    Icon::Applications,
-    Icon::Plan,
-    Icon::Doctor,
-    Icon::History,
-    Icon::Favorites,
+/// The screens `--screen` opens on by name; areas go by their id.
+const SCREEN_NAMES: [(&str, Screen); 22] = [
+    ("dashboard", Screen::Dashboard),
+    ("plan", Screen::Plan),
+    ("favorites", Screen::Favorites),
+    ("history", Screen::History),
+    ("backups", Screen::Backups),
+    ("doctor", Screen::Doctor),
+    ("updates", Screen::Updates),
+    ("drift", Screen::Drift),
+    ("reliability", Screen::Reliability),
+    ("hardware", Screen::Hardware),
+    ("desktop", Screen::Desktop),
+    ("bundles", Screen::Bundles),
+    ("services", Screen::Services),
+    ("storage", Screen::Storage),
+    ("performance", Screen::Performance),
+    ("recovery", Screen::Recovery),
+    ("migration", Screen::Migration),
+    ("restic", Screen::Restic),
+    ("repositories", Screen::Repositories),
+    ("configs", Screen::Configs),
+    ("home-manager", Screen::HomeManager),
+    ("settings", Screen::Settings),
 ];
 
-const QUICK_ACTIONS: [(&str, &str); 5] = [
-    ("Browse Applications", "Search and install tools"),
-    ("Review the Install Plan", "See what is queued and run it"),
-    ("Run System Doctor", "Health checks and reports"),
-    ("View History", "Past runs and their logs"),
-    ("Favorites", "Pinned and recently run entries"),
+/// What a quick action on the dashboard opens.
+#[derive(Clone, Copy)]
+enum Quick {
+    Applications,
+    Plan,
+    Wizard,
+    Palette,
+    Doctor,
+    History,
+    Favorites,
+}
+
+const QUICK_ACTIONS: [(Icon, &str, &str, Quick); 7] = [
+    (
+        Icon::Applications,
+        "Browse Applications",
+        "Search and install tools",
+        Quick::Applications,
+    ),
+    (
+        Icon::Plan,
+        "Review the Install Plan",
+        "See what is queued and run it",
+        Quick::Plan,
+    ),
+    (
+        Icon::Settings,
+        "Set up this machine",
+        "Choose a workstation to review",
+        Quick::Wizard,
+    ),
+    (
+        Icon::Search,
+        "Find anything",
+        "Any screen, action or entry",
+        Quick::Palette,
+    ),
+    (
+        Icon::Doctor,
+        "Run System Doctor",
+        "Health checks and reports",
+        Quick::Doctor,
+    ),
+    (
+        Icon::History,
+        "View History",
+        "Past runs and their logs",
+        Quick::History,
+    ),
+    (
+        Icon::Favorites,
+        "Favorites",
+        "Pinned and recently run entries",
+        Quick::Favorites,
+    ),
 ];
 
 pub struct App {
@@ -659,6 +763,10 @@ pub struct App {
     show_hidden: bool,
     /// Nerd Font icons, or plain text.
     icons: bool,
+    /// Clicks and the wheel, through the terminal's mouse reporting.
+    mouse: bool,
+    /// What the last frame drew where, for the mouse.
+    hits: RefCell<Hits>,
     /// After a failed step, continue with the steps that do not need it.
     keep_going: bool,
     /// Take a snapshot before system changes, where the machine can.
@@ -764,6 +872,8 @@ pub struct App {
     reports_dir: Option<PathBuf>,
     /// Opens a link in the browser; tests answer for it.
     opener: fn(&str) -> Result<(), String>,
+    /// Copies a report; tests answer for it.
+    copier: fn(&str) -> Result<String, String>,
     /// The machine a hardware report names, in tests; read each time
     /// otherwise.
     machine: Option<hardware_report::Machine>,
@@ -787,7 +897,9 @@ pub struct App {
     recovery_found: Vec<doctor::Diagnosis>,
     /// What a migration of this machine would hold, as last read.
     migration_here: Option<migration::Migration>,
-    reading_migration: Option<mpsc::Receiver<migration::Migration>>,
+    reading_migration: Option<mpsc::Receiver<(migration::Migration, bool)>>,
+    /// Whether the packages installed by hand can be told apart here.
+    migration_packages_known: bool,
     /// The migration file opened, and what it means here.
     migration_opened: Option<(PathBuf, Translation)>,
     opening_migration: Option<mpsc::Receiver<MigrationOpened>>,
@@ -802,6 +914,8 @@ pub struct App {
     restic_browse: Option<ResticBrowse>,
     browsing_restic: Option<mpsc::Receiver<ResticBrowse>>,
     restic_search: Option<ResticSearch>,
+    /// Whether a file's history is looked for ignoring upper and lower case.
+    restic_ignore_case: bool,
     searching_restic: Option<mpsc::Receiver<ResticSearch>>,
     restic_rows: Vec<ResticRow>,
     /// What runs restic: restic itself, or a test's stand-in.
@@ -869,6 +983,8 @@ impl App {
             skip_confirmation: args.skip_confirmation,
             show_hidden: args.override_validation,
             icons: !args.plain,
+            mouse: true,
+            hits: RefCell::new(Hits::default()),
             keep_going: false,
             snapshots: true,
             snapshot_tool: None,
@@ -922,6 +1038,7 @@ impl App {
             reporting: None,
             reports_dir: None,
             opener: |_| Err("there is no browser here".to_string()),
+            copier: |_| Err("there is no clipboard here".to_string()),
             machine: None,
             services_found: None,
             service_rows: Vec::new(),
@@ -937,6 +1054,7 @@ impl App {
             recovery_found: Vec::new(),
             migration_here: None,
             reading_migration: None,
+            migration_packages_known: true,
             migration_opened: None,
             opening_migration: None,
             migration_rows: Vec::new(),
@@ -948,6 +1066,7 @@ impl App {
             restic_browse: None,
             browsing_restic: None,
             restic_search: None,
+            restic_ignore_case: false,
             searching_restic: None,
             restic_rows: Vec::new(),
             restic: std::sync::Arc::new(restic::Here),
@@ -991,6 +1110,7 @@ impl App {
             look.theme
         });
         self.icons = look.icons && !args.plain;
+        self.mouse = look.mouse;
         self.keep_going = look.keep_going;
         if let Some(path) = &path {
             let favorites = settings::favorites_path(path);
@@ -1005,6 +1125,7 @@ impl App {
         self.systemctl = notifications::systemctl;
         self.reports_dir = history::state_dir();
         self.opener = open_link;
+        self.copier = super::clipboard::copy;
         self
     }
 
@@ -1073,6 +1194,7 @@ impl App {
             keep_going: self.keep_going,
             snapshots: self.snapshots,
             set_up: self.set_up,
+            mouse: self.mouse,
         };
         if let Err(error) = settings::save(path, &look) {
             tracing::warn!(%error, "the settings were not saved");
@@ -1171,6 +1293,8 @@ impl App {
                     Item::Group(group) => Row::Group {
                         index,
                         name: group.name.clone(),
+                        description: group.description.clone(),
+                        count: group.items.len(),
                     },
                     Item::Entry(entry) => Row::Entry(Box::new(entry.clone())),
                 }));
@@ -1201,7 +1325,10 @@ impl App {
             Screen::Plan => self.queue.len(),
             Screen::History => self.records.len(),
             Screen::Backups => self.backups.len(),
-            Screen::Updates => self.channels.len(),
+            Screen::Updates => {
+                let waiting = self.entries_with_updates().len();
+                self.channels.len() + if waiting > 0 { waiting + 1 } else { 0 }
+            }
             Screen::Drift => self
                 .drift_report
                 .as_ref()
@@ -1239,9 +1366,142 @@ impl App {
     }
 
     fn selected_entry(&self) -> Option<&Entry> {
+        // The Updates screen's entries come after its channels.
+        if self.screen == Screen::Updates {
+            let index = self
+                .main_state
+                .selected()?
+                .checked_sub(self.channels.len())?;
+            return self.entries_with_updates().into_iter().nth(index);
+        }
+        // The Doctor's report rows come after its checks.
+        if self.screen == Screen::Doctor {
+            let index = self
+                .main_state
+                .selected()?
+                .checked_sub(self.diagnoses.len())?;
+            return self
+                .catalog
+                .tabs
+                .iter()
+                .find(|tab| tab.id == "doctor")
+                .and_then(|tab| tab.entries().into_iter().nth(index));
+        }
         match self.selected_row() {
             Some(Row::Entry(entry)) => Some(entry.as_ref()),
             _ => None,
+        }
+    }
+
+    /// The screen `--screen` names: a fixed screen's name, or an area's id.
+    pub(super) fn screen_named(&self, name: &str) -> Option<Screen> {
+        let name = name.trim().to_lowercase();
+        SCREEN_NAMES
+            .iter()
+            .find(|(known, _)| *known == name)
+            .map(|(_, screen)| *screen)
+            .or_else(|| {
+                let index = self.catalog.tabs.iter().position(|tab| tab.id == name)?;
+                // Only an area the menu shows.
+                self.menu
+                    .iter()
+                    .any(|item| item.screen == Screen::Area(index))
+                    .then_some(Screen::Area(index))
+            })
+    }
+
+    /// The names `--screen` takes, for its error.
+    pub(super) fn screen_names(&self) -> String {
+        let mut names: Vec<&str> = SCREEN_NAMES.iter().map(|(name, _)| *name).collect();
+        names.extend(self.menu.iter().filter_map(|item| match item.screen {
+            Screen::Area(index) => Some(self.catalog.tabs[index].id.as_str()),
+            _ => None,
+        }));
+        names.join(", ")
+    }
+
+    /// Open on the screen `--screen` named, with the focus on it.
+    pub(super) fn open_on(&mut self, screen: Screen) {
+        self.open_screen(screen);
+        if screen != Screen::Dashboard {
+            self.focus = Focus::Main;
+        }
+    }
+
+    /// Where an entry is listed: its area, and the group that holds it.
+    fn place(&self, id: &str) -> Option<(String, Option<String>)> {
+        fn walk(items: &[Item], id: &str, group: Option<&str>) -> Option<Option<String>> {
+            items.iter().find_map(|item| match item {
+                Item::Entry(entry) if entry.id == id => Some(group.map(str::to_string)),
+                Item::Group(inner) => walk(&inner.items, id, Some(&inner.name)),
+                Item::Entry(_) => None,
+            })
+        }
+        self.catalog
+            .tabs
+            .iter()
+            .find_map(|tab| walk(&tab.items, id, None).map(|group| (tab.name.clone(), group)))
+    }
+
+    /// "Area › group", as the window writes where an entry is.
+    fn place_label(&self, id: &str) -> Option<String> {
+        self.place(id).map(|(area, group)| match group {
+            Some(group) => format!("{area} › {group}"),
+            None => area,
+        })
+    }
+
+    /// Package entries found installed (or kept by Nix), and those with an
+    /// update waiting, from the last check.
+    fn installed_count(&self) -> usize {
+        self.statuses
+            .values()
+            .filter(|status| {
+                matches!(
+                    status,
+                    Status::Installed { .. } | Status::Elsewhere { .. } | Status::Managed { .. }
+                )
+            })
+            .count()
+    }
+
+    fn update_count(&self) -> usize {
+        self.statuses
+            .values()
+            .filter(|status| matches!(status, Status::Update { .. }))
+            .count()
+    }
+
+    /// What the footer says of the check of package entries, once one has
+    /// started or answered.
+    fn check_line(&self) -> Option<String> {
+        if self.checking.is_some() {
+            Some("Checking what is installed…".to_string())
+        } else if self.check_statuses || !self.statuses.is_empty() {
+            Some(format!(
+                "{} package entries checked · Ctrl-R check again",
+                self.statuses.len()
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// Check again how package entries stand, unless a check is running.
+    fn check_again(&mut self) {
+        if self.checking.is_none() {
+            self.planned = None;
+            self.refresh_statuses();
+        }
+    }
+
+    /// The count the sidebar shows beside a screen, when there is one.
+    fn menu_count(&self, screen: Screen) -> usize {
+        match screen {
+            Screen::Favorites => self.favorites.len(),
+            Screen::Plan => self.queue.len(),
+            Screen::Updates => self.update_count(),
+            _ => 0,
         }
     }
 
@@ -1394,8 +1654,9 @@ impl App {
         }
         if let Some(receiver) = &self.reading_migration {
             match receiver.try_recv() {
-                Ok(found) => {
+                Ok((found, known)) => {
                     self.migration_here = Some(found);
+                    self.migration_packages_known = known;
                     self.reading_migration = None;
                     self.build_migration_rows();
                     return true;
@@ -1610,6 +1871,7 @@ impl App {
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
+        self.hits.get_mut().clear();
         let area = frame.area();
         frame.render_widget(Block::default().style(self.theme.base()), area);
         let too_small = (area.width < MIN_WIDTH || area.height < MIN_HEIGHT)
@@ -1648,6 +1910,7 @@ impl App {
             .split(rows[1]);
         self.draw_sidebar(frame, columns[0]);
         let main = columns[1];
+        self.hits.get_mut().main(main);
         match self.screen {
             Screen::Dashboard => self.draw_dashboard(frame, main),
             Screen::Area(_) => self.draw_area(frame, main),
@@ -1674,6 +1937,17 @@ impl App {
             Screen::Settings => self.draw_settings(frame, main),
         }
         match &mut self.popup {
+            // The keys are wider than the screen beside the sidebar; under
+            // the header, which the banner's picture stays drawn over.
+            Some(Popup::Text(popup)) if popup.title() == "Keys" => {
+                let below = Rect::new(
+                    area.x,
+                    rows[1].y,
+                    area.width,
+                    rows[1].height + rows[2].height,
+                );
+                popup.draw(frame, centered(below, 98, 98), self.theme)
+            }
             Some(Popup::Text(popup) | Popup::HardwareReport(popup, _)) => {
                 popup.draw(frame, centered(main, 95, 95), self.theme)
             }
@@ -1736,9 +2010,10 @@ impl App {
             ]);
             frame.render_widget(Paragraph::new(brand), text);
             let middle = Rect::new(area.x, top, area.width.saturating_sub(2), 1).intersection(area);
+            let room = (text.width as usize)
+                .saturating_sub(helix.chars().count() + 3 + toolbox.chars().count());
             frame.render_widget(
-                Paragraph::new(Line::styled(status, Style::default().fg(color).bold()))
-                    .alignment(Alignment::Right),
+                Paragraph::new(self.header_status(status, color, room)).alignment(Alignment::Right),
                 middle,
             );
             self.rule(frame, area.x, area.bottom().saturating_sub(1), area.width);
@@ -1775,12 +2050,27 @@ impl App {
             Line::styled(TAGLINE, Style::default().fg(self.theme.faint())),
         ]);
         frame.render_widget(Paragraph::new(brand), text);
+        let room = (text.width as usize).saturating_sub("HELIX TOOLBOX".len());
         frame.render_widget(
-            Paragraph::new(Line::styled(status, Style::default().fg(color).bold()))
-                .alignment(Alignment::Right),
+            Paragraph::new(self.header_status(status, color, room)).alignment(Alignment::Right),
             text,
         );
         self.rule(frame, area.x, area.bottom().saturating_sub(1), area.width);
+    }
+
+    /// READY or RUNNING at the right of the header, with the version before
+    /// it when `room` columns beside the name hold both.
+    fn header_status(&self, status: &'static str, color: Color, room: usize) -> Line<'static> {
+        const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"), "   ");
+        let mut spans = Vec::new();
+        if VERSION.chars().count() + status.chars().count() + 2 <= room {
+            spans.push(Span::styled(
+                VERSION,
+                Style::default().fg(self.theme.faint()),
+            ));
+        }
+        spans.push(Span::styled(status, Style::default().fg(color).bold()));
+        Line::from(spans)
     }
 
     /// A rounded card whose fill stays inside its border, as in the design;
@@ -1847,7 +2137,7 @@ impl App {
         for &index in items {
             let item = &self.menu[index];
             let current = item.screen == self.screen;
-            let label = self.menu_label(item, current);
+            let label = self.menu_label(item, current, inner.width.saturating_sub(4));
             let border = match (current, focused) {
                 (true, true) => self.theme.focused(),
                 (true, false) => self.theme.selected_line(),
@@ -1858,7 +2148,9 @@ impl App {
             } else {
                 self.theme.card()
             };
-            let inside = self.framed(frame, Rect::new(inner.x, y, inner.width, 3), border, fill);
+            let card = Rect::new(inner.x, y, inner.width, 3);
+            self.hits.get_mut().menu(card.intersection(inner), index);
+            let inside = self.framed(frame, card, border, fill);
             frame.render_widget(
                 Paragraph::new(label).block(Block::default().padding(Padding::horizontal(1))),
                 inside,
@@ -1874,15 +2166,18 @@ impl App {
         }
     }
 
-    /// A menu item's icon and label.
-    fn menu_label(&self, item: &MenuItem, current: bool) -> Line<'static> {
+    /// A menu item's icon and label, with its count at the right of
+    /// `width` when it has one, as the window's sidebar shows.
+    fn menu_label(&self, item: &MenuItem, current: bool, width: u16) -> Line<'static> {
         let icon = self.icon_gap(self.menu_icon(item.screen));
         let text_style = if current {
             Style::default().fg(self.theme.on_selected()).bold()
         } else {
             Style::default().fg(self.theme.entry())
         };
-        Line::from(vec![
+        let count = self.menu_count(item.screen);
+        let used = icon.chars().count() + item.label.chars().count();
+        let mut spans = vec![
             Span::styled(
                 icon,
                 Style::default().fg(if current {
@@ -1892,7 +2187,22 @@ impl App {
                 }),
             ),
             Span::styled(item.label.clone(), text_style),
-        ])
+        ];
+        if count > 0 {
+            let number = count.to_string();
+            let gap = (width as usize).saturating_sub(used + number.chars().count());
+            if gap >= 1 {
+                // The Install Plan's count stands out, as in the window.
+                let color = if item.screen == Screen::Plan {
+                    self.theme.focused()
+                } else {
+                    self.theme.muted()
+                };
+                spans.push(Span::raw(" ".repeat(gap)));
+                spans.push(Span::styled(number, Style::default().fg(color).bold()));
+            }
+        }
+        Line::from(spans)
     }
 
     /// One menu item as a line, marked when it is the current screen.
@@ -1978,12 +2288,13 @@ impl App {
                     area,
                 ),
                 Row::Item(index) => {
+                    self.hits.borrow_mut().menu(area, *index);
                     let item = &self.menu[*index];
                     let current = item.screen == self.screen;
                     self.menu_row(
                         frame,
                         area,
-                        self.menu_label(item, current),
+                        self.menu_label(item, current, area.width.saturating_sub(3)),
                         current,
                         focused,
                     );
@@ -2021,6 +2332,18 @@ impl App {
         )
     }
 
+    /// A list's items, their heights noted for the mouse.
+    fn measure<'a, T: Into<ListItem<'a>>>(
+        &self,
+        items: impl IntoIterator<Item = T>,
+    ) -> Vec<ListItem<'a>> {
+        let items: Vec<ListItem> = items.into_iter().map(Into::into).collect();
+        self.hits
+            .borrow_mut()
+            .measured(items.iter().map(|item| item.height() as u16).collect());
+        items
+    }
+
     fn card(&self, title: &str) -> Block<'static> {
         Block::bordered()
             .border_set(border::ROUNDED)
@@ -2045,13 +2368,41 @@ impl App {
             "Welcome to your Linux command center.",
         );
         let rows = self.overview.rows.len() as u16;
-        let actions = QUICK_ACTIONS.len() as u16;
+        // The quick actions in two columns where two of them fit side by
+        // side: cards need more room than lines.
+        let content_width = content.width;
+        let columns = move |card: u16| -> u16 {
+            let wide = if card == 1 { 56 } else { 72 };
+            if content_width >= wide { 2 } else { 1 }
+        };
         let overview_height = |spaced: bool| if spaced { rows * 2 + 1 } else { rows + 2 };
-        // Roomy rows and two-line cards when they fit, tighter otherwise.
-        let (spaced, card) = [(true, 4), (false, 4), (false, 3), (false, 1)]
-            .into_iter()
-            .find(|&(spaced, card)| overview_height(spaced) + 3 + actions * card <= content.height)
-            .unwrap_or((false, 1));
+        let actions = |card: u16| (QUICK_ACTIONS.len() as u16).div_ceil(columns(card)) * card;
+        // Roomy rows and two-line cards with the counts as tiles when they
+        // fit, the counts as a line before smaller cards, tighter otherwise.
+        // `tiles` is the counts' height: tiles with a blank line after them,
+        // or one line.
+        let (tiles, spaced, card) = [
+            (4, true, 4),
+            (4, false, 4),
+            (1, false, 4),
+            (4, false, 3),
+            (1, false, 3),
+            (0, false, 3),
+            (1, false, 1),
+            (0, false, 1),
+        ]
+        .into_iter()
+        .find(|&(tiles, spaced, card)| {
+            tiles + overview_height(spaced) + 3 + actions(card) <= content.height
+        })
+        .unwrap_or((0, false, 1));
+        self.draw_counts(frame, Rect::new(content.x, content.y, content.width, tiles));
+        let content = Rect::new(
+            content.x,
+            content.y + tiles,
+            content.width,
+            content.height.saturating_sub(tiles),
+        );
         let width = content.width.saturating_sub(4) as usize;
         let mut lines: Vec<Line> = Vec::new();
         for (index, (label, value)) in self.overview.rows.iter().enumerate() {
@@ -2085,7 +2436,7 @@ impl App {
         self.fill(frame, overview);
         frame.render_widget(Paragraph::new(Text::from(lines)).block(block), overview);
         // A blank line before the heading, unless every action would not fit.
-        let gap = u16::from(overview_height(spaced) + 3 + actions * card <= content.height);
+        let gap = u16::from(overview_height(spaced) + 3 + actions(card) <= content.height);
         let heading = overview.bottom() + gap;
         if heading >= content.bottom() {
             return;
@@ -2104,39 +2455,113 @@ impl App {
             content.bottom().saturating_sub(heading + 1),
         );
         let focused = self.focus == Focus::Main;
+        let selected = self.main_state.selected().unwrap_or(0);
+        let columns = columns(card);
+        // Side by side, in reading order, with a column between them.
+        let column_width = (list.width + 1) / columns - 1;
         if card == 1 {
-            let items: Vec<Line> = QUICK_ACTIONS
-                .iter()
-                .map(|(title, detail)| {
-                    Line::from(vec![
-                        Span::styled(*title, Style::default().fg(self.theme.entry()).bold()),
-                        Span::styled(
-                            format!("   {detail}"),
-                            Style::default().fg(self.theme.muted()),
-                        ),
-                    ])
-                })
-                .collect();
-            let widget = List::new(items)
-                .highlight_style(self.highlight(focused))
-                .highlight_symbol(self.marker(focused));
-            frame.render_stateful_widget(widget, list, &mut self.main_state);
+            let marker = self.marker(focused);
+            let blank = " ".repeat(marker.chars().count());
+            for (index, (_, title, detail, _)) in QUICK_ACTIONS.iter().enumerate() {
+                let row = index as u16 / columns;
+                let column = index as u16 % columns;
+                if row >= list.height {
+                    break;
+                }
+                let rect = Rect::new(
+                    list.x + column * (column_width + 1),
+                    list.y + row,
+                    column_width,
+                    1,
+                );
+                self.hits.get_mut().row(rect, index);
+                let chosen = index == selected;
+                let line = Line::from(vec![
+                    Span::raw(if chosen { marker } else { blank.as_str() }.to_string()),
+                    Span::styled(*title, Style::default().fg(self.theme.entry()).bold()),
+                    Span::styled(
+                        format!("   {detail}"),
+                        Style::default().fg(self.theme.muted()),
+                    ),
+                ]);
+                let style = if chosen {
+                    self.highlight(focused)
+                } else {
+                    Style::default()
+                };
+                frame.render_widget(Paragraph::new(line).style(style), rect);
+            }
             return;
         }
-        let selected = self.main_state.selected().unwrap_or(0);
-        for (index, (title, detail)) in QUICK_ACTIONS.iter().enumerate() {
-            let rect = Rect::new(list.x, list.y + index as u16 * card, list.width, card);
+        for (index, (icon, title, detail, _)) in QUICK_ACTIONS.iter().enumerate() {
+            let row = index as u16 / columns;
+            let column = index as u16 % columns;
+            let rect = Rect::new(
+                list.x + column * (column_width + 1),
+                list.y + row * card,
+                column_width,
+                card,
+            );
             if rect.bottom() > list.bottom() {
                 break;
             }
+            self.hits.get_mut().row(rect, index);
             self.action_card(
                 frame,
                 rect,
-                QUICK_ICONS[index],
+                *icon,
                 title,
                 detail,
                 index == selected,
                 focused,
+            );
+        }
+    }
+
+    /// The dashboard's counts, as the window's tiles: installed, updates
+    /// waiting, queued and pinned. Four tiles in three rows, else one line.
+    fn draw_counts(&self, frame: &mut Frame, area: Rect) {
+        if area.height == 0 {
+            return;
+        }
+        let counts = [
+            (self.installed_count(), "installed", self.theme.success()),
+            (self.update_count(), "updates", self.theme.warning()),
+            (self.queue.len(), "queued", self.theme.focused()),
+            (self.favorites.len(), "pinned", self.theme.title()),
+        ];
+        if area.height < 4 {
+            let mut spans = Vec::new();
+            for (index, (count, label, color)) in counts.iter().enumerate() {
+                if index > 0 {
+                    spans.push(Span::styled(" · ", Style::default().fg(self.theme.faint())));
+                }
+                spans.push(Span::styled(
+                    count.to_string(),
+                    Style::default().fg(*color).bold(),
+                ));
+                spans.push(Span::styled(
+                    format!(" {label}"),
+                    Style::default().fg(self.theme.muted()),
+                ));
+            }
+            frame.render_widget(
+                Paragraph::new(Line::from(spans)),
+                Rect::new(area.x, area.y, area.width, 1),
+            );
+            return;
+        }
+        let tile = (area.width + 1) / 4 - 1;
+        for (index, (count, label, color)) in counts.iter().enumerate() {
+            let rect = Rect::new(area.x + index as u16 * (tile + 1), area.y, tile, 3);
+            let inside = self.framed(frame, rect, self.theme.line(), self.theme.card());
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled(count.to_string(), Style::default().fg(*color).bold()),
+                    Span::styled(format!(" {label}"), Style::default().fg(self.theme.muted())),
+                ]))
+                .alignment(Alignment::Center),
+                inside,
             );
         }
     }
@@ -2180,12 +2605,23 @@ impl App {
             })
             .bold();
         let icon = Span::styled(icon, Style::default().fg(self.theme.focused()));
+        // The chevron takes the last two columns.
+        let text = Rect::new(
+            inner.x,
+            inner.y,
+            inner.width.saturating_sub(2),
+            inner.height,
+        );
+        let room = usize::from(text.width);
         let lines = if inner.height >= 2 {
             vec![
                 Line::from(vec![icon, Span::styled(title.to_string(), title_style)]),
                 Line::from(vec![
-                    Span::raw(indent),
-                    Span::styled(detail.to_string(), Style::default().fg(self.theme.muted())),
+                    Span::raw(indent.clone()),
+                    Span::styled(
+                        clip(detail, room.saturating_sub(indent.chars().count())),
+                        Style::default().fg(self.theme.muted()),
+                    ),
                 ]),
             ]
         } else {
@@ -2193,17 +2629,17 @@ impl App {
                 icon,
                 Span::styled(title.to_string(), title_style),
                 Span::styled(
-                    format!("   {detail}"),
+                    format!(
+                        "   {}",
+                        clip(
+                            detail,
+                            room.saturating_sub(indent.chars().count() + title.chars().count() + 3)
+                        )
+                    ),
                     Style::default().fg(self.theme.muted()),
                 ),
             ])]
         };
-        let text = Rect::new(
-            inner.x,
-            inner.y,
-            inner.width.saturating_sub(2),
-            inner.height,
-        );
         frame.render_widget(Paragraph::new(Text::from(lines)), text);
         frame.render_widget(
             Paragraph::new(Line::styled(
@@ -2313,14 +2749,39 @@ impl App {
         let content_width =
             (block.inner(area).width as usize).saturating_sub(marker.chars().count());
         let group = self.glyph(Icon::Group);
+        let searching = self.searching();
         let lines: Vec<Line> = self
             .rows
             .iter()
             .map(|row| match row {
                 Row::Up => Line::from(format!("{group}  .."))
                     .style(Style::default().fg(self.theme.group())),
-                Row::Group { name, .. } => Line::from(format!("{group}  {name}"))
-                    .style(Style::default().fg(self.theme.group())),
+                Row::Group {
+                    name,
+                    description,
+                    count,
+                    ..
+                } => {
+                    // Its name, what it holds, and how many, as the window shows a group.
+                    let left = format!("{group}  {name}");
+                    let number = format!("{count} ");
+                    let room = content_width
+                        .saturating_sub(left.chars().count() + number.chars().count() + 2);
+                    let about = if description.is_empty() || room < 8 {
+                        String::new()
+                    } else {
+                        format!("  {}", clipped(description, room))
+                    };
+                    let gap = " ".repeat(content_width.saturating_sub(
+                        left.chars().count() + about.chars().count() + number.chars().count(),
+                    ));
+                    Line::from(vec![
+                        Span::styled(left, Style::default().fg(self.theme.group())),
+                        Span::styled(about, Style::default().fg(self.theme.faint())),
+                        Span::raw(gap),
+                        Span::styled(number, Style::default().fg(self.theme.muted())),
+                    ])
+                }
                 Row::Entry(entry) => {
                     let queued = self.is_queued(entry);
                     let (style, icon_color) = if queued {
@@ -2331,10 +2792,13 @@ impl App {
                     } else {
                         (Style::default().fg(self.theme.entry()), self.theme.muted())
                     };
+                    // An entry that cannot be queued is marked as running on its own.
                     let icon = if queued {
                         self.glyph(Icon::Queued)
-                    } else {
+                    } else if entry.multi_select {
                         self.glyph(Icon::Entry)
+                    } else {
+                        self.glyph(Icon::Alone)
                     };
                     // Without icons, a queued entry is marked after its name; a pinned one
                     // always is.
@@ -2375,11 +2839,32 @@ impl App {
                     };
                     let right =
                         word.chars().count() + detail.chars().count() + flags.chars().count();
-                    let gap =
-                        " ".repeat(content_width.saturating_sub(left.chars().count() + right));
+                    // Between them, where it fits: where a search result is
+                    // listed, then the description, as the window's rows show.
+                    let room = content_width.saturating_sub(left.chars().count() + right + 3);
+                    let place = if searching {
+                        self.place_label(&entry.id)
+                    } else {
+                        None
+                    };
+                    let about = match (place, entry.description.is_empty()) {
+                        (Some(place), true) => place,
+                        (Some(place), false) => format!("{place} · {}", entry.description),
+                        (None, _) => entry.description.clone(),
+                    };
+                    let about = if about.is_empty() || room < 8 {
+                        String::new()
+                    } else {
+                        format!("  {}", clipped(&about, room))
+                    };
+                    let gap = " ".repeat(
+                        content_width
+                            .saturating_sub(left.chars().count() + about.chars().count() + right),
+                    );
                     Line::from(vec![
                         Span::styled(icon.to_string(), Style::default().fg(icon_color)),
                         Span::styled(format!("  {}{suffix}", entry.name), style),
+                        Span::styled(about, Style::default().fg(self.theme.faint())),
                         Span::raw(gap),
                         Span::styled(word, Style::default().fg(color)),
                         Span::styled(detail, Style::default().fg(self.theme.faint())),
@@ -2389,12 +2874,12 @@ impl App {
             })
             .collect();
         self.fill(frame, area);
-        let list = List::new(lines)
+        let list = List::new(self.measure(lines))
             .block(block)
             .highlight_style(self.highlight(focused))
             .highlight_symbol(marker)
             .scroll_padding(1);
-        frame.render_stateful_widget(list, area, &mut self.main_state);
+        bordered_list(frame, list, area, &mut self.main_state, &self.hits);
     }
 
     fn draw_plan(&mut self, frame: &mut Frame, area: Rect) {
@@ -2491,37 +2976,68 @@ impl App {
         );
         let focused = self.focus == Focus::Main;
         let steps = planned.map(|planned| planned.steps).unwrap_or_default();
-        let items: Vec<Line> = self
+        let block = self.card(&format!("Queued entries · {}", self.queue.len()));
+        let marker = self.marker(focused);
+        let width = (block.inner(parts[2]).width as usize).saturating_sub(marker.chars().count());
+        // Each entry in two lines, as the window's rows: its number, name,
+        // status and flags, then where it is listed, its kind and its step.
+        let items: Vec<ListItem> = self
             .queue
             .iter()
-            .map(|entry| {
+            .enumerate()
+            .map(|(index, entry)| {
                 let command = steps
                     .iter()
                     .find(|step| step.id() == entry.id)
                     .map(|step| step.display())
                     .unwrap_or_else(|| "nothing to do".to_string());
-                Line::from(vec![
-                    Span::styled(
-                        self.icon_gap(Icon::Queued),
-                        Style::default().fg(self.theme.success()),
-                    ),
-                    Span::styled(
-                        entry.name.clone(),
-                        Style::default().fg(self.theme.entry()).bold(),
-                    ),
-                    Span::styled(
-                        format!("   {command}"),
-                        Style::default().fg(self.theme.muted()),
-                    ),
-                ])
+                let icon = self.icon_gap(Icon::Queued);
+                let number = format!("{}. ", index + 1);
+                let (word, color) = match self.statuses.get(&entry.id) {
+                    Some(status) => (status.label().to_string(), self.status_color(status)),
+                    None => (String::new(), self.theme.muted()),
+                };
+                let flags = format!("  {} ", entry.flags.trim());
+                let left = icon.chars().count() + number.len() + entry.name.chars().count();
+                let gap = " ".repeat(
+                    width.saturating_sub(left + word.chars().count() + flags.chars().count()),
+                );
+                let indent = " ".repeat(icon.chars().count() + number.len());
+                let mut about = vec![kind_label(&entry.action).to_string()];
+                if let Some(place) = self.place_label(&entry.id) {
+                    about.insert(0, place);
+                }
+                let about = about.join(" · ");
+                let room = width.saturating_sub(indent.len() + about.chars().count() + 3);
+                ListItem::new(Text::from(vec![
+                    Line::from(vec![
+                        Span::styled(icon, Style::default().fg(self.theme.success())),
+                        Span::styled(number, Style::default().fg(self.theme.faint())),
+                        Span::styled(
+                            entry.name.clone(),
+                            Style::default().fg(self.theme.entry()).bold(),
+                        ),
+                        Span::raw(gap),
+                        Span::styled(word, Style::default().fg(color)),
+                        Span::styled(flags, Style::default().fg(self.theme.muted())),
+                    ]),
+                    Line::from(vec![
+                        Span::raw(indent),
+                        Span::styled(about, Style::default().fg(self.theme.faint())),
+                        Span::styled(
+                            format!("   {}", clipped(&command, room)),
+                            Style::default().fg(self.theme.muted()),
+                        ),
+                    ]),
+                ]))
             })
             .collect();
         self.fill(frame, parts[2]);
-        let list = List::new(items)
-            .block(self.card("Queued entries"))
+        let list = List::new(self.measure(items))
+            .block(block)
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused));
-        frame.render_stateful_widget(list, parts[2], &mut self.main_state);
+        bordered_list(frame, list, parts[2], &mut self.main_state, &self.hits);
     }
 
     fn draw_backups(&mut self, frame: &mut Frame, area: Rect) {
@@ -2626,11 +3142,11 @@ impl App {
                 ])
             })
             .collect();
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card("Backups"))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused));
-        frame.render_stateful_widget(list, parts[2], &mut self.main_state);
+        bordered_list(frame, list, parts[2], &mut self.main_state, &self.hits);
     }
 
     fn draw_history(&mut self, frame: &mut Frame, area: Rect) {
@@ -2676,11 +3192,11 @@ impl App {
             })
             .collect();
         self.fill(frame, inner);
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card("Runs"))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused));
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     fn settings(&self) -> Vec<(String, String)> {
@@ -2768,6 +3284,14 @@ impl App {
                 "Log level (HELIX_TOOLBOX_LOG)".to_string(),
                 crate::logging::requested().unwrap_or_else(|| "info".to_string()),
             ),
+            (
+                "Mouse".to_string(),
+                if self.mouse {
+                    "on (Shift+drag selects text)".to_string()
+                } else {
+                    "off".to_string()
+                },
+            ),
         ]
     }
 
@@ -2793,15 +3317,39 @@ impl App {
             })
             .collect();
         self.fill(frame, inner);
-        let list = List::new(items)
-            .block(self.card("Settings"))
+        // Where they are kept, as the window says.
+        let mut block = self.card("Settings");
+        if let Some(path) = &self.settings_path {
+            block = block.title_bottom(Line::styled(
+                format!(
+                    " Kept in {} ",
+                    helix_toolbox_core::printable(&path.display().to_string())
+                ),
+                Style::default().fg(self.theme.faint()),
+            ));
+        }
+        let list = List::new(self.measure(items))
+            .block(block)
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused));
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
         self.rule(frame, area.x, area.y, area.width);
+        // How the check of package entries stands, on the rule, as the
+        // window's footer says it.
+        if let Some(status) = self.check_line() {
+            let width = status.chars().count() as u16 + 2;
+            let x = area.right().saturating_sub(width + 2).max(area.x);
+            frame.render_widget(
+                Paragraph::new(Line::styled(
+                    format!(" {status} "),
+                    Style::default().fg(self.theme.faint()),
+                )),
+                Rect::new(x, area.y, width.min(area.width), 1).intersection(area),
+            );
+        }
         let (_, hints) = self.hints();
         // Help and quit sit on the right, as in the design.
         let (right, mut left): (Vec<&Hint>, Vec<&Hint>) = hints
@@ -2838,11 +3386,42 @@ impl App {
         };
         let row =
             Rect::new(area.x + 1, area.y + 1, area.width.saturating_sub(2), 1).intersection(area);
+        let right_line = Line::from(spans(&right));
+        let right_x = row.right().saturating_sub(right_line.width() as u16);
+        self.hint_hits(&left, row.x, row);
+        self.hint_hits(&right, right_x, row);
         frame.render_widget(Paragraph::new(Line::from(spans(&left))), row);
-        frame.render_widget(
-            Paragraph::new(Line::from(spans(&right))).alignment(Alignment::Right),
-            row,
-        );
+        frame.render_widget(Paragraph::new(right_line).alignment(Alignment::Right), row);
+    }
+
+    /// Where each of the hints drawn from `x` on is, for a click: each key
+    /// of a hint where its name is, its description sending the first.
+    fn hint_hits(&self, hints: &[&Hint], mut x: u16, row: Rect) {
+        let mut hits = self.hits.borrow_mut();
+        let width = |text: &str| Span::raw(text).width() as u16;
+        for (index, hint) in hints.iter().enumerate() {
+            if index > 0 {
+                x += width(" · ");
+            }
+            let start = x;
+            for (number, name) in hint.keys().iter().enumerate() {
+                if number > 0 {
+                    x += width("/");
+                }
+                if let Some(key) = mouse::key_named(name) {
+                    hits.key(Rect::new(x, row.y, width(name), 1).intersection(row), key);
+                }
+                x += width(name);
+            }
+            let text = width(&format!(" {}", hint.text()));
+            if let Some(key) = hint.keys().first().and_then(|name| mouse::key_named(name)) {
+                hits.key(
+                    Rect::new(start, row.y, x - start + text, 1).intersection(row),
+                    key,
+                );
+            }
+            x += text;
+        }
     }
 
     fn hints(&self) -> (&'static str, Vec<Hint>) {
@@ -2897,6 +3476,9 @@ impl App {
                                 list.push(Hint::new(&["u"], "Update"));
                             }
                             list.push(Hint::new(&["Space"], "Plan"));
+                            if matches!(entry.action, Action::Profile { .. }) {
+                                list.push(Hint::new(&["e"], "Its entries to plan"));
+                            }
                             list.push(Hint::new(&["d"], "Describe"));
                             list.push(Hint::new(&["p"], "Preview"));
                             list.push(Hint::new(&["v"], "Trust"));
@@ -2927,6 +3509,9 @@ impl App {
                         list.push(Hint::new(&["e"], "Changes"));
                         list.push(Hint::new(&["s"], "Save as profile"));
                     }
+                    if self.queue.len() > 1 {
+                        list.push(Hint::new(&["K", "J"], "Move"));
+                    }
                     list.push(Hint::new(&["x"], "Remove"));
                     list.push(Hint::new(&["c"], "Clear"));
                 }
@@ -2953,16 +3538,28 @@ impl App {
                                 list.push(Hint::new(&["f"], "Run the entry"));
                             }
                         }
-                        None => list.push(Hint::new(&["Enter"], "Run")),
+                        None => {
+                            list.push(Hint::new(&["Enter"], "Run"));
+                            list.push(Hint::new(&["Space"], "Plan"));
+                            list.push(Hint::new(&["d"], "Details"));
+                        }
                     }
                     list.push(Hint::new(&["r"], "Check again"));
                 }
                 Screen::Updates => {
                     list.push(Hint::new(&["↑↓"], "Navigate"));
-                    if !self.channels.is_empty() {
-                        list.push(Hint::new(&["Enter"], "Details"));
-                        list.push(Hint::new(&["u"], "Update"));
-                        list.push(Hint::new(&["U"], "Update all"));
+                    match self.selected_update_row() {
+                        UpdateRow::Channel => {
+                            list.push(Hint::new(&["Enter"], "Details"));
+                            list.push(Hint::new(&["u"], "Update"));
+                            list.push(Hint::new(&["U"], "Update all"));
+                        }
+                        UpdateRow::Entry(_) => {
+                            list.push(Hint::new(&["Enter", "u"], "Update it"));
+                            list.push(Hint::new(&["d"], "Details"));
+                        }
+                        UpdateRow::Every => list.push(Hint::new(&["Enter"], "Update every entry")),
+                        UpdateRow::Nothing => {}
                     }
                     list.push(Hint::new(&["r"], "Check online"));
                 }
@@ -2980,6 +3577,7 @@ impl App {
                         .is_some_and(|(_, report)| !report.restore().is_empty())
                     {
                         list.push(Hint::new(&["a"], "Plan all missing"));
+                        list.push(Hint::new(&["R"], "Run them now"));
                     }
                     if self.drift_targets.len() > 1 {
                         list.push(Hint::new(&["b"], "Compare with"));
@@ -3087,7 +3685,8 @@ impl App {
                             }
                         }
                         Some(ServiceRow::Autostart(_)) => {
-                            list.push(Hint::new(&["Enter"], "On or off at login"))
+                            list.push(Hint::new(&["Enter"], "On or off at login"));
+                            list.push(Hint::new(&["d"], "Details"));
                         }
                         _ => {}
                     }
@@ -3173,10 +3772,20 @@ impl App {
                                 list.push(Hint::new(&["R"], "Restore"));
                             }
                             Some(ResticRow::Baseline(_)) => list.push(Hint::new(&["v"], "Test")),
-                            _ => {}
+                            _ => list.push(Hint::new(&["F"], "Restore…")),
                         }
                         list.push(Hint::new(&["b"], "Back up"));
                         list.push(Hint::new(&["s"], "History"));
+                        if self.restic_search.is_some() {
+                            list.push(Hint::new(
+                                &["i"],
+                                if self.restic_ignore_case {
+                                    "Match case"
+                                } else {
+                                    "Ignore case"
+                                },
+                            ));
+                        }
                         list.push(Hint::new(&["n"], "Baseline"));
                     }
                     list.push(Hint::new(&["r"], "Read again"));
@@ -3197,9 +3806,130 @@ impl App {
     // ----- keys -----
 
     /// Returns false when Helix Toolbox should exit.
+    /// Whether the terminal should report the mouse.
+    pub fn mouse(&self) -> bool {
+        self.mouse
+    }
+
+    /// A click or the wheel, done as the keys that do the same, so nothing
+    /// a click starts skips its review. Returns false to quit, as a click
+    /// on the q hint asks.
+    pub fn handle_mouse(&mut self, event: &MouseEvent) -> bool {
+        if !self.mouse {
+            return true;
+        }
+        let target = self.hits.borrow().at(event.column, event.row);
+        match event.kind {
+            MouseEventKind::ScrollDown => self.wheel(true, event),
+            MouseEventKind::ScrollUp => self.wheel(false, event),
+            MouseEventKind::Down(MouseButton::Left) => match target {
+                Some(Target::Key(key)) => self.handle_key(&key),
+                // Behind a popup only its hints answer.
+                _ if self.popup.is_some() => true,
+                Some(Target::Menu(index)) => {
+                    let screen = self.menu[index].screen;
+                    if screen == self.screen && self.focus == Focus::Sidebar {
+                        self.press(KeyCode::Enter)
+                    } else {
+                        if screen != self.screen {
+                            self.open_screen(screen);
+                        }
+                        self.focus = Focus::Sidebar;
+                        true
+                    }
+                }
+                Some(Target::Row(index)) => self.click_row(index),
+                None => true,
+            },
+            _ => true,
+        }
+    }
+
+    fn press(&mut self, code: KeyCode) -> bool {
+        self.handle_key(&KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    /// Give the main list the focus, as the keys would: Enter from the
+    /// sidebar or the search line.
+    fn focus_main(&mut self) -> bool {
+        match self.focus {
+            Focus::Main => true,
+            Focus::Sidebar | Focus::Search => self.press(KeyCode::Enter),
+        }
+    }
+
+    /// A click on a row selects it, by the arrow keys; a click on the row
+    /// already selected in the focused list is Enter.
+    fn click_row(&mut self, index: usize) -> bool {
+        if self.focus != Focus::Main {
+            return self.focus_main() && self.select_by_keys(index);
+        }
+        let selected = self.main_state.selected().unwrap_or(0);
+        if index == selected {
+            return self.press(KeyCode::Enter);
+        }
+        self.select_by_keys(index)
+    }
+
+    fn select_by_keys(&mut self, index: usize) -> bool {
+        for _ in 0..self.main_len() {
+            let before = self.main_state.selected().unwrap_or(0);
+            if before == index {
+                break;
+            }
+            let code = if index > before {
+                KeyCode::Down
+            } else {
+                KeyCode::Up
+            };
+            if !self.press(code) {
+                return false;
+            }
+            if self.main_state.selected().unwrap_or(0) == before {
+                break;
+            }
+        }
+        true
+    }
+
+    /// The wheel scrolls what is under it: a popup's text or list, the
+    /// output of a run, or the main list's selection.
+    fn wheel(&mut self, down: bool, event: &MouseEvent) -> bool {
+        let code = if down { KeyCode::Down } else { KeyCode::Up };
+        match &mut self.popup {
+            // Keys go to the command running, so the wheel scrolls its output instead.
+            Some(Popup::Running(running)) => {
+                running.scroll(if down { -3 } else { 3 });
+                true
+            }
+            // A typed answer has nothing to scroll.
+            Some(
+                Popup::ProfileName(_)
+                | Popup::BaselineName(_)
+                | Popup::FirmwareWord(_)
+                | Popup::LookName(_)
+                | Popup::Ask(..),
+            ) => true,
+            Some(_) => self.press(code),
+            None if self.hits.borrow().in_main(event.column, event.row) => {
+                self.focus_main() && self.press(code)
+            }
+            None => true,
+        }
+    }
+
     pub fn handle_key(&mut self, key: &KeyEvent) -> bool {
         let control_c =
             key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c');
+        if let Some(Popup::Text(popup) | Popup::HardwareReport(popup, _)) = &mut self.popup
+            && key.code == KeyCode::Char('c')
+            && let Some(text) = popup.copyable()
+        {
+            let said = (self.copier)(text)
+                .unwrap_or_else(|error| format!("The report could not be copied: {error}"));
+            popup.noted(said);
+            return true;
+        }
         match &mut self.popup {
             Some(Popup::Text(popup)) => {
                 if popup.handle_key(key) {
@@ -3444,6 +4174,10 @@ impl App {
             self.open_palette();
             return true;
         }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('r') {
+            self.check_again();
+            return true;
+        }
         if self.focus == Focus::Search {
             self.handle_search_key(key);
             return true;
@@ -3513,6 +4247,21 @@ impl App {
     }
 
     fn handle_main_key(&mut self, key: &KeyEvent) {
+        // The Install Plan's order: K or Shift-Up earlier, J or Shift-Down later.
+        if self.screen == Screen::Plan {
+            let shifted = key.modifiers.contains(KeyModifiers::SHIFT);
+            let by = match key.code {
+                KeyCode::Char('K') => Some(-1),
+                KeyCode::Char('J') => Some(1),
+                KeyCode::Up if shifted => Some(-1),
+                KeyCode::Down if shifted => Some(1),
+                _ => None,
+            };
+            if let Some(by) = by {
+                self.move_queued(by);
+                return;
+            }
+        }
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => self.move_selection(1),
             KeyCode::Char('k') | KeyCode::Up => self.move_selection(-1),
@@ -3521,12 +4270,18 @@ impl App {
         match self.screen {
             Screen::Dashboard => match key.code {
                 KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
-                    let screen = match self.main_state.selected().unwrap_or(0) {
-                        0 => Screen::Area(self.first_area()),
-                        1 => Screen::Plan,
-                        2 => Screen::Doctor,
-                        4 => Screen::Favorites,
-                        _ => Screen::History,
+                    let selected = self.main_state.selected().unwrap_or(0);
+                    let quick = QUICK_ACTIONS
+                        .get(selected)
+                        .map_or(Quick::Applications, |action| action.3);
+                    let screen = match quick {
+                        Quick::Applications => Screen::Area(self.first_area()),
+                        Quick::Plan => Screen::Plan,
+                        Quick::Doctor => Screen::Doctor,
+                        Quick::Favorites => Screen::Favorites,
+                        Quick::History => Screen::History,
+                        Quick::Wizard => return self.open_wizard(false),
+                        Quick::Palette => return self.open_palette(),
                     };
                     self.open_screen(screen);
                 }
@@ -3550,6 +4305,7 @@ impl App {
                     }
                 }
                 KeyCode::Char(' ') => self.toggle_queue(),
+                KeyCode::Char('e') => self.queue_profile_entries(),
                 KeyCode::Char('c') => self.check_selected(),
                 KeyCode::Char('o') if self.in_profiles() => {
                     self.popup = Some(Popup::Ask(
@@ -3693,26 +4449,49 @@ impl App {
                 },
                 KeyCode::Char('f') => self.repair_selected(),
                 KeyCode::Char('r') => self.examine(),
+                KeyCode::Char('d') | KeyCode::Char('D') => match self.selected_diagnosis() {
+                    Some(_) => self.describe_diagnosis(),
+                    None => self.describe(),
+                },
+                // A report row is an entry like any other.
+                KeyCode::Char('p') | KeyCode::Char('P') => self.preview(),
+                KeyCode::Char('v') => {
+                    if let Some(id) = self.selected_entry().map(|entry| entry.id.clone()) {
+                        self.inspect(&id);
+                    }
+                }
+                KeyCode::Char(' ') => self.toggle_queue(),
+                KeyCode::Char('*') => self.toggle_favorite(),
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
-            Screen::Updates => match key.code {
-                KeyCode::Enter | KeyCode::Char('d') => self.describe_channel(),
-                KeyCode::Char('u') => match self.selected_channel().cloned() {
-                    Some(channel) if channel.commands.is_empty() => {
-                        self.popup = Some(Popup::Text(TextPopup::new(
-                            "Nothing to run",
-                            format!("{}: {}", channel.name, channel.note),
-                            true,
-                        )));
-                    }
-                    Some(channel) => self.confirm_plan(Ok(updates::plan(&[&channel]))),
-                    None => {}
+            Screen::Updates => match (key.code, self.selected_update_row()) {
+                (KeyCode::Enter | KeyCode::Char('u'), UpdateRow::Entry(entry)) => {
+                    self.update(vec![*entry])
+                }
+                (KeyCode::Char('d') | KeyCode::Char('D'), UpdateRow::Entry(_)) => self.describe(),
+                (KeyCode::Enter, UpdateRow::Every) => {
+                    let waiting = self.entries_with_updates().into_iter().cloned().collect();
+                    self.update(waiting);
+                }
+                (code, _) => match code {
+                    KeyCode::Enter | KeyCode::Char('d') => self.describe_channel(),
+                    KeyCode::Char('u') => match self.selected_channel().cloned() {
+                        Some(channel) if channel.commands.is_empty() => {
+                            self.popup = Some(Popup::Text(TextPopup::new(
+                                "Nothing to run",
+                                format!("{}: {}", channel.name, channel.note),
+                                true,
+                            )));
+                        }
+                        Some(channel) => self.confirm_plan(Ok(updates::plan(&[&channel]))),
+                        None => {}
+                    },
+                    KeyCode::Char('U') => self.update_every_channel(),
+                    KeyCode::Char('r') => self.gather_updates(true),
+                    KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                    _ => {}
                 },
-                KeyCode::Char('U') => self.update_every_channel(),
-                KeyCode::Char('r') => self.gather_updates(true),
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
             },
             Screen::Desktop => match key.code {
                 KeyCode::Enter | KeyCode::Char('d') => match self.selected_desktop_row().cloned() {
@@ -3848,6 +4627,7 @@ impl App {
                     }
                 }
                 KeyCode::Char('a') => self.queue_missing(),
+                KeyCode::Char('R') => self.run_missing(),
                 KeyCode::Char('b') => self.next_drift_target(1),
                 KeyCode::Char('B') => self.next_drift_target(-1),
                 KeyCode::Char('s') => {
@@ -3887,6 +4667,11 @@ impl App {
                         _ => {}
                     }
                 }
+                KeyCode::Char('d') | KeyCode::Char('D') => match self.selected_service_row() {
+                    Some(ServiceRow::Unit(index)) => self.describe_unit(index),
+                    Some(ServiceRow::Autostart(index)) => self.describe_autostart(index),
+                    _ => {}
+                },
                 KeyCode::Char('s') => {
                     if let Some(ServiceRow::Unit(index)) = self.selected_service_row()
                         && let Some(unit) = self.unit(index)
@@ -4038,6 +4823,18 @@ impl App {
             Screen::Restic => match key.code {
                 KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.open_restic_row(),
                 KeyCode::Char('R') => self.ask_restore(),
+                KeyCode::Char('F') => self.ask_restore_from(),
+                KeyCode::Char('i') => {
+                    self.restic_ignore_case = !self.restic_ignore_case;
+                    match self
+                        .restic_search
+                        .as_ref()
+                        .map(|(pattern, _)| pattern.clone())
+                    {
+                        Some(pattern) => self.search_restic(pattern),
+                        None => self.build_restic_rows(),
+                    }
+                }
                 KeyCode::Char('d') => self.describe_restic(),
                 KeyCode::Char('b') => self.plan_restic(restic::plan_backup),
                 KeyCode::Char('c') => self.plan_restic(restic::plan_check),
@@ -4064,7 +4861,8 @@ impl App {
                     ));
                 }
                 KeyCode::Char('v') => self.ask_test(),
-                KeyCode::Char('w') => self.toggle_restic_timer(),
+                KeyCode::Char('w') => self.toggle_restic_timer(restic::Every::Day),
+                KeyCode::Char('W') => self.toggle_restic_timer(restic::Every::Week),
                 KeyCode::Char('r') => self.read_restic(),
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
@@ -4293,6 +5091,51 @@ impl App {
         }
     }
 
+    /// Move the selected Install Plan entry earlier (-1) or later (1), as
+    /// the window's arrows do; the selection follows it.
+    fn move_queued(&mut self, by: isize) {
+        let Some(selected) = self.main_state.selected() else {
+            return;
+        };
+        let Some(target) = selected.checked_add_signed(by) else {
+            return;
+        };
+        if selected >= self.queue.len() || target >= self.queue.len() {
+            return;
+        }
+        self.queue.swap(selected, target);
+        self.main_state.select(Some(target));
+    }
+
+    /// Queue the selected profile's entries one by one, those not queued
+    /// yet, to change the plan before it runs; then show the Install Plan.
+    fn queue_profile_entries(&mut self) {
+        let Some(entry) = self.selected_entry().cloned() else {
+            return;
+        };
+        let Action::Profile { entries } = &entry.action else {
+            return;
+        };
+        let mut added = 0;
+        for id in entries {
+            if let Some(found) = self.catalog.find(id).cloned()
+                && found.multi_select
+                && !self.queue.iter().any(|queued| queued.id == found.id)
+            {
+                self.queue.push(found);
+                added += 1;
+            }
+        }
+        self.open_screen(Screen::Plan);
+        self.focus = Focus::Main;
+        let text = if added == 0 {
+            "Its entries are already in the Install Plan.".to_string()
+        } else {
+            format!("{added} of its entries were added to the Install Plan. Nothing has run.")
+        };
+        self.popup = Some(Popup::Text(TextPopup::new(entry.name.clone(), text, true)));
+    }
+
     fn preview(&mut self) {
         let Some(entry) = self.selected_entry() else {
             return;
@@ -4334,21 +5177,61 @@ impl App {
         let Some(entry) = self.selected_entry() else {
             return;
         };
-        let mut text = if entry.description.is_empty() {
-            "This entry has no description.".to_string()
+        // As the window's details: where it is, what kind, whether it asks.
+        let mut tags = vec![kind_label(&entry.action).to_string()];
+        if matches!(
+            entry.action,
+            Action::Script {
+                interactive: true,
+                ..
+            }
+        ) {
+            tags.push("Asks questions".to_string());
+        }
+        if !entry.multi_select {
+            tags.push("Runs on its own".to_string());
+        }
+        let mut text = String::new();
+        if let Some(place) = self.place_label(&entry.id) {
+            text.push_str(&format!("{place}\n"));
+        }
+        text.push_str(&tags.join(" · "));
+        text.push_str("\n\n");
+        text.push_str(if entry.description.is_empty() {
+            "This entry has no description."
         } else {
-            entry.description.clone()
-        };
+            &entry.description
+        });
         if let Some(status) = self.statuses.get(&entry.id) {
             let detail = status.detail();
             text.push_str(&format!("\n\nStatus: {}", status.label()));
             if !detail.is_empty() {
-                text.push_str(&format!(" ({detail})"));
+                text.push_str(&format!("\nInstalled from: {detail}"));
             }
             if let Status::Update { .. } = status {
                 text.push_str(
                     "\nThe repository metadata on this machine has a newer version: u updates it (on Arch, with the whole system).",
                 );
+            }
+        }
+        if let Action::Profile { entries } = &entry.action
+            && !entries.is_empty()
+        {
+            text.push_str("\n\nRuns, in order:");
+            for (number, id) in entries.iter().enumerate() {
+                let name = self
+                    .catalog
+                    .find(id)
+                    .map_or(id.as_str(), |found| found.name.as_str());
+                text.push_str(&format!("\n  {}. {name}", number + 1));
+            }
+            text.push_str("\n\ne puts its entries in the Install Plan one by one, to change the plan before it runs.");
+        }
+        let meanings = flag_meanings(&entry.flags);
+        if !meanings.is_empty() {
+            text.push_str("\n\nWhat it does:");
+            for (flag, meaning) in meanings {
+                text.push_str(&format!("\n  {flag:<4}{meaning}"));
             }
         }
         self.popup = Some(Popup::Text(TextPopup::new(entry.name.clone(), text, true)));
@@ -4436,9 +5319,12 @@ impl App {
         }
         if let Some(repair) = &diagnosis.repair {
             text.push_str(&format!(
-                "\nRepair: {}. f runs it after its own confirmation.\n",
+                "\nRepair: {}. f runs it after its own confirmation:\n",
                 repair.label
             ));
+            for command in &repair.commands {
+                text.push_str(&format!("  {}\n", command.join(" ")));
+            }
         } else if let Some(entry) = diagnosis
             .entry
             .as_deref()
@@ -4535,23 +5421,62 @@ impl App {
             ]));
         }
         for entry in self.doctor_entries() {
+            // Queued and pinned, marked as in the entry lists.
+            let queued = self.is_queued(&entry);
+            let marks = format!(
+                "{}{}",
+                if queued { " *" } else { "" },
+                if self.favorites.contains(&entry.id) {
+                    " ★"
+                } else {
+                    ""
+                }
+            );
+            let status = self
+                .statuses
+                .get(&entry.id)
+                .map(|status| format!("  {}", status.label()))
+                .unwrap_or_default();
             items.push(Line::from(vec![
                 Span::styled("Report  ", Style::default().fg(self.theme.group())),
-                Span::styled(entry.name.clone(), Style::default().fg(self.theme.entry())),
+                Span::styled(
+                    format!("{}{marks}", entry.name),
+                    if queued {
+                        Style::default().fg(self.theme.focused()).bold()
+                    } else {
+                        Style::default().fg(self.theme.entry())
+                    },
+                ),
+                Span::styled(status, Style::default().fg(self.theme.muted())),
             ]));
         }
         self.fill(frame, inner);
-        let list = List::new(items)
-            .block(
-                self.card(if self.examining.is_some() && !self.diagnoses.is_empty() {
-                    "Checks (checking again…)"
+        let title = if self.diagnoses.is_empty() {
+            "Checks".to_string()
+        } else {
+            let count = |health: doctor::Health| {
+                self.diagnoses
+                    .iter()
+                    .filter(|diagnosis| diagnosis.health == health)
+                    .count()
+            };
+            format!(
+                "Checks · {} problems · {} notices · {} OK{}",
+                count(doctor::Health::Problem),
+                count(doctor::Health::Notice),
+                count(doctor::Health::Good),
+                if self.examining.is_some() {
+                    " (checking again…)"
                 } else {
-                    "Checks"
-                }),
+                    ""
+                }
             )
+        };
+        let list = List::new(self.measure(items))
+            .block(self.card(&title))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused));
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     /// Look at the update channels in the background; `online` also asks the
@@ -4568,6 +5493,34 @@ impl App {
             let _ = sender.send((channels, online));
         });
         self.gathering = Some(receiver);
+    }
+
+    /// Package entries whose status says an update waits.
+    fn entries_with_updates(&self) -> Vec<&Entry> {
+        self.catalog
+            .entries()
+            .into_iter()
+            .filter(|entry| matches!(self.statuses.get(&entry.id), Some(Status::Update { .. })))
+            .collect()
+    }
+
+    /// What the selected row of the Updates screen is: a channel, then the
+    /// entries with an update, then the row that updates them all.
+    fn selected_update_row(&self) -> UpdateRow {
+        let Some(index) = self.main_state.selected() else {
+            return UpdateRow::Nothing;
+        };
+        if index < self.channels.len() {
+            return UpdateRow::Channel;
+        }
+        let waiting = self.entries_with_updates();
+        match waiting.get(index - self.channels.len()) {
+            Some(entry) => UpdateRow::Entry(Box::new((*entry).clone())),
+            None if !waiting.is_empty() && index == self.channels.len() + waiting.len() => {
+                UpdateRow::Every
+            }
+            None => UpdateRow::Nothing,
+        }
     }
 
     fn selected_channel(&self) -> Option<&updates::Channel> {
@@ -4681,17 +5634,47 @@ impl App {
                 ),
             ]));
         }
+        let waiting = self.entries_with_updates();
+        if !waiting.is_empty() {
+            let width = waiting
+                .iter()
+                .map(|entry| entry.name.chars().count())
+                .max()
+                .unwrap_or(0)
+                .max(name_width.saturating_sub(8))
+                + 2;
+            for entry in &waiting {
+                let detail = self
+                    .statuses
+                    .get(&entry.id)
+                    .map(|status| status.detail())
+                    .unwrap_or_default();
+                items.push(Line::from(vec![
+                    Span::styled("Entry   ", Style::default().fg(self.theme.group())),
+                    Span::styled(
+                        format!("{:<width$}", entry.name),
+                        Style::default().fg(self.theme.entry()),
+                    ),
+                    Span::styled("Update  ", Style::default().fg(self.theme.warning()).bold()),
+                    Span::styled(detail, Style::default().fg(self.theme.muted())),
+                ]));
+            }
+            items.push(Line::styled(
+                format!("▶ Update every entry ({})", waiting.len()),
+                Style::default().fg(self.theme.focused()).bold(),
+            ));
+        }
         let title = match (self.gathering.is_some(), self.channels_online) {
             (true, _) if !self.channels.is_empty() => "Channels (looking again…)",
             (_, true) => "Channels · checked online",
             _ => "Channels",
         };
         self.fill(frame, inner);
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card(title))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused));
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     // ----- the command palette -----
@@ -4718,7 +5701,7 @@ impl App {
                 Act::Open(item.screen),
             );
         }
-        let actions: [(&str, &str, Act); 16] = [
+        let actions: [(&str, &str, Act); 18] = [
             (
                 "Check updates online",
                 "updates refresh",
@@ -4768,6 +5751,11 @@ impl App {
                 "upgrade packages",
                 Act::UpdateEntries,
             ),
+            (
+                "Check again what is installed",
+                "status refresh packages installed",
+                Act::CheckStatuses,
+            ),
             ("Change the theme", "colors colors look", Act::Theme),
             (
                 "Set up this machine",
@@ -4782,6 +5770,15 @@ impl App {
                 },
                 "nerd font plain",
                 Act::Icons,
+            ),
+            (
+                if self.mouse {
+                    "Turn the mouse off"
+                } else {
+                    "Turn the mouse on"
+                },
+                "mouse click wheel scroll select text",
+                Act::Mouse,
             ),
         ];
         for (label, keywords, act) in actions {
@@ -4908,6 +5905,7 @@ impl App {
                 }
             }
             Act::Report => self.make_report(),
+            Act::CheckStatuses => self.check_again(),
             Act::UpdateEntries => {
                 let waiting: Vec<Entry> = self
                     .catalog
@@ -4935,6 +5933,10 @@ impl App {
             }
             Act::Icons => {
                 self.icons = !self.icons;
+                self.save_look();
+            }
+            Act::Mouse => {
+                self.mouse = !self.mouse;
                 self.save_look();
             }
             Act::Help => {
@@ -5159,6 +6161,30 @@ impl App {
         self.popup = Some(Popup::Text(TextPopup::new("Install Plan", text, true)));
     }
 
+    /// Review every entry that puts back something missing as one run, as
+    /// the window's Run now does; nothing runs before the confirmation.
+    fn run_missing(&mut self) {
+        let Some((_, report)) = &self.drift_report else {
+            return;
+        };
+        let (restore, _) =
+            crate::drift::available(&report.restore(), &self.catalog, &self.platform);
+        let entries: Vec<Entry> = restore
+            .iter()
+            .filter_map(|id| self.catalog.find(id))
+            .cloned()
+            .collect();
+        if entries.is_empty() {
+            self.popup = Some(Popup::Text(TextPopup::new(
+                "Nothing to put back",
+                "No entry here puts back what differs.",
+                true,
+            )));
+            return;
+        }
+        self.confirm(entries);
+    }
+
     /// Record this machine as a baseline and compare with it.
     fn save_baseline(&mut self, name: &str) {
         let Some(inventory) = &self.inventory else {
@@ -5303,6 +6329,32 @@ impl App {
             }
         };
         lines.extend(summary);
+        if let Some((_, report)) = &self.drift_report
+            && target.is_some()
+        {
+            if !report.unknown.is_empty() {
+                lines.push(Line::styled(
+                    format!("Not compared: {}", report.unknown.join(", ")),
+                    Style::default().fg(self.theme.muted()),
+                ));
+            }
+            let (_, unavailable) =
+                crate::drift::available(&report.restore(), &self.catalog, &self.platform);
+            if !unavailable.is_empty() {
+                let names: Vec<&str> = unavailable
+                    .iter()
+                    .map(|id| {
+                        self.catalog
+                            .find(id)
+                            .map_or(id.as_str(), |entry| &entry.name)
+                    })
+                    .collect();
+                lines.push(Line::styled(
+                    format!("Not on this machine: {}", names.join(", ")),
+                    Style::default().fg(self.theme.muted()),
+                ));
+            }
+        }
         lines.push(Line::styled(
             match self.drift_targets.len() {
                 0 | 1 => "s saves this machine as a baseline".to_string(),
@@ -5331,15 +6383,8 @@ impl App {
             return;
         };
         if report.differences.is_empty() {
-            let mut text = "Everything recorded is as it was.".to_string();
-            if !report.unknown.is_empty() {
-                text.push_str(&format!(
-                    " Not in this catalog, so not compared: {}.",
-                    report.unknown.join(", ")
-                ));
-            }
             frame.render_widget(
-                Paragraph::new(text)
+                Paragraph::new("Everything recorded is as it was.")
                     .block(self.card("Differences"))
                     .style(Style::default().fg(self.theme.muted()))
                     .wrap(Wrap { trim: true }),
@@ -5384,6 +6429,19 @@ impl App {
                         difference.note.clone(),
                         Style::default().fg(self.theme.muted()),
                     ),
+                    // Was and now, as the window's columns show them.
+                    Span::styled(
+                        if difference.was.is_some() || difference.now.is_some() {
+                            format!(
+                                "  {} → {}",
+                                difference.was.as_deref().unwrap_or("–"),
+                                difference.now.as_deref().unwrap_or("–")
+                            )
+                        } else {
+                            String::new()
+                        },
+                        Style::default().fg(self.theme.faint()),
+                    ),
                     Span::styled(
                         if queued { "  · planned" } else { "" },
                         Style::default().fg(self.theme.success()),
@@ -5391,11 +6449,11 @@ impl App {
                 ])
             })
             .collect();
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card("Differences"))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused));
-        frame.render_stateful_widget(list, parts[2], &mut self.main_state);
+        bordered_list(frame, list, parts[2], &mut self.main_state, &self.hits);
     }
 
     /// The change preview of a plan.
@@ -5732,6 +6790,7 @@ impl App {
                     if queued { "  · planned" } else { "" }
                 ),
                 id: suggestion.id,
+                note: suggestion.note,
             });
         }
         self.desktop = Some(found);
@@ -5823,7 +6882,20 @@ impl App {
                         ),
                     ),
                 ]),
-                DesktopRow::Entry { text, .. } | DesktopRow::Look { text, .. } => Line::from(vec![
+                DesktopRow::Entry { text, note, .. } => Line::from(vec![
+                    Span::styled(
+                        format!("  {} ", self.glyph(Icon::Entry)),
+                        Style::default().fg(self.theme.muted()),
+                    ),
+                    Span::styled(text.clone(), Style::default().fg(self.theme.entry())),
+                    Span::styled(
+                        note.as_ref()
+                            .map(|note| format!("  {note}"))
+                            .unwrap_or_default(),
+                        Style::default().fg(self.theme.faint()),
+                    ),
+                ]),
+                DesktopRow::Look { text, .. } => Line::from(vec![
                     Span::styled(
                         format!("  {} ", self.glyph(Icon::Entry)),
                         Style::default().fg(self.theme.muted()),
@@ -5832,12 +6904,12 @@ impl App {
                 ]),
             })
             .collect();
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card("This machine"))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused))
             .scroll_padding(1);
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     // ----- Hardware -----
@@ -5915,12 +6987,12 @@ impl App {
         } else {
             "This machine"
         };
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card(title))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused))
             .scroll_padding(1);
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     // ----- Reliability and trust -----
@@ -6043,14 +7115,26 @@ impl App {
         let counts = counts.join(" · ");
         // As tall as its text once wrapped to the card's width.
         let width = (inner.width.saturating_sub(4) as usize).max(1);
-        let rows: usize = [summary.as_str(), counts.as_str()]
+        // What could not be read of the record, as the window's warning card.
+        let problems: Vec<String> = evidence
+            .problems
             .iter()
+            .map(|problem| format!("⚠ {problem}"))
+            .collect();
+        let rows: usize = [summary.as_str(), counts.as_str()]
+            .into_iter()
+            .chain(problems.iter().map(String::as_str))
             .map(|text| text.chars().count().div_ceil(width).max(1))
             .sum();
-        let lines = vec![
+        let mut lines = vec![
             Line::from(summary),
             Line::styled(counts, Style::default().fg(self.theme.muted())),
         ];
+        lines.extend(
+            problems
+                .into_iter()
+                .map(|problem| Line::styled(problem, Style::default().fg(self.theme.warning()))),
+        );
         let parts = Layout::vertical([
             Constraint::Length(rows as u16 + 2),
             Constraint::Length(1),
@@ -6112,7 +7196,7 @@ impl App {
             coverage => format!("Entries · {}", coverage.label()),
         };
         self.fill(frame, parts[2]);
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(
                 self.card(&title).title(
                     Line::styled(
@@ -6125,7 +7209,7 @@ impl App {
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused))
             .scroll_padding(1);
-        frame.render_stateful_widget(list, parts[2], &mut self.main_state);
+        bordered_list(frame, list, parts[2], &mut self.main_state, &self.hits);
     }
 
     fn reload_backups(&mut self) {
@@ -6254,6 +7338,10 @@ impl App {
             }
             10 => self.open_wizard(false),
             11 => self.make_report(),
+            13 => {
+                self.mouse = !self.mouse;
+                self.save_look();
+            }
             _ => {}
         }
     }
@@ -6454,6 +7542,16 @@ impl App {
                 self.restore_restic(&snapshot, include.as_deref(), text);
                 return;
             }
+            Asked::ResticRestoreFrom => {
+                // The snapshot, then what of it, as the window's two fields.
+                let text = text.trim();
+                let (snapshot, include) = match text.split_once(char::is_whitespace) {
+                    Some((snapshot, include)) => (snapshot, Some(include.trim().to_string())),
+                    None => (text, None),
+                };
+                self.ask_restore_into(snapshot.to_string(), include);
+                return;
+            }
             Asked::ResticBaseline => ("Baseline recorded", self.record_baseline(text)),
             Asked::ResticTest(baseline) => {
                 self.test_restic(&baseline, text.trim());
@@ -6582,7 +7680,9 @@ impl App {
         );
         // Over anything but a run or a question.
         if matches!(self.popup, None | Some(Popup::Text(_))) {
-            self.popup = Some(Popup::Text(TextPopup::new("Bug report", text, true)));
+            self.popup = Some(Popup::Text(
+                TextPopup::new("Bug report", text, true).copying(report),
+            ));
         }
     }
 
@@ -6674,10 +7774,11 @@ impl App {
             TextPopup::new(
                 "Hardware report",
                 format!(
-                    "{text}\no opens the issue in your browser, filled in; GitHub asks you to sign in, and the form asks what you checked. Nothing is sent until you submit it there."
+                    "{text}\no opens the issue in your browser, filled in; GitHub asks you to sign in, and the form asks what you checked. Nothing is sent until you submit it there. c copies the report."
                 ),
                 true,
-            ),
+            )
+            .copying(format!("{text}\nThe issue, filled in:\n\n{url}\n")),
             url,
         ));
     }
@@ -6833,6 +7934,55 @@ impl App {
         }
     }
 
+    /// An application started at login, as the window's side pane shows it.
+    fn describe_autostart(&mut self, index: usize) {
+        let Some(item) = self
+            .services_found
+            .as_ref()
+            .and_then(|found| found.autostart.get(index))
+        else {
+            return;
+        };
+        let mut text = String::new();
+        if !item.comment.is_empty() {
+            text.push_str(&format!("{}\n\n", item.comment));
+        }
+        text.push_str(&format!(
+            "Runs: {}\nFrom: {}{}\nAt login: {}\n\n",
+            if item.exec.is_empty() {
+                "nothing named"
+            } else {
+                &item.exec
+            },
+            if item.system {
+                "the system"
+            } else {
+                "your own"
+            },
+            if item.own.is_some() && item.system {
+                " · your file overrides it"
+            } else {
+                ""
+            },
+            if !item.here {
+                "not in this desktop"
+            } else if item.enabled {
+                "started"
+            } else {
+                "not started"
+            }
+        ));
+        text.push_str(&format!(
+            "Enter plans {}, reviewed before it changes anything. For you only: the system's file stays as it is.",
+            if item.enabled {
+                "not starting it at login"
+            } else {
+                "starting it at login"
+            }
+        ));
+        self.popup = Some(Popup::Text(TextPopup::new(item.name.clone(), text, true)));
+    }
+
     /// Plan turning an autostart entry off, or on again.
     fn switch_autostart(&mut self, index: usize) {
         let Some(item) = self
@@ -6930,12 +8080,12 @@ impl App {
                 }
             }
         }
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card(&title))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused))
             .scroll_padding(1);
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     // ----- Storage -----
@@ -7109,12 +8259,12 @@ impl App {
                 });
             }
         }
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card("Storage"))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused))
             .scroll_padding(1);
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     // ----- Performance -----
@@ -7528,12 +8678,12 @@ impl App {
         } else {
             "Boot and machine"
         };
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card(title))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused))
             .scroll_padding(1);
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     // ----- Recovery -----
@@ -7644,11 +8794,11 @@ impl App {
             ]));
         }
         self.fill(frame, inner);
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card("Readiness"))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused));
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     // ----- Migration -----
@@ -7673,7 +8823,18 @@ impl App {
         let (sender, receiver) = mpsc::channel();
         std::thread::spawn(move || {
             let refs: Vec<&Entry> = entries.iter().collect();
-            let _ = sender.send(migration::gather(&refs, &platform, history::now()));
+            // As migration::gather, keeping whether the packages chosen by
+            // hand could be read.
+            let inventory = Inventory::gather(&platform);
+            let chosen = migration::chosen(platform.manager);
+            let found = migration::export(
+                &refs,
+                &platform,
+                &inventory,
+                chosen.as_deref(),
+                history::now(),
+            );
+            let _ = sender.send((found, chosen.is_some()));
         });
         self.reading_migration = Some(receiver);
         self.build_migration_rows();
@@ -7831,6 +8992,11 @@ impl App {
             None if self.reading_migration.is_some() => "Reading what this machine has…".into(),
             None => "Press r to read what this machine has.".into(),
         }));
+        if self.migration_here.is_some() && !self.migration_packages_known {
+            rows.push(MigrationRow::Text(
+                "The packages you installed yourself cannot be told apart here, so only the entries and Flatpaks go in the file.".into(),
+            ));
+        }
         rows.push(MigrationRow::Text(
             "e writes it to a file to take to another machine; o opens one made elsewhere.".into(),
         ));
@@ -7942,12 +9108,12 @@ impl App {
                 }
             });
         }
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card("Migration"))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused))
             .scroll_padding(1);
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     // ----- Home Manager -----
@@ -8259,12 +9425,12 @@ impl App {
                 }
             });
         }
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card("Home Manager"))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused))
             .scroll_padding(1);
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     // ----- Restic -----
@@ -8338,12 +9504,13 @@ impl App {
         let Some(config) = self.restic_config().cloned() else {
             return;
         };
+        let ignore_case = self.restic_ignore_case;
         let runner = self.restic.clone();
         let home = std::env::var_os("HOME")
             .map(PathBuf::from)
             .unwrap_or_default();
         let work = move || {
-            let found = restic::history(runner.as_ref(), &config, &home, &pattern, false);
+            let found = restic::history(runner.as_ref(), &config, &home, &pattern, ignore_case);
             (pattern, found)
         };
         if self.examine_here {
@@ -8440,20 +9607,50 @@ impl App {
         }
     }
 
+    /// Restore what the selected row names, or, on another row, what is typed.
     fn ask_restore(&mut self) {
-        let Some((snapshot, include)) = self.restic_restore_target() else {
-            return;
-        };
-        if !self
+        match self.restic_restore_target() {
+            Some((snapshot, include)) => self.ask_restore_into(snapshot, include),
+            None => self.ask_restore_from(),
+        }
+    }
+
+    /// Whether this restic restores without overwriting; says why not when not.
+    fn restic_restores(&mut self) -> bool {
+        if self
             .restic_reading
             .as_ref()
             .is_some_and(|reading| reading.restores)
         {
-            self.popup = Some(Popup::Text(TextPopup::new(
-                "Cannot restore here",
-                "This restic cannot restore without overwriting and check what it wrote; restic 0.17 or later can.",
-                true,
-            )));
+            return true;
+        }
+        self.popup = Some(Popup::Text(TextPopup::new(
+            "Cannot restore here",
+            "This restic cannot restore without overwriting and check what it wrote; restic 0.17 or later can.",
+            true,
+        )));
+        false
+    }
+
+    /// A restore typed in full: the snapshot (latest unless another is
+    /// named) and, after it, only this path.
+    fn ask_restore_from(&mut self) {
+        if self.restic_config().is_none() || !self.restic_restores() {
+            return;
+        }
+        self.popup = Some(Popup::Ask(
+            InputPopup::new(
+                "Restore into a new folder",
+                "The snapshot (latest, or its ID), and after it, if only one path of it, that path, such as latest /home/me/Documents:",
+            )
+            .with_value("latest".to_string())
+            .answering("Next"),
+            Asked::ResticRestoreFrom,
+        ));
+    }
+
+    fn ask_restore_into(&mut self, snapshot: String, include: Option<String>) {
+        if !self.restic_restores() {
             return;
         }
         let what = include
@@ -8579,17 +9776,13 @@ impl App {
         ))
     }
 
-    /// The daily backup on, or off when it is on.
-    fn toggle_restic_timer(&mut self) {
+    /// The timed backup on, every day or every week, or off when it is on.
+    fn toggle_restic_timer(&mut self, every: restic::Every) {
         if !self.examine_here {
             return;
         }
         let on = restic::units_here().and_then(|units| restic::timer(&units));
-        self.set_restic_timer(if on.is_some() {
-            None
-        } else {
-            Some(restic::Every::Day)
-        });
+        self.set_restic_timer(if on.is_some() { None } else { Some(every) });
     }
 
     /// The timed backup's state, for Settings.
@@ -8720,8 +9913,14 @@ impl App {
                         .map(restic::Every::label)
                         .unwrap_or("off")
                 )));
+                if !config.excludes.is_empty() {
+                    rows.push(ResticRow::Text(format!(
+                        "Leaves out {}",
+                        helix_toolbox_core::printable(&config.excludes.join(", "))
+                    )));
+                }
                 rows.push(ResticRow::Text(
-                    "b backs up, c checks, w turns the daily backup on or off, s looks for a file's history.".into(),
+                    "b backs up, c checks, w backs up every day and W every week (either stops the timer), s looks for a file's history, F restores a snapshot you name.".into(),
                 ));
             }
         }
@@ -8762,8 +9961,13 @@ impl App {
             rows.push(ResticRow::Heading("Looking through the snapshots…".into()));
         } else if let Some((pattern, found)) = &self.restic_search {
             rows.push(ResticRow::Heading(format!(
-                "History of {}",
-                helix_toolbox_core::printable(pattern)
+                "History of {}{}",
+                helix_toolbox_core::printable(pattern),
+                if self.restic_ignore_case {
+                    ", ignoring upper and lower case (i)"
+                } else {
+                    ""
+                }
             )));
             match found {
                 Ok(files) if files.is_empty() => rows.push(ResticRow::Text(
@@ -8907,12 +10111,12 @@ impl App {
                 }
             });
         }
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card("Restic"))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused))
             .scroll_padding(1);
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     // ----- Repositories -----
@@ -9084,7 +10288,7 @@ impl App {
                 self.popup = Some(Popup::Ask(
                     InputPopup::new(
                         "A task of yours",
-                        "The command, run in the repository's folder, such as npm run serve:",
+                        "The command, run in the repository's folder, such as npm run serve; begin with fish: or bash: to run it with that shell:",
                     )
                     .answering("Keep"),
                     Asked::AddTask,
@@ -9249,7 +10453,9 @@ impl App {
         let Some((found, _)) = &self.repo_open else {
             return Err("No repository is open.".to_string());
         };
-        let command = text.trim().to_string();
+        // "fish: …" or "bash: …" runs it with that shell, as the window's
+        // Run with choice; otherwise it runs as it is.
+        let (shell, command) = task_shell(text);
         let mut id: String = command
             .to_lowercase()
             .chars()
@@ -9280,7 +10486,7 @@ impl App {
                 },
                 name: command.chars().take(80).collect(),
                 command: command.clone(),
-                shell: workspaces::Shell::Direct,
+                shell,
                 detected: false,
             },
         )?;
@@ -9619,8 +10825,13 @@ impl App {
                         ),
                         Span::styled(
                             format!(
-                                "{}{}",
+                                "{}{}{}",
                                 if task.detected { "" } else { "yours: " },
+                                match task.shell {
+                                    workspaces::Shell::Direct => "",
+                                    workspaces::Shell::Fish => "fish: ",
+                                    workspaces::Shell::Bash => "bash: ",
+                                },
                                 printable(&task.command)
                             ),
                             muted,
@@ -9629,12 +10840,12 @@ impl App {
                 }
             });
         }
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card("Repositories"))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused))
             .scroll_padding(1);
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     // ----- Configs -----
@@ -9706,6 +10917,8 @@ impl App {
                     loaded,
                     checked,
                     history,
+                    draft: None,
+                    draft_checked: None,
                 }
             })
             .collect();
@@ -9764,6 +10977,21 @@ impl App {
                 }
             }
             KeyCode::Char('d') => self.describe_config(),
+            KeyCode::Char('c') => {
+                if let Some(kind) = self.selected_config_kind() {
+                    self.check_config(kind);
+                }
+            }
+            KeyCode::Char('s') => {
+                if let Some(kind) = self.selected_config_kind() {
+                    self.save_draft(kind);
+                }
+            }
+            KeyCode::Char('x') => {
+                if let Some(kind) = self.selected_config_kind() {
+                    self.discard_draft(kind);
+                }
+            }
             KeyCode::Char('v') | KeyCode::Char('r') => self.read_configs(),
             KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
             _ => {}
@@ -9777,7 +11005,15 @@ impl App {
             Some(ConfigRow::Backup(..)) => list.push(Hint::new(&["Enter"], "Put back")),
             _ => {}
         }
-        if self.selected_config_kind().is_some() {
+        if let Some(kind) = self.selected_config_kind() {
+            list.push(Hint::new(&["c"], "Check"));
+            if self
+                .config_part(kind)
+                .is_some_and(|part| part.draft.is_some())
+            {
+                list.push(Hint::new(&["s"], "Save"));
+                list.push(Hint::new(&["x"], "Discard changes"));
+            }
             list.push(Hint::new(&["E"], "Edit in your editor"));
         }
         list.push(Hint::new(&["d"], "Details"));
@@ -9796,7 +11032,11 @@ impl App {
             Ok(ready) => ready,
             Err(why) => return self.cannot_config(why),
         };
-        let now = configs::values(kind, &loaded.content)
+        let text = self
+            .config_part(kind)
+            .and_then(|part| part.draft.clone())
+            .unwrap_or(loaded.content);
+        let now = configs::values(kind, &text)
             .into_iter()
             .find(|(key, _)| *key == field.key)
             .and_then(|(_, value)| value)
@@ -9807,21 +11047,80 @@ impl App {
                 format!("{} ({}):", field.key, field.hint),
             )
             .with_value(now)
-            .answering("Review"),
+            .answering("Change"),
             Asked::ConfigField(kind, field.key),
         ));
     }
 
-    /// Change a field and review saving it.
+    /// Change a field in the draft; s saves the draft, after review.
     fn set_config(&mut self, kind: configs::Kind, key: &str, value: &str) {
+        let (_, loaded) = match self.config_ready(kind) {
+            Ok(ready) => ready,
+            Err(why) => return self.cannot_config(why),
+        };
+        let text = self
+            .config_part(kind)
+            .and_then(|part| part.draft.clone())
+            .unwrap_or_else(|| loaded.content.clone());
+        match configs::set(kind, &text, key, value) {
+            Ok(after) => self.set_draft(kind, &loaded, after),
+            Err(why) => self.cannot_config(why),
+        }
+    }
+
+    /// Keep text as the draft, or none when it is the file as it is.
+    fn set_draft(&mut self, kind: configs::Kind, loaded: &configs::Loaded, after: String) {
+        if let Some(part) = self.config_parts.iter_mut().find(|part| part.kind == kind) {
+            part.draft = (after != loaded.content).then_some(after);
+            part.draft_checked = None;
+        }
+        self.build_config_rows();
+    }
+
+    /// Check the draft, or the file when there is none, as the window's Check.
+    fn check_config(&mut self, kind: configs::Kind) {
+        let (_, loaded) = match self.config_ready(kind) {
+            Ok(ready) => ready,
+            Err(why) => return self.cannot_config(why),
+        };
+        let check = self.config_check();
+        let folder = self.copies_folder();
+        if let Some(part) = self.config_parts.iter_mut().find(|part| part.kind == kind) {
+            let checked = configs::validate(
+                kind,
+                part.draft.as_deref().unwrap_or(&loaded.content),
+                &check,
+                folder.as_deref(),
+            );
+            if part.draft.is_some() {
+                part.draft_checked = Some(checked);
+            } else {
+                part.checked = Some(checked);
+            }
+        }
+        self.build_config_rows();
+    }
+
+    /// Review saving the draft.
+    fn save_draft(&mut self, kind: configs::Kind) {
         let (located, loaded) = match self.config_ready(kind) {
             Ok(ready) => ready,
             Err(why) => return self.cannot_config(why),
         };
-        match configs::set(kind, &loaded.content, key, value) {
-            Ok(after) => self.save_config(&located, &loaded, &after),
-            Err(why) => self.cannot_config(why),
+        let draft = self
+            .config_part(kind)
+            .and_then(|part| part.draft.clone())
+            .unwrap_or_else(|| loaded.content.clone());
+        self.save_config(&located, &loaded, &draft);
+    }
+
+    /// Go back to the file as it was read.
+    fn discard_draft(&mut self, kind: configs::Kind) {
+        if let Some(part) = self.config_parts.iter_mut().find(|part| part.kind == kind) {
+            part.draft = None;
+            part.draft_checked = None;
         }
+        self.build_config_rows();
     }
 
     /// Check new text and review the plan that saves it.
@@ -9857,7 +11156,12 @@ impl App {
         let Some(folder) = self.copies_folder() else {
             return self.no_copies_folder();
         };
-        let copy = match configs::private_copy(kind, "edit", &loaded.content, &folder) {
+        // The draft, when there is one, is what the editor starts from.
+        let text = self
+            .config_part(kind)
+            .and_then(|part| part.draft.clone())
+            .unwrap_or_else(|| loaded.content.clone());
+        let copy = match configs::private_copy(kind, "edit", &text, &folder) {
             Ok(copy) => copy,
             Err(why) => return self.cannot_config(why),
         };
@@ -9887,7 +11191,11 @@ impl App {
             return self.cannot_config(format!("{why}; nothing is saved."));
         }
         match after {
-            Ok(after) => self.save_config(&request.located, &request.loaded, &after),
+            Ok(after) => {
+                // What came back is the draft, and its save is reviewed.
+                self.set_draft(request.located.kind, &request.loaded, after.clone());
+                self.save_config(&request.located, &request.loaded, &after)
+            }
             Err(error) => self.cannot_config(format!(
                 "The edited copy cannot be read: {error}; nothing is saved."
             )),
@@ -9997,6 +11305,19 @@ impl App {
                     }
                 }));
             }
+            if part.draft.is_some() {
+                rows.push(ConfigRow::Text(
+                    "Draft: changed, not saved yet. c checks it, s saves it after review, x discards it."
+                        .to_string(),
+                ));
+                rows.push(ConfigRow::Text(match &part.draft_checked {
+                    None => "Draft checks: not checked yet".to_string(),
+                    Some(Checked::Valid) => "Draft checks: valid".to_string(),
+                    Some(checked @ (Checked::Unchecked(why) | Checked::Invalid(why))) => {
+                        format!("Draft checks: {}: {why}", checked.label())
+                    }
+                }));
+            }
             rows.extend((0..kind.fields().len()).map(|index| ConfigRow::Field(kind, index)));
             rows.push(ConfigRow::Edit(kind));
             if !part.history.is_empty() {
@@ -10029,7 +11350,9 @@ impl App {
                     Style::default().fg(self.theme.group()).bold(),
                 ),
                 ConfigRow::Text(text) => {
-                    let color = if text.starts_with("Checks: Invalid") {
+                    let color = if text.starts_with("Checks: Invalid")
+                        || text.starts_with("Draft checks: Invalid")
+                    {
                         self.theme.failure()
                     } else {
                         self.theme.muted()
@@ -10041,15 +11364,17 @@ impl App {
                 }
                 ConfigRow::Field(kind, index) => {
                     let field = &kind.fields()[*index];
-                    let value = self
-                        .config_part(*kind)
-                        .and_then(|part| part.loaded.as_ref()?.as_ref().ok())
-                        .and_then(|loaded| {
-                            configs::values(*kind, &loaded.content)
-                                .into_iter()
-                                .find(|(key, _)| *key == field.key)?
-                                .1
-                        });
+                    // The draft's value, when there is a draft.
+                    let value = self.config_part(*kind).and_then(|part| {
+                        let text = match &part.draft {
+                            Some(draft) => draft.as_str(),
+                            None => part.loaded.as_ref()?.as_ref().ok()?.content.as_str(),
+                        };
+                        configs::values(*kind, text)
+                            .into_iter()
+                            .find(|(key, _)| *key == field.key)?
+                            .1
+                    });
                     Line::from(vec![
                         Span::styled(
                             format!("  {:<26}", field.label),
@@ -10096,12 +11421,12 @@ impl App {
                 }
             });
         }
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card("Configs"))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused))
             .scroll_padding(1);
-        frame.render_stateful_widget(list, inner, &mut self.main_state);
+        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
     }
 
     // ----- Offline bundles -----
@@ -10390,12 +11715,12 @@ impl App {
             })
             .collect();
         self.fill(frame, parts[0]);
-        let list = List::new(items)
+        let list = List::new(self.measure(items))
             .block(self.card("Offline bundles"))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused))
             .scroll_padding(1);
-        frame.render_stateful_widget(list, parts[0], &mut self.main_state);
+        bordered_list(frame, list, parts[0], &mut self.main_state, &self.hits);
         self.fill(frame, parts[2]);
         frame.render_widget(
             Paragraph::new(help)
@@ -10768,6 +12093,23 @@ fn own_profile(entry: &Entry) -> bool {
     entry.id.starts_with(profiles::PREFIX) && matches!(entry.action, Action::Profile { .. })
 }
 
+/// A task's command as typed, and the shell a "fish:" or "bash:" in front
+/// of it names.
+fn task_shell(text: &str) -> (workspaces::Shell, String) {
+    let text = text.trim();
+    for (prefix, shell) in [
+        ("fish:", workspaces::Shell::Fish),
+        ("bash:", workspaces::Shell::Bash),
+    ] {
+        if let Some(rest) = text.strip_prefix(prefix)
+            && !rest.trim().is_empty()
+        {
+            return (shell, rest.trim().to_string());
+        }
+    }
+    (workspaces::Shell::Direct, text.to_string())
+}
+
 /// A path as the user typed it: `~` is the home folder; anything else must
 /// be a full path.
 fn typed_path(text: &str) -> Result<PathBuf, String> {
@@ -10799,6 +12141,66 @@ fn removable(entry: &Entry) -> bool {
             ..
         }
     )
+}
+
+/// What kind of entry it is, in the window's words.
+fn kind_label(action: &Action) -> &'static str {
+    match action {
+        Action::Package { .. } => "Package",
+        Action::Script { .. } => "Script",
+        Action::Command { .. } => "Command",
+        Action::Nix { .. } => "Nix",
+        Action::Native { .. } => "Built in",
+        Action::Profile { .. } => "Profile",
+    }
+}
+
+/// Each word of a flags field and what it means, as the flags guide says;
+/// P before a known flag makes it privileged.
+fn flag_meanings(field: &str) -> Vec<(String, String)> {
+    const MEANINGS: [(&str, &str); 9] = [
+        ("D", "disk changes, such as partitioning (privileged)"),
+        ("FI", "Flatpak installation"),
+        ("FM", "file changes"),
+        ("I", "installation (privileged)"),
+        ("K", "kernel changes (privileged)"),
+        ("MP", "package manager actions"),
+        ("SI", "full system installation"),
+        ("SS", "service actions (privileged)"),
+        ("RP", "package removal"),
+    ];
+    let meaning = |flag: &str| {
+        MEANINGS
+            .iter()
+            .find(|(known, _)| *known == flag)
+            .map(|(_, meaning)| *meaning)
+    };
+    field
+        .split_whitespace()
+        .map(|flag| {
+            let privileged = flag
+                .strip_prefix('P')
+                .filter(|base| !base.is_empty())
+                .and_then(meaning);
+            let said = match (privileged, meaning(flag)) {
+                (Some(base), _) => format!("{base}, privileged"),
+                (None, Some(known)) => known.to_string(),
+                (None, None) => "unknown flag".to_string(),
+            };
+            (flag.to_string(), said)
+        })
+        .collect()
+}
+
+/// The text cut to `width` characters, ending in "…" when it was cut.
+fn clipped(text: &str, width: usize) -> String {
+    if text.chars().count() <= width {
+        return text.to_string();
+    }
+    let mut cut: String = text.chars().take(width.saturating_sub(1)).collect();
+    cut.truncate(cut.trim_end().len());
+    cut.push('…');
+    cut
 }
 
 fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
@@ -10984,10 +12386,53 @@ fn strip_escapes(text: &str) -> String {
     result
 }
 
+/// `text` cut to `width` columns at a word, with an ellipsis when it is cut.
+fn clip(text: &str, width: usize) -> String {
+    if text.chars().count() <= width {
+        return text.to_string();
+    }
+    let room = width.saturating_sub(1);
+    let cut: String = text.chars().take(room).collect();
+    let at_word = match cut.rfind(' ') {
+        Some(space) if space > room / 2 => cut[..space].trim_end().to_string(),
+        _ => cut,
+    };
+    if width == 0 {
+        String::new()
+    } else {
+        format!("{at_word}…")
+    }
+}
+
+/// Draw a list in a card with the main selection, and note where its
+/// items are, inside the border, for the mouse.
+fn bordered_list(
+    frame: &mut Frame,
+    list: List,
+    area: Rect,
+    state: &mut ListState,
+    hits: &RefCell<Hits>,
+) {
+    frame.render_stateful_widget(list, area, state);
+    hits.borrow_mut()
+        .list(Block::bordered().inner(area), state.offset());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
+
+    #[test]
+    fn clipped_text_ends_at_a_word() {
+        assert_eq!(
+            clip("Search and install entries", 40),
+            "Search and install entries"
+        );
+        assert_eq!(clip("Search and install entries", 16), "Search and…");
+        assert_eq!(clip("Supercalifragilistic", 8), "Superca…");
+        assert_eq!(clip("anything", 0), "");
+    }
 
     fn app() -> App {
         let args = TuiArgs {
@@ -11115,6 +12560,136 @@ mod tests {
         assert_eq!(app.main_state.selected(), Some(1));
         press(&mut app, KeyCode::Char('h'));
         assert_eq!(app.focus, Focus::Sidebar);
+    }
+
+    /// Where `text` is drawn, as the column and row of its first cell.
+    fn find(app: &mut App, text: &str) -> (u16, u16) {
+        let drawn = screen(app, 120, 40);
+        for (row, line) in drawn.lines().enumerate() {
+            if let Some(at) = line.find(text) {
+                return (line[..at].chars().count() as u16, row as u16);
+            }
+        }
+        panic!("{text:?} is not on the screen:\n{drawn}");
+    }
+
+    fn mouse_at(app: &mut App, kind: MouseEventKind, (column, row): (u16, u16)) -> bool {
+        app.handle_mouse(&MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        })
+    }
+
+    fn click(app: &mut App, text: &str) -> bool {
+        let at = find(app, text);
+        mouse_at(app, MouseEventKind::Down(MouseButton::Left), at)
+    }
+
+    /// A click on the lowest place `text` is drawn, such as a result below
+    /// the search that found it.
+    fn click_last(app: &mut App, text: &str) -> bool {
+        let drawn = screen(app, 120, 40);
+        let (column, row) = drawn
+            .lines()
+            .enumerate()
+            .filter_map(|(row, line)| {
+                line.find(text)
+                    .map(|at| (line[..at].chars().count() as u16, row as u16))
+            })
+            .last()
+            .unwrap_or_else(|| panic!("{text:?} is not on the screen:\n{drawn}"));
+        mouse_at(app, MouseEventKind::Down(MouseButton::Left), (column, row))
+    }
+
+    #[test]
+    fn clicks_open_screens_and_select_rows_and_a_second_click_is_enter() {
+        let mut app = app();
+        let area = app.menu[1].label.clone();
+        click(&mut app, &area);
+        assert_eq!(app.screen, Screen::Area(0));
+        assert_eq!(app.focus, Focus::Sidebar);
+        // A row of the list: selected, by the keys, and the list focused.
+        click(&mut app, "Developer Tools");
+        assert_eq!(app.focus, Focus::Main);
+        let row = app.main_state.selected().unwrap();
+        assert!(
+            matches!(app.selected_row(), Some(Row::Group { .. })),
+            "row {row}"
+        );
+        assert!(app.at_root());
+        click(&mut app, "Developer Tools");
+        assert_eq!(
+            app.areas[0].path.len(),
+            1,
+            "the second click opens the group"
+        );
+        // On an entry, the second click asks first, as Enter does; a click
+        // beside the confirmation answers nothing.
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "System Report (script)");
+        let name = "System Report (script)";
+        click_last(&mut app, name);
+        assert_eq!(app.focus, Focus::Main);
+        assert!(app.popup.is_none());
+        click_last(&mut app, name);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        click(&mut app, &area);
+        mouse_at(&mut app, MouseEventKind::Down(MouseButton::Left), (60, 20));
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        assert_eq!(app.screen, Screen::Area(0));
+        // Its hints are its keys: n cancels.
+        click(&mut app, "n/q/Esc");
+        assert!(app.popup.is_none());
+    }
+
+    #[test]
+    fn the_wheel_scrolls_the_list_and_popups_and_hints_are_keys() {
+        let mut app = app();
+        press(&mut app, KeyCode::Char('j'));
+        let list = find(&mut app, "Developer Tools");
+        mouse_at(&mut app, MouseEventKind::ScrollDown, list);
+        assert_eq!(app.focus, Focus::Main);
+        let before = app.main_state.selected().unwrap();
+        mouse_at(&mut app, MouseEventKind::ScrollDown, list);
+        assert_eq!(app.main_state.selected(), Some(before + 1));
+        mouse_at(&mut app, MouseEventKind::ScrollUp, list);
+        assert_eq!(app.main_state.selected(), Some(before));
+        // The wheel over the sidebar changes no screen.
+        let sidebar = find(&mut app, "MAIN MENU");
+        mouse_at(&mut app, MouseEventKind::ScrollDown, sidebar);
+        assert_eq!(app.screen, Screen::Area(0));
+        // The ? hint is the ? key; the wheel scrolls the help it opens.
+        click(&mut app, "? Help");
+        let Some(Popup::Text(_)) = &app.popup else {
+            panic!("the help did not open")
+        };
+        mouse_at(&mut app, MouseEventKind::ScrollDown, (60, 20));
+        let Some(Popup::Text(help)) = &app.popup else {
+            panic!("the wheel closed the help")
+        };
+        assert_eq!(help.scroll(), 1);
+        click(&mut app, "Enter/q/Esc");
+        assert!(app.popup.is_none());
+        // And q quits.
+        assert!(!click(&mut app, "q Quit"));
+    }
+
+    #[test]
+    fn the_mouse_can_be_turned_off_in_settings() {
+        let mut app = app();
+        assert!(app.mouse());
+        app.open_screen(Screen::Settings);
+        press(&mut app, KeyCode::Enter);
+        click(&mut app, "Mouse");
+        click(&mut app, "Mouse");
+        assert!(!app.mouse(), "{}", screen(&mut app, 120, 40));
+        assert!(screen(&mut app, 120, 40).contains("off"));
+        // Off, clicks do nothing at all.
+        let area = app.menu[1].label.clone();
+        click(&mut app, &area);
+        assert_eq!(app.screen, Screen::Settings);
     }
 
     #[test]
@@ -11300,6 +12875,18 @@ mod tests {
         assert!(shown.contains("Paste it into a new issue"), "{shown}");
         let saved = std::fs::read_to_string(directory.path().join("bug-report.md")).unwrap();
         assert!(saved.contains("### Helix Toolbox report"), "{saved}");
+        // c copies the report itself, not the words around it.
+        assert!(shown.contains("c Copy"), "{shown}");
+        app.copier = |text| {
+            if text.starts_with("### Helix Toolbox report") {
+                Ok("Copied with wl-copy.".into())
+            } else {
+                Err(format!("not the report: {text}"))
+            }
+        };
+        press(&mut app, KeyCode::Char('c'));
+        assert!(screen(&mut app, 120, 40).contains("Copied with wl-copy."));
+        assert!(matches!(app.popup, Some(Popup::Text(_))));
         let (choices, _) = app.palette_choices();
         assert!(
             choices
@@ -11312,11 +12899,52 @@ mod tests {
     fn quick_actions_open_screens() {
         let mut app = app();
         press(&mut app, KeyCode::Enter);
-        press(&mut app, KeyCode::Char('j'));
-        press(&mut app, KeyCode::Char('j'));
+        for _ in 0..4 {
+            press(&mut app, KeyCode::Char('j'));
+        }
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.screen, Screen::Doctor);
         assert!(screen(&mut app, 120, 40).contains("Machine Summary"));
+    }
+
+    #[test]
+    fn quick_actions_set_up_the_machine_and_find_anything() {
+        let mut app = app();
+        press(&mut app, KeyCode::Enter);
+        let text = screen(&mut app, 120, 40);
+        assert!(text.contains("Set up this machine"), "{text}");
+        assert!(text.contains("Find anything"), "{text}");
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Wizard(_))));
+        app.popup = None;
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Palette(_))));
+    }
+
+    #[test]
+    fn the_dashboard_counts_what_is_installed_queued_and_pinned() {
+        let mut app = app();
+        app.statuses.insert(
+            "ripgrep".to_string(),
+            Status::Installed {
+                source: "pacman".to_string(),
+                version: Some("15.2.0-1".to_string()),
+                shadowed: None,
+            },
+        );
+        app.favorites.push("marker".to_string());
+        let text = screen(&mut app, 120, 40);
+        assert!(text.contains("1 installed"), "{text}");
+        assert!(text.contains("0 updates"), "{text}");
+        assert!(text.contains("0 queued"), "{text}");
+        assert!(text.contains("1 pinned"), "{text}");
+        // Taller, the counts are tiles.
+        let tall = screen(&mut app, 120, 60);
+        assert!(tall.contains("╭"), "{tall}");
+        assert!(tall.contains("1 installed"), "{tall}");
     }
 
     #[test]
@@ -11433,7 +13061,7 @@ mod tests {
         press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Char('d'));
         assert!(
-            screen(&mut app, 140, 40).contains("Status: Managed (Home Manager 0.74.4)"),
+            screen(&mut app, 140, 40).contains("Installed from: Home Manager 0.74.4"),
             "the description says it too"
         );
     }
@@ -11948,6 +13576,17 @@ mod tests {
         );
         let saved = std::fs::read_to_string(reports.path().join("hardware-report.md")).unwrap();
         assert!(saved.contains(url.as_str()));
+        // c copies the report with its issue link, as the window's Copy does.
+        app.copier = |text| {
+            if text.contains("[[hardware]]") && text.contains("The issue, filled in:") {
+                Ok("Copied with xclip.".into())
+            } else {
+                Err(format!("not the report: {text}"))
+            }
+        };
+        press(&mut app, KeyCode::Char('c'));
+        assert!(screen(&mut app, 140, 40).contains("Copied with xclip."));
+        assert!(matches!(app.popup, Some(Popup::HardwareReport(..))));
         app.opener = |url| {
             if url.starts_with(hardware_report::ISSUES) {
                 Ok(())
@@ -12570,6 +14209,12 @@ mod tests {
         press(&mut app, KeyCode::Backspace);
         type_text(&mut app, "14");
         press(&mut app, KeyCode::Enter);
+        // It goes into the draft, and s reviews saving it.
+        assert!(app.popup.is_none());
+        let shown = screen(&mut app, 160, 50);
+        assert!(shown.contains("Draft: changed, not saved yet"), "{shown}");
+        assert!(shown.contains("Font size                 14"), "{shown}");
+        press(&mut app, KeyCode::Char('s'));
         assert!(matches!(app.popup, Some(Popup::Confirm(_))));
         let shown = screen(&mut app, 160, 50);
         assert!(shown.contains("Save Ghostty's configuration"), "{shown}");
@@ -13125,6 +14770,255 @@ mod tests {
         assert!(screen(&mut app, 140, 40).contains("Profile  "));
     }
 
+    fn queue_ids(app: &App) -> Vec<String> {
+        app.queue.iter().map(|entry| entry.id.clone()).collect()
+    }
+
+    #[test]
+    fn the_sidebar_counts_what_is_pinned_queued_and_waiting() {
+        let mut app = app();
+        for id in ["git", "ripgrep"] {
+            let entry = app.catalog.find(id).unwrap().clone();
+            app.toggle_queued(entry);
+        }
+        app.favorites.push("fzf".to_string());
+        app.statuses.insert(
+            "fzf".to_string(),
+            Status::Update {
+                source: "pacman".to_string(),
+                version: Some("0.60".to_string()),
+                latest: Some("0.61".to_string()),
+                shadowed: None,
+            },
+        );
+        let text = screen(&mut app, 120, 40);
+        let line = |label: &str| {
+            text.lines()
+                .find(|line| line.contains(label))
+                .unwrap_or_default()
+                .to_string()
+        };
+        let sidebar = |line: String| {
+            line.chars()
+                .take(SIDEBAR_WIDTH as usize)
+                .collect::<String>()
+        };
+        assert!(sidebar(line("Install Plan")).contains(" 2 │"), "{text}");
+        assert!(sidebar(line("Favorites")).contains(" 1"), "{text}");
+        assert!(sidebar(line("Updates")).contains(" 1"), "{text}");
+        // Nothing to count, nothing shown.
+        assert!(
+            !sidebar(line("History")).chars().any(|c| c.is_ascii_digit()),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_header_shows_the_version_where_it_fits() {
+        let mut app = app();
+        let wide = screen(&mut app, 120, 40);
+        assert!(
+            wide.contains(concat!("v", env!("CARGO_PKG_VERSION"))),
+            "{wide}"
+        );
+        app.size_bypass = true;
+        let narrow = screen(&mut app, 40, 30);
+        assert!(
+            narrow.contains("HELIX TOOLBOX") && narrow.contains("SYSTEM READY"),
+            "{narrow}"
+        );
+    }
+
+    #[test]
+    fn the_footer_says_how_the_check_stands_and_ctrl_r_checks_again() {
+        let mut app = app();
+        assert!(!screen(&mut app, 120, 40).contains("package entries checked"));
+        app.statuses.insert(
+            "fzf".to_string(),
+            Status::Absent {
+                replaces: Vec::new(),
+            },
+        );
+        let text = screen(&mut app, 120, 40);
+        assert!(
+            text.contains("1 package entries checked · Ctrl-R check again"),
+            "{text}"
+        );
+        let (_sender, receiver) = mpsc::channel();
+        app.checking = Some(receiver);
+        assert!(screen(&mut app, 120, 40).contains("Checking what is installed…"));
+        // Off in tests, Ctrl-R starts nothing, and the palette offers it too.
+        app.checking = None;
+        app.handle_key(&KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        assert!(app.checking.is_none() && app.popup.is_none());
+        let (choices, _) = app.palette_choices();
+        assert!(
+            choices
+                .iter()
+                .any(|choice| choice.label == "Check again what is installed")
+        );
+    }
+
+    #[test]
+    fn area_rows_say_what_entries_and_groups_hold_and_results_where_they_are() {
+        let mut app = app();
+        app.open_screen(Screen::Area(app.first_area()));
+        app.focus = Focus::Main;
+        let text = screen(&mut app, 160, 40);
+        let group = app
+            .rows
+            .iter()
+            .find_map(|row| match row {
+                Row::Group { name, count, .. } => Some((name.clone(), *count)),
+                _ => None,
+            })
+            .unwrap();
+        let line = text.lines().find(|line| line.contains(&group.0)).unwrap();
+        assert!(
+            line.trim_end()
+                .trim_end_matches('│')
+                .trim_end()
+                .ends_with(&group.1.to_string()),
+            "{line}"
+        );
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "ripgrep");
+        let text = screen(&mut app, 160, 40);
+        let row = text.lines().find(|line| line.contains("Ripgrep")).unwrap();
+        assert!(row.contains("Applications › "), "{row}");
+        // A row that cannot be queued is marked as running on its own.
+        let alone = app
+            .catalog
+            .entries()
+            .into_iter()
+            .find(|entry| !entry.multi_select)
+            .unwrap()
+            .clone();
+        press(&mut app, KeyCode::Esc);
+        app.rows = vec![Row::Entry(Box::new(alone.clone()))];
+        let text = screen(&mut app, 160, 40);
+        assert!(text.contains(&format!("[>]  {}", alone.name)), "{text}");
+    }
+
+    #[test]
+    fn details_say_where_an_entry_is_its_kind_and_its_flags() {
+        let mut app = app();
+        app.open_screen(Screen::Area(app.first_area()));
+        app.focus = Focus::Main;
+        press(&mut app, KeyCode::Char('/'));
+        type_text(&mut app, "ripgrep");
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Char('d'));
+        let text = screen(&mut app, 140, 45);
+        assert!(text.contains("Applications › "), "{text}");
+        assert!(text.contains("Package"), "{text}");
+        assert!(text.contains("What it does:"), "{text}");
+        assert!(text.contains("installation (privileged)"), "{text}");
+        assert_eq!(
+            flag_meanings("PI FM X"),
+            vec![
+                (
+                    "PI".to_string(),
+                    "installation (privileged), privileged".to_string()
+                ),
+                ("FM".to_string(), "file changes".to_string()),
+                ("X".to_string(), "unknown flag".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_profile_shows_what_it_runs_and_e_queues_its_entries() {
+        let mut app = app();
+        let profile = app.catalog.find("developer-basics").unwrap().clone();
+        let Action::Profile { entries } = &profile.action else {
+            panic!("not a profile");
+        };
+        let entries = entries.clone();
+        app.rows = vec![Row::Entry(Box::new(profile.clone()))];
+        app.screen = Screen::Area(app.first_area());
+        app.focus = Focus::Main;
+        app.main_state.select(Some(0));
+        press(&mut app, KeyCode::Char('d'));
+        let text = screen(&mut app, 140, 45);
+        assert!(text.contains("Runs, in order:"), "{text}");
+        assert!(text.contains("1. Git") || text.contains("1. git"), "{text}");
+        app.popup = None;
+        // One entry already queued stays once.
+        let git = app.catalog.find("git").unwrap().clone();
+        app.queue.push(git);
+        app.rows = vec![Row::Entry(Box::new(profile))];
+        app.main_state.select(Some(0));
+        press(&mut app, KeyCode::Char('e'));
+        assert_eq!(app.screen, Screen::Plan);
+        assert_eq!(queue_ids(&app), entries);
+        assert!(screen(&mut app, 140, 40).contains("3 of its entries were added"));
+        app.popup = None;
+        app.open_screen(Screen::Area(app.first_area()));
+        app.rows = vec![Row::Entry(Box::new(
+            app.catalog.find("developer-basics").unwrap().clone(),
+        ))];
+        app.main_state.select(Some(0));
+        app.focus = Focus::Main;
+        press(&mut app, KeyCode::Char('e'));
+        assert!(screen(&mut app, 140, 40).contains("Its entries are already in the Install Plan"));
+    }
+
+    #[test]
+    fn the_install_plan_moves_entries_and_says_what_each_is() {
+        let mut app = app();
+        for id in ["git", "ripgrep", "fzf"] {
+            let entry = app.catalog.find(id).unwrap().clone();
+            app.toggle_queued(entry);
+        }
+        app.open_screen(Screen::Plan);
+        app.focus = Focus::Main;
+        app.main_state.select(Some(0));
+        press(&mut app, KeyCode::Char('J'));
+        assert_eq!(queue_ids(&app), ["ripgrep", "git", "fzf"]);
+        assert_eq!(app.main_state.selected(), Some(1));
+        app.handle_key(&KeyEvent::new(KeyCode::Down, KeyModifiers::SHIFT));
+        assert_eq!(queue_ids(&app), ["ripgrep", "fzf", "git"]);
+        press(&mut app, KeyCode::Char('K'));
+        press(&mut app, KeyCode::Char('K'));
+        assert_eq!(queue_ids(&app), ["git", "ripgrep", "fzf"]);
+        // At the top, it stays.
+        press(&mut app, KeyCode::Char('K'));
+        assert_eq!(queue_ids(&app), ["git", "ripgrep", "fzf"]);
+        app.statuses.insert(
+            "fzf".to_string(),
+            Status::Absent {
+                replaces: Vec::new(),
+            },
+        );
+        let text = screen(&mut app, 140, 50);
+        assert!(text.contains("Queued entries · 3"), "{text}");
+        assert!(text.contains("1. Git") || text.contains("1. git"), "{text}");
+        assert!(text.contains("Applications › "), "{text}");
+        assert!(text.contains(" · Package"), "{text}");
+        assert!(text.contains("Not installed"), "{text}");
+        assert!(text.contains("K/J Move"), "{text}");
+    }
+
+    #[test]
+    fn screens_are_found_by_name_for_the_command_line() {
+        let app = app();
+        assert_eq!(app.screen_named("updates"), Some(Screen::Updates));
+        assert_eq!(app.screen_named("Home-Manager"), Some(Screen::HomeManager));
+        assert_eq!(
+            app.screen_named("applications"),
+            Some(Screen::Area(app.first_area()))
+        );
+        assert_eq!(app.screen_named("nowhere"), None);
+        assert!(app.screen_names().contains("doctor, updates, drift"));
+        assert!(
+            app.screen_names().ends_with("profiles") || app.screen_names().contains("applications")
+        );
+        let mut app = app;
+        app.open_on(Screen::Doctor);
+        assert_eq!((app.screen, app.focus), (Screen::Doctor, Focus::Main));
+    }
+
     #[test]
     fn ctrl_k_finds_screens_actions_and_entries() {
         let mut app = app();
@@ -13646,5 +15540,304 @@ mod tests {
         app.main_state.select(Some(earlier - 1));
         press(&mut app, KeyCode::Enter);
         assert!(screen(&mut app, 160, 40).contains("It is the active one."));
+    }
+
+    #[test]
+    fn the_doctor_counts_its_checks_shows_repair_commands_and_its_reports_are_entries() {
+        let mut app = app();
+        let check = |id: &str, health: doctor::Health| doctor::Diagnosis {
+            id: id.into(),
+            title: id.into(),
+            health,
+            summary: "found".into(),
+            evidence: Vec::new(),
+            advice: None,
+            repair: None,
+            entry: None,
+        };
+        app.diagnoses = vec![
+            check("one", doctor::Health::Problem),
+            check("two", doctor::Health::Notice),
+            check("three", doctor::Health::Good),
+            check("four", doctor::Health::Good),
+        ];
+        app.diagnoses[0].repair = Some(doctor::Repair {
+            label: "fix it".into(),
+            commands: vec![vec!["sudo".into(), "true".into()]],
+        });
+        app.open_screen(Screen::Doctor);
+        app.focus = Focus::Main;
+        let shown = screen(&mut app, 160, 40);
+        assert!(
+            shown.contains("Checks · 1 problems · 1 notices · 2 OK"),
+            "{shown}"
+        );
+        // The repair's commands are shown before f runs them.
+        press(&mut app, KeyCode::Char('d'));
+        let shown = screen(&mut app, 160, 40);
+        assert!(
+            shown.contains("Repair: fix it.") && shown.contains("sudo true"),
+            "{shown}"
+        );
+        app.popup = None;
+        // A report row queues, pins and describes like any entry.
+        app.main_state.select(Some(app.diagnoses.len()));
+        let report = app.selected_entry().cloned().expect("a report entry");
+        press(&mut app, KeyCode::Char('d'));
+        assert!(matches!(app.popup, Some(Popup::Text(_))));
+        app.popup = None;
+        press(&mut app, KeyCode::Char('*'));
+        assert!(app.favorites.contains(&report.id));
+        if report.multi_select {
+            press(&mut app, KeyCode::Char(' '));
+            assert!(app.is_queued(&report));
+            assert!(screen(&mut app, 160, 40).contains(&format!("{} *", report.name)));
+        }
+    }
+
+    #[test]
+    fn the_updates_screen_lists_entries_with_an_update_below_the_channels() {
+        let mut app = app();
+        app.channels = vec![channel("pacman", "Arch packages", Some(Vec::new()))];
+        let inventory = Inventory::from_parts(
+            Some(helix_toolbox_core::PackageManager::Arch),
+            Some([("ripgrep".to_string(), "15.2.0-1".to_string())].into()),
+            [("ripgrep".to_string(), "15.3.0-1".to_string())].into(),
+            HashMap::new(),
+            Default::default(),
+        );
+        let ripgrep = app.catalog.find("ripgrep").unwrap().clone();
+        let status = inventory
+            .status(&ripgrep, &app.platform, &|_| None)
+            .unwrap();
+        app.statuses.insert("ripgrep".into(), status);
+        app.inventory = Some(inventory);
+        app.open_screen(Screen::Updates);
+        app.focus = Focus::Main;
+        assert_eq!(app.main_len(), 3, "the channel, the entry and update all");
+        let shown = screen(&mut app, 140, 40);
+        assert!(shown.contains("Entry   Ripgrep"), "{shown}");
+        assert!(shown.contains("Update every entry (1)"), "{shown}");
+        app.main_state.select(Some(1));
+        assert!(screen(&mut app, 140, 40).contains("Update it"));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        assert!(screen(&mut app, 140, 40).contains("sudo pacman -Syu"));
+        press(&mut app, KeyCode::Char('n'));
+        app.popup = None;
+        app.main_state.select(Some(2));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+    }
+
+    #[test]
+    fn drift_shows_was_and_now_what_is_not_compared_and_runs_the_missing_after_review() {
+        let mut app = app();
+        // Opening the screen reads the baselines; the comparison is set after.
+        app.open_screen(Screen::Drift);
+        app.focus = Focus::Main;
+        app.drift_targets = vec![DriftTarget::Profile {
+            id: "profile:work".into(),
+            name: "Work".into(),
+            entries: vec!["ripgrep".into(), "gone-entry".into()],
+        }];
+        app.drift_target = 0;
+        app.drift_report = Some((
+            "profile:work".into(),
+            drift::Report {
+                against: "Work".into(),
+                differences: vec![drift::Difference {
+                    kind: drift::Kind::Missing,
+                    subject: "ripgrep".into(),
+                    was: Some("15.2.0".into()),
+                    now: None,
+                    entry: Some("ripgrep".into()),
+                    note: "not installed".into(),
+                }],
+                matched: 3,
+                unknown: vec!["gone-entry".into()],
+            },
+        ));
+        app.main_state.select(Some(0));
+        let shown = screen(&mut app, 160, 40);
+        assert!(shown.contains("15.2.0 → –"), "{shown}");
+        assert!(shown.contains("Not compared: gone-entry"), "{shown}");
+        assert!(shown.contains("R Run them now"), "{shown}");
+        // Reviewed like any run; where it is installed already, there is
+        // nothing to run.
+        press(&mut app, KeyCode::Char('R'));
+        assert!(
+            matches!(app.popup, Some(Popup::Confirm(_)))
+                || screen(&mut app, 160, 40).contains("Nothing to run"),
+            "{}",
+            screen(&mut app, 160, 40)
+        );
+        press(&mut app, KeyCode::Char('n'));
+        assert!(!matches!(app.popup, Some(Popup::Running(_))));
+    }
+
+    #[test]
+    fn reliability_says_what_of_the_record_could_not_be_read() {
+        let mut app = app();
+        let mut evidence = reliability::Evidence::default();
+        evidence
+            .problems
+            .push("validation.toml cannot be read: broken".into());
+        app.evidence = Some(evidence);
+        app.open_screen(Screen::Reliability);
+        let shown = screen(&mut app, 160, 40);
+        assert!(
+            shown.contains("⚠ validation.toml cannot be read: broken"),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn a_login_application_is_described_before_it_is_switched() {
+        let mut app = app();
+        let mut found = stand_in_services();
+        found.autostart[0].comment = "Updates in the background".into();
+        found.autostart[0].own = Some("/home/me/.config/autostart/discover.desktop".into());
+        app.services_found = Some(found);
+        app.open_screen(Screen::Services);
+        app.focus = Focus::Main;
+        // The view of the applications started at login.
+        for _ in 0..3 {
+            press(&mut app, KeyCode::Char('i'));
+        }
+        let row = app
+            .service_rows
+            .iter()
+            .position(|row| matches!(row, ServiceRow::Autostart(_)))
+            .unwrap();
+        app.main_state.select(Some(row));
+        press(&mut app, KeyCode::Char('d'));
+        let shown = screen(&mut app, 160, 40);
+        for text in [
+            "Updates in the background",
+            "Runs: discover --notifier",
+            "From: the system · your file overrides it",
+            "At login: started",
+            "For you only",
+        ] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+    }
+
+    #[test]
+    fn migration_says_when_packages_cannot_be_told_apart() {
+        let mut app = app();
+        app.migration_here = Some(migration::Migration {
+            version: migration::VERSION,
+            from: "Solus".into(),
+            ..Default::default()
+        });
+        app.migration_packages_known = false;
+        app.open_screen(Screen::Migration);
+        let shown = screen(&mut app, 200, 40);
+        assert!(
+            shown.contains("The packages you installed yourself cannot be told apart here"),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn restic_restores_what_is_typed_shows_what_it_leaves_out_and_ignores_case() {
+        let mut app = restic_app(Vec::new());
+        if let Some(ResticReading {
+            found: restic::Found::Ready(config),
+            ..
+        }) = &mut app.restic_reading
+        {
+            config.excludes = vec!["/home/me/.cache".into()];
+        }
+        app.open_screen(Screen::Restic);
+        app.focus = Focus::Main;
+        let shown = screen(&mut app, 160, 40);
+        assert!(shown.contains("Leaves out /home/me/.cache"), "{shown}");
+        press(&mut app, KeyCode::Char('F'));
+        assert!(matches!(
+            app.popup,
+            Some(Popup::Ask(_, Asked::ResticRestoreFrom))
+        ));
+        type_text(&mut app, " /home/me/Documents");
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            matches!(
+                &app.popup,
+                Some(Popup::Ask(_, Asked::ResticRestore(snapshot, Some(include))))
+                    if snapshot == "latest" && include == "/home/me/Documents"
+            ),
+            "the snapshot, then the path"
+        );
+        app.popup = None;
+        press(&mut app, KeyCode::Char('s'));
+        answer(&mut app, "NOTES.txt");
+        press(&mut app, KeyCode::Char('i'));
+        assert!(app.restic_ignore_case);
+        assert!(screen(&mut app, 160, 40).contains("ignoring upper and lower case"));
+    }
+
+    #[test]
+    fn a_task_of_yours_can_name_its_shell() {
+        assert_eq!(
+            task_shell(" fish: npm run dev "),
+            (workspaces::Shell::Fish, "npm run dev".to_string())
+        );
+        assert_eq!(
+            task_shell("bash:make"),
+            (workspaces::Shell::Bash, "make".to_string())
+        );
+        assert_eq!(
+            task_shell("sh -c 'echo hi'"),
+            (workspaces::Shell::Direct, "sh -c 'echo hi'".to_string())
+        );
+        assert_eq!(
+            task_shell("fish:"),
+            (workspaces::Shell::Direct, "fish:".to_string()),
+            "a shell with no command is the command"
+        );
+    }
+
+    #[test]
+    fn a_configuration_draft_is_checked_and_discarded() {
+        let directory = tempfile::tempdir().unwrap();
+        let home = directory.path().canonicalize().unwrap();
+        let mut app = configs_app(&home);
+        app.open_screen(Screen::Configs);
+        app.focus = Focus::Main;
+        app.set_config(configs::Kind::Ghostty, "font-size", "13");
+        let shown = screen(&mut app, 160, 50);
+        assert!(shown.contains("Draft checks: not checked yet"), "{shown}");
+        let field = app
+            .config_rows
+            .iter()
+            .position(|row| matches!(row, ConfigRow::Field(configs::Kind::Ghostty, 1)))
+            .unwrap();
+        app.main_state.select(Some(field));
+        press(&mut app, KeyCode::Char('c'));
+        assert!(
+            !screen(&mut app, 160, 50).contains("Draft checks: not checked yet"),
+            "it was checked"
+        );
+        press(&mut app, KeyCode::Char('x'));
+        let shown = screen(&mut app, 160, 50);
+        assert!(!shown.contains("Draft:"), "{shown}");
+        assert_eq!(
+            std::fs::read_to_string(home.join(".config/ghostty/config")).unwrap(),
+            "font-size = 11\n"
+        );
+    }
+
+    #[test]
+    fn settings_say_where_they_are_kept() {
+        let mut app = app();
+        app.settings_path = Some("/home/me/.config/helix-toolbox/settings.toml".into());
+        app.open_screen(Screen::Settings);
+        let shown = screen(&mut app, 160, 40);
+        assert!(
+            shown.contains("Kept in /home/me/.config/helix-toolbox/settings.toml"),
+            "{shown}"
+        );
     }
 }

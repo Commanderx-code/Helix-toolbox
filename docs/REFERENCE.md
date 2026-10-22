@@ -11,14 +11,40 @@ sidebar move between Dashboard, Applications, Favorites, Install Plan, and the o
 areas, History and Settings; `Enter` or `l` opens the selected screen and
 `h` returns to the sidebar. In an area, `j`/`k` or the arrows move in the
 list, `Enter` opens a group or runs an entry, `Space` adds it to the install
-plan, `d` shows the description, `p` the script or command, `g` explains the
-flags column and `/` searches every area. The Install Plan shows what is
-queued with its risk and requirements; `Enter` runs it. Each run asks `[Y]`
-first and then runs in a terminal inside the window; `Ctrl-C` stops it and
-everything it started (if something ignores that, the window says so and a
-second `Ctrl-C` kills it), `l` saves its output, and History lists every run.
+plan, `d` shows its details, `p` the script or command, `g` explains the
+flags column and `/` searches every area. A row shows the entry's
+description where it fits, a group what it holds and how many items, and
+a search result the area and group it is listed in; an entry marked `[>]`
+(a play icon with Nerd Font icons) runs on its own and cannot be queued.
+The details say where the entry is, its kind (package, script, command,
+Nix, built in or profile), whether it asks questions as it runs, where an
+installed package came from, what a profile runs in order and what each of
+its flags means. On a profile, `e` puts its entries in the Install Plan one
+by one, so the plan can be changed before it runs. The Install Plan shows
+what is queued with its risk and requirements, each entry with its status,
+flags, area, kind and step; `K` and `J` (or `Shift` with the arrows) move
+the selected one earlier or later, and `Enter` runs it. Each run asks `[Y]`
+first and then runs in a terminal inside the window, with each step beside
+it (waiting, running, done, failed with its exit status, or skipped), how
+many steps have ended, and the run's warnings and, at the end, its result
+and every check, those done after the next reboot or not checked here marked
+so; `Ctrl-C` stops it and everything it started (if something ignores that,
+the window says so and a second `Ctrl-C` kills it), `l` saves its output, and
+History lists every run.
 `?` shows all keys and `q` quits. The menu needs a terminal; the commands
-below also work without one.
+below also work without one. `helix-toolbox tui --screen <name>` opens it
+on a screen (`updates`, `doctor`, `drift`, `plan`, `restic` and the others,
+or an area's id such as `applications`); on the first start the setup
+wizard opens over it.
+
+As in the window, the sidebar counts pinned Favorites, queued Install Plan
+entries and entries with an update, and the header shows the version. The
+Dashboard counts the package entries installed, those with an update
+waiting, what is queued and what is pinned, above the System Overview, and
+its quick actions include **Set up this machine** (the setup wizard) and
+**Find anything** (the command palette). The footer's rule says how many
+package entries were checked, or that the check is running; `Ctrl-R`, or
+"check again what is installed" in the command palette, checks again.
 
 `Ctrl-K` opens the command palette from any screen: type part of what you
 want and `Enter` does it. It finds every screen (`open updates`), actions
@@ -26,6 +52,16 @@ want and `Enter` does it. It finds every screen (`open updates`), actions
 at that check, `save this machine as a baseline`, `clear the install plan`,
 `change the theme`) and every entry (`install ghostty`), loose spellings
 included. An entry chosen there is planned and confirmed like any other.
+
+The mouse works too. A click on a sidebar item opens that screen; a click
+on a row selects it, and a click on the row already selected does what
+`Enter` does, so an entry or a plan still opens its confirmation first and
+a word you must type is still typed. A click on a key hint at the bottom
+presses that key, and the wheel scrolls the list, a popup or the output of
+a run. A click outside a popup does nothing. While the interface has the
+mouse, most terminals still select text with `Shift` held down; Settings
+(**Mouse**) or `Ctrl-K` "turn the mouse off" leaves the mouse to the
+terminal, and the choice is remembered.
 
 Search ranks what it finds: names that match exactly or start with the
 text first, then names containing it, ids, loose spellings (`rpgrp` finds
@@ -46,8 +82,8 @@ still works); **compatible** keeps to sixteen colors; **monochrome** uses no
 color at all, only bold and reverse video. With `NO_COLOR` set, Helix Toolbox
 starts in monochrome without changing the theme it remembers. Settings also turns the icons
 off for terminals without a Nerd Font. Both choices are remembered in
-`~/.config/helix-toolbox/settings.toml`; `--theme` and `--plain` override them
-for one run.
+`~/.config/helix-toolbox/settings.toml`, which the Settings screen names;
+`--theme` and `--plain` override them for one run.
 
 ## Status and updates
 
@@ -59,8 +95,8 @@ downloaded to find out), **Managed** when the command comes from Nix (`Home
 Manager 1.4.7`, `Nix`, `NixOS`), or **Not installed**. When a package is
 installed but a Nix copy of its command comes first on the PATH, the status
 says so (`; Home Manager's 0.12.5 runs first`). The check runs in the
-background when the menu opens and after every run; `d` repeats it in the
-description.
+background when the menu opens, after every run and on `Ctrl-R`; `d`
+repeats it in the details.
 
 `u` updates the selected entry and `U` every entry with an update, after
 the same confirmation as a run: `flatpak update -y` for its installation, `apt-get
@@ -97,7 +133,9 @@ another and the AUR after the repositories, through the tools themselves
 (`sudo pacman -Syu`, `paru -Sua`, `flatpak update`, `nix flake update` then
 `home-manager switch`), after the usual confirmation. The Home Manager update
 changes the flake's `flake.lock`, in your dotfiles checkout when the
-configuration is a link to one.
+configuration is a link to one. Below the channels, the package entries with
+an update are listed: `Enter` (or `u`) on one updates it as `u` in its area
+does, and the last row updates every one of them.
 
 The **Helix Toolbox** row is Helix Toolbox itself, updated the way it was
 installed, which it tells from where it runs. `r` asks GitHub for the latest
@@ -214,9 +252,13 @@ with no recorded run here still counts as set up when what it sets is in
 place: the files it writes are all there, or its installer's own renderer
 (`configure.py`, which only prints) finds the boot or login-screen settings
 it would write already in the file, as after a run from before Helix Toolbox
-1.1 recorded runs, or a change made by hand. `Enter`
+1.1 recorded runs, or a change made by hand. Each difference shows what it
+was and what it is now. `Enter`
 explains a difference; `Space` adds the entry that puts it back to the
-Install Plan and `a` adds all of them, to be reviewed and confirmed there.
+Install Plan and `a` adds all of them, to be reviewed and confirmed there;
+`R` reviews running all of them now instead. What the baseline or profile
+names that this catalog lacks is listed as not compared, and the entries
+this distribution cannot install as not on this machine.
 
 To set up a new machine like an old one: `helix-toolbox drift save "Old
 laptop"` and `helix-toolbox drift export "Old laptop"` there, then `helix-toolbox
@@ -257,7 +299,8 @@ saves the look in `~/.config/helix-toolbox/looks/`; `Enter` on a saved look
 puts back what differs with the desktop's own commands
 (`plasma-apply-colorscheme`, `gsettings set`, …), after confirmation. The
 entries for this desktop (its login screen theme, terminal configuration,
-boot splash) are listed below, to run or queue. `helix-toolbox desktop`,
+boot splash) are listed below with what is worth knowing about each here,
+to run or queue. `helix-toolbox desktop`,
 `desktop save <name>`, `desktop apply <name>`, `list` and `delete`.
 
 ## Offline bundles
@@ -387,7 +430,9 @@ and the machine's own ask for your password. Masking is not offered.
 
 **At login** lists the XDG autostart applications (`/etc/xdg/autostart` and
 `~/.config/autostart`), whether each starts and whether it applies to this
-desktop. `Enter` turns one off for you only, with a file of yours in
+desktop. `d` shows what it runs, its comment, whether it is the system's
+or your own and whether your file overrides the system's. `Enter` turns one
+off for you only, with a file of yours in
 `~/.config/autostart` that says `Hidden=true` (the system's stays as it
 is), or on again by taking that out. `helix-toolbox services` (`list
 [filter] [--user] [--failed]`, `show <unit>`, `start`, `stop`, `restart`,
@@ -479,7 +524,9 @@ in your home folder unless you name another), reading only:
 - the packages you installed yourself that no entry covers, as the package
   manager records them (`pacman -Qqe`, `apt-mark showmanual`, `dnf
   repoquery --userinstalled`, zypper's packages less those it installed as
-  dependencies, `/etc/apk/world`, `xbps-query -m`).
+  dependencies, `/etc/apk/world`, `xbps-query -m`). Where they cannot be
+  told apart (on Solus, or when the package manager does not answer), the
+  screen says so and only the entries and Flatpaks go in the file.
 
 `o` opens a migration file and says what each thing in it means here,
 under four headings. **To install**: an entry through this distribution's
@@ -531,10 +578,14 @@ The screen lists the snapshots (the latest 30 of each machine and folder).
 `Enter` browses one, a folder at a time. `s` looks for a name or path, with
 `*` wildcards, in every snapshot: each version of each file it finds,
 whether it changed from the version before (its size or time), and how
-many newer snapshots of the same folder no longer have it. `R` on a
+many newer snapshots of the same folder no longer have it; `i` looks
+again ignoring upper and lower case. `R` on a
 snapshot, a file or a version restores it into a new folder of your home
 folder, which must not be there yet: restic restores with `--overwrite
 never` and reads what it wrote back (`--verify`, restic 0.17 or later).
+`F` restores a snapshot you name (`latest` unless you type its ID), and
+after it, only the path you type. The screen shows what the backup leaves
+out.
 `b` backs up the folders named (`--exclude-caches` too), `c` checks the
 repository's structure. Each is a plan you review.
 
@@ -544,7 +595,8 @@ file's SHA-256 (a file of your home folder, up to 100 MB) in
 `v` on it restores it from a snapshot (the latest, or one you name) into a
 temporary folder, compares, says PASS or FAIL and removes the folder.
 
-`w` turns a daily backup on or off: `helix-toolbox-restic.timer` and its
+`w` turns a daily backup on and `W` a weekly one, and either turns it off
+when it is on: `helix-toolbox-restic.timer` and its
 service in your systemd user folder, which run `helix-toolbox restic backup
 --yes`. It needs the password from a file or a command, since the timer
 has none of your environment, and it never replaces or removes a unit it
@@ -598,7 +650,8 @@ Cargo (`build`, `test`, `check`, `run`), a Makefile's `all`, `build`,
 `workspaces.toml` beside the settings, with your favorites; `x` removes it.
 `Enter` runs a task in the repository's folder after you review it, its
 command split into words and run as it is, or with fish or bash when you
-say so (`--shell`).
+say so (`--shell`; in the terminal interface, begin the command with
+`fish:` or `bash:`). `A` stages every change, after review.
 
 `helix-toolbox repos` (`show`, `diff [file] [--staged]`, `stage [files] |
 --all`, `unstage`, `commit -m`, `branch [--create]`, `stash [-m]
@@ -630,11 +683,13 @@ another user's), or, without Ghostty, said not to be checked; Fastfetch's
 JSONC read here, comments and trailing commas allowed: one object, and
 `modules` a list of names or objects with a `"type"`.
 
-`Enter` on a field changes it: Ghostty's font (the first `font-family`;
-the others stay as fallbacks), font size, theme, padding, background
-opacity and cursor, the last line that sets each; Fastfetch's logo, its
-type and the modules, in order, each kept with its options. The rest of
-the file, comments included, is left as it is. `E` opens a private copy in
+`Enter` on a field changes it in a draft: Ghostty's font (the first
+`font-family`; the others stay as fallbacks), font size, theme, padding,
+background opacity and cursor, the last line that sets each; Fastfetch's
+logo, its type and the modules, in order, each kept with its options. The
+rest of the file, comments included, is left as it is. Several fields can
+change before one save: `c` checks the draft, `s` saves it and `x`
+discards it. `E` opens a private copy of the draft (or the file) in
 `$VISUAL` or `$EDITOR`, then checks it. Either way the save is a plan you
 review, the file side by side: run, it checks with `sha256sum` that the
 file is as it was read, keeps it as a configuration backup beside it
@@ -690,7 +745,8 @@ changes):
 Beside each are the systems it was tested on, the date it was last verified
 and when it last ran successfully on this machine. Release builds carry the
 record of the Distributions run they were built after; other builds show the
-stand-in tests and reports only. `i` shows only critical or only untested
+stand-in tests and reports only; what of that record cannot be read is
+said above the list. `i` shows only critical or only untested
 entries, `Enter` the evidence. Before a critical entry with no more than
 stand-in tests runs, its confirmation says so. `helix-toolbox reliability
 [--critical]` prints the same.
@@ -703,7 +759,11 @@ distribution, desktop, model and graphics cards with their drivers (no
 serial numbers, host name or user), with the `[[hardware]]` record it asks
 for and a link that opens the issue form filled in. It is refused for a run
 that failed and in a virtual machine or a container. Nothing is sent until
-you submit the issue.
+you submit the issue. In the terminal interface, `c` copies the report with
+its link, as it does the bug report from Settings: through `wl-copy`, `xclip`
+or `xsel` where the desktop has one, otherwise by asking the terminal itself
+(OSC 52, which Ghostty, Kitty, WezTerm, foot and tmux understand). Both are
+also saved under `~/.local/state/helix-toolbox/`.
 
 `v` on any entry (or `helix-toolbox trust <id>`) opens the **trust inspector**:
 the installer's origin (Helix Toolbox's own installers, Linutil's, or commands
@@ -738,8 +798,12 @@ what to do; where a safe repair exists (restart the resolver or a service,
 remove a stale lock, `dpkg --configure -a`, give files back to you, rebuild
 the initramfs or GRUB's menu, clear package caches) `f` runs it after its own
 confirmation, or runs the entry that addresses it (the graphics drivers).
-The Helix Doctor reports are listed below the checks. `helix-toolbox doctor`
-prints the checks and `helix-toolbox doctor --repair <id>` runs one repair.
+The counts of problems, notices and checks that are OK head the list, and
+a check's details name the commands its repair runs. The Helix Doctor
+reports are listed below the checks, entries like any other: `Enter` runs
+one, `Space` queues it, `d`, `p`, `v` and `*` as in the areas.
+`helix-toolbox doctor` prints the checks and `helix-toolbox doctor --repair
+<id>` runs one repair.
 
 The **Backups** screen (and `helix-toolbox backups`) lists the configuration
 backups Helix Toolbox's entries leave beside a file before changing it

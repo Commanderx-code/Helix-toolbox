@@ -4,6 +4,56 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.21.0
+
+- **The terminal interface's running window shows each step.** Beside the
+  terminal, every step of the run is listed as waiting, running, done,
+  failed with its exit status, or skipped, with a bar of how many have
+  ended. The run's warnings, which it used to drop, are shown, and at the
+  end the result and every check, failures first and those done after the
+  reboot or not checked here marked so, as in the window. `c` copies the bug
+  report and the hardware report.
+- **The mouse in the terminal interface.** A click opens a screen from the
+  sidebar, selects a row, and on the row already selected does what `Enter`
+  does, which still asks first. A click on a key hint presses that key, and
+  the wheel scrolls lists, popups and a run's output. Settings, or the
+  command palette, turns it off to leave the mouse to the terminal; most
+  terminals select text with `Shift` held meanwhile.
+- **The rest of the window's screens in the terminal interface.**
+  - **Helix Doctor:** counts its problems, notices and OK checks, and
+    names the commands a repair runs. Its reports are entries like any
+    other (`Space`, `d`, `p`, `v`, `*`).
+  - **Updates:** lists the package entries with an update, each to update,
+    and all of them at once.
+  - **Drift:** shows was and now, what was not compared and what this
+    machine cannot install, and `R` reviews running what is missing.
+  - **Reliability:** says what of its record could not be read.
+  - **Desktop:** gives each suggestion's note.
+  - **Services:** `d` describes an application started at login.
+  - **Migration:** says when your own packages cannot be told apart.
+  - **Restic:** `i` ignores case in a file's history, `W` backs up weekly,
+    `F` restores a snapshot and path you type, and it shows what the
+    backup leaves out.
+  - **Repositories:** a task can run with fish or bash.
+  - **Configs:** field changes collect in a draft that `c` checks, `s`
+    saves once and `x` discards.
+  - **Settings:** names its file.
+- **The window's counts, details and plan order in the terminal
+  interface.**
+  - The sidebar counts pinned favorites, queued entries and updates. The
+    header shows the version, and the Dashboard shows the same four counts
+    as the window, with **Set up this machine** and **Find anything** among
+    its quick actions.
+  - The footer says how the check of installed packages stands, and
+    `Ctrl-R`, or the command palette, checks again.
+  - Rows show descriptions, group counts, and where a search result is
+    listed. Entries that run on their own are marked. `d` shows an entry's
+    place, kind, source, what a profile runs and what each flag means.
+  - `e` puts a profile's entries in the Install Plan one by one. `K` and
+    `J` reorder the plan, whose rows now show each entry's status, flags,
+    area and kind.
+  - `helix-toolbox tui --screen <name>` opens on a screen.
+
 ## v1.20.1
 
 - **Flatpak steps answer Flatpak's question.** Flatpak asked again before

@@ -179,6 +179,7 @@ password when they run.
 | `Ctrl-K` | Find any screen, action or entry by name |
 | `t` | Change the theme |
 | `?` | Every key |
+| Mouse | Click a screen, a row or a key hint; the wheel scrolls |
 
 From the command line:
 

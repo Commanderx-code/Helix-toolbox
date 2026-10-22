@@ -474,6 +474,11 @@ pub struct TuiArgs {
     /// Do not warn when running as root.
     #[arg(short = 'r', long)]
     pub bypass_root: bool,
+    /// Open on this screen, such as updates, doctor, drift, plan or an
+    /// area's id (applications); on the first start the setup wizard opens
+    /// over it.
+    #[arg(long, value_name = "SCREEN")]
+    pub screen: Option<String>,
 }
 
 fn main() -> Result<()> {

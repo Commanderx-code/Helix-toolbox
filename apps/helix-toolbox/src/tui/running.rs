@@ -4,17 +4,17 @@
 use super::{hints::Hint, theme::Theme};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use helix_toolbox_engine::{
-    Finished, Outcome, Plan, StepState,
+    Check, Finished, Outcome, Plan, StepState,
     execution::{Execution, ExecutionEvent, Options},
     history,
 };
 use ratatui::{
     Frame,
-    layout::{Alignment, Rect},
-    style::Style,
+    layout::{Alignment, Constraint, Layout, Rect},
+    style::{Color, Style},
     symbols::border,
-    text::Line,
-    widgets::{Block, Padding},
+    text::{Line, Span},
+    widgets::{Block, Clear, Padding, Paragraph},
 };
 use std::{
     path::{Path, PathBuf},
@@ -22,13 +22,271 @@ use std::{
 };
 use tui_term::widget::PseudoTerminal;
 
+/// How a step of the run stands, as its events said.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Standing {
+    Waiting,
+    Running,
+    Done,
+    Failed(u32),
+    Interrupted,
+    Skipped,
+    NotRun,
+}
+
+impl Standing {
+    fn mark(self) -> &'static str {
+        match self {
+            Standing::Waiting => "○",
+            Standing::Running => "◐",
+            Standing::Done => "✓",
+            Standing::Failed(_) => "✗",
+            Standing::Interrupted => "■",
+            Standing::Skipped | Standing::NotRun => "–",
+        }
+    }
+
+    fn color(self, theme: Theme) -> Color {
+        match self {
+            Standing::Waiting | Standing::Skipped | Standing::NotRun => theme.faint(),
+            Standing::Running => theme.focused(),
+            Standing::Done => theme.success(),
+            Standing::Failed(_) | Standing::Interrupted => theme.failure(),
+        }
+    }
+}
+
+impl From<&StepState> for Standing {
+    fn from(state: &StepState) -> Self {
+        match state {
+            StepState::Done => Standing::Done,
+            StepState::Failed(code) => Standing::Failed(*code),
+            StepState::Interrupted => Standing::Interrupted,
+            StepState::Skipped => Standing::Skipped,
+            StepState::NotRun => Standing::NotRun,
+        }
+    }
+}
+
+/// The steps are drawn beside the terminal from this width on, and the
+/// messages under it from this height on.
+const STEPS_FROM_WIDTH: u16 = 70;
+const MESSAGES_FROM_HEIGHT: u16 = 12;
+
+/// What the run's events said: each step's standing, how many have ended,
+/// the warnings and, once it ends, the outcome with its checks.
+#[derive(Default)]
+struct Shown {
+    /// Each step's name and how it stands, in the plan's order.
+    steps: Vec<(String, Standing)>,
+    /// How many steps have ended, of all.
+    ended: usize,
+    /// What the run warned about without stopping.
+    warnings: Vec<String>,
+    /// The outcome with the checks of its package steps, once it ends.
+    finished: Option<Finished>,
+}
+
+impl Shown {
+    fn new(plan: &Plan) -> Self {
+        Self {
+            steps: plan
+                .steps
+                .iter()
+                .map(|step| (step.name().to_string(), Standing::Waiting))
+                .collect(),
+            ..Self::default()
+        }
+    }
+
+    /// Take an event other than output; true when it changes the window.
+    fn take(&mut self, event: ExecutionEvent) -> bool {
+        let mut mark = |index: usize, standing: Standing| {
+            if let Some(step) = self.steps.get_mut(index) {
+                step.1 = standing;
+            }
+        };
+        match event {
+            ExecutionEvent::RunStarted { steps, .. } => {
+                self.steps = steps
+                    .into_iter()
+                    .map(|step| (step.name, Standing::Waiting))
+                    .collect();
+            }
+            ExecutionEvent::StepStarted(step) => mark(step.index, Standing::Running),
+            ExecutionEvent::StepCompleted(step) => mark(step.index, Standing::Done),
+            ExecutionEvent::StepFailed {
+                step,
+                exit_code,
+                interrupted,
+            } => mark(
+                step.index,
+                if interrupted {
+                    Standing::Interrupted
+                } else {
+                    Standing::Failed(exit_code)
+                },
+            ),
+            ExecutionEvent::StepSkipped(step) => mark(step.index, Standing::Skipped),
+            ExecutionEvent::Progress { ended, .. } => self.ended = ended,
+            // The note along the bottom counts what is still running as it
+            // changes, so this one is not kept.
+            ExecutionEvent::Warning(message)
+                if message.ends_with("of this run are still running") => {}
+            ExecutionEvent::Warning(message) => self.warnings.push(message),
+            ExecutionEvent::Completed(finished) | ExecutionEvent::Interrupted(finished) => {
+                // The end says how every step stands, those not run included.
+                if finished.steps.len() == self.steps.len() {
+                    for (shown, step) in self.steps.iter_mut().zip(&finished.steps) {
+                        shown.1 = Standing::from(&step.state);
+                    }
+                }
+                self.finished = Some(finished);
+            }
+            ExecutionEvent::Output { .. } => {}
+        }
+        true
+    }
+
+    /// A bar of the steps that have ended, and how many of all.
+    fn progress_line(&self, width: u16, theme: Theme) -> Line<'static> {
+        let total = self.steps.len();
+        let ended = self.ended.min(total);
+        let count = format!(" {ended} of {total} steps ended");
+        let bar = usize::from(width).saturating_sub(count.chars().count());
+        let filled = (bar * ended).checked_div(total).unwrap_or(0);
+        let failed = self
+            .steps
+            .iter()
+            .any(|(_, standing)| matches!(standing, Standing::Failed(_) | Standing::Interrupted));
+        Line::from(vec![
+            Span::styled(
+                "━".repeat(filled),
+                Style::default().fg(if failed {
+                    theme.failure()
+                } else {
+                    theme.success()
+                }),
+            ),
+            Span::styled("─".repeat(bar - filled), Style::default().fg(theme.line())),
+            Span::styled(count, Style::default().fg(theme.muted())),
+        ])
+    }
+
+    /// Each step with its mark and, when it failed, its exit status; the
+    /// list follows the running step when it is longer than the room.
+    fn step_list(&self, area: Rect, theme: Theme) -> Paragraph<'static> {
+        let width = usize::from(area.width);
+        let current = self
+            .steps
+            .iter()
+            .position(|(_, standing)| *standing == Standing::Running)
+            .or_else(|| {
+                self.steps
+                    .iter()
+                    .rposition(|(_, standing)| *standing != Standing::Waiting)
+            })
+            .unwrap_or(0);
+        let height = usize::from(area.height).max(1);
+        let first = current
+            .saturating_sub(height.saturating_sub(1) / 2)
+            .min(self.steps.len().saturating_sub(height));
+        let lines: Vec<Line> = self
+            .steps
+            .iter()
+            .skip(first)
+            .take(height)
+            .map(|(name, standing)| {
+                let exit = match standing {
+                    Standing::Failed(code) => format!(" exit {code}"),
+                    _ => String::new(),
+                };
+                let room = width.saturating_sub(2 + exit.chars().count());
+                let name: String = if name.chars().count() > room {
+                    let mut cut: String = name.chars().take(room.saturating_sub(1)).collect();
+                    cut.push('…');
+                    cut
+                } else {
+                    name.clone()
+                };
+                let style = Style::default().fg(standing.color(theme));
+                let name_style = match standing {
+                    Standing::Running => style.bold(),
+                    Standing::Done => Style::default().fg(theme.entry()),
+                    _ => style,
+                };
+                Line::from(vec![
+                    Span::styled(format!("{} ", standing.mark()), style),
+                    Span::styled(name, name_style),
+                    Span::styled(exit, Style::default().fg(theme.failure())),
+                ])
+            })
+            .collect();
+        Paragraph::new(lines)
+    }
+
+    /// The warnings, then once it ends the result and each check: failures
+    /// first, then those checked after the reboot or not at all.
+    fn messages(&self, theme: Theme) -> Vec<Line<'static>> {
+        let mut lines: Vec<Line> = self
+            .warnings
+            .iter()
+            .map(|warning| {
+                Line::styled(format!("⚠ {warning}"), Style::default().fg(theme.warning()))
+            })
+            .collect();
+        let Some(finished) = &self.finished else {
+            return lines;
+        };
+        let good = finished.succeeded();
+        lines.push(Line::styled(
+            format!(
+                "{} Result: {}",
+                if good { "✓" } else { "✗" },
+                finished.describe()
+            ),
+            Style::default().fg(if good {
+                theme.success()
+            } else {
+                theme.failure()
+            }),
+        ));
+        let mut checks: Vec<&Check> = finished.checks.iter().collect();
+        checks.sort_by_key(|check| {
+            if check.later || check.unsure {
+                1
+            } else if check.passed {
+                2
+            } else {
+                0
+            }
+        });
+        for check in checks {
+            let (mark, prefix, color) = if check.later {
+                ("↻", "After the reboot: ", theme.muted())
+            } else if check.unsure {
+                ("i", "Not checked: ", theme.muted())
+            } else if check.passed {
+                ("✓", "", theme.faint())
+            } else {
+                ("✗", "", theme.failure())
+            };
+            lines.push(Line::styled(
+                format!("{mark} {prefix}{}: {}", check.name, check.detail),
+                Style::default().fg(color),
+            ));
+        }
+        lines
+    }
+}
+
 pub struct RunningView {
     execution: Execution,
     events: Receiver<ExecutionEvent>,
     /// The terminal's output, as the events brought it.
     output: Vec<u8>,
-    /// The outcome with the checks of its package steps, once it ends.
-    finished: Option<Finished>,
+    /// The steps, warnings and end, as the events said.
+    shown: Shown,
     recorded: bool,
     log: Option<PathBuf>,
     /// Why the history record or the log could not be written, if so.
@@ -44,7 +302,7 @@ impl RunningView {
             execution,
             events,
             output: Vec::new(),
-            finished: None,
+            shown: Shown::new(plan),
             recorded: false,
             log: None,
             problem: None,
@@ -53,11 +311,11 @@ impl RunningView {
     }
 
     pub fn is_finished(&self) -> bool {
-        self.finished.is_some()
+        self.shown.finished.is_some()
     }
 
     fn finished(&self) -> Option<&Finished> {
-        self.finished.as_ref()
+        self.shown.finished.as_ref()
     }
 
     /// Take the events that arrived; true when any changes the window.
@@ -75,12 +333,7 @@ impl RunningView {
                     }
                     changed = true;
                 }
-                ExecutionEvent::Completed(finished) | ExecutionEvent::Interrupted(finished) => {
-                    self.finished = Some(finished);
-                    changed = true;
-                }
-                // The terminal shows the steps; the end shows what is left.
-                _ => {}
+                event => changed |= self.shown.take(event),
             }
         }
         changed
@@ -203,11 +456,51 @@ impl RunningView {
             .title_bottom(Line::from(note).centered())
             .padding(Padding::horizontal(1));
         let inner = block.inner(area);
-        self.execution.resize(inner.height, inner.width);
-        let mut parser = vt100::Parser::new(inner.height.max(1), inner.width.max(1), 2000);
+        frame.render_widget(Clear, area);
+        frame.render_widget(block, area);
+        let messages = self.shown.messages(theme);
+        let room = if inner.height >= MESSAGES_FROM_HEIGHT {
+            (messages.len() as u16).min(inner.height / if finished.is_some() { 2 } else { 4 })
+        } else {
+            0
+        };
+        let [progress, body, below] = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Fill(1),
+            Constraint::Length(room),
+        ])
+        .areas(inner);
+        frame.render_widget(self.shown.progress_line(progress.width, theme), progress);
+        let terminal = if inner.width >= STEPS_FROM_WIDTH && !self.shown.steps.is_empty() {
+            let width = (inner.width / 3).min(36);
+            let [steps, _, terminal] = Layout::horizontal([
+                Constraint::Length(width),
+                Constraint::Length(1),
+                Constraint::Fill(1),
+            ])
+            .areas(body);
+            frame.render_widget(self.shown.step_list(steps, theme), steps);
+            terminal
+        } else {
+            body
+        };
+        if room > 0 {
+            frame.render_widget(
+                Paragraph::new(fit(messages, usize::from(room), theme)),
+                below,
+            );
+        }
+        self.execution.resize(terminal.height, terminal.width);
+        let mut parser = vt100::Parser::new(terminal.height.max(1), terminal.width.max(1), 2000);
         parser.process(&self.output);
         parser.screen_mut().set_scrollback(self.scrollback);
-        frame.render_widget(PseudoTerminal::new(parser.screen()).block(block), area);
+        frame.render_widget(PseudoTerminal::new(parser.screen()), terminal);
+    }
+
+    /// Scroll the output: back by a positive number of lines, forward by a
+    /// negative one.
+    pub fn scroll(&mut self, lines: isize) {
+        self.scrollback = self.scrollback.saturating_add_signed(lines);
     }
 
     /// Returns true when the window should close.
@@ -288,8 +581,170 @@ impl RunningView {
     }
 }
 
+/// At most `room` lines; the last says how many more there are.
+fn fit(mut lines: Vec<Line<'static>>, room: usize, theme: Theme) -> Vec<Line<'static>> {
+    if lines.len() > room && room > 0 {
+        let more = lines.len() - room + 1;
+        lines.truncate(room - 1);
+        lines.push(Line::styled(
+            format!("… and {more} more"),
+            Style::default().fg(theme.faint()),
+        ));
+    }
+    lines
+}
+
 impl Drop for RunningView {
     fn drop(&mut self) {
         self.record();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use helix_toolbox_engine::{StepResult, execution::StepInfo};
+
+    fn info(index: usize, name: &str) -> StepInfo {
+        StepInfo {
+            index,
+            id: name.to_lowercase(),
+            name: name.to_string(),
+        }
+    }
+
+    fn text(line: &Line) -> String {
+        line.spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect()
+    }
+
+    fn texts(lines: &[Line]) -> Vec<String> {
+        lines.iter().map(text).collect()
+    }
+
+    /// Three steps: the first done, the second failed, the third skipped.
+    fn after_a_failure() -> Shown {
+        let mut shown = Shown::default();
+        let steps = vec![info(0, "Ripgrep"), info(1, "Meld"), info(2, "Meld's theme")];
+        shown.take(ExecutionEvent::RunStarted {
+            entries: Vec::new(),
+            steps: steps.clone(),
+        });
+        shown.take(ExecutionEvent::StepStarted(steps[0].clone()));
+        assert_eq!(shown.steps[0].1, Standing::Running);
+        shown.take(ExecutionEvent::StepCompleted(steps[0].clone()));
+        shown.take(ExecutionEvent::Progress { ended: 1, total: 3 });
+        shown.take(ExecutionEvent::Warning("the mirror is slow".into()));
+        // The note along the bottom keeps this count, as it changes.
+        shown.take(ExecutionEvent::Warning(
+            "2 process(es) of this run are still running".into(),
+        ));
+        shown.take(ExecutionEvent::StepStarted(steps[1].clone()));
+        shown.take(ExecutionEvent::StepFailed {
+            step: steps[1].clone(),
+            exit_code: 7,
+            interrupted: false,
+        });
+        shown.take(ExecutionEvent::StepSkipped(steps[2].clone()));
+        shown.take(ExecutionEvent::Progress { ended: 3, total: 3 });
+        shown
+    }
+
+    #[test]
+    fn each_step_is_marked_as_its_events_say() {
+        let shown = after_a_failure();
+        assert_eq!(
+            shown.steps,
+            [
+                ("Ripgrep".to_string(), Standing::Done),
+                ("Meld".to_string(), Standing::Failed(7)),
+                ("Meld's theme".to_string(), Standing::Skipped),
+            ]
+        );
+        let theme = Theme::default();
+        let progress = text(&shown.progress_line(30, theme));
+        assert!(progress.ends_with(" 3 of 3 steps ended"), "{progress}");
+        assert_eq!(progress.chars().count(), 30);
+        let list = format!("{:?}", shown.step_list(Rect::new(0, 0, 24, 5), theme));
+        assert!(
+            list.contains("Ripgrep") && list.contains(" exit 7"),
+            "{list}"
+        );
+        // The warning is shown while it runs, too.
+        assert_eq!(texts(&shown.messages(theme)), ["⚠ the mirror is slow"]);
+    }
+
+    #[test]
+    fn the_end_gives_the_result_and_each_check_failures_first() {
+        let mut shown = after_a_failure();
+        let check = |name: &str, passed, unsure, later| Check {
+            name: name.to_string(),
+            passed,
+            detail: "found".to_string(),
+            unsure,
+            later,
+        };
+        let result = |id: &str, state| StepResult {
+            id: id.to_string(),
+            name: id.to_string(),
+            state,
+        };
+        shown.take(ExecutionEvent::Completed(Finished {
+            outcome: Outcome::Failed { exit_code: 7 },
+            checks: vec![
+                check("Ripgrep", true, false, false),
+                check("SDDM theme", true, false, true),
+                check("Firmware", true, true, false),
+                check("Meld", false, false, false),
+            ],
+            steps: vec![
+                result("ripgrep", StepState::Done),
+                result("meld", StepState::Failed(7)),
+                result("theme", StepState::NotRun),
+            ],
+        }));
+        // The end's own word wins: the third step was not run.
+        assert_eq!(shown.steps[2].1, Standing::NotRun);
+        let lines = texts(&shown.messages(Theme::default()));
+        assert_eq!(lines[0], "⚠ the mirror is slow");
+        assert!(lines[1].starts_with("✗ Result: exit 7"), "{}", lines[1]);
+        assert_eq!(
+            lines[2..],
+            [
+                "✗ Meld: found",
+                "↻ After the reboot: SDDM theme: found",
+                "i Not checked: Firmware: found",
+                "✓ Ripgrep: found",
+            ]
+        );
+    }
+
+    #[test]
+    fn messages_that_do_not_fit_say_how_many_more() {
+        let lines: Vec<Line> = (0..6).map(|n| Line::from(format!("line {n}"))).collect();
+        let fitted = texts(&fit(lines.clone(), 3, Theme::default()));
+        assert_eq!(fitted, ["line 0", "line 1", "… and 4 more"]);
+        assert_eq!(fit(lines, 6, Theme::default()).len(), 6);
+    }
+
+    #[test]
+    fn a_long_list_follows_the_running_step() {
+        let mut shown = Shown::default();
+        let steps: Vec<StepInfo> = (0..20).map(|n| info(n, &format!("Step {n}"))).collect();
+        shown.take(ExecutionEvent::RunStarted {
+            entries: Vec::new(),
+            steps: steps.clone(),
+        });
+        shown.take(ExecutionEvent::StepStarted(steps[15].clone()));
+        let list = format!(
+            "{:?}",
+            shown.step_list(Rect::new(0, 0, 20, 5), Theme::default())
+        );
+        assert!(
+            list.contains("Step 15") && !list.contains("Step 1\""),
+            "{list}"
+        );
     }
 }

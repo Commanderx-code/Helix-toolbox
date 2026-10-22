@@ -17,6 +17,8 @@ pub struct Look {
     pub snapshots: bool,
     /// The setup wizard has been offered: false only on the very first run.
     pub set_up: bool,
+    /// Clicks and the wheel; off leaves the mouse to the terminal.
+    pub mouse: bool,
 }
 
 impl Default for Look {
@@ -27,6 +29,7 @@ impl Default for Look {
             keep_going: false,
             snapshots: true,
             set_up: false,
+            mouse: true,
         }
     }
 }
@@ -58,6 +61,7 @@ pub fn load(path: &Path) -> Look {
         ("keep_going", &mut look.keep_going),
         ("snapshots", &mut look.snapshots),
         ("set_up", &mut look.set_up),
+        ("mouse", &mut look.mouse),
     ] {
         if let Some(value) = get(name).and_then(|value| value.as_bool()) {
             *field = value;
@@ -89,6 +93,7 @@ mod tests {
             keep_going: true,
             snapshots: false,
             set_up: false,
+            mouse: false,
         };
         save(&path, &look).unwrap();
         assert_eq!(load(&path), look);
