@@ -1,17 +1,23 @@
-//! `helix-toolbox notifications`: the desktop notification when updates
-//! wait, turned on and off, and the check its timer runs
-//! (helix_toolbox_engine::notifications).
+//! `helix-toolbox notifications`: the desktop notifications of what the
+//! scheduled check finds (updates waiting, and when chosen new health
+//! problems and Drift), turned on and off, and the check its timer runs
+//! (helix_toolbox_engine::notifications and watch).
 
 use anyhow::{Context, Result, bail};
+use helix_toolbox_catalog::Catalog;
 use helix_toolbox_engine::{
     doctor::{self, System},
+    drift as engine_drift,
     inventory::which,
     notifications::{self, Places, Started},
-    updates,
+    settings, updates,
+    watch::{self, Watch},
 };
 use helix_toolbox_platform::LinuxInfo;
 use std::{
+    collections::{BTreeMap, BTreeSet},
     io::Read,
+    path::PathBuf,
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
@@ -23,16 +29,30 @@ fn places() -> Result<Places> {
     Places::here().context("there is no home folder to keep the timer in")
 }
 
+fn settings_path() -> Result<PathBuf> {
+    settings::path().context("there is no home folder to keep the choices in")
+}
+
 pub fn status() -> Result<()> {
     let places = places()?;
-    if notifications::is_on(&places) {
+    let watch = watch::read(&places, settings::path().as_deref());
+    if !watch.any() {
         println!(
-            "Update notifications: on, checking {} ({}).",
-            notifications::EVERY,
-            notifications::TIMER
+            "Notifications: off. helix-toolbox notifications on tells of updates; health on and drift <baseline> tell of more."
         );
-    } else {
-        println!("Update notifications: off. helix-toolbox notifications on turns them on.");
+        return Ok(());
+    }
+    println!(
+        "Notifications: on, checking {} ({}).",
+        notifications::EVERY,
+        notifications::TIMER
+    );
+    let yes = |on: bool| if on { "yes" } else { "no" };
+    println!("  Updates waiting: {}", yes(watch.updates));
+    println!("  New health problems: {}", yes(watch.health));
+    match &watch.drift {
+        Some(slug) => println!("  Drift from the baseline: {slug}"),
+        None => println!("  Drift: no"),
     }
     if let Ok(told) = std::fs::read_to_string(&places.told) {
         let when = std::fs::metadata(&places.told)
@@ -46,43 +66,95 @@ pub fn status() -> Result<()> {
     Ok(())
 }
 
-pub fn on() -> Result<()> {
+/// Change what is watched, and the timer with it.
+pub fn change(how: impl FnOnce(&mut Watch)) -> Result<()> {
     let places = places()?;
+    let path = settings_path()?;
+    let mut watch = watch::read(&places, Some(&path));
+    how(&mut watch);
     let program = std::env::current_exe().context("cannot tell where this program is")?;
     let window = notifications::window_here();
-    match notifications::turn_on(
+    let started = watch::apply(
         &places,
+        &path,
+        &watch,
         &program,
         window.as_deref(),
         &notifications::systemctl,
     )
-    .map_err(anyhow::Error::msg)?
-    {
-        Started::Now => println!(
-            "Update notifications are on: Helix Toolbox checks {}, and soon after you log in, and tells you when updates are waiting. It never updates anything itself.",
-            notifications::EVERY
+    .map_err(anyhow::Error::msg)?;
+    let what: Vec<String> = [
+        watch.updates.then(|| "updates waiting".to_string()),
+        watch.health.then(|| "new health problems".to_string()),
+        watch
+            .drift
+            .as_ref()
+            .map(|slug| format!("changes since the baseline {slug}")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    match started {
+        _ if what.is_empty() => println!("Notifications are off."),
+        Some(Started::AtLogin) => println!(
+            "Notifications are on, for {}. systemd's user manager did not answer, so the checks start at your next login.",
+            what.join(", ")
         ),
-        Started::AtLogin => println!(
-            "Update notifications are on. systemd's user manager did not answer, so the checks start at your next login."
+        _ => println!(
+            "Helix Toolbox checks {}, and soon after you log in, and tells you of {}. It never updates, repairs or puts back anything itself.",
+            notifications::EVERY,
+            what.join(", ")
         ),
     }
     Ok(())
 }
 
 pub fn off() -> Result<()> {
-    notifications::turn_off(&places()?, &notifications::systemctl).map_err(anyhow::Error::msg)?;
-    println!("Update notifications are off.");
-    Ok(())
+    change(|watch| *watch = Watch::default())
 }
 
-/// What the timer runs: look, and tell of what is new.
-pub fn check(platform: &LinuxInfo) -> Result<()> {
+/// What the timer runs: look at what is watched, and tell of what is new.
+pub fn check(catalog: &Catalog, platform: &LinuxInfo) -> Result<()> {
     let places = places()?;
+    let watch = watch::read(&places, settings::path().as_deref());
+    let mut problems = Vec::new();
+    // A timer from before the choices, or with them lost, still tells of
+    // updates, as it always did.
+    if (watch.updates || !watch.any())
+        && let Err(error) = check_updates(&places, platform)
+    {
+        problems.push(error);
+    }
+    if watch.health
+        && let Err(error) = check_health(&places, platform)
+    {
+        problems.push(error);
+    }
+    if let Some(slug) = &watch.drift
+        && let Err(error) = check_drift(&places, catalog, platform, slug)
+    {
+        problems.push(error);
+    }
+    match problems.len() {
+        0 => Ok(()),
+        1 => Err(problems.remove(0)),
+        _ => bail!(
+            "{}",
+            problems
+                .iter()
+                .map(|error| error.to_string())
+                .collect::<Vec<_>>()
+                .join("; ")
+        ),
+    }
+}
+
+fn check_updates(places: &Places, platform: &LinuxInfo) -> Result<()> {
     let channels = updates::overview(&doctor::Here, platform, &crate::this_places(), true);
     let found = notifications::waiting(&channels);
-    if !notifications::is_news(&places, &found) {
+    if !notifications::is_news(places, &found) {
         if found.total() == 0 {
-            notifications::remember(&places, &found)?;
+            notifications::remember(places, &found)?;
             println!("Nothing is waiting.");
         } else {
             println!(
@@ -92,6 +164,56 @@ pub fn check(platform: &LinuxInfo) -> Result<()> {
         }
         return Ok(());
     }
+    let window = notifications::window_here();
+    let (title, body) = notifications::message(&found, window.is_some());
+    // Told is told, even when the wait for a click is cut short.
+    notifications::remember(places, &found)?;
+    if let Err(error) = tell(&title, &body, window, "--updates") {
+        notifications::remember(places, &notifications::Waiting::default())?;
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn check_health(places: &Places, platform: &LinuxInfo) -> Result<()> {
+    let found = doctor::examine(&doctor::Here, platform.manager);
+    let told_path = watch::health_told(places);
+    let before: BTreeMap<String, String> = watch::load(&told_path);
+    let news = watch::health_news(&before, &found);
+    watch::store(&told_path, &watch::health_state(&found))?;
+    if news.is_empty() {
+        println!("No new health problems.");
+        return Ok(());
+    }
+    let window = notifications::window_here();
+    let (title, body) = watch::health_message(&news, window.is_some());
+    tell(&title, &body, window, "--doctor")
+}
+
+fn check_drift(places: &Places, catalog: &Catalog, platform: &LinuxInfo, slug: &str) -> Result<()> {
+    let directory = engine_drift::dir().context("cannot find the configuration folder")?;
+    let Some((_, baseline)) = engine_drift::find(&directory, slug) else {
+        bail!(
+            "the baseline {slug} is gone; helix-toolbox notifications drift <baseline> chooses another"
+        );
+    };
+    let report = crate::drift::compare(catalog, platform, &baseline);
+    let told_path = watch::drift_told(places);
+    let before: BTreeSet<String> = watch::load(&told_path);
+    let (news, now) = watch::drift_news(&before, &report);
+    watch::store(&told_path, &now)?;
+    if news.is_empty() {
+        println!("No new changes since {}.", report.against);
+        return Ok(());
+    }
+    let window = notifications::window_here();
+    let (title, body) = watch::drift_message(&report.against, &news, window.is_some());
+    tell(&title, &body, window, "--drift")
+}
+
+/// Show one notification; a click on its button opens the window on
+/// `screen` (`--updates`, `--doctor`, `--drift`).
+fn tell(title: &str, body: &str, window: Option<PathBuf>, screen: &str) -> Result<()> {
     let help = which("notify-send")
         .and_then(|_| doctor::Here.run(&["notify-send", "--help"]))
         .map(|(_, text)| text);
@@ -100,11 +222,7 @@ pub fn check(platform: &LinuxInfo) -> Result<()> {
             "neither notify-send (libnotify) nor gdbus (GLib) is installed to show the notification"
         );
     };
-    let window = notifications::window_here();
-    let (title, body) = notifications::message(&found, window.is_some());
-    let command = notifications::command(notifier, &title, &body, window.is_some());
-    // Told is told, even when the wait for a click is cut short.
-    notifications::remember(&places, &found)?;
+    let command = notifications::command(notifier, title, body, window.is_some());
     println!("{title}");
     if !command.iter().any(|arg| arg == "--wait") {
         let status = Command::new(&command[0])
@@ -114,7 +232,6 @@ pub fn check(platform: &LinuxInfo) -> Result<()> {
             .status()
             .with_context(|| format!("cannot run {}", command[0]))?;
         if !status.success() {
-            notifications::remember(&places, &notifications::Waiting::default())?;
             bail!("{} could not show the notification", command[0]);
         }
         return Ok(());
@@ -123,7 +240,7 @@ pub fn check(platform: &LinuxInfo) -> Result<()> {
         && let Some(window) = window
     {
         Command::new(&window)
-            .arg("--updates")
+            .arg(screen)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

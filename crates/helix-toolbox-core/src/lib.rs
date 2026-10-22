@@ -286,9 +286,12 @@ pub struct Effects {
     pub takes_effect: Option<String>,
     /// What cannot be known before it runs.
     pub unknown: Vec<String>,
+    /// What holds once it has run, checked afterward (`[[verify]]`).
+    pub checks: Vec<Verify>,
 }
 
 impl Effects {
+    /// Nothing for the change preview to show; checks are not shown there.
     pub fn is_empty(&self) -> bool {
         self.files.is_empty()
             && self.packages.is_empty()
@@ -310,6 +313,97 @@ pub struct FileEffect {
     pub render: Vec<String>,
     /// When it applies, such as "the machine boots with GRUB".
     pub when: Option<String>,
+}
+
+/// Something that holds once an entry has run, checked afterward from the
+/// machine itself, read-only and as the user.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Verify {
+    pub claim: Claim,
+    /// Checked only where this path exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when_exists: Option<String>,
+    /// It holds only once the machine has started again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub after_reboot: bool,
+}
+
+/// What a check claims. Paths are absolute, under `~/`, or under `{grub}/`
+/// (GRUB's folder in /boot).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Claim {
+    /// A file or folder is there, or is gone.
+    Path {
+        path: String,
+        /// "file" or "directory"; either when not given.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        is: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        absent: bool,
+    },
+    /// A file has a word (separated by spaces) or a whole line, or lacks it:
+    /// `/proc/cmdline`, a value in `/sys`.
+    Text {
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        word: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        line: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        absent: bool,
+    },
+    /// A setting in `key=value` files, INI or shell style; with several
+    /// files, the last one that sets it wins, as programs read them.
+    Setting {
+        files: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        section: Option<String>,
+        key: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        equals: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        contains: Option<String>,
+        /// A path made from the value, `{value}` standing for it, that
+        /// must exist: the theme a setting selects is installed.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        points_to: Option<String>,
+        /// Not set at all, or set to nothing.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        unset: bool,
+    },
+    /// A systemd unit is enabled, active, or neither; the user's own with
+    /// `user`.
+    Service {
+        unit: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        enabled: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        active: Option<bool>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        user: bool,
+    },
+}
+
+/// A systemd unit name: letters, digits and `-_.@:\`, ending in a unit type.
+pub fn valid_unit_name(name: &str) -> bool {
+    const TYPES: [&str; 8] = [
+        ".service",
+        ".timer",
+        ".socket",
+        ".target",
+        ".mount",
+        ".path",
+        ".swap",
+        ".automount",
+    ];
+    !name.is_empty()
+        && name.len() <= 128
+        && !name.starts_with(['-', '.'])
+        && TYPES.iter().any(|kind| name.ends_with(kind))
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_.@:\\".contains(&b))
 }
 
 /// The `configure.py` actions that only print a file's new contents.

@@ -1009,6 +1009,28 @@ def update_notifications(machine, shots):
     elif 'Nothing is waiting' not in said:
         raise RuntimeError(f'the check did not finish:\n{said[-1500:]}')
     log(f'  the check: {said.strip().splitlines()[-1] if said.strip() else "(nothing)"}')
+    # Health problems and Drift on the same timer: a baseline saved with a
+    # catalog entry's package installed, then the package removed, told once.
+    machine.ssh('sudo zypper --non-interactive install htop >/dev/null')
+    machine.ssh('./helix-toolbox notifications health on && ./helix-toolbox drift save vm-before '
+                '&& ./helix-toolbox notifications drift vm-before')
+    machine.ssh('sudo zypper --non-interactive rm -u htop >/dev/null')
+    machine.ssh('rm -f /tmp/hf-notified')
+    machine.ssh(f'sudo journalctl --rotate >/dev/null; {user} start helix-toolbox-updates.service')
+    result = machine.ssh(f'{user} show -P Result helix-toolbox-updates.service').stdout.strip()
+    said = machine.ssh('sudo journalctl _SYSTEMD_USER_UNIT=helix-toolbox-updates.service -b --no-pager -o cat').stdout
+    if result != 'success':
+        raise RuntimeError(f'the check with health and Drift ended with {result}:\n{said[-1500:]}')
+    if 'No new health problems' not in said and 'Helix Doctor' not in said:
+        raise RuntimeError(f'the health checks did not run:\n{said[-1500:]}')
+    if 'since vm-before' not in said or 'htop' not in machine.ssh('cat /tmp/hf-notified', check=False).stdout:
+        raise RuntimeError(f'the package removed after the baseline was not told of:\n{said[-1500:]}')
+    # Told once: the next check has nothing new from Drift.
+    machine.ssh(f'{user} start helix-toolbox-updates.service')
+    again = machine.ssh('sudo journalctl _SYSTEMD_USER_UNIT=helix-toolbox-updates.service -b --no-pager -o cat').stdout
+    if 'No new changes since vm-before' not in again:
+        raise RuntimeError(f'the same change was told of twice:\n{again[-1500:]}')
+    log('  health and Drift: told of the removed package once')
     machine.ssh('./helix-toolbox notifications off')
     if machine.ok(f'{user} is-active helix-toolbox-updates.timer') or machine.ok(
             'test -e ~/.config/systemd/user/helix-toolbox-updates.timer'):
@@ -1128,6 +1150,25 @@ CASES = {
 }
 
 
+# Cases with nothing for verify to check afterward: not catalog entries,
+# or an installation whose live system is gone once it finishes.
+NOT_ENTRIES = {'bundle-flatpak', 'bundle-zypper', 'update-notifications', 'arch-server-setup'}
+
+
+def verify(machine, entry):
+    """What the entry's own checks say, after its case passed: its catalog
+    [[verify]] claims and what it installs, read on the machine as the user,
+    the after-reboot ones too where the case rebooted. A check the case
+    proves but the catalog gets wrong fails here."""
+    if entry in NOT_ENTRIES:
+        return
+    said = machine.ssh(f'./helix-toolbox verify {shlex.quote(entry)}', check=False)
+    for line in said.stdout.splitlines():
+        log(f'{entry}: {line.strip()}')
+    if said.returncode != 0:
+        raise RuntimeError(f'helix-toolbox verify {entry} found it not as it should be:\n{said.stdout[-2000:]}{said.stderr[-1000:]}')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--distro', choices=sorted(MACHINES), required=True, help='the machine')
@@ -1153,6 +1194,7 @@ def main():
             started = time.time()
             try:
                 case(machine, options.shots)
+                verify(machine, entry)
                 entries[entry] = 'verified'
                 log(f'{entry}: verified in {time.time() - started:.0f} s')
             except Exception as error:  # every case is reported, then the run fails

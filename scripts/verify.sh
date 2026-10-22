@@ -9,6 +9,14 @@ elif command -v nix >/dev/null; then
 else
     echo "actionlint is not installed; the Checks workflow lints the workflows." >&2
 fi
+# Dependencies: vulnerabilities, licenses and sources (deny.toml).
+if command -v cargo-deny >/dev/null; then
+    cargo deny check -A license-not-encountered -A license-exception-not-encountered
+    cargo deny --manifest-path apps/helix-toolbox-gui/src-tauri/Cargo.toml check \
+        -A license-not-encountered -A license-exception-not-encountered
+else
+    echo "cargo-deny is not installed; the Release integrity workflow checks the dependencies." >&2
+fi
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace

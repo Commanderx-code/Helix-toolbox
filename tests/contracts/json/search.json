@@ -1,0 +1,19 @@
+{
+  "command": "string",
+  "data": {
+    "query": "string",
+    "results": [
+      {
+        "description": "string",
+        "flags": "string",
+        "id": "string",
+        "kind": "string",
+        "name": "string",
+        "score": "number"
+      }
+    ]
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

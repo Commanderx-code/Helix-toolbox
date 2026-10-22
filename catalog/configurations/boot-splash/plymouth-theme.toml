@@ -11,3 +11,12 @@ values = ["plymouth-set-default-theme"]
 
 [script]
 id = "commander/plymouth-theme"
+
+# What it leaves, checked after the run.
+# As plymouth-set-default-theme reads it: the file in /etc wins.
+[[verify]]
+kind = "setting"
+files = ["/usr/share/plymouth/plymouthd.defaults", "/etc/plymouth/plymouthd.conf"]
+section = "Daemon"
+key = "Theme"
+points_to = "/usr/share/plymouth/themes/{value}"

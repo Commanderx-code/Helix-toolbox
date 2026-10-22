@@ -1,0 +1,24 @@
+{
+  "command": "string",
+  "data": {
+    "tabs": [
+      {
+        "id": "string",
+        "items": [
+          {
+            "description": "string",
+            "flags": "string",
+            "id": "string",
+            "kind": "string",
+            "name": "string",
+            "type": "string"
+          }
+        ],
+        "name": "string"
+      }
+    ]
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

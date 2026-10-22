@@ -30,3 +30,10 @@ path = "/etc/mkinitcpio.conf"
 change = "adds the plymouth hook; backed up first"
 render = ["mkinitcpio-hooks", "/etc/mkinitcpio.conf", "add"]
 when = "the boot images are built with mkinitcpio"
+
+# What it leaves, checked after the run.
+[[verify]]
+kind = "text"
+path = "/proc/cmdline"
+word = "splash"
+after_reboot = true

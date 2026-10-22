@@ -136,6 +136,15 @@ pub trait System {
     fn canonical(&self, path: &Path) -> Option<PathBuf>;
     fn user(&self) -> (u32, u32, PathBuf);
     fn on_path(&self, tool: &str) -> bool;
+    /// Whether this user may look for the path: false when a folder on the
+    /// way is closed to them, so that missing cannot be told from hidden.
+    fn can_look(&self, _path: &Path) -> bool {
+        true
+    }
+    /// Whether the path is a folder.
+    fn is_dir(&self, path: &Path) -> bool {
+        !self.list(path).is_empty()
+    }
     /// Names of running processes.
     fn processes(&self) -> Vec<String>;
 }
@@ -237,6 +246,14 @@ impl System for Here {
         helix_toolbox_platform::binary_exists(tool)
     }
 
+    fn can_look(&self, path: &Path) -> bool {
+        !matches!(std::fs::symlink_metadata(path), Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied)
+    }
+
+    fn is_dir(&self, path: &Path) -> bool {
+        path.is_dir()
+    }
+
     fn processes(&self) -> Vec<String> {
         self.list(Path::new("/proc"))
             .into_iter()
@@ -281,7 +298,76 @@ fn gather(system: &dyn System, manager: Option<PackageManager>) -> Vec<Diagnosis
     permissions(system, &mut found);
     boot(system, manager, &mut found);
     space(system, manager, &mut found);
+    if let Some(directory) = crate::history::state_dir() {
+        after_reboot(system, &directory, &mut found);
+    }
     found
+}
+
+/// The checks runs kept for after a reboot: checked once the machine has
+/// started since, waiting until then.
+fn after_reboot(system: &dyn System, directory: &Path, into: &mut Vec<Diagnosis>) {
+    let reviewed = crate::verification::review(system, directory);
+    if reviewed.is_empty() {
+        return;
+    }
+    let mut evidence = Vec::new();
+    let mut failed = Vec::new();
+    let mut waiting = Vec::new();
+    for item in &reviewed {
+        let ran = crate::date(item.waiting.ran);
+        match &item.checks {
+            None => {
+                waiting.push(item.waiting.name.clone());
+                evidence.push(format!(
+                    "{} (run {ran}): {} waiting for the next reboot",
+                    item.waiting.name,
+                    item.waiting.checks.len()
+                ));
+            }
+            Some(checks) => {
+                for check in checks {
+                    if !check.passed {
+                        failed.push(item.waiting.name.clone());
+                    }
+                    evidence.push(format!(
+                        "{} (run {ran}): {}: {}",
+                        check.label(),
+                        check.name,
+                        check.detail
+                    ));
+                }
+            }
+        }
+    }
+    failed.dedup();
+    let (health, summary) = if !failed.is_empty() {
+        (
+            Health::Problem,
+            format!(
+                "not as they should be after the reboot: {}",
+                failed.join(", ")
+            ),
+        )
+    } else if !waiting.is_empty() {
+        (
+            Health::Notice,
+            format!("waiting for the next reboot: {}", waiting.join(", ")),
+        )
+    } else {
+        (
+            Health::Good,
+            "everything checked after the reboot is as it should be".to_string(),
+        )
+    };
+    let mut found = diagnosis("after-reboot", "Checks after the reboot", health, summary);
+    found.evidence = evidence;
+    if health == Health::Problem {
+        found.advice = Some(
+            "Run the entry again, and look at its log in History; the change may not have taken effect, or something else replaced it.".to_string(),
+        );
+    }
+    into.push(found);
 }
 
 fn diagnosis(id: &str, title: &str, health: Health, summary: impl Into<String>) -> Diagnosis {

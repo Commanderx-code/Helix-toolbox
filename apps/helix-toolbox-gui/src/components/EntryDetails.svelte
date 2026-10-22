@@ -119,6 +119,13 @@
           <Icon name="trash" size={14} /> Remove…
         </button>
       {/if}
+      <button
+        class="button ghost"
+        title="Check now that it left the machine as it should, without changing anything"
+        onclick={() => toolbox.tell(`Checks: ${entry.name}`, () => api.checkEntry(entry.id), true)}
+      >
+        <Icon name="check" size={16} /> Check it now
+      </button>
       <button class="button ghost" title={pinned ? 'Unpin' : 'Pin to Favorites'} onclick={() => toolbox.togglePin(entry.id)}>
         <Icon name="star" size={16} />
         {pinned ? 'Unpin' : 'Pin'}

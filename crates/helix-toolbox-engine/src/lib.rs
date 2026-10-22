@@ -36,9 +36,11 @@ pub mod settings;
 pub mod setup;
 pub mod trust;
 pub mod updates;
+pub mod verification;
+pub mod watch;
 
 use helix_toolbox_core::{
-    Action, Entry, NativeAction, NixAction, PackageManager, Risk, valid_package_name,
+    Action, Entry, NativeAction, NixAction, PackageManager, Risk, Verify, valid_package_name,
 };
 use helix_toolbox_platform::{LinuxInfo, binary_exists};
 use std::{
@@ -108,6 +110,8 @@ pub enum Step {
         program: String,
         args: Vec<String>,
         interactive: bool,
+        /// What it should leave, checked after the run.
+        expect: Expected,
     },
     Command {
         id: String,
@@ -145,6 +149,33 @@ pub enum Step {
         source: Source,
         targets: Vec<UpdateTarget>,
     },
+}
+
+/// What a script step should leave: what its entry's `detect` table says
+/// it installs, and its `[[verify]]` claims.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Expected {
+    pub probes: Vec<Probe>,
+    pub binary: Option<String>,
+    pub checks: Vec<Verify>,
+}
+
+/// What an entry's script should leave on this machine.
+pub fn expected(entry: &Entry, platform: &LinuxInfo) -> Expected {
+    let mut expect = Expected {
+        checks: entry.effects.checks.clone(),
+        ..Expected::default()
+    };
+    if let Some(detect) = &entry.detect {
+        expect.probes = own_probes(
+            &detect.packages,
+            detect.aur.as_deref(),
+            detect.flatpak.as_deref(),
+            platform.manager,
+        );
+        expect.binary = detect.binary.clone();
+    }
+    expect
 }
 
 /// A file a Helix Toolbox-made step changes.
@@ -640,6 +671,7 @@ fn add_entry<'a>(
                 program,
                 args,
                 interactive: *interactive,
+                expect: expected(entry, platform),
             }
         }
         Action::Command { line } => Step::Command {
@@ -1289,19 +1321,43 @@ pub fn missing_requirements(plan: &Plan, present: &dyn Fn(&str) -> bool) -> Vec<
     missing
 }
 
-/// Whether one package step left its package as intended.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Whether one step left the machine as intended: its package, or what a
+/// script was to set up.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Check {
     /// The step's name, such as "Ripgrep" or "Remove Ripgrep".
     pub name: String,
     pub passed: bool,
     /// What showed it, or what is wrong.
     pub detail: String,
+    /// It could not be checked here (`detail` says why); it fails nothing.
+    pub unsure: bool,
+    /// It is checked after the next reboot; it fails nothing yet.
+    pub later: bool,
 }
 
-/// Check every package and update step of a finished plan against the system.
+impl Check {
+    /// What it found, in a word or two.
+    pub fn label(&self) -> &'static str {
+        match (self.passed, self.unsure, self.later) {
+            (_, _, true) => "After the reboot",
+            (_, true, _) => "Not checked",
+            (true, _, _) => "Verified",
+            (false, _, _) => "Not verified",
+        }
+    }
+}
+
+/// Check every package, script and update step of a finished plan against
+/// the system.
 pub fn verify(plan: &Plan) -> Vec<Check> {
     let mut checks = verify_with(plan, &Probe::holds, &binary_exists);
+    checks.extend(verification::verify_scripts_with(
+        plan,
+        &Probe::holds,
+        &binary_exists,
+        &doctor::Here,
+    ));
     let manager = plan.steps.iter().find_map(|step| match step {
         Step::Update { targets, .. } => targets.iter().find_map(|target| match &target.probe {
             Probe::Package { manager, .. } => Some(*manager),
@@ -1355,6 +1411,7 @@ pub fn verify_updates_with(
                 name: format!("Update {}", target.name),
                 passed,
                 detail,
+                ..Check::default()
             });
         }
     }
@@ -1398,6 +1455,7 @@ pub fn verify_with(
                     }
                     (false, _) => "removed".to_string(),
                 },
+                ..Check::default()
             }
         } else {
             // Its own packages answer; the command only where none can.
@@ -1410,21 +1468,25 @@ pub fn verify_with(
                     name: name.clone(),
                     passed: true,
                     detail: probe.describe(),
+                    ..Check::default()
                 },
                 None if probes.is_empty() && on_path(binary) => Check {
                     name: name.clone(),
                     passed: true,
                     detail: format!("{shown} is on the PATH"),
+                    ..Check::default()
                 },
                 None if probes.is_empty() && binary.is_none() => Check {
                     name: name.clone(),
                     passed: true,
                     detail: "finished; nothing here can confirm it".to_string(),
+                    ..Check::default()
                 },
                 None if probes.is_empty() => Check {
                     name: name.clone(),
                     passed: false,
                     detail: format!("not found after the run: {shown} is not on the PATH"),
+                    ..Check::default()
                 },
                 None => Check {
                     name: name.clone(),
@@ -1438,6 +1500,7 @@ pub fn verify_with(
                             .join(" and "),
                         if probes.len() == 1 { "does" } else { "do" }
                     ),
+                    ..Check::default()
                 },
             }
         };
@@ -1612,12 +1675,18 @@ impl Finished {
         self.outcome.succeeded() && self.checks.iter().all(|check| check.passed)
     }
 
+    /// It succeeded, and something was checked for sure.
     pub fn verified(&self) -> bool {
-        !self.checks.is_empty() && self.succeeded()
+        self.succeeded()
+            && self
+                .checks
+                .iter()
+                .any(|check| !check.unsure && !check.later)
     }
 
     /// The result as the history records it: "exit 0, verified",
-    /// "exit 0, not verified: Meld (…)", or the outcome alone.
+    /// "exit 0, not verified: Meld (…)", "exit 0, verified; 1 check after
+    /// the next reboot", or the outcome alone.
     pub fn describe(&self) -> String {
         let mut text = self.outcome.describe();
         let unfinished = self.unfinished();
@@ -1637,10 +1706,28 @@ impl Finished {
             .filter(|check| !check.passed)
             .map(|check| format!("{} ({})", check.name, check.detail))
             .collect();
-        if failed.is_empty() {
-            text.push_str(", verified");
-        } else {
+        let sure = self
+            .checks
+            .iter()
+            .any(|check| check.passed && !check.unsure && !check.later);
+        if !failed.is_empty() {
             text.push_str(&format!(", not verified: {}", failed.join("; ")));
+        } else if sure {
+            text.push_str(", verified");
+        }
+        let count =
+            |kind: &dyn Fn(&Check) -> bool| self.checks.iter().filter(|check| kind(check)).count();
+        let plural = |count: usize| if count == 1 { "check" } else { "checks" };
+        let unsure = count(&|check| check.unsure);
+        let later = count(&|check| check.later);
+        if unsure > 0 {
+            text.push_str(&format!("; {unsure} {} not possible here", plural(unsure)));
+        }
+        if later > 0 {
+            text.push_str(&format!(
+                "; {later} {} after the next reboot",
+                plural(later)
+            ));
         }
         text
     }
@@ -1752,6 +1839,11 @@ pub fn execute_in(
     let finished = Finished::from_run(plan, outcome, status.as_deref());
     if let Some(status) = &status {
         let _ = std::fs::remove_file(status);
+    }
+    if let Some(directory) = history_dir
+        && let Err(error) = verification::keep(directory, plan, &finished, history::now())
+    {
+        warn!(%error, "the checks for after the reboot were not kept");
     }
     info!(outcome = finished.describe(), "run finished");
     if let Some(directory) = history_dir {
@@ -2236,6 +2328,7 @@ mod tests {
                     program: "/bin/sh".into(),
                     args: vec!["-e".into()],
                     interactive: true,
+                    expect: Expected::default(),
                 },
                 Step::Command {
                     id: "fail".into(),

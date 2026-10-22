@@ -1339,6 +1339,7 @@ mod tests {
                 program: "sh".into(),
                 args: Vec::new(),
                 interactive: true,
+                expect: crate::Expected::default(),
             }],
             ..Plan::default()
         }

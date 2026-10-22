@@ -5,10 +5,11 @@ use anyhow::{Context, Result};
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::Entry;
 use helix_toolbox_engine::{
-    doctor, history,
+    Probe, doctor, history,
     reliability::{Assessment, Evidence, Level},
     trust::{self, Build, Fact, Inspection},
     updates::Install,
+    verification,
 };
 pub use helix_toolbox_engine::{reliability::rows, trust::text};
 use helix_toolbox_platform::LinuxInfo;
@@ -47,6 +48,69 @@ pub fn counts(rows: &[(&Entry, Assessment)]) -> Vec<(Level, usize)> {
     })
     .filter(|(_, count)| *count > 0)
     .collect()
+}
+
+/// `helix-toolbox verify`: each entry's checks now.
+pub fn verify(
+    catalog: &Catalog,
+    platform: &LinuxInfo,
+    ids: &[String],
+    as_json: bool,
+) -> Result<()> {
+    let records = history::read(1000).unwrap_or_default();
+    let mut found = Vec::new();
+    for id in ids {
+        let entry = crate::find(catalog, id)?;
+        let rebooted = verification::rebooted_since(&doctor::Here, &records, &entry.id);
+        let checks = verification::check_entry(
+            entry,
+            platform,
+            rebooted,
+            &Probe::holds,
+            &helix_toolbox_platform::binary_exists,
+            &doctor::Here,
+        );
+        found.push((entry, checks));
+    }
+    let failed = found
+        .iter()
+        .any(|(_, checks)| checks.iter().any(|check| !check.passed));
+    if as_json {
+        crate::json::print(
+            "verify",
+            json!({
+                "passed": !failed,
+                "entries": found.iter().map(|(entry, checks)| json!({
+                    "id": entry.id,
+                    "name": entry.name,
+                    "checks": checks.iter().map(|check| json!({
+                        "name": check.name,
+                        "label": check.label(),
+                        "passed": check.passed,
+                        "unsure": check.unsure,
+                        "later": check.later,
+                        "detail": check.detail,
+                    })).collect::<Vec<_>>(),
+                })).collect::<Vec<_>>(),
+            }),
+        );
+    } else {
+        for (entry, checks) in &found {
+            println!("{}", entry.name);
+            if checks.is_empty() {
+                println!(
+                    "  Nothing to check: it declares no checks and installs nothing Helix Toolbox can find."
+                );
+            }
+            for check in checks {
+                println!("  {}: {}: {}", check.label(), check.name, check.detail);
+            }
+        }
+    }
+    if failed {
+        anyhow::bail!("not everything is as it should be");
+    }
+    Ok(())
 }
 
 pub fn reliability(catalog: &Catalog, ids: &[String], critical: bool, as_json: bool) -> Result<()> {

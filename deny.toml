@@ -1,0 +1,56 @@
+# cargo-deny's rules for every dependency of the command line and the
+# window (apps/helix-toolbox-gui/src-tauri reads this file too): known
+# vulnerabilities and unmaintained crates, licenses that let Helix Toolbox
+# be shared under MIT, and crates only from crates.io. The Release integrity
+# workflow checks them on every change and every week.
+
+[graph]
+all-features = true
+
+[advisories]
+# RustSec's database: vulnerabilities fail, and so do crates marked
+# unmaintained that Helix Toolbox depends on directly.
+unmaintained = "workspace"
+yanked = "deny"
+
+[licenses]
+confidence-threshold = 0.9
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Unlicense",
+    "Zlib",
+]
+exceptions = [
+    # terminfo, through ratatui's termwiz-free path, is WTFPL: free to use.
+    { allow = ["WTFPL"], crate = "terminfo" },
+    # The window's WebKit side: Servo's CSS crates and dirs' option-ext.
+    # MPL-2.0 is per file, and these files are used unchanged.
+    { allow = ["MPL-2.0"], crate = "cssparser" },
+    { allow = ["MPL-2.0"], crate = "cssparser-macros" },
+    { allow = ["MPL-2.0"], crate = "dtoa-short" },
+    { allow = ["MPL-2.0"], crate = "option-ext" },
+    { allow = ["MPL-2.0"], crate = "selectors" },
+]
+
+[bans]
+# Two versions of one crate are common in a dependency tree this size;
+# they are not refused, only crates added by wildcard.
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

@@ -29,3 +29,22 @@ change = "the theme's files, copied in from its pinned source; an earlier theme 
 [[effects.files]]
 path = "{grub}/grub.cfg"
 change = "regenerated with the new settings; checked with grub-script-check before it replaces the current menu, which is backed up"
+
+# What it leaves, checked after the run.
+[[verify]]
+kind = "setting"
+files = ["/etc/default/grub"]
+key = "GRUB_THEME"
+contains = "/themes/commander-ctt-minegrub-"
+points_to = "{value}"
+
+[[verify]]
+kind = "setting"
+files = ["/etc/default/grub"]
+key = "GRUB_TERMINAL_OUTPUT"
+equals = "gfxterm"
+
+[[verify]]
+kind = "path"
+path = "{grub}/grub.cfg"
+is = "file"

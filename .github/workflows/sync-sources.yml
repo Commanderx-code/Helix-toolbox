@@ -263,13 +263,20 @@ jobs:
             cp -- "$file" "helixforge${file#helix-toolbox}"
           done
           ls -1
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-cyclonedx
+      # What the program and the window are made of, from the lock files they
+      # were built from: CycloneDX, checksummed and attested with them.
+      - name: Software bills of materials
+        run: scripts/sbom.sh /tmp/helix-toolbox-release
       - name: Checksums of the tested builds
         run: |
           cd /tmp/helix-toolbox-release
           sha256sum helix-toolbox-linux-x86_64 helix-toolbox-linux-aarch64 helix-toolbox_*.deb helix-toolbox-[0-9]*.rpm \
             helix-toolbox-[0-9]*.pkg.tar.zst helix-toolbox-gui_*.deb helix-toolbox-gui-[0-9]*.rpm helix-toolbox-gui_*.AppImage helix-toolbox-gui-[0-9]*.pkg.tar.zst \
             helixforge-linux-* helixforge_*.deb helixforge-*.rpm helixforge-*.pkg.tar.zst \
-            validation.json > SHA256SUMS
+            validation.json helix-toolbox-sbom.cdx.json helix-toolbox-gui-sbom.cdx.json helix-toolbox-gui-frontend-sbom.cdx.json > SHA256SUMS
           cat SHA256SUMS
       - name: Attest where the files were built
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
@@ -283,6 +290,7 @@ jobs:
             /tmp/helix-toolbox-release/helix-toolbox-gui-[0-9]*.rpm
             /tmp/helix-toolbox-release/helix-toolbox-gui_*.AppImage
             /tmp/helix-toolbox-release/helix-toolbox-gui-[0-9]*.pkg.tar.zst
+            /tmp/helix-toolbox-release/*-sbom.cdx.json
       - name: Publish the tested Linux builds
         env:
           GH_TOKEN: ${{ github.token }}
@@ -322,6 +330,7 @@ jobs:
               "\`sha256sum --check --ignore-missing SHA256SUMS\`" \
               "\`gh attestation verify <file> --repo $GITHUB_REPOSITORY\`"
             printf '\nThe files named helixforge-* are the same files under the name before 1.7, for copies of HelixForge to update from.\n'
+            printf '\nThe *-sbom.cdx.json files are CycloneDX software bills of materials: every crate in the program and the window, and the window'"'"'s frontend packages.\n'
           } > release-notes.md
           # A draft left by a failed run may point at an older commit; start again.
           if [ "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)" = true ]; then
@@ -334,7 +343,8 @@ jobs:
           gh release upload "$tag" helix-toolbox-linux-x86_64 helix-toolbox-linux-aarch64 helix-toolbox_*.deb helix-toolbox-[0-9]*.rpm \
             helix-toolbox-[0-9]*.pkg.tar.zst helix-toolbox-gui_*.deb helix-toolbox-gui-[0-9]*.rpm helix-toolbox-gui_*.AppImage helix-toolbox-gui-[0-9]*.pkg.tar.zst \
             helixforge-linux-* helixforge_*.deb helixforge-*.rpm helixforge-*.pkg.tar.zst \
-            validation.json SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+            validation.json helix-toolbox-sbom.cdx.json helix-toolbox-gui-sbom.cdx.json helix-toolbox-gui-frontend-sbom.cdx.json \
+            SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
           gh release edit "$tag" --draft=false --latest --repo "$GITHUB_REPOSITORY"
       - name: Publish the crates to crates.io
         env:

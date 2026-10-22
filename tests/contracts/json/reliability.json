@@ -1,0 +1,24 @@
+{
+  "command": "string",
+  "data": {
+    "entries": [
+      {
+        "assessment": {
+          "critical": "boolean",
+          "evidence": [],
+          "label": "string",
+          "level": "string",
+          "ran_here": "null",
+          "systems": [],
+          "verified": "null"
+        },
+        "id": "string",
+        "name": "string"
+      }
+    ],
+    "record": "null"
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

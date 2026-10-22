@@ -1,0 +1,5 @@
+name = "Evening"
+desktop = "kde"
+
+[settings]
+color-scheme = "BreezeDark"

@@ -257,6 +257,24 @@ fn named(directory: &Path, name: &str) -> Result<(String, Baseline)> {
         .with_context(|| format!("no baseline named '{name}'; see helix-toolbox drift list"))
 }
 
+/// A saved baseline by name: its file name and itself.
+pub fn saved(name: &str) -> Result<(String, Baseline)> {
+    let directory = drift::dir().context("cannot find the configuration folder")?;
+    named(&directory, name)
+}
+
+/// Compare this machine with a baseline, as `drift check` does.
+pub fn compare(catalog: &Catalog, platform: &LinuxInfo, baseline: &Baseline) -> Report {
+    let here = Here::gather(platform);
+    let scripts = catalog.root().join("scripts");
+    let render =
+        |arguments: &[String]| helix_toolbox_engine::preview::render_with(&scripts, arguments);
+    drift::compare(
+        baseline,
+        &here.sources(catalog, platform, &settings, &render),
+    )
+}
+
 /// A saved baseline by name, or a baseline file.
 fn load(directory: &Path, name: &str) -> Result<Baseline> {
     let path = Path::new(name);

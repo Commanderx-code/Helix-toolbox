@@ -26,3 +26,24 @@ when = "limine.conf is on /boot"
 path = "/boot/dotfiles-splash.png"
 change = "the look's wallpaper, beside limine.conf"
 when = "limine.conf is on /boot"
+
+# What it leaves, checked after the run.
+# Beside limine.conf, wherever it is; the file itself may be root's only.
+
+[[verify]]
+kind = "path"
+path = "/boot/dotfiles-splash.png"
+is = "file"
+when_exists = "/boot/limine.conf"
+
+[[verify]]
+kind = "path"
+path = "/efi/dotfiles-splash.png"
+is = "file"
+when_exists = "/efi/limine.conf"
+
+[[verify]]
+kind = "path"
+path = "/boot/efi/dotfiles-splash.png"
+is = "file"
+when_exists = "/boot/efi/limine.conf"

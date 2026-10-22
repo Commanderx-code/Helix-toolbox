@@ -528,7 +528,9 @@ jobs:
           export PATH="$PWD/stand-ins:$PATH" XDG_CONFIG_HOME="$PWD/notify-config" XDG_STATE_HOME="$PWD/notify-state"
           units=notify-config/systemd/user
           bin/helix-toolbox notifications on
-          bin/helix-toolbox notifications | grep -q '^Update notifications: on'
+          bin/helix-toolbox notifications | tee status.txt
+          grep -q '^Notifications: on' status.txt
+          grep -qx '  Updates waiting: yes' status.txt
           test -L $units/timers.target.wants/helix-toolbox-updates.timer
           grep -qx -- '--user start helix-toolbox-updates.timer' systemctl.log
           # systemd's own reading of the units, where the image has it.
@@ -539,6 +541,12 @@ jobs:
           if grep -q 'waiting$' check.txt; then
             grep -qx -- '--app-name=Helix Toolbox' notified.txt
           fi
+          # New health problems on the same timer, told once.
+          bin/helix-toolbox notifications health on
+          bin/helix-toolbox notifications | grep -qx '  New health problems: yes'
+          bin/helix-toolbox notifications check | tee health.txt
+          grep -qE '^(No new health problems\.|Helix Doctor)' health.txt
+          bin/helix-toolbox notifications check | grep -qx 'No new health problems.'
           bin/helix-toolbox notifications off
           test ! -e $units/helix-toolbox-updates.timer
           test ! -e $units/timers.target.wants/helix-toolbox-updates.timer

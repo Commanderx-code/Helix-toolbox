@@ -81,6 +81,7 @@ export const saveBaseline = (name: string) => call<string>('save_baseline', { na
 
 export const reliability = () => call<ReliabilityView>('reliability');
 export const trust = (id: string) => call<string>('trust', { id });
+export const checkEntry = (id: string) => call<string>('check_entry', { id });
 
 export const hardware = () => call<Hardware>('read_hardware');
 export const prepareFirmware = (index: number) => call<Prepared>('prepare_firmware', { index });
@@ -106,7 +107,8 @@ export const settings = () => call<SettingsView>('read_settings');
 export const saveSettings = (keepGoing: boolean, snapshots: boolean) =>
   call<SettingsView>('save_settings', { keepGoing, snapshots });
 export const saveTheme = (theme: WindowTheme) => call<SettingsView>('save_theme', { theme });
-export const saveNotifications = (on: boolean) => call<string>('save_notifications', { on });
+export const saveWatch = (updates: boolean, health: boolean, drift: string | null) =>
+  call<string>('save_watch', { updates, health, drift });
 
 /** Run the confirmed plan; `onEvent` gets each event as it comes. */
 export async function run(rows: number, cols: number, onEvent: (event: RunEvent) => void) {

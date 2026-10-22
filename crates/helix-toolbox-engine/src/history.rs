@@ -148,6 +148,11 @@ pub fn begin_in(directory: &Path, entries: &[(String, String)]) -> std::io::Resu
 impl Pending {
     /// Keep how the run ended in its marker, for when the record is written
     /// later (the interface writes it when its window closes).
+    /// The history's folder.
+    pub fn directory(&self) -> &Path {
+        &self.directory
+    }
+
     pub fn ended(&mut self, success: bool, result: &str) -> std::io::Result<()> {
         self.marker.outcome = Some((success, result.to_string()));
         let staging = self.path.with_extension("new");

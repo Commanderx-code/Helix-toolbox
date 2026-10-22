@@ -39,6 +39,10 @@ discarding the rest, so going back to an earlier 1.x keeps what it
 understands. A profile or baseline exported from one machine imports on another
 running the same or a later 1.x.
 
+`apps/helix-toolbox/tests/contracts.rs` checks the two promises above on
+every change: each `--json` command's shape against the one saved when it
+was added, and files written by 1.0, 1.1 and 1.4.
+
 **Entry ids.** An entry's id (`ripgrep`, `pacman-config`,
 `profile-dev-box`) does not change. An entry can be removed only when what it
 installs no longer exists or can no longer be installed safely; the changelog

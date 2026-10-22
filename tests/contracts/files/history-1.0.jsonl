@@ -1,0 +1,2 @@
+{"unix_timestamp":1760000000,"entries":["marker"],"names":["Marker"],"success":true,"result":"exit 0"}
+{"unix_timestamp":1760000100,"entries":["report"],"names":["Report"],"success":false,"result":"exit 1"}

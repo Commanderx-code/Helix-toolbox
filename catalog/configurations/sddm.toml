@@ -40,3 +40,18 @@ path = "/etc/sddm.conf"
 change = "the silent theme, the on-screen keyboard and the greeter settings it needs; other settings stay; backed up first"
 render = ["sddm", "/etc/sddm.conf"]
 when = "the file exists"
+
+# What it leaves, checked after the run.
+[[verify]]
+kind = "path"
+path = "/usr/share/sddm/themes/silent/metadata.desktop"
+is = "file"
+
+# SDDM reads /etc/sddm.conf after its drop-ins.
+[[verify]]
+kind = "setting"
+files = ["/etc/sddm.conf.d/zz-commander-theme.conf", "/etc/sddm.conf"]
+section = "Theme"
+key = "Current"
+equals = "silent"
+points_to = "/usr/share/sddm/themes/{value}/metadata.desktop"

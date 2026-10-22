@@ -4,6 +4,35 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.16.0
+
+- **A script that exits 0 is not enough.** After a run, a script entry is
+  checked for what it installs and for what it was to set up: the theme a
+  GRUB or SDDM setting selects is installed, a service is enabled and
+  running, a word is on the kernel command line. The GRUB, Limine, boot
+  splash, SDDM, AppArmor, SELinux and SSD TRIM entries declare these checks
+  (`[[verify]]` in the catalog); what only holds after a reboot is checked
+  after it, in Helix Doctor. What cannot be read as you is said to be not
+  checked, never passed. `c` in the terminal interface, **Check it now**
+  in the window and `helix-toolbox verify <entry>` check an entry at any
+  time. The VM tests run the same checks after each of their cases.
+- **Told when the machine changes.** The notifications' timer can also
+  tell you when Helix Doctor finds a new problem, and when the machine
+  differs from a saved Drift baseline in a new way, each told once:
+  **Tell me of new health problems** and **Tell me when it drifts from a
+  baseline** in Settings, in the window and the terminal interface, or
+  `helix-toolbox notifications health on` and `notifications drift
+  <baseline>`. A click opens the window on Helix Doctor or Drift. Nothing
+  is repaired or put back by itself.
+- **What a release is made of.** Each release carries CycloneDX software
+  bills of materials for the program, the window and the window's
+  frontend, checksummed and attested with the programs. Every change and
+  every week, the dependencies are checked for known vulnerabilities and
+  licenses, the window's packages audited, and the release binary built
+  twice to show it comes out the same. Tests check what 1.x promises: the
+  `--json` shapes only gain fields, and settings, history, profiles,
+  baselines and looks written by 1.0, 1.1 and 1.4 still read.
+
 ## v1.15.0
 
 - **The terminal interface catches up with the window.** It has an

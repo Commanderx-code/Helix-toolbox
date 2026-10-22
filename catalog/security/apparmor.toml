@@ -35,3 +35,20 @@ path = "/etc/default/limine"
 change = "sets lsm=landlock,lockdown,yama,integrity,apparmor,bpf on the kernel command line; backed up first"
 render = ["limine-cmdline", "/etc/default/limine", "set", "lsm=landlock,lockdown,yama,integrity,apparmor,bpf"]
 when = "Arch with the Limine entry tool, while AppArmor is off in the kernel"
+
+# What it leaves, checked after the run.
+# On in the kernel: at once where it was, after the reboot where the kernel
+# parameter was just set.
+[[verify]]
+kind = "text"
+path = "/sys/module/apparmor/parameters/enabled"
+line = "Y"
+after_reboot = true
+
+# The service, once the kernel runs AppArmor.
+[[verify]]
+kind = "service"
+unit = "apparmor.service"
+enabled = true
+active = true
+when_exists = "/sys/kernel/security/apparmor"

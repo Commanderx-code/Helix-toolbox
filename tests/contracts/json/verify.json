@@ -1,0 +1,16 @@
+{
+  "command": "string",
+  "data": {
+    "entries": [
+      {
+        "checks": [],
+        "id": "string",
+        "name": "string"
+      }
+    ],
+    "passed": "boolean"
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

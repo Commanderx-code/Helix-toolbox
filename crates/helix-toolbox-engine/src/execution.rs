@@ -435,6 +435,14 @@ fn conclude(shared: &Shared) -> Finished {
             let finished = Finished::from_run(&shared.plan, outcome, shared.status.as_deref());
             if let Some(pending) = &mut shared.history.lock().unwrap().pending {
                 let _ = pending.ended(finished.succeeded(), &finished.describe());
+                if let Err(error) = crate::verification::keep(
+                    pending.directory(),
+                    &shared.plan,
+                    &finished,
+                    crate::history::now(),
+                ) {
+                    tracing::warn!(%error, "the checks for after the reboot were not kept");
+                }
             }
             finished
         })
@@ -692,6 +700,8 @@ struct WireCheck<'a> {
     name: &'a str,
     passed: bool,
     detail: &'a str,
+    unsure: bool,
+    later: bool,
 }
 
 impl<'a> From<&'a Finished> for WireResult<'a> {
@@ -736,6 +746,8 @@ impl<'a> From<&'a Finished> for WireResult<'a> {
                     name: &check.name,
                     passed: check.passed,
                     detail: &check.detail,
+                    unsure: check.unsure,
+                    later: check.later,
                 })
                 .collect(),
         }
@@ -1255,6 +1267,7 @@ mod tests {
                 name: "Ripgrep".into(),
                 passed: false,
                 detail: "rg is not installed".into(),
+                ..Check::default()
             }],
             steps: vec![StepResult {
                 id: "ripgrep".into(),
@@ -1271,7 +1284,7 @@ mod tests {
                 "succeeded": false,
                 "verified": false,
                 "steps": [{"index": 0, "id": "ripgrep", "name": "Ripgrep", "state": "failed", "exit_code": 1}],
-                "checks": [{"name": "Ripgrep", "passed": false, "detail": "rg is not installed"}],
+                "checks": [{"name": "Ripgrep", "passed": false, "detail": "rg is not installed", "unsure": false, "later": false}],
             })
         );
         let stopped = Finished {

@@ -11,3 +11,14 @@ values = ["ID=fedora"]
 
 [script]
 id = "commander/selinux"
+
+# What it leaves, checked after the run.
+[[verify]]
+kind = "path"
+path = "/usr/sbin/semanage"
+is = "file"
+
+[[verify]]
+kind = "path"
+path = "/usr/sbin/sestatus"
+is = "file"

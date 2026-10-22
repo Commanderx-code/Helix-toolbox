@@ -1,0 +1,9 @@
+{
+  "command": "string",
+  "data": {
+    "profiles": []
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

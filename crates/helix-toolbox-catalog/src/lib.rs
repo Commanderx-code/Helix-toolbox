@@ -9,9 +9,10 @@
 //! killed are removed the next time Helix Toolbox starts.
 
 use helix_toolbox_core::{
-    ARCHITECTURES, Action, Check, Detect, Effects, Entry, FileEffect, GPU_VENDORS, Group, Item,
-    NativeAction, Needs, NixAction, PackageNames, Precondition, Tab, valid_binary_name,
-    valid_flatpak_id, valid_id, valid_package_name, valid_script_segment,
+    ARCHITECTURES, Action, Check, Claim, Detect, Effects, Entry, FileEffect, GPU_VENDORS, Group,
+    Item, NativeAction, Needs, NixAction, PackageNames, Precondition, Tab, Verify,
+    valid_binary_name, valid_flatpak_id, valid_id, valid_package_name, valid_script_segment,
+    valid_unit_name,
 };
 use helix_toolbox_platform::binary_exists;
 use include_dir::{Dir, include_dir};
@@ -243,6 +244,51 @@ struct EntryFile {
     /// What a script is expected to change, for the change preview.
     #[serde(default)]
     effects: Option<EffectsFile>,
+    /// What holds once a script has run, checked afterward.
+    #[serde(default)]
+    verify: Vec<VerifyFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VerifyFile {
+    kind: String,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    files: Vec<String>,
+    #[serde(default)]
+    is: Option<String>,
+    #[serde(default)]
+    word: Option<String>,
+    #[serde(default)]
+    line: Option<String>,
+    #[serde(default)]
+    section: Option<String>,
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    equals: Option<String>,
+    #[serde(default)]
+    contains: Option<String>,
+    #[serde(default)]
+    points_to: Option<String>,
+    #[serde(default)]
+    unset: bool,
+    #[serde(default)]
+    unit: Option<String>,
+    #[serde(default)]
+    enabled: Option<bool>,
+    #[serde(default)]
+    active: Option<bool>,
+    #[serde(default)]
+    user: bool,
+    #[serde(default)]
+    absent: bool,
+    #[serde(default)]
+    when_exists: Option<String>,
+    #[serde(default)]
+    after_reboot: bool,
 }
 
 #[derive(Deserialize)]
@@ -528,7 +574,8 @@ fn load_items(
             if validate && !needs.runs_on(std::env::consts::ARCH) {
                 continue;
             }
-            let effects = effects_of(&entry, &path)?;
+            let mut effects = effects_of(&entry, &path)?;
+            effects.checks = checks_of(&entry, &path)?;
             if !ids.insert(stem.to_string()) {
                 return Err(CatalogError::Invalid(format!("duplicate entry id: {stem}")));
             }
@@ -617,7 +664,194 @@ fn effects_of(entry: &EntryFile, path: &Path) -> Result<Effects, CatalogError> {
         services: effects.services.clone(),
         takes_effect: effects.takes_effect.clone(),
         unknown: effects.unknown.clone(),
+        checks: Vec::new(),
     })
+}
+
+/// A path a check reads: absolute, under `~/` or under `{grub}/`, without
+/// `..`; `{value}` only where `value` allows it.
+fn checkable_path(path: &str, value: bool) -> bool {
+    let located = path.starts_with('/') || path.starts_with("~/") || path.starts_with("{grub}/");
+    let rest = path.replace("{grub}", "").replace("{value}", "");
+    located
+        && path.len() <= 256
+        && !path.split('/').any(|part| part == "..")
+        && !path.chars().any(char::is_control)
+        && !rest.contains(['{', '}'])
+        && (value || !path.contains("{value}"))
+}
+
+/// The entry's `[[verify]]` checks, each a claim of one kind with only the
+/// fields that kind takes.
+fn checks_of(entry: &EntryFile, path: &Path) -> Result<Vec<Verify>, CatalogError> {
+    let invalid = |index: usize, why: &str| {
+        Err(CatalogError::Invalid(format!(
+            "{} has an invalid verify check {}: {why}",
+            path.display(),
+            index + 1
+        )))
+    };
+    if !entry.verify.is_empty() && entry.script.is_none() {
+        return invalid(0, "only script entries declare checks");
+    }
+    let plain =
+        |text: &str| !text.is_empty() && text.len() <= 200 && !text.chars().any(char::is_control);
+    let mut checks = Vec::new();
+    for (index, check) in entry.verify.iter().enumerate() {
+        let path_only = check.files.is_empty()
+            && check.section.is_none()
+            && check.key.is_none()
+            && check.equals.is_none()
+            && check.contains.is_none()
+            && check.points_to.is_none()
+            && !check.unset;
+        let unit_only = check.unit.is_none()
+            && check.enabled.is_none()
+            && check.active.is_none()
+            && !check.user;
+        let text_only = check.word.is_none() && check.line.is_none();
+        let claim = match check.kind.as_str() {
+            "path" => {
+                let Some(file) = &check.path else {
+                    return invalid(index, "a path check needs a path");
+                };
+                if !checkable_path(file, false)
+                    || !path_only
+                    || !unit_only
+                    || !text_only
+                    || check
+                        .is
+                        .as_deref()
+                        .is_some_and(|is| is != "file" && is != "directory")
+                {
+                    return invalid(
+                        index,
+                        "a path check takes a path, is (file or directory) and absent",
+                    );
+                }
+                Claim::Path {
+                    path: file.clone(),
+                    is: check.is.clone(),
+                    absent: check.absent,
+                }
+            }
+            "text" => {
+                let Some(file) = &check.path else {
+                    return invalid(index, "a text check needs a path");
+                };
+                let one = check.word.is_some() != check.line.is_some();
+                let words = check.word.iter().chain(&check.line).all(|text| plain(text));
+                if !checkable_path(file, false)
+                    || !one
+                    || !words
+                    || check
+                        .word
+                        .as_deref()
+                        .is_some_and(|word| word.contains(char::is_whitespace))
+                    || !path_only
+                    || !unit_only
+                    || check.is.is_some()
+                {
+                    return invalid(
+                        index,
+                        "a text check takes a path and one word or line, and absent",
+                    );
+                }
+                Claim::Text {
+                    path: file.clone(),
+                    word: check.word.clone(),
+                    line: check.line.clone(),
+                    absent: check.absent,
+                }
+            }
+            "setting" => {
+                let Some(key) = &check.key else {
+                    return invalid(index, "a setting check needs a key");
+                };
+                let key_ok = !key.is_empty()
+                    && key.len() <= 64
+                    && key
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"_-.".contains(&b));
+                let tests = check.equals.is_some() as u8
+                    + check.contains.is_some() as u8
+                    + check.points_to.is_some() as u8;
+                let tested = if check.unset { tests == 0 } else { tests > 0 };
+                let texts = check
+                    .equals
+                    .iter()
+                    .chain(&check.contains)
+                    .chain(&check.section)
+                    .all(|text| plain(text));
+                if check.files.is_empty()
+                    || !check.files.iter().all(|file| checkable_path(file, false))
+                    || !key_ok
+                    || !tested
+                    || !texts
+                    || check.points_to.as_deref().is_some_and(|to| {
+                        !to.contains("{value}") || !checkable_path(to, true) && to != "{value}"
+                    })
+                    || check.path.is_some()
+                    || check.absent
+                    || !unit_only
+                    || !text_only
+                    || check.is.is_some()
+                {
+                    return invalid(
+                        index,
+                        "a setting check takes files, a key, an optional section, and equals, contains or points_to, or unset alone",
+                    );
+                }
+                Claim::Setting {
+                    files: check.files.clone(),
+                    section: check.section.clone(),
+                    key: key.clone(),
+                    equals: check.equals.clone(),
+                    contains: check.contains.clone(),
+                    points_to: check.points_to.clone(),
+                    unset: check.unset,
+                }
+            }
+            "service" => {
+                let Some(unit) = &check.unit else {
+                    return invalid(index, "a service check needs a unit");
+                };
+                if !valid_unit_name(unit)
+                    || (check.enabled.is_none() && check.active.is_none())
+                    || check.path.is_some()
+                    || !path_only
+                    || !text_only
+                    || check.absent
+                    || check.is.is_some()
+                {
+                    return invalid(
+                        index,
+                        "a service check takes a unit, enabled or active, and user",
+                    );
+                }
+                Claim::Service {
+                    unit: unit.clone(),
+                    enabled: check.enabled,
+                    active: check.active,
+                    user: check.user,
+                }
+            }
+            _ => return invalid(index, "kind is path, text, setting or service"),
+        };
+        if check
+            .when_exists
+            .as_deref()
+            .is_some_and(|when| !checkable_path(when, false))
+        {
+            return invalid(index, "when_exists needs an absolute or ~/ path");
+        }
+        checks.push(Verify {
+            claim,
+            when_exists: check.when_exists.clone(),
+            after_reboot: check.after_reboot,
+        });
+    }
+    Ok(checks)
 }
 
 /// The entry's `needs` table, checked.

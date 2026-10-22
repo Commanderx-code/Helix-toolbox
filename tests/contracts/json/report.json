@@ -1,0 +1,53 @@
+{
+  "command": "string",
+  "data": {
+    "health_checks": "null",
+    "helix_toolbox": "string",
+    "helixforge": "string",
+    "installed_from": "string",
+    "recent_runs": [],
+    "settings": {
+      "icons": "boolean",
+      "keep_going": "boolean",
+      "snapshots": "boolean",
+      "theme": "string"
+    },
+    "system": {
+      "architecture": "string",
+      "distribution": {
+        "id": "string",
+        "id_like": [
+          "string"
+        ],
+        "name": "string"
+      },
+      "kernel": "string",
+      "package_manager": "string",
+      "tools": {
+        "flatpak": "boolean",
+        "home-manager": "boolean",
+        "nix": "boolean",
+        "sudo": "boolean"
+      }
+    },
+    "terminal": {
+      "colorterm": "string",
+      "size": "string",
+      "term": "string",
+      "term_program": "string"
+    },
+    "tools": {
+      "flatpak": "boolean",
+      "home-manager": "boolean",
+      "nix": "boolean",
+      "paru": "boolean",
+      "snapper": "boolean",
+      "sudo": "boolean",
+      "timeshift": "boolean",
+      "yay": "boolean"
+    }
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

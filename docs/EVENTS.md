@@ -155,7 +155,8 @@ the kind in snake case.
 {"event": "completed", "outcome": {"kind": "success"},
  "description": "exit 0, verified", "succeeded": true, "verified": true,
  "steps": [{"index": 0, "id": "ripgrep", "name": "Ripgrep", "state": "done"}],
- "checks": [{"name": "Ripgrep", "passed": true, "detail": "pacman lists ripgrep"}]}
+ "checks": [{"name": "Ripgrep", "passed": true, "detail": "pacman lists ripgrep",
+             "unsure": false, "later": false}]}
 {"event": "interrupted", "outcome": {"kind": "interrupted"},
  "description": "interrupted", "succeeded": false, "verified": false,
  "steps": [{"index": 0, "id": "ripgrep", "name": "Ripgrep", "state": "not_run"}],
@@ -164,7 +165,11 @@ the kind in snake case.
 
 `outcome.kind` is `success`, `failed` (with `exit_code`), `interrupted` or
 `could_not_start` (with `reason`). A step's `state` is `done`, `failed` (with
-`exit_code`), `interrupted`, `skipped` or `not_run`. `description` is the
+`exit_code`), `interrupted`, `skipped` or `not_run`. A check is a package
+step's or a script entry's (what its `detect` table installs, and its
+`[[verify]]` claims); `unsure` is one that could not be checked here and
+`later` one checked after the next reboot, both with `passed` true and
+neither counted toward `verified`. `description` is the
 result as the history records it. `bytes` is an array of numbers in JSON; an
 interface that can pass raw bytes should do so instead.
 

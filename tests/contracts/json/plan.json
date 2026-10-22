@@ -1,0 +1,28 @@
+{
+  "command": "string",
+  "data": {
+    "blocked": [],
+    "findings": [],
+    "keep_going": "boolean",
+    "notes": [],
+    "privileged": "boolean",
+    "requirements": [
+      "string"
+    ],
+    "risk": "string",
+    "runnable": "boolean",
+    "steps": [
+      {
+        "command": "string",
+        "depends_on": [],
+        "fallbacks": [],
+        "id": "string",
+        "index": "number",
+        "name": "string"
+      }
+    ]
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

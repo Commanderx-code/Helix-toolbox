@@ -1,0 +1,24 @@
+{
+  "command": "string",
+  "data": {
+    "architecture": "string",
+    "distribution": {
+      "id": "string",
+      "id_like": [
+        "string"
+      ],
+      "name": "string"
+    },
+    "kernel": "string",
+    "package_manager": "string",
+    "tools": {
+      "flatpak": "boolean",
+      "home-manager": "boolean",
+      "nix": "boolean",
+      "sudo": "boolean"
+    }
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

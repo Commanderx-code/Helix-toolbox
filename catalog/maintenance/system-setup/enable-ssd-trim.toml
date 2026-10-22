@@ -11,3 +11,10 @@ values = ["systemctl"]
 
 [script]
 id = "system-setup/fstrim-setup"
+
+# What it leaves, checked after the run.
+[[verify]]
+kind = "service"
+unit = "fstrim.timer"
+enabled = true
+active = true

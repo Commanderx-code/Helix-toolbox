@@ -242,6 +242,14 @@ enum Command {
         #[arg(long)]
         yes: bool,
     },
+    /// Check that entries left the machine as they should, read-only: what
+    /// each installs and its checks of files, settings and services. Checks
+    /// that hold only after a reboot are made once the machine has started
+    /// since the entry last ran. Exits 1 when one fails.
+    Verify {
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
     /// How far each entry has been tested: in distribution containers, with
     /// stand-in commands, on virtual or real machines, or not yet; and its
     /// last successful run on this machine.
@@ -261,10 +269,11 @@ enum Command {
     /// like any entry: helix-toolbox run profile-<name>.
     #[command(subcommand)]
     Profile(ProfileCommand),
-    /// Tell you on the desktop when updates are waiting: a systemd user
-    /// timer checks every 6 hours, as helix-toolbox updates --online does,
-    /// and shows a notification when something new waits. It never updates
-    /// anything itself. Without a subcommand, says whether it is on.
+    /// Tell you on the desktop when updates are waiting, and if you choose
+    /// when Helix Doctor finds a new problem or the machine drifts from a
+    /// baseline: a systemd user timer checks every 6 hours and shows a
+    /// notification when something is new. It never updates, repairs or
+    /// puts back anything itself. Without a subcommand, says what is on.
     Notifications {
         #[command(subcommand)]
         action: Option<NotificationsCommand>,
@@ -331,12 +340,25 @@ enum ProfileCommand {
 
 #[derive(Subcommand)]
 enum NotificationsCommand {
-    /// Write the timer into your systemd user folder and start it.
+    /// Tell of updates waiting: writes the timer into your systemd user
+    /// folder and starts it, if it is not there yet.
     On,
-    /// Stop the timer and remove it.
+    /// Stop telling of anything: stops the timer and removes it.
     Off,
-    /// Look for updates now and tell of new ones; the timer runs this.
+    /// Also tell of new problems Helix Doctor's health checks find (the
+    /// network and DNS checks, which come and go, are left out), or not.
+    Health { switch: Switch },
+    /// Also tell of new ways this machine differs from a saved Drift
+    /// baseline, or "off" to stop.
+    Drift { baseline: String },
+    /// Look now and tell of what is new; the timer runs this.
     Check,
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Switch {
+    On,
+    Off,
 }
 
 #[derive(clap::Args, Clone, Debug, Default)]
@@ -937,6 +959,7 @@ fn main() -> Result<()> {
             print!("{}", hardware_text(&found));
             Ok(())
         }
+        Command::Verify { ids } => inspect::verify(&load(false)?, &platform, &ids, as_json),
         Command::Reliability { ids, critical } => {
             inspect::reliability(&load(false)?, &ids, critical, as_json)
         }
@@ -1034,9 +1057,19 @@ fn main() -> Result<()> {
         }
         Command::Notifications { action } => match action {
             None => notify::status(),
-            Some(NotificationsCommand::On) => notify::on(),
+            Some(NotificationsCommand::On) => notify::change(|watch| watch.updates = true),
             Some(NotificationsCommand::Off) => notify::off(),
-            Some(NotificationsCommand::Check) => notify::check(&platform),
+            Some(NotificationsCommand::Health { switch }) => {
+                notify::change(|watch| watch.health = matches!(switch, Switch::On))
+            }
+            Some(NotificationsCommand::Drift { baseline }) => {
+                let slug = match baseline.as_str() {
+                    "off" => None,
+                    name => Some(drift::saved(name)?.0),
+                };
+                notify::change(|watch| watch.drift = slug)
+            }
+            Some(NotificationsCommand::Check) => notify::check(&load(false)?, &platform),
         },
         Command::Report {
             worked: Some(id),
@@ -1172,16 +1205,7 @@ fn confirm_and_run(
     let this = std::env::current_exe().context("cannot find the Helix Toolbox executable")?;
     let finished = execute(planned, &catalog.lib_dir(), &this, &mut InheritedRunner)?;
     for check in &finished.checks {
-        println!(
-            "{} {}: {}",
-            if check.passed {
-                "Verified:"
-            } else {
-                "Not verified:"
-            },
-            check.name,
-            check.detail
-        );
+        println!("{}: {}: {}", check.label(), check.name, check.detail);
     }
     let unfinished = finished.unfinished();
     if !unfinished.is_empty() {

@@ -1,0 +1,21 @@
+format = 1
+name = "Fresh install"
+taken = 1760000000
+system = "Garuda Linux"
+
+[[entry]]
+id = "marker"
+source = "pacman"
+version = "1.0-1"
+
+[[applied]]
+id = "report"
+when = 1760000000
+
+[[file]]
+path = "~/.bashrc"
+kind = "file"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[settings]
+shell = "/usr/bin/fish"

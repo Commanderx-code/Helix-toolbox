@@ -135,6 +135,14 @@ gh attestation verify helix-toolbox_1.0.0-1_amd64.deb --repo Commanderx-code/Hel
 It succeeds only for a file built by this repository's release workflow,
 and says which workflow run built it.
 
+What each build is made of is in the release's software bills of
+materials, CycloneDX JSON from the lock files it was built from:
+`helix-toolbox-sbom.cdx.json` (every crate in the program),
+`helix-toolbox-gui-sbom.cdx.json` (the window's crates) and
+`helix-toolbox-gui-frontend-sbom.cdx.json` (its frontend packages). They are
+in `SHA256SUMS` and attested like the programs, and any scanner that reads
+CycloneDX can check them against vulnerability databases.
+
 ## With Cargo
 
 With Rust 1.89 or newer ([rustup](https://rustup.rs)), Cargo builds

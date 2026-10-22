@@ -225,6 +225,14 @@ release, distribution, family, architecture, complete, entries, files,
 flatpak}` (`flatpak`, the Flatpaks in the same form, only in format 2), each
 file `{path, sha256, bytes, source, assurance}`.
 
+## verify
+
+`{passed, entries: [{id, name, checks}]}`: `passed` is false when a check
+failed (and the command exits 1). A check is `{name, label, passed, unsure,
+later, detail}`, `label` being `Verified`, `Not verified`, `Not checked`
+(`unsure`: it could not be checked here) or `After the reboot` (`later`: it
+holds only once the machine has started since the entry's last run).
+
 ## hardware_report
 
 `report --worked <entry>`: `{entries: [{id, name}], machine, system,

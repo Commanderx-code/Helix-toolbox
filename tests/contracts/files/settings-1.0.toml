@@ -1,0 +1,5 @@
+# As 1.0 wrote it, with the old name of the transparent theme.
+theme = "default"
+icons = false
+keep_going = true
+snapshots = false

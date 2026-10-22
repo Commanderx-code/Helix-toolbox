@@ -20,7 +20,7 @@ use helix_toolbox_engine::{
     plan, plan_removal, preflight, preview, profiles,
     reliability::{self, Evidence},
     settings::{self, RunChoices, WindowTheme},
-    setup, trust, updates,
+    setup, trust, updates, verification, watch,
 };
 use helix_toolbox_platform::LinuxInfo;
 use serde::Serialize;
@@ -60,8 +60,9 @@ struct Gui {
     channels: Mutex<Vec<updates::Channel>>,
     backups: Mutex<Vec<backups::Backup>>,
     hardware: Mutex<Option<hardware::Hardware>>,
-    /// Started with `--updates`, as a click on the update notification does.
-    open_updates: bool,
+    /// The screen to open on: `--updates`, `--doctor` or `--drift`, as a
+    /// click on a notification starts the window.
+    opens: Option<&'static str>,
 }
 
 /// The command line beside this program, else on the PATH.
@@ -122,9 +123,9 @@ struct About {
     /// The first start on this machine: the setup wizard opens by itself.
     first_run: bool,
     theme: WindowTheme,
-    /// Open on the Updates screen: the window was started from the update
-    /// notification.
-    open_updates: bool,
+    /// The screen to open on (updates, doctor or drift): the window was
+    /// started from a notification.
+    opens: Option<&'static str>,
 }
 
 #[tauri::command]
@@ -138,7 +139,7 @@ fn about(gui: State<Gui>) -> About {
             .as_deref()
             .is_some_and(|path| !settings::set_up(path)),
         theme: theme(&gui),
-        open_updates: gui.open_updates,
+        opens: gui.opens,
     }
 }
 
@@ -1174,6 +1175,45 @@ async fn trust(app: AppHandle, id: String) -> Result<String, String> {
     .await?
 }
 
+/// Check an entry now, read-only, as `helix-toolbox verify` does: what it
+/// installs and its checks of files, settings and services.
+#[tauri::command]
+async fn check_entry(app: AppHandle, id: String) -> Result<String, String> {
+    blocking(app, move |gui| {
+        let catalog = gui.catalog.read().unwrap();
+        let entry = catalog
+            .find(&id)
+            .ok_or_else(|| format!("There is no entry {id} in the catalog."))?;
+        let records = history::read(1000).unwrap_or_default();
+        let rebooted = verification::rebooted_since(&doctor::Here, &records, &entry.id);
+        let checks = verification::check_entry(
+            entry,
+            &gui.platform,
+            rebooted,
+            &helix_toolbox_engine::Probe::holds,
+            &helix_toolbox_platform::binary_exists,
+            &doctor::Here,
+        );
+        if checks.is_empty() {
+            return Ok(format!(
+                "{} declares no checks and installs nothing Helix Toolbox can find, so there is nothing to check.",
+                entry.name
+            ));
+        }
+        let failed = checks.iter().filter(|check| !check.passed).count();
+        let mut text = match failed {
+            0 => "Everything that can be checked here is as it should be.\n\n".to_string(),
+            1 => "One check found it not as it should be.\n\n".to_string(),
+            count => format!("{count} checks found it not as it should be.\n\n"),
+        };
+        for check in &checks {
+            text.push_str(&format!("{}: {}\n  {}\n", check.label(), check.name, check.detail));
+        }
+        Ok(text)
+    })
+    .await?
+}
+
 // Hardware
 
 /// Firmware, disks, sensors, batteries and devices, read from this machine.
@@ -1590,6 +1630,12 @@ struct SettingsView {
     /// Whether update notifications are on; None where there is no home
     /// to keep their timer in.
     notifications: Option<bool>,
+    /// Whether new health problems are told of; None as above.
+    health: Option<bool>,
+    /// The baseline Drift is watched against, by its file name.
+    drift: Option<String>,
+    /// The saved baselines to choose from: file name and name.
+    baselines: Vec<(String, String)>,
 }
 
 #[tauri::command]
@@ -1599,13 +1645,26 @@ fn read_settings(gui: State<Gui>) -> SettingsView {
         .as_deref()
         .map(settings::run_choices)
         .unwrap_or_default();
+    let watched =
+        notifications::Places::here().map(|places| watch::read(&places, gui.settings.as_deref()));
     SettingsView {
         keep_going: choices.keep_going,
         snapshots: choices.snapshots,
         snapshot_tool: backups::Snapshots::here().map(backups::Snapshots::label),
         path: gui.settings.as_ref().map(|path| path.display().to_string()),
         theme: theme(&gui),
-        notifications: notifications::Places::here().map(|places| notifications::is_on(&places)),
+        notifications: watched.as_ref().map(|watch| watch.updates),
+        health: watched.as_ref().map(|watch| watch.health),
+        drift: watched.and_then(|watch| watch.drift),
+        baselines: drift::dir()
+            .map(|directory| {
+                drift::load_all(&directory)
+                    .0
+                    .into_iter()
+                    .map(|(slug, baseline)| (slug, printable(&baseline.name)))
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -1613,30 +1672,62 @@ fn read_settings(gui: State<Gui>) -> SettingsView {
 /// notifications` does; the timer runs the command line, and a click on a
 /// notification opens this window. What happened, to tell.
 #[tauri::command]
-async fn save_notifications(app: AppHandle, on: bool) -> Result<String, String> {
+async fn save_watch(
+    app: AppHandle,
+    updates: bool,
+    health: bool,
+    drift: Option<String>,
+) -> Result<String, String> {
     blocking(app, move |gui| {
         let places =
             notifications::Places::here().ok_or("there is no home folder to keep the timer in")?;
-        if !on {
-            notifications::turn_off(&places, &notifications::systemctl)?;
-            return Ok("Update notifications are off.".to_string());
+        let path = gui
+            .settings
+            .clone()
+            .ok_or("there is no home folder to keep the choices in")?;
+        if let Some(slug) = &drift {
+            let directory = drift::dir().ok_or("cannot find the configuration folder")?;
+            drift::find(&directory, slug)
+                .ok_or_else(|| format!("There is no baseline {}.", printable(slug)))?;
         }
+        let chosen = watch::Watch {
+            updates,
+            health,
+            drift,
+        };
         // An AppImage runs from a mount that goes away; its own file stays.
         let window = std::env::var_os("APPIMAGE")
             .map(PathBuf::from)
             .or_else(|| std::env::current_exe().ok());
-        let started = notifications::turn_on(
+        let started = watch::apply(
             &places,
+            &path,
+            &chosen,
             &gui.this,
             window.as_deref(),
             &notifications::systemctl,
         )?;
+        let what: Vec<String> = [
+            chosen.updates.then(|| "updates are waiting".to_string()),
+            chosen
+                .health
+                .then(|| "Helix Doctor finds a new problem".to_string()),
+            chosen
+                .drift
+                .as_ref()
+                .map(|slug| format!("the machine changes since the baseline {slug}")),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
         Ok(match started {
-            notifications::Started::Now => format!(
-                "Helix Toolbox now checks {}, and soon after you log in, and shows a notification when updates are waiting; a click on it opens Updates here. It never updates anything itself.",
-                notifications::EVERY
+            _ if what.is_empty() => "Notifications are off.".to_string(),
+            Some(notifications::Started::AtLogin) => "The checks are set up, but systemd's user manager did not answer, so they start at your next login.".to_string(),
+            _ => format!(
+                "Helix Toolbox checks {}, and soon after you log in, and shows a notification when {}; a click on it opens the screen here. It never updates, repairs or puts back anything itself.",
+                notifications::EVERY,
+                what.join(", or when ")
             ),
-            notifications::Started::AtLogin => "The checks are set up, but systemd's user manager did not answer, so they start at your next login.".to_string(),
         })
     })
     .await?
@@ -1746,7 +1837,9 @@ fn main() {
         channels: Mutex::new(Vec::new()),
         backups: Mutex::new(Vec::new()),
         hardware: Mutex::new(None),
-        open_updates: args.iter().any(|arg| arg == "--updates"),
+        opens: ["updates", "doctor", "drift"]
+            .into_iter()
+            .find(|screen| args.iter().any(|arg| *arg == format!("--{screen}"))),
     };
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -1759,10 +1852,10 @@ fn main() {
                 stop, close_run, runs, save_profile, import_profile, export_profile,
                 delete_profile, bug_report, copy_text, hardware_report, open_issue, doctor,
                 prepare_repair, updates,
-                prepare_channels, prepare_update, prepare_remove, list_backups, prepare_restore, drift_targets,
+                prepare_channels, prepare_update, prepare_remove, list_backups, prepare_restore, drift_targets, check_entry,
                 drift_check, save_baseline, reliability, trust, read_hardware, prepare_firmware,
                 prepare_smart, read_desktop, save_look, prepare_look, read_settings,
-                save_settings, save_notifications, save_theme, bundle_contents, prepare_bundle_create,
+                save_settings, save_watch, save_theme, bundle_contents, prepare_bundle_create,
                 bundle_check, prepare_bundle_install, setup_start, setup_choose, setup_done $(, $extra)*
             ]
         };

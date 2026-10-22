@@ -23,3 +23,11 @@ path = "/etc/default/limine"
 change = "removes splash and rhgb from the kernel command line; backed up first"
 render = ["limine-cmdline", "/etc/default/limine", "remove", "splash", "rhgb"]
 when = "the Limine entry tool manages the boot entries"
+
+# What it leaves, checked after the run.
+[[verify]]
+kind = "text"
+path = "/proc/cmdline"
+word = "splash"
+absent = true
+after_reboot = true

@@ -42,19 +42,25 @@
     }
   }
 
-  /** Notifications turn on or off at once: they are a timer, not a setting to save. */
-  async function switchNotifications(on: boolean) {
+  /** What the scheduled check tells of changes at once: it is a timer, not a setting to save. */
+  async function switchWatch(change: { updates?: boolean; health?: boolean; drift?: string | null }) {
+    if (!view) return;
+    const updates = change.updates ?? view.notifications === true;
+    const health = change.health ?? view.health === true;
+    const drift = change.drift !== undefined ? change.drift : view.drift;
     switching = true;
     try {
-      const told = await api.saveNotifications(on);
-      if (on) toolbox.notice = { title: 'Update notifications', text: told };
+      const told = await api.saveWatch(updates, health, drift);
+      const turnedOn = change.updates === true || change.health === true || (change.drift ?? null) !== null;
+      if (turnedOn) toolbox.notice = { title: 'Notifications', text: told };
     } catch (error) {
-      toolbox.error = `Update notifications could not be turned ${on ? 'on' : 'off'}: ${error}`;
+      toolbox.error = `Notifications could not be changed: ${error}`;
     } finally {
       switching = false;
       await load();
     }
   }
+
 
   async function save() {
     saving = true;
@@ -109,13 +115,14 @@
         </span>
       </label>
 
-      <h2 class="section">Updates</h2>
+      <h2 class="section">Notifications</h2>
+      <p class="muted">One check, every 6 hours and soon after you log in, tells you of what is new. It never updates, repairs or puts back anything itself; the terminal interface shares these choices.</p>
       <label class="toggle" class:off={view.notifications === null}>
         <input
           type="checkbox"
           checked={view.notifications === true}
           disabled={view.notifications === null || switching}
-          onchange={(event) => switchNotifications(event.currentTarget.checked)}
+          onchange={(event) => switchWatch({ updates: event.currentTarget.checked })}
         />
         <span>
           <span class="title">Tell me when updates are waiting</span>
@@ -123,12 +130,49 @@
             {#if view.notifications === null}
               There is no home folder to keep the check's timer in.
             {:else}
-              A desktop notification, checked every 6 hours and soon after you log in, the way Updates checks online. It never updates
-              anything itself. This applies at once, and the terminal interface shares it.
+              A desktop notification, the way Updates checks online; a click on it opens Updates.
             {/if}
           </span>
         </span>
       </label>
+      <label class="toggle" class:off={view.health === null}>
+        <input
+          type="checkbox"
+          checked={view.health === true}
+          disabled={view.health === null || switching}
+          onchange={(event) => switchWatch({ health: event.currentTarget.checked })}
+        />
+        <span>
+          <span class="title">Tell me when Helix Doctor finds a new problem</span>
+          <span class="detail">
+            The health checks, a problem told once: a failed service, a disk filling up, a check after a reboot that did not hold. The network and DNS
+            checks, which come and go, are left out.
+          </span>
+        </span>
+      </label>
+      <div class="toggle">
+        <span>
+          <label class="title" for="watch-drift">Tell me when this machine drifts from a baseline</label>
+          <span class="detail">
+            {#if view.baselines.length === 0}
+              Save this machine as a baseline in Drift first.
+            {:else}
+              Each new difference from the baseline, told once: an application gone, a configuration file changed, a setting different.
+            {/if}
+          </span>
+          <select
+            id="watch-drift"
+            value={view.drift ?? ''}
+            disabled={view.health === null || view.baselines.length === 0 || switching}
+            onchange={(event) => switchWatch({ drift: event.currentTarget.value || null })}
+          >
+            <option value="">No</option>
+            {#each view.baselines as [slug, name] (slug)}
+              <option value={slug}>From {name}</option>
+            {/each}
+          </select>
+        </span>
+      </div>
 
       <h2 class="section">Appearance</h2>
       <div class="themes" role="radiogroup" aria-label="Theme">
@@ -169,6 +213,22 @@
 <style>
   .content {
     padding: 4px 18px 18px;
+  }
+
+  select {
+    justify-self: start;
+    height: 32px;
+    margin-top: 6px;
+    padding: 0 10px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-small);
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+  }
+
+  .toggle .title[for] {
+    cursor: default;
   }
 
   .toggle + .toggle {

@@ -159,8 +159,8 @@
           </div>
           {#each finished.checks as check (check.name)}
             <div class={check.passed ? 'faint' : 'bad'}>
-              <Icon name={check.passed ? 'check' : 'x'} size={14} />
-              {check.name}: {check.detail}
+              <Icon name={check.later ? 'history' : check.unsure ? 'info' : check.passed ? 'check' : 'x'} size={14} />
+              {check.later ? 'After the reboot: ' : check.unsure ? 'Not checked: ' : ''}{check.name}: {check.detail}
             </div>
           {/each}
         {/if}

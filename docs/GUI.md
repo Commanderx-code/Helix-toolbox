@@ -55,7 +55,9 @@ others: `sha256sum --check --ignore-missing SHA256SUMS` and
   terminal interface. A package entry that offers removal and is
   installed has **Remove…** too, the terminal interface's `r`: the package
   manager or Flatpak that installed it removes it, after the same
-  confirmation.
+  confirmation. **Check it now** makes the entry's checks, read-only, as
+  `c` does in the terminal interface: whether what it installs and sets up
+  is still there.
 - **Favorites**: the pinned entries, the same `favorites.toml` the
   terminal interface keeps.
 - **Install Plan**: the queue, in the order it will be planned; entries can
@@ -128,10 +130,11 @@ The other tools, under **More tools** in the sidebar:
 - **Settings**: what happens after a failed step and whether a snapshot
   is taken first, the same `settings.toml` the terminal interface keeps
   its own look in, and **Set up this machine…**, the setup wizard again.
-  **Tell me when updates are waiting** turns the update notifications on
-  or off at once, as `helix-toolbox notifications on` does (GUIDE.md): a
-  timer of the user's own checks every 6 hours and shows a desktop
-  notification, whose **Show updates** opens this window on Updates.
+  **Notifications** turn on or off at once, as `helix-toolbox
+  notifications` does (GUIDE.md): a timer of the user's own checks every 6
+  hours for updates waiting, and if chosen for new health problems and for
+  changes since a Drift baseline, and shows a desktop notification whose
+  button opens this window on Updates, Helix Doctor or Drift.
   **Appearance** chooses the window's theme: **Follow the desktop** (the
   default: light or dark as the desktop's color scheme is, through GTK,
   and changing with it), **Dark** or **Light**. It applies at once and is
@@ -225,6 +228,7 @@ Its commands:
 | `runs` | the history |
 | `save_profile` | the Install Plan as a profile |
 | `bug_report`, `copy_text` | `helix-toolbox report` with the window's facts, and text put on the clipboard |
+| `check_entry` | `helix-toolbox verify` for one entry, as text: **Check it now** in an entry's details |
 | `hardware_report`, `open_issue` | `helix-toolbox report --worked` for a run or an entry, and its issue opened by `xdg-open`, outside the AppImage's own libraries |
 | `import_profile`, `export_profile`, `delete_profile` | your profiles: one added from a file, written to one, or deleted; the file is chosen in the file chooser unless a path is given |
 | `doctor`, `prepare_repair` | the health checks, and a repair ready to confirm |
@@ -236,7 +240,7 @@ Its commands:
 | `read_hardware`, `prepare_firmware`, `prepare_smart` | the hardware, a firmware update, a disk's health check |
 | `read_desktop`, `save_look`, `prepare_look` | the desktop and its looks, saving one, putting one back |
 | `read_settings`, `save_settings` | the run choices |
-| `save_notifications` | the update notifications' timer on or off |
+| `save_watch` | what the scheduled check tells of (updates, health problems, Drift from a baseline), and its timer on or off with it |
 | `setup_start`, `setup_choose`, `setup_done` | the wizard: the machine and the workstations, a workstation's entries for this machine, remembering it was offered |
 
 Every `prepare_*` command answers like `prepare`, with a plan waiting for
@@ -265,8 +269,8 @@ Every icon is drawn from the logo, `assets/icon.svg`: after a change to it,
 run `scripts/icons.sh` from the repository root and commit what it writes.
 The window's header draws `icon.svg` itself.
 
-The window takes `--updates` to open on the Updates screen, as a click on
-the update notification starts it, and `--catalog-dir DIR`, like the command line, to read a
+The window takes `--updates`, `--doctor` or `--drift` to open on that
+screen, as a click on a notification starts it, and `--catalog-dir DIR`, like the command line, to read a
 catalog from a directory; with `tests/fixtures` it works against the
 fixture entries (a marker file, a failing command, a greeter that asks for
 a name), so the whole flow can be tried without changing anything. Debug
@@ -280,7 +284,7 @@ palette, every screen, a run of the marker fixture through the
 confirmation and the terminal, a saved profile exported, deleted and
 imported again, the Remove button, a bug report from a stand-in
 command line, a hardware report of the run whose issue goes to a stand-in
-`xdg-open`, and the update notifications turned on and off with a
+`xdg-open`, and the notifications of updates and health problems turned on and off with a
 stand-in `systemctl`; then it checks the files those left. The Checks workflow runs it under `xvfb-run` on every
 change; by hand, inside a virtual session:
 

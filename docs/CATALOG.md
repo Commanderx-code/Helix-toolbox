@@ -122,6 +122,56 @@ print a file's new contents (`grub`, `grub-cmdline`, `sddm`,
 side. `{grub}` stands for `/boot/grub` (`/boot/grub2` on Fedora) and `{time}`
 for the date and time the installer puts in a name.
 
+A script entry's exit status alone does not show that it worked. After its
+run, what its `[detect]` table says it installs is looked for, as for a
+package entry, and its `[[verify]]` checks say what it leaves, each read
+from the machine as you, changing nothing:
+
+```toml
+# The setting selects a theme that is installed.
+[[verify]]
+kind = "setting"
+files = ["/etc/sddm.conf.d/zz-commander-theme.conf", "/etc/sddm.conf"]
+section = "Theme"
+key = "Current"
+equals = "silent"
+points_to = "/usr/share/sddm/themes/{value}/metadata.desktop"
+
+[[verify]]
+kind = "text"
+path = "/proc/cmdline"
+word = "splash"
+after_reboot = true
+
+[[verify]]
+kind = "service"
+unit = "fstrim.timer"
+enabled = true
+active = true
+
+[[verify]]
+kind = "path"
+path = "/efi/dotfiles-splash.png"
+is = "file"
+when_exists = "/efi/limine.conf"
+```
+
+| Kind | Takes | Holds when |
+|---|---|---|
+| `path` | `path`, `is` (`file` or `directory`), `absent` | it is there (of that kind), or gone with `absent` |
+| `text` | `path`, one `word` or `line`, `absent` | the file has the word (between spaces) or the whole line, or lacks it |
+| `setting` | `files`, `key`, `section`, then `equals`, `contains` and `points_to`, or `unset` alone | the key's value, from the last of the files that sets it (as programs read drop-ins, then the main file), matches; `points_to` is a path made from it with `{value}` that must exist |
+| `service` | `unit`, `enabled`, `active`, `user` | systemd says so, of the system's unit or your own |
+
+Any check takes `when_exists` (it applies only where that path is) and
+`after_reboot` (it holds only once the machine has started again: kept
+beside the history, checked by Helix Doctor and `helix-toolbox verify` after
+the reboot). Paths are absolute, under `~/` or under `{grub}/`. What cannot
+be read here, a file only root can read or a container without systemd, is
+reported as not checked, never as passed; a check that fails makes the run
+not verified. The VM tests run `helix-toolbox verify` after each of their
+cases, so the checks of the entries they cover are proven on real systems.
+
 `catalog/setup.toml` holds the setup wizard's workstations, each with
 entries and `[[workstation.when]]` additions for a graphics vendor
 (`gpu`), a distribution family (`family`, `not_family`) or a desktop, and
