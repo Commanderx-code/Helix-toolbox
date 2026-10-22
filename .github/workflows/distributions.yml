@@ -94,9 +94,7 @@ jobs:
         with:
           node-version: 22
       - name: Install WebKitGTK and the other libraries Tauri needs
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+        run: scripts/ci-apt-install.sh libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - name: The Debian package, the RPM, the AppImage and the Arch package
         working-directory: apps/helix-toolbox-gui
         run: |

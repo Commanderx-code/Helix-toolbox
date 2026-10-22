@@ -23,7 +23,7 @@ jobs:
       # The dependencies as main last built them; only what changed compiles.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Install shellcheck and fish
-        run: sudo apt-get update && sudo apt-get install -y shellcheck fish
+        run: scripts/ci-apt-install.sh shellcheck fish
       - name: Workflow lint
         uses: docker://rhysd/actionlint:1.7.7
         with:
@@ -82,9 +82,7 @@ jobs:
           cache: npm
           cache-dependency-path: apps/helix-toolbox-gui/package-lock.json
       - name: Install WebKitGTK and the other libraries Tauri needs
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb
+        run: scripts/ci-apt-install.sh libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb
       - name: The frontend type-checks and builds
         working-directory: apps/helix-toolbox-gui
         run: |

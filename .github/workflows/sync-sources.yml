@@ -77,7 +77,7 @@ jobs:
           fi
       - name: Install validation tools
         if: steps.release.outputs.build == 'true'
-        run: sudo apt-get update && sudo apt-get install -y shellcheck fish
+        run: scripts/ci-apt-install.sh shellcheck fish
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         if: steps.release.outputs.build == 'true'
         with:
@@ -203,9 +203,7 @@ jobs:
         with:
           node-version: 22
       - name: Install WebKitGTK and the other libraries Tauri needs
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+        run: scripts/ci-apt-install.sh libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - name: Build the packages at the release's version
         env:
           VERSION: ${{ needs.sync.outputs.version }}

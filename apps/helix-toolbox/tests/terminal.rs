@@ -135,13 +135,20 @@ impl Terminal {
         thread::sleep(Duration::from_millis(120));
     }
 
-    /// Replace the search with `text` and move to the results.
+    /// Replace the search with `text` and move to the results. Each key waits
+    /// for the footer to show it took effect: an Escape read together with
+    /// the next "/" on a busy machine is Alt-/, which types a "/".
     fn search(&mut self, text: &str) {
+        let searching = |screen: &str| screen.contains("Keep results");
         self.keys("/");
+        self.wait_until("the search box to take keys", searching);
         self.keys(ESC);
+        self.wait_until("the search to clear", |screen| !searching(screen));
         self.keys("/");
+        self.wait_until("the search box to take keys", searching);
         self.keys(text);
         self.keys("\r");
+        self.wait_until("the results to take keys", |screen| !searching(screen));
     }
 
     fn resize(&mut self, rows: u16, cols: u16) {
@@ -359,6 +366,9 @@ fn the_menu_runs_fixture_entries_from_the_keyboard() {
     tui.keys("Ada\r");
     tui.wait_for(&["Hello, Ada.", "FINISHED"]);
     tui.keys("\r");
+    tui.wait_until("the running window to close", |screen| {
+        !screen.contains("FINISHED")
+    });
 
     // Ctrl-C stops a running entry and its child, and the run is interrupted.
     tui.search("sleep");

@@ -4,14 +4,14 @@
 resolver = "2"
 
 [workspace.package]
-version = "1.22.0"
+version = "1.22.1"
 
 [workspace.dependencies]
 # scripts/stamp-version.py keeps these in step with the version above.
-helix-toolbox-catalog = { path = "../../../crates/helix-toolbox-catalog", version = "=1.22.0" }
-helix-toolbox-core = { path = "../../../crates/helix-toolbox-core", version = "=1.22.0" }
-helix-toolbox-engine = { path = "../../../crates/helix-toolbox-engine", version = "=1.22.0" }
-helix-toolbox-platform = { path = "../../../crates/helix-toolbox-platform", version = "=1.22.0" }
+helix-toolbox-catalog = { path = "../../../crates/helix-toolbox-catalog", version = "=1.22.1" }
+helix-toolbox-core = { path = "../../../crates/helix-toolbox-core", version = "=1.22.1" }
+helix-toolbox-engine = { path = "../../../crates/helix-toolbox-engine", version = "=1.22.1" }
+helix-toolbox-platform = { path = "../../../crates/helix-toolbox-platform", version = "=1.22.1" }
 
 [package]
 name = "helix-toolbox-gui"

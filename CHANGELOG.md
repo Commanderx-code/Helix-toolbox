@@ -4,6 +4,14 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.22.1
+
+- **Steadier release builds.** A terminal test now waits for each key in a
+  search to take effect, so a busy ARM64 machine no longer reads Escape and
+  the next key as one. The workflows install Ubuntu packages through
+  `scripts/ci-apt-install.sh`, which stops a stalled or trickling mirror
+  after a few minutes and tries again, from Ubuntu's main archive.
+
 ## v1.22.0
 
 - **The window looks like Command Center.** The Dashboard welcomes you by
