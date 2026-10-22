@@ -1,0 +1,7 @@
+name = "Joplin"
+description = "Notes and to-do lists with sync and end-to-end encryption, from Flathub."
+flags = "I"
+
+[package]
+flatpak = "net.cozic.joplin_desktop"
+removable = true

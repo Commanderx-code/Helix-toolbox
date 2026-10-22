@@ -1,0 +1,9 @@
+name = "OpenSnitch"
+description = "Application firewall that asks before a program connects to the network. Arch, Debian and Ubuntu."
+flags = "I"
+
+[package]
+binary = "opensnitchd"
+arch = "opensnitch"
+debian = "opensnitch"
+removable = true

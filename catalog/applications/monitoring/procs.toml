@@ -1,0 +1,11 @@
+name = "procs"
+description = "A modern ps, with colors, a tree view and search."
+flags = "I"
+
+[package]
+binary = "procs"
+arch = "procs"
+debian = "procs"
+fedora = "procs"
+suse = "procs"
+removable = true

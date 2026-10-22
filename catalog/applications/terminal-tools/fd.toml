@@ -1,0 +1,11 @@
+name = "fd"
+description = "A simple, fast alternative to find. Debian and Ubuntu name its command fdfind."
+flags = "I"
+
+[package]
+binary = "fd"
+arch = "fd"
+debian = "fd-find"
+fedora = "fd-find"
+suse = "fd"
+removable = true

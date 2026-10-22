@@ -1,0 +1,11 @@
+name = "ncdu"
+description = "Disk usage analyzer with a terminal interface."
+flags = "I"
+
+[package]
+binary = "ncdu"
+arch = "ncdu"
+debian = "ncdu"
+fedora = "ncdu"
+suse = "ncdu"
+removable = true

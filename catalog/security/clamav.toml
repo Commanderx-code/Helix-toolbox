@@ -1,0 +1,11 @@
+name = "ClamAV"
+description = "Open-source antivirus scanner (clamscan); freshclam fetches its signatures."
+flags = "I"
+
+[package]
+binary = "clamscan"
+arch = "clamav"
+debian = "clamav"
+fedora = "clamav"
+suse = "clamav"
+removable = true

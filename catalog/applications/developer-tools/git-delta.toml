@@ -1,0 +1,11 @@
+name = "delta"
+description = "Syntax-highlighted diffs for Git, side by side if you like."
+flags = "I"
+
+[package]
+binary = "delta"
+arch = "git-delta"
+debian = "git-delta"
+fedora = "git-delta"
+suse = "git-delta"
+removable = true

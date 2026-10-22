@@ -1,0 +1,12 @@
+name = "Kdenlive"
+description = "Video editor with multitrack editing, effects and transitions."
+flags = "I"
+
+[package]
+binary = "kdenlive"
+arch = "kdenlive"
+debian = "kdenlive"
+fedora = "kdenlive"
+suse = "kdenlive"
+flatpak = "org.kde.kdenlive"
+removable = true

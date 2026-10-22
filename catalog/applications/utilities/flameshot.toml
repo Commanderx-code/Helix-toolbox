@@ -1,0 +1,12 @@
+name = "Flameshot"
+description = "Screenshots with annotation, arrows, blur and upload."
+flags = "I"
+
+[package]
+binary = "flameshot"
+arch = "flameshot"
+debian = "flameshot"
+fedora = "flameshot"
+suse = "flameshot"
+flatpak = "org.flameshot.Flameshot"
+removable = true

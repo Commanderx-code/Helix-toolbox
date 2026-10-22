@@ -1,0 +1,7 @@
+name = "LocalSend"
+description = "Send files to nearby devices over your local network, from Flathub."
+flags = "I"
+
+[package]
+flatpak = "org.localsend.localsend_app"
+removable = true

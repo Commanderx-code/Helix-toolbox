@@ -1,0 +1,11 @@
+name = "Distrobox"
+description = "Run other Linux distributions in containers that share your home folder and desktop."
+flags = "I"
+
+[package]
+binary = "distrobox"
+arch = "distrobox"
+debian = "distrobox"
+fedora = "distrobox"
+suse = "distrobox"
+removable = true

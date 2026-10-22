@@ -1,0 +1,11 @@
+name = "GitHub CLI"
+description = "Pull requests, issues, releases and Actions from the terminal (gh)."
+flags = "I"
+
+[package]
+binary = "gh"
+arch = "github-cli"
+debian = "gh"
+fedora = "gh"
+suse = "gh"
+removable = true

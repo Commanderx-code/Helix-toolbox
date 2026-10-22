@@ -1,0 +1,7 @@
+name = "Bitwarden"
+description = "Password manager that syncs across your devices, from Flathub."
+flags = "I"
+
+[package]
+flatpak = "com.bitwarden.desktop"
+removable = true

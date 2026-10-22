@@ -1,0 +1,9 @@
+name = "DBeaver"
+description = "Database tool for PostgreSQL, MySQL, SQLite and many more."
+flags = "I"
+
+[package]
+binary = "dbeaver"
+arch = "dbeaver"
+flatpak = "io.dbeaver.DBeaverCommunity"
+removable = true

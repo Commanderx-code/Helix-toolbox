@@ -1,0 +1,11 @@
+name = "tmux"
+description = "Terminal multiplexer: split panes, windows and sessions that survive a disconnect."
+flags = "I"
+
+[package]
+binary = "tmux"
+arch = "tmux"
+debian = "tmux"
+fedora = "tmux"
+suse = "tmux"
+removable = true

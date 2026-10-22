@@ -1,0 +1,11 @@
+name = "tealdeer (tldr)"
+description = "Short, practical examples for command-line tools (tldr NAME)."
+flags = "I"
+
+[package]
+binary = "tldr"
+arch = "tealdeer"
+debian = "tealdeer"
+fedora = "tealdeer"
+suse = "tealdeer"
+removable = true

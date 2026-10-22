@@ -38,6 +38,8 @@
 - **Scribus**: Scribus is free and open-source desktop publishing software available for most desktop operating systems.
 - **Synfig Studio**: Synfig Studio is a free and open-source vector-based 2D animation software.
 - **Tenacity**: Tenacity is an easy-to-use, cross-platform multi-track audio editor/recorder.
+- **Kdenlive**: Video editor with multitrack editing, effects and transitions.
+- **Shotcut**: Cross-platform video editor with wide format support.
 
 ### Developer Tools
 
@@ -54,15 +56,25 @@ https://github.com/ChrisTitusTech/neovim
 - **VS Code**: Visual Studio Code (VS Code) is a lightweight, open-source code editor with built-in support for debugging, version control, and extensions for various programming languages and frameworks.
 - **VS Codium**: VSCodium is a free, open-source version of Visual Studio Code (VS Code) that removes Microsoft-specific telemetry and branding.
 - **Zed**: Zed is a next-generation code editor written in rust, designed for high-performance collaboration with humans and AI.
+- **DBeaver**: Database tool for PostgreSQL, MySQL, SQLite and many more.
+- **Distrobox**: Run other Linux distributions in containers that share your home folder and desktop.
 - **Git**: Distributed version control.
+- **GitHub CLI**: Pull requests, issues, releases and Actions from the terminal (gh).
 - **Neovim**: Extensible terminal-based text editor.
+- **Podman Desktop**: Manage containers, images, pods and Kubernetes from a desktop app.
 - **Ripgrep**: Fast recursive text search (rg).
+- **delta**: Syntax-highlighted diffs for Git, side by side if you like.
 - **fzf**: Command-line fuzzy finder.
 
 ### Monitoring
 
+- **Fastfetch**: System information beside your distribution logo, quickly.
+- **Mission Center**: Monitor CPU, memory, disk, network and GPU usage, like a task manager.
+- **bottom**: Graphical process and system monitor for the terminal (btm).
 - **btop**: Resource monitor with a terminal interface.
 - **htop**: Interactive process viewer.
+- **nvtop**: GPU usage and processes for NVIDIA, AMD and Intel graphics.
+- **procs**: A modern ps, with colors, a tree view and search.
 
 ### Terminal Tools
 
@@ -70,6 +82,19 @@ https://github.com/ChrisTitusTech/neovim
 - **NetWatch Network Dashboard**: Install pinned NetWatch through Nix on Linux x86_64. Ordinary monitoring is unprivileged; capture permissions remain a separate choice.
 - **TFM Visual File Manager**: Install the pinned TFM beta through Nix on Linux x86_64, with preview and Wayland clipboard helpers. Use Ghostty for image previews.
 - **Cassette Spotify Player**: Install pinned Cassette and librespot through Nix on Linux x86_64. Requires Spotify Premium, your own Client ID and interactive browser login.
+- **bat**: cat with syntax highlighting, line numbers and Git changes. Debian and Ubuntu name its command batcat.
+- **broot**: Navigate folder trees, find files and see what fills a disk.
+- **duf**: Disk usage and free space of every mounted file system, as a readable table.
+- **dust**: A more intuitive du: which folders take the most space, at a glance.
+- **eza**: A modern ls, with colors, icons, Git status and a tree view.
+- **fd**: A simple, fast alternative to find. Debian and Ubuntu name its command fdfind.
+- **hyperfine**: Benchmark commands, with warmup runs and statistics.
+- **jq**: Slice, filter and reshape JSON on the command line.
+- **ncdu**: Disk usage analyzer with a terminal interface.
+- **tealdeer (tldr)**: Short, practical examples for command-line tools (tldr NAME).
+- **tmux**: Terminal multiplexer: split panes, windows and sessions that survive a disconnect.
+- **trash-cli**: Move files to the desktop trash from the terminal, list and restore them.
+- **zoxide**: A smarter cd that remembers the folders you use most (z NAME).
 
 ### Communication Apps
 
@@ -194,6 +219,28 @@ WINE for running Windows programs, and the Proton builds and compatibility tools
 - **WINE Staging**: WINE with the staging patches, newer fixes that are not yet in WINE itself. It replaces WINE: when WINE is installed, pacman asks before removing it. Arch only.
 - **WINE Meta**: Garuda's meta-package for WINE: WINE with Gecko, Mono, Winetricks, WineASIO and the libraries Windows games commonly need. Garuda only.
 - **Winetricks**: Installs Windows components (fonts, runtimes, DirectX pieces) and changes settings in WINE prefixes. Debian has it only in contrib.
+
+### Media
+
+- **Spotify**: Music and podcast streaming, from Flathub.
+- **VLC**: Plays almost any video or audio file, disc and stream.
+- **mpv**: Minimal, keyboard-driven media player.
+
+### Notes
+
+- **Joplin**: Notes and to-do lists with sync and end-to-end encryption, from Flathub.
+- **Obsidian**: Notes in plain Markdown files, linked together, from Flathub.
+
+### Utilities
+
+- **Bitwarden**: Password manager that syncs across your devices, from Flathub.
+- **Flameshot**: Screenshots with annotation, arrows, blur and upload.
+- **Flatseal**: Review and change the permissions of your Flatpak apps, from Flathub.
+- **KeePassXC**: Offline password manager that keeps your passwords in an encrypted file.
+- **LocalSend**: Send files to nearby devices over your local network, from Flathub.
+- **Syncthing**: Keep folders in sync between your devices, peer to peer. Start it with systemctl --user enable --now syncthing.
+- **Warehouse**: Manage Flatpak apps, their data and versions, from Flathub.
+- **qBittorrent**: Open-source BitTorrent client with search and RSS.
 
 ## Configurations
 
@@ -361,7 +408,11 @@ https://github.com/ChrisTitusTech/dwm-titus
 - **FirewallD Firewall Baselines (CTT)**: Configure FirewallD with CTT's recommended baseline rules for improved system security. For more information visit: https://christitus.com/linux-security-mistakes
 - **Lynis Security Audit**: Install Lynis when needed, run an elevated system security audit with live results, then optionally remove Lynis.
 - **UFW Firewall Baselines (CTT)**: Developed to ease iptables firewall configuration, UFW provides a user friendly way to create an IPv4 or IPv6 host-based firewall. This command installs UFW and configures UFW based on CTT's recommended rules. For more information visit: https://christitus.com/linux-security-mistakes
+- **ClamAV**: Open-source antivirus scanner (clamscan); freshclam fetches its signatures.
+- **Fail2ban**: Bans addresses that keep failing to log in, such as over SSH. Configure its jails, then enable fail2ban.service.
+- **OpenSnitch**: Application firewall that asks before a program connects to the network. Arch, Debian and Ubuntu.
 
 ## Profiles
 
 - **Developer Basics**: Git, ripgrep, fzf and Neovim, as one reviewable plan.
+- **Terminal Power User**: Modern terminal tools for files, search, Git and monitoring, as one reviewable plan.

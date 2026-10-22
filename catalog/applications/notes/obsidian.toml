@@ -1,0 +1,7 @@
+name = "Obsidian"
+description = "Notes in plain Markdown files, linked together, from Flathub."
+flags = "I"
+
+[package]
+flatpak = "md.obsidian.Obsidian"
+removable = true

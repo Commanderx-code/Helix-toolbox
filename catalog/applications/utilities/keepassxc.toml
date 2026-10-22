@@ -1,0 +1,12 @@
+name = "KeePassXC"
+description = "Offline password manager that keeps your passwords in an encrypted file."
+flags = "I"
+
+[package]
+binary = "keepassxc"
+arch = "keepassxc"
+debian = "keepassxc"
+fedora = "keepassxc"
+suse = "keepassxc"
+flatpak = "org.keepassxc.KeePassXC"
+removable = true

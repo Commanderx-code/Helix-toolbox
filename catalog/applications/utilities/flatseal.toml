@@ -1,0 +1,7 @@
+name = "Flatseal"
+description = "Review and change the permissions of your Flatpak apps, from Flathub."
+flags = "I"
+
+[package]
+flatpak = "com.github.tchx84.Flatseal"
+removable = true

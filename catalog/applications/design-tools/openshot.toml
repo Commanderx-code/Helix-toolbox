@@ -6,7 +6,7 @@ order = 116
 [package]
 binary = "openshot"
 debian = "openshot-qt"
-fedora = "openshot-qt"
+fedora = "openshot"
 suse = "openshot-qt"
 aur = "openshot"
 flatpak = "org.openshot.OpenShot"

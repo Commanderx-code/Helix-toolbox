@@ -6,7 +6,7 @@ order = 101
 [package]
 binary = "ardour"
 debian = "ardour"
-fedora = "ardour"
+fedora = "ardour9"
 suse = "ardour"
 aur = "ardour"
 flatpak = "org.ardour.Ardour"

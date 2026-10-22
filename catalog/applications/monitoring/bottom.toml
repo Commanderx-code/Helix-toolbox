@@ -1,0 +1,10 @@
+name = "bottom"
+description = "Graphical process and system monitor for the terminal (btm)."
+flags = "I"
+
+[package]
+binary = "btm"
+arch = "bottom"
+debian = "btm"
+suse = "bottom"
+removable = true

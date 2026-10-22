@@ -1,0 +1,12 @@
+name = "Shotcut"
+description = "Cross-platform video editor with wide format support."
+flags = "I"
+
+[package]
+binary = "shotcut"
+arch = "shotcut"
+debian = "shotcut"
+fedora = "shotcut"
+suse = "shotcut"
+flatpak = "org.shotcut.Shotcut"
+removable = true

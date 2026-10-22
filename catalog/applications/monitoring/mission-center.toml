@@ -1,0 +1,9 @@
+name = "Mission Center"
+description = "Monitor CPU, memory, disk, network and GPU usage, like a task manager."
+flags = "I"
+
+[package]
+binary = "missioncenter"
+arch = "mission-center"
+flatpak = "io.missioncenter.MissionCenter"
+removable = true

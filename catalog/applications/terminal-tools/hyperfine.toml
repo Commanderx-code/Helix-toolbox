@@ -1,0 +1,11 @@
+name = "hyperfine"
+description = "Benchmark commands, with warmup runs and statistics."
+flags = "I"
+
+[package]
+binary = "hyperfine"
+arch = "hyperfine"
+debian = "hyperfine"
+fedora = "hyperfine"
+suse = "hyperfine"
+removable = true

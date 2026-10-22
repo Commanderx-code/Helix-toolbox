@@ -1,0 +1,7 @@
+name = "Warehouse"
+description = "Manage Flatpak apps, their data and versions, from Flathub."
+flags = "I"
+
+[package]
+flatpak = "io.github.flattool.Warehouse"
+removable = true

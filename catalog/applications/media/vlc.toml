@@ -1,0 +1,12 @@
+name = "VLC"
+description = "Plays almost any video or audio file, disc and stream."
+flags = "I"
+
+[package]
+binary = "vlc"
+arch = "vlc"
+debian = "vlc"
+fedora = "vlc"
+suse = "vlc"
+flatpak = "org.videolan.VLC"
+removable = true

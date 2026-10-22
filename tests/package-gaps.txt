@@ -1,0 +1,27 @@
+# Packages the catalog names that one distribution's repositories lack.
+# The Distributions workflow checks every other name exists; an entry with
+# a gap here tries its next source on that distribution (the AUR, Flathub)
+# or fails there. One per line: the container image, then the package.
+# Garuda's own repository has its WINE meta-package; Arch does not.
+archlinux:latest wine-meta
+# Debian keeps these in contrib, which is off by default.
+debian:stable winetricks
+debian:stable protontricks
+# Ubuntu dropped Dolphin; Flathub has it.
+ubuntu:22.04 dolphin-emu
+ubuntu:24.04 dolphin-emu
+# Ubuntu 22.04 predates these Rust and Go tools in its archive.
+ubuntu:22.04 eza
+ubuntu:22.04 btm
+ubuntu:22.04 broot
+ubuntu:22.04 du-dust
+ubuntu:22.04 fastfetch
+ubuntu:22.04 git-delta
+ubuntu:22.04 procs
+ubuntu:22.04 tealdeer
+ubuntu:22.04 distrobox
+ubuntu:22.04 opensnitch
+ubuntu:24.04 broot
+ubuntu:24.04 du-dust
+ubuntu:24.04 fastfetch
+ubuntu:24.04 procs

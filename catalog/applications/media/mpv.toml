@@ -1,0 +1,12 @@
+name = "mpv"
+description = "Minimal, keyboard-driven media player."
+flags = "I"
+
+[package]
+binary = "mpv"
+arch = "mpv"
+debian = "mpv"
+fedora = "mpv"
+suse = "mpv"
+flatpak = "io.mpv.Mpv"
+removable = true

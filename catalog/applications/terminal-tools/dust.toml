@@ -1,0 +1,11 @@
+name = "dust"
+description = "A more intuitive du: which folders take the most space, at a glance."
+flags = "I"
+
+[package]
+binary = "dust"
+arch = "dust"
+debian = "du-dust"
+fedora = "du-dust"
+suse = "dust"
+removable = true

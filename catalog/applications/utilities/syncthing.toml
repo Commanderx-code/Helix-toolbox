@@ -1,0 +1,11 @@
+name = "Syncthing"
+description = "Keep folders in sync between your devices, peer to peer. Start it with systemctl --user enable --now syncthing."
+flags = "I"
+
+[package]
+binary = "syncthing"
+arch = "syncthing"
+debian = "syncthing"
+fedora = "syncthing"
+suse = "syncthing"
+removable = true

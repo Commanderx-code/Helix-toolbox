@@ -408,6 +408,12 @@ jobs:
             echo "Steam ran on aarch64" >&2
             exit 1
           fi
+      # Every package the catalog names for this family is in this
+      # distribution's repositories, but for the gaps tests/package-gaps.txt
+      # lists, which must still be gaps.
+      - name: The catalog's package names exist here
+        if: ${{ !matrix.arch }}
+        run: scripts/check-package-names.sh "${{ matrix.image }}"
       # WINE and Steam's gaming stack are for x86 programs.
       - name: WINE and gaming packages the catalog names exist here
         if: ${{ !matrix.arch }}
@@ -426,18 +432,6 @@ jobs:
             debian:*) apt-cache show wine minigalaxy > /dev/null ;;
             ubuntu:*) apt-cache show wine winetricks protontricks minigalaxy > /dev/null ;;
             fedora:*) dnf info -q wine winetricks protontricks minigalaxy > /dev/null ;;
-            opensuse/*)
-              # Every openSUSE package the catalog names exists in the
-              # distribution's repositories.
-              grep -rhE '^suse = ' catalog | sed 's/^suse = "\(.*\)"$/\1/' | sort -u > suse-names.txt
-              missing=0
-              while read -r name; do
-                if ! zypper --non-interactive --quiet search --match-exact --type package "$name" > /dev/null; then
-                  echo "openSUSE has no package $name" >&2
-                  missing=1
-                fi
-              done < suse-names.txt
-              test "$missing" = 0 ;;
           esac
           # The Arch-only entries show only on Arch; Garuda's meta-package
           # nowhere here. A bare "! grep" never fails a step, so test it.

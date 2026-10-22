@@ -1,0 +1,11 @@
+name = "eza"
+description = "A modern ls, with colors, icons, Git status and a tree view."
+flags = "I"
+
+[package]
+binary = "eza"
+arch = "eza"
+debian = "eza"
+fedora = "eza"
+suse = "eza"
+removable = true

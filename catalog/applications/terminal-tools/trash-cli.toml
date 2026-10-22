@@ -1,0 +1,11 @@
+name = "trash-cli"
+description = "Move files to the desktop trash from the terminal, list and restore them."
+flags = "I"
+
+[package]
+binary = "trash-put"
+arch = "trash-cli"
+debian = "trash-cli"
+fedora = "trash-cli"
+suse = "trash-cli"
+removable = true

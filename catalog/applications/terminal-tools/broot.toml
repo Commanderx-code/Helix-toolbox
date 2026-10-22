@@ -1,0 +1,10 @@
+name = "broot"
+description = "Navigate folder trees, find files and see what fills a disk."
+flags = "I"
+
+[package]
+binary = "broot"
+arch = "broot"
+debian = "broot"
+suse = "broot"
+removable = true

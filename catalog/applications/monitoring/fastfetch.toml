@@ -1,0 +1,11 @@
+name = "Fastfetch"
+description = "System information beside your distribution logo, quickly."
+flags = "I"
+
+[package]
+binary = "fastfetch"
+arch = "fastfetch"
+debian = "fastfetch"
+fedora = "fastfetch"
+suse = "fastfetch"
+removable = true

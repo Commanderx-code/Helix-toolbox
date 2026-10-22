@@ -5,8 +5,6 @@ order = 103
 
 [package]
 binary = "gopher64plus"
-debian = "gopher64"
-fedora = "gopher64"
 aur = "gopher64"
 flatpak = "io.github.gopher64.gopher64"
 removable = true

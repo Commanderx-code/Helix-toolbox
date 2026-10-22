@@ -24,6 +24,11 @@ flatpak = "org.ardour.Ardour"    # for families with no package
 removable = true                 # offer removal: r in the interface, helix-toolbox remove
 ```
 
+Each name must be a package in the family's repositories: the Distributions
+workflow checks every one in each distribution's container. A release that
+lacks one, such as Ubuntu 22.04 for many newer tools, lists it in
+`tests/package-gaps.txt`; there the entry tries its next source.
+
 Whether an entry is installed is asked of the package manager (`pacman -Q`,
 `dpkg-query`, `rpm -q` and the like) for its own packages, then of Flatpak.
 Only when none of them is installed does `binary` count, so a tool installed

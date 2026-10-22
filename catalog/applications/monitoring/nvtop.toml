@@ -1,0 +1,11 @@
+name = "nvtop"
+description = "GPU usage and processes for NVIDIA, AMD and Intel graphics."
+flags = "I"
+
+[package]
+binary = "nvtop"
+arch = "nvtop"
+debian = "nvtop"
+fedora = "nvtop"
+suse = "nvtop"
+removable = true

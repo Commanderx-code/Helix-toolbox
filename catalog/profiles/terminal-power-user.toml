@@ -1,0 +1,6 @@
+name = "Terminal Power User"
+description = "Modern terminal tools for files, search, Git and monitoring, as one reviewable plan."
+flags = "I"
+
+[profile]
+entries = ["bat", "eza", "fd", "ripgrep", "fzf", "zoxide", "tmux", "btop", "jq", "tealdeer", "git-delta", "gh"]

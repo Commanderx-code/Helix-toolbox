@@ -1,0 +1,12 @@
+name = "qBittorrent"
+description = "Open-source BitTorrent client with search and RSS."
+flags = "I"
+
+[package]
+binary = "qbittorrent"
+arch = "qbittorrent"
+debian = "qbittorrent"
+fedora = "qbittorrent"
+suse = "qbittorrent"
+flatpak = "org.qbittorrent.qBittorrent"
+removable = true

@@ -1,0 +1,11 @@
+name = "Spotify"
+description = "Music and podcast streaming, from Flathub."
+flags = "I"
+
+[package]
+flatpak = "com.spotify.Client"
+removable = true
+
+[needs]
+# Spotify publishes its Linux app for x86_64 only.
+architectures = ["x86_64"]

@@ -1,0 +1,11 @@
+name = "jq"
+description = "Slice, filter and reshape JSON on the command line."
+flags = "I"
+
+[package]
+binary = "jq"
+arch = "jq"
+debian = "jq"
+fedora = "jq"
+suse = "jq"
+removable = true

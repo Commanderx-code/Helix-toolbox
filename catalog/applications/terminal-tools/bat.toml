@@ -1,0 +1,11 @@
+name = "bat"
+description = "cat with syntax highlighting, line numbers and Git changes. Debian and Ubuntu name its command batcat."
+flags = "I"
+
+[package]
+binary = "bat"
+arch = "bat"
+debian = "bat"
+fedora = "bat"
+suse = "bat"
+removable = true

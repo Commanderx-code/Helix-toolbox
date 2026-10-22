@@ -1,0 +1,11 @@
+name = "zoxide"
+description = "A smarter cd that remembers the folders you use most (z NAME)."
+flags = "I"
+
+[package]
+binary = "zoxide"
+arch = "zoxide"
+debian = "zoxide"
+fedora = "zoxide"
+suse = "zoxide"
+removable = true

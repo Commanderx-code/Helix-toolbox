@@ -1,0 +1,11 @@
+name = "duf"
+description = "Disk usage and free space of every mounted file system, as a readable table."
+flags = "I"
+
+[package]
+binary = "duf"
+arch = "duf"
+debian = "duf"
+fedora = "duf"
+suse = "duf"
+removable = true

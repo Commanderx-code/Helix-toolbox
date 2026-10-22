@@ -36,7 +36,7 @@ settings, profiles and history over ([what changed](https://github.com/Commander
 
 ## Highlights
 
-- **A catalog of 248 entries** for applications, development tools, gaming,
+- **A catalog of 290 entries** for applications, development tools, gaming,
   desktop and shell configuration, maintenance and security, in searchable
   groups, with ready-made profiles that set up a whole workstation.
 - **Knows your machine.** Each entry shows whether it is installed, from
