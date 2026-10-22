@@ -581,6 +581,40 @@ jobs:
             grep -q 'Package cache is not offered' refused.txt
           fi
           bin/helix-toolbox storage
+      - name: Performance and recovery read, and a configuration backup restored and undone for real
+        run: |
+          # No systemd in a container: no record of the boot, and it says why.
+          bin/helix-toolbox performance | tee performance.txt
+          grep -q 'systemd does not run this machine' performance.txt
+          bin/helix-toolbox --json performance > performance.json
+          python3 -c 'import json; d = json.load(open("performance.json"))["data"]; assert d["boot"] is None and d["now"]["memory_total"] > 0, d'
+          # Helix Toolbox's own restore: a file put back, then the restore undone.
+          config="$HOME/.config/hf-restore/config"
+          mkdir -p "$(dirname "$config")"
+          printf 'new\n' > "$config"
+          printf 'old\n' > "$config.helix-toolbox-backup-20260101000000"
+          bin/helix-toolbox restore "$config.helix-toolbox-backup-20260101000000" --yes
+          [ "$(cat "$config")" = old ]
+          kept=$(find "$(dirname "$config")" -name 'config.helix-toolbox-backup-*' ! -name '*-20260101000000')
+          [ "$(cat "$kept")" = new ]
+          bin/helix-toolbox restore "$kept" --yes
+          [ "$(cat "$config")" = new ]
+          bin/helix-toolbox --json recovery > recovery.json
+          bin/helix-toolbox --json backups > backups.json
+          python3 -c 'import json
+          checks = json.load(open("recovery.json"))["data"]["checks"]
+          ids = [check["id"] for check in checks]
+          assert ids[0] == "snapshots" and {"configuration-backups", "own-files", "machine-record"} <= set(ids), ids
+          # The first backup, and the two the restore and its undo kept.
+          found = json.load(open("backups.json"))["data"]["backups"]
+          assert len([backup for backup in found if backup["original"].endswith("/hf-restore/config")]) == 3, found'
+          bin/helix-toolbox recovery
+          # Nothing takes snapshots in a container, so there are none to check.
+          if bin/helix-toolbox recovery --check-snapshots --dry-run 2> refused.txt; then
+            echo "the snapshot check was planned without a snapshot tool" >&2
+            exit 1
+          fi
+          grep -q 'neither Snapper' refused.txt
       - name: Script and native entries
         run: |
           bin/helix-toolbox run system-report machine-summary --yes | tee report.txt

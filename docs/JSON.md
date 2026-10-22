@@ -259,6 +259,31 @@ bytes, `null` when unknown; `frees` is `null` when only the cleanup can
 tell, `not_offered` why an item cannot be cleaned now, `packages` what
 unused packages would remove.
 
+## performance
+
+`{boot, no_boot, now, previous, recorded, hints}`. `boot` is `null` where
+systemd did not record one, with `no_boot` saying why; otherwise `{id,
+booted, kernel, phases: {firmware, loader, kernel, initrd, userspace,
+total}, slowest: [{name, took}], chain: [{name, at, took}]}`, times in
+milliseconds (`firmware`, `loader` and `initrd` `null` when unknown),
+`booted` in seconds since 1970, `chain` what the login screen waited for.
+`now` is `{cpus, load, memory_total, memory_available, swaps: [{name, zram,
+size, used}], pressure: {cpu, memory, io}, governor, power_profile,
+heaviest: [{pid, name, memory}]}`, bytes, and the share of the last minute
+programs waited (`null` without the kernel's pressure figures).
+`previous` compares this boot with the one recorded before it, as
+`comparison` does, or is `null`; `hints` are `[{title, detail, command,
+unit, entry}]`. `performance boots` is `boots`: `{boots: [...]}`, newest
+first. `performance compare` is `comparison`: `{before, after, phases:
+[{name, before, after}], units: [...], runs: [{at, names, success}]}`.
+
+## recovery
+
+`{checks, snapshots}`: the checks as `doctor` gives them (`snapshots`,
+`snapshot-boot`, `second-kernel`, `configuration-backups`, `own-files`,
+`machine-record`; a check that does not apply here is left out), and the
+snapshot tool set up (`Snapper`, `Timeshift`) or `null`.
+
 ## hardware_report
 
 `report --worked <entry>`: `{entries: [{id, name}], machine, system,

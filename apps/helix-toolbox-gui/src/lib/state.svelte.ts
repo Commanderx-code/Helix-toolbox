@@ -19,6 +19,8 @@ export type Screen =
   | { kind: 'reliability' }
   | { kind: 'services' }
   | { kind: 'storage' }
+  | { kind: 'performance' }
+  | { kind: 'recovery' }
   | { kind: 'hardware' }
   | { kind: 'bundles' }
   | { kind: 'desktop' }

@@ -78,6 +78,10 @@ settings, profiles and history over ([what changed](https://github.com/Commander
   started at login, each change told what it costs first; and where the disk
   space goes, with what each cleanup frees. Snapshots and bootable kernels
   are never cleaned.
+- **Performance and recovery**: how long the boot took and where the time
+  went, each boot beside an earlier one with the runs in between; and
+  whether the machine could be brought back: snapshots and booting one, a
+  second kernel, backups of your own files, a baseline to rebuild from.
 - **Know what you are running**: the Reliability screen shows how far each
   entry has been tested (in distribution containers, with stand-ins, on real
   machines), critical boot and driver entries first, and the trust inspector

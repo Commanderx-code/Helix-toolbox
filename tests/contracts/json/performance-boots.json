@@ -1,0 +1,36 @@
+{
+  "command": "string",
+  "data": {
+    "boots": [
+      {
+        "booted": "number",
+        "chain": [
+          {
+            "at": "number",
+            "name": "string",
+            "took": "null"
+          }
+        ],
+        "id": "string",
+        "kernel": "string",
+        "phases": {
+          "firmware": "number",
+          "initrd": "number",
+          "kernel": "number",
+          "loader": "number",
+          "total": "number",
+          "userspace": "number"
+        },
+        "slowest": [
+          {
+            "name": "string",
+            "took": "number"
+          }
+        ]
+      }
+    ]
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

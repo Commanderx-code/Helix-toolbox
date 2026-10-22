@@ -410,6 +410,60 @@ Helix Toolbox's configuration backups are listed and never offered: what
 could undo a mistake stays. `helix-toolbox storage` and `storage clean
 <item>` (`--dry-run`, `--yes`) do the same.
 
+## Performance
+
+**Performance** reads systemd's record of this boot (`systemctl show` of
+the manager's timestamps, as `systemd-analyze time` counts them): the
+firmware, the boot loader, the kernel, the initial RAM disk and the
+services, then what the login screen waited for (`systemd-analyze
+critical-chain`) and the slowest services since the boot (`systemd-analyze
+blame`). Below it, the machine now: the load against its processors,
+memory and swap (zram or a disk), the kernel's pressure figures for the
+processor, memory and the disk over the last minute, the frequency
+governor and power profile, and the programs holding the most memory.
+
+Each boot is recorded once, the first time Helix Toolbox reads it or the
+notifications' timer runs, in `boots.json` beside the history (the last
+50). This boot is set beside the one before it; `b` (or the window's
+choice) sets it beside an earlier one. The comparison lists each part and
+each unit that moved by half a second or more, a kernel that changed, and
+the Helix Toolbox runs between the two boots. Hints say what is worth
+knowing: the firmware or the boot menu taking long, a service the login
+screen waited two seconds or more for (for `NetworkManager-wait-online` and
+`systemd-networkd-wait-online`, `Enter` plans disabling it, which asks
+first), memory nearly full, swapping to disk without zram, and programs
+waiting. It only reads. `helix-toolbox performance` (`boots`, `compare
+<before> [after]`, a boot by its number in `boots` or the start of its id)
+does the same.
+
+## Recovery
+
+**Recovery** checks what would bring the machine back, reading only:
+
+- **System snapshots**: Snapper (with a root configuration) or Timeshift,
+  and Snapper's count and newest where this user may list them; a notice
+  when the newest is over a month old, or when nothing takes snapshots,
+  with the entry that sets Snapper or Timeshift up.
+- **Starting from a snapshot**, on Btrfs: whether the boot menu lists
+  snapshots (grub-btrfs, limine-snapper-sync, openSUSE's GRUB entries), so a
+  system that no longer starts can start from one.
+- **A second kernel**: the kernels in `/boot` with their boot images, and on
+  Arch the advice to keep `linux-lts` beside the kernel.
+- **Configuration backups**: how many Helix Toolbox's entries left, and
+  the newest.
+- **Your own files**: a backup program for the home folder (Borg, restic,
+  Kopia, Déjà Dup, Pika Backup, Vorta, Back In Time and others), since
+  system snapshots leave `/home` out and share the disk.
+- **A record of this machine**: the newest Drift baseline, a notice when
+  there is none or it is over 90 days old.
+
+`c` runs the snapshot check: as root, it lists the snapshots and, for
+Snapper, checks the newest is a Btrfs subvolume holding `/etc/os-release`,
+`/usr/bin` and `/usr/lib/modules`; for Timeshift, `timeshift --list`. It
+rolls nothing back and takes or removes nothing, and asks first. `f` runs
+the entry a check names. `helix-toolbox recovery` (`--check-snapshots`
+with `--dry-run` and `--yes`, confirmed by typing CHECK) does the same.
+
 ## Reliability and trust
 
 **Reliability** lists every entry with how far it has been tested, the
@@ -526,6 +580,8 @@ helix-toolbox hardware                   # firmware, disks, temperatures, batter
 helix-toolbox services list --failed     # systemd units; show, start, stop, restart, enable, disable
 helix-toolbox startup off <file>         # what the desktop starts at login, for you
 helix-toolbox storage                    # where the space goes; storage clean <item> frees some
+helix-toolbox performance                # this boot, the machine now, and the boot before; boots, compare
+helix-toolbox recovery                   # snapshots, kernels, backups; --check-snapshots looks inside, as root
 helix-toolbox reliability --critical     # how far the boot, login and driver entries are tested
 helix-toolbox trust sddm                 # where an entry comes from and what checks it
 helix-toolbox doctor                     # health checks, read-only

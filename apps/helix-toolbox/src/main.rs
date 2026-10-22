@@ -1,6 +1,7 @@
 //! Helix Toolbox: build, configure and optimize a Linux machine from a terminal
 //! menu, or from the command line.
 
+mod analyze;
 mod bundle;
 mod docgen;
 mod drift;
@@ -243,6 +244,30 @@ enum Command {
     Storage {
         #[command(subcommand)]
         action: Option<manage::StorageCommand>,
+    },
+    /// How long the boot took and where the time went, how the machine is
+    /// doing now, and this boot beside an earlier one with Helix Toolbox's
+    /// runs in between. It only reads; each boot it sees is recorded, so
+    /// later boots can be compared with it.
+    Performance {
+        #[command(subcommand)]
+        action: Option<analyze::PerformanceCommand>,
+    },
+    /// Recovery readiness: snapshots and whether the boot menu can start
+    /// one, a second kernel, configuration backups, a backup of your own
+    /// files and a Drift baseline. It only reads; --check-snapshots lists
+    /// the snapshots as root and looks inside the newest, changing nothing.
+    Recovery {
+        /// List the snapshots as root and check the newest holds a system;
+        /// confirmed by typing CHECK.
+        #[arg(long)]
+        check_snapshots: bool,
+        /// With --check-snapshots: show the plan and stop.
+        #[arg(long)]
+        dry_run: bool,
+        /// With --check-snapshots: skip the confirmation phrase.
+        #[arg(long)]
+        yes: bool,
     },
     /// The hardware and firmware: fwupd's devices and the firmware updates it
     /// knows of, disks, temperatures, batteries, PCI and USB devices. It only
@@ -934,6 +959,19 @@ fn main() -> Result<()> {
         Command::Services { action } => manage::services(action, &load(false)?, &platform, as_json),
         Command::Startup { action } => manage::startup(action, &load(false)?, &platform, as_json),
         Command::Storage { action } => manage::storage(action, &load(false)?, &platform, as_json),
+        Command::Performance { action } => analyze::performance(action, as_json),
+        Command::Recovery {
+            check_snapshots,
+            dry_run,
+            yes,
+        } => analyze::recovery(
+            check_snapshots,
+            dry_run,
+            yes,
+            &load(false)?,
+            &platform,
+            as_json,
+        ),
         Command::Hardware {
             smart,
             firmware,

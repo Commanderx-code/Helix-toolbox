@@ -22,6 +22,8 @@ pub enum Icon {
     Bundles,
     Services,
     Storage,
+    Performance,
+    Recovery,
     Settings,
     Area,
     Group,
@@ -57,6 +59,8 @@ impl Icon {
                 Icon::Bundles => "\u{f1c6}",        // file archive
                 Icon::Services => "\u{f085}",       // cogs
                 Icon::Storage => "\u{f1c0}",        // database
+                Icon::Performance => "\u{f201}",    // line chart
+                Icon::Recovery => "\u{f1cd}",       // life ring
                 Icon::Settings => "\u{f013}",       // cog
                 Icon::Area => "\u{f07b}",           // folder
                 Icon::Group => "\u{f07b}",          // folder

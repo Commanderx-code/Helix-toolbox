@@ -209,6 +209,22 @@ unused Flatpak runtimes, old logs, the trash and picture previews. `Enter`
 on one shows its plan. Snapshots, bootable kernels and configuration
 backups are never offered.
 
+## A slow boot, and a bad day
+
+**Performance** shows how long the machine took to start and where the
+time went, from the firmware to the login screen. Every boot is recorded,
+so after a change you can see this boot beside the one before (`b` picks an
+earlier one): what got slower, whether the kernel changed, and what Helix
+Toolbox ran in between. When the boot waited for something it rarely needs,
+such as the network, a hint says so and `Enter` plans turning it off.
+
+**Recovery** asks the questions to answer before something goes wrong: is
+there a snapshot to go back to, can the boot menu start one, is there a
+second kernel, are your own files backed up somewhere else, and is there a
+Drift baseline to rebuild a new machine from. `c` looks inside the newest
+snapshot as root, reading only; `f` runs an entry that sets the missing
+part up.
+
 ## A machine without internet
 
 On a machine of the same distribution that is online, `helix-toolbox bundle

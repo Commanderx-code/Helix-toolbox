@@ -1,0 +1,23 @@
+{
+  "command": "string",
+  "data": {
+    "checks": [
+      {
+        "advice": "string",
+        "entry": "null",
+        "evidence": [
+          "string"
+        ],
+        "health": "string",
+        "id": "string",
+        "repair": "null",
+        "summary": "string",
+        "title": "string"
+      }
+    ],
+    "snapshots": "string"
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

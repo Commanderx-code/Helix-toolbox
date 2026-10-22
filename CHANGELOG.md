@@ -4,6 +4,32 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.18.0
+
+- **Performance.** **Performance**, in the window and the terminal
+  interface, shows how long this boot took and where the time went (the
+  firmware, the boot loader, the kernel, the initial RAM disk and the
+  services), what the login screen waited for and the slowest services,
+  then the machine now: load, memory, swap, how long programs waited for
+  the processor, memory or the disk, and what holds the most memory. Each
+  boot is recorded (the notifications' timer records them too), and this
+  one is set beside an earlier one: what got slower or faster, a changed
+  kernel, and the Helix Toolbox runs in between. Hints say what is worth
+  knowing, such as a boot menu's countdown or the boot waiting for the
+  network, and **Turn it off…** plans that change. `helix-toolbox
+  performance` (`boots`, `compare`) does the same.
+- **Recovery.** **Recovery** checks whether this machine could be brought
+  back after a bad update or a lost disk: snapshots of the system and
+  whether the boot menu can start one, a second kernel, Helix Toolbox's
+  configuration backups, a backup program for your own files, and a Drift
+  baseline to rebuild from. **Check snapshots…** lists the snapshots as root
+  and looks inside the newest, changing nothing. `helix-toolbox recovery`
+  (`--check-snapshots`) does the same.
+- **Restores undone at once keep both copies.** A restore keeps the file it
+  replaces as a backup named by the second it was taken; undoing a restore
+  within that same second moved the file onto the backup being put back.
+  The name now carries the run's process too.
+
 ## v1.17.0
 
 - **Services and startup.** **Services**, in the window and the

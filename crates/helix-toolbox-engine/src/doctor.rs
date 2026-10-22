@@ -859,14 +859,15 @@ fn permissions(system: &dyn System, into: &mut Vec<Diagnosis>) {
     into.push(found);
 }
 
-fn boot(system: &dyn System, manager: Option<PackageManager>, into: &mut Vec<Diagnosis>) {
+/// The installed kernels in /boot, each with the initramfs it boots with;
+/// modules a removed kernel left behind are not counted.
+pub fn kernels(system: &dyn System, manager: Option<PackageManager>) -> Vec<(String, String)> {
     let modules = if system.exists(Path::new("/usr/lib/modules")) {
         Path::new("/usr/lib/modules")
     } else {
         Path::new("/lib/modules")
     };
-    let mut missing: Vec<String> = Vec::new();
-    let mut evidence = Vec::new();
+    let mut found = Vec::new();
     for version in system.list(modules) {
         // Arch names its images after the package base; the others after the version.
         let (kernel, image) = match system.read(&modules.join(&version).join("pkgbase")) {
@@ -890,6 +891,17 @@ fn boot(system: &dyn System, manager: Option<PackageManager>, into: &mut Vec<Dia
             // Modules left behind by a removed kernel, or a kernel kept elsewhere.
             continue;
         }
+        if !found.iter().any(|(other, _)| *other == kernel) {
+            found.push((kernel, image));
+        }
+    }
+    found
+}
+
+fn boot(system: &dyn System, manager: Option<PackageManager>, into: &mut Vec<Diagnosis>) {
+    let mut missing: Vec<String> = Vec::new();
+    let mut evidence = Vec::new();
+    for (kernel, image) in kernels(system, manager) {
         if system.exists(Path::new(&image)) {
             evidence.push(format!("{kernel}: {image} present"));
         } else {

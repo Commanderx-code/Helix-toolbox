@@ -36,18 +36,28 @@ printf 'name = "Profiles"\n' > "$work/catalog/catalog/profiles/tab.toml"
 # runners are virtual.
 mkdir "$work/bin"
 cp apps/helix-toolbox-gui/tests/drive/helix-toolbox "$work/bin/helix-toolbox"
-# It answers the Services screen's two lists with a few units of its own.
+# It answers the Services screen's two lists with a few units of its own,
+# and the Performance screen with a boot, which systemd-analyze's stand-in
+# says waited for the network.
 cat > "$work/bin/systemctl" <<EOF
 #!/bin/sh
 echo "\$*" >> "$work/systemctl.log"
 case "\$*" in
     *list-unit-files*) printf '%s' '[{"unit_file":"cups.service","state":"disabled","preset":"disabled"},{"unit_file":"fstrim.timer","state":"enabled","preset":"enabled"}]' ;;
     *list-units*) printf '%s' '[{"unit":"cups.service","load":"loaded","active":"inactive","sub":"dead","description":"CUPS Scheduler"},{"unit":"fstrim.timer","load":"loaded","active":"active","sub":"waiting","description":"Discard unused blocks once a week"}]' ;;
+    show\ --property=*) printf 'InitRDTimestampMonotonic=1065390\nUserspaceTimestampMonotonic=3727009\nFinishTimestampMonotonic=12121346\n' ;;
+esac
+EOF
+cat > "$work/bin/systemd-analyze" <<'EOF'
+#!/bin/sh
+case "$1" in
+    blame) printf '      4.344s NetworkManager-wait-online.service\n      4.183s plocate-updatedb.service\n' ;;
+    critical-chain) printf 'graphical.target @8.394s\n`-NetworkManager-wait-online.service @1.003s +4.344s\n' ;;
 esac
 EOF
 printf '#!/bin/sh\necho "$*" >> "%s/xdg-open.log"\n' "$work" > "$work/bin/xdg-open"
 printf '#!/bin/sh\necho none\nexit 1\n' > "$work/bin/systemd-detect-virt"
-chmod +x "$work/bin/systemctl" "$work/bin/xdg-open" "$work/bin/systemd-detect-virt"
+chmod +x "$work/bin/systemctl" "$work/bin/systemd-analyze" "$work/bin/xdg-open" "$work/bin/systemd-detect-virt"
 export PATH="$work/bin:$PATH"
 mkdir -p "$work/home" "$work/config" "$work/state" "$work/data" "$work/cache"
 export HOME="$work/home"

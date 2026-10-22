@@ -37,6 +37,8 @@
     trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6',
     external: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6',
     disk: 'M4 5h16v14H4zM4 13h16M8 16.5h.01M12 16.5h4',
+    chart: 'M4 4v16h16M8 15l4-5 3 3 5-6',
+    lifebuoy: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM5.6 5.6l3.6 3.6M14.8 14.8l3.6 3.6M18.4 5.6l-3.6 3.6M9.2 14.8l-3.6 3.6',
   } as const;
 
   export type IconName = keyof typeof PATHS;

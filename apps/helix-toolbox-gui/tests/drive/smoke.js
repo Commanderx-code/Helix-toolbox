@@ -195,7 +195,7 @@
     await until('the focus back on Marker', () => document.activeElement === marker);
   });
 
-  const screens = ['Updates','Backups', 'Drift', 'Reliability', 'Hardware', 'Services', 'Storage', 'Desktop', 'History', 'Favorites', 'Dashboard'];
+  const screens = ['Updates','Backups', 'Drift', 'Reliability', 'Hardware', 'Services', 'Storage', 'Performance', 'Recovery', 'Desktop', 'History', 'Favorites', 'Dashboard'];
   for (const name of screens) {
     await step(`the ${name} screen opens`, async () => {
       await click(name, document.querySelector('nav'));
@@ -358,6 +358,23 @@
       await until('the review to close', () => !document.querySelector('#confirm-title'));
     }
     return `${asked} reviewed${clean ? ', and a cleanup' : ''}; nothing ran`;
+  });
+
+  await step('a boot hint and the recovery checks are reviewed, and nothing runs', async () => {
+    await click('Performance', document.querySelector('nav'));
+    await until('Performance', () => screenTitle().startsWith('Performance'));
+    await until('the boot read', () => withText('.part h2', 'This boot'), 60000);
+    const off = await until('the hint to turn waiting online off', () => [...document.querySelectorAll('.hints .button')].find((button) => button.textContent.includes('Turn it off')), 30000);
+    off.click();
+    const review = await until('the review', () => document.querySelector('#confirm-title')?.closest('[role="dialog"]'));
+    if (!review.textContent.includes('NetworkManager-wait-online.service')) throw new Error(review.textContent);
+    await accessible('a boot hint under review');
+    await click('Cancel', review);
+    await until('the review to close', () => !document.querySelector('#confirm-title'));
+    await click('Recovery', document.querySelector('nav'));
+    await until('Recovery', () => screenTitle().startsWith('Recovery'));
+    await until('the checks', () => withText('.part h2', 'Configuration backups'), 30000);
+    return 'the wait-online hint was reviewed; recovery checks shown; nothing ran';
   });
 
   await step('an entry is checked now, without changing anything', async () => {

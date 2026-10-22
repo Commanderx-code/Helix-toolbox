@@ -24,7 +24,7 @@ use helix_toolbox_engine::{
     inventory::{Inventory, Status, which},
     notifications,
     overview::Overview,
-    plan, plan_removal, preflight, profiles, reliability,
+    performance, plan, plan_removal, preflight, profiles, recovery, reliability,
     services::{self, Verb},
     storage, updates,
     watch::{self, Watch},
@@ -99,9 +99,9 @@ History, Backups, Doctor, Hardware, Desktop, Updates, Drift, Reliability, Settin
   Hardware: f       update firmware (type FIRMWARE)    s   SMART check;  Backups: e  side by side
   Desktop: s        save the look; Enter puts a saved one back      Settings: wizard, bug report
   Drift: b          compare with another         s   save this machine; Space / a plan what is missing
-  Reliability: i    critical or untested only    v   where the entry comes from
-  History, Reliability: w  report that it worked here, for a Hardware Tested record
+  Reliability: i    critical or untested only    v   trust;  w (and History)  report it worked here
   Services: s start/stop  e enable/disable  R restart  i which  f filter   Storage: Enter cleans
+  Performance: b an earlier boot  Enter acts on a hint   Recovery: c check snapshots  f set up
 
 Running window
   Ctrl-C            stop; again, kill what is left  Enter / q   close when finished
@@ -135,6 +135,10 @@ enum Screen {
     Services,
     /// Where the space goes, and what can be cleaned.
     Storage,
+    /// The boot's times, the machine now, and this boot beside another.
+    Performance,
+    /// Whether the machine could be brought back after a bad update.
+    Recovery,
     Settings,
 }
 
@@ -186,6 +190,21 @@ enum StorageRow {
     Item(usize),
     Kept(usize),
 }
+
+/// A line of the Performance screen.
+#[derive(Clone, Debug)]
+enum PerformanceRow {
+    Heading(String),
+    Text(String),
+    /// A change from the earlier boot, and whether it is slower.
+    Change(String, bool),
+    /// A unit and how long it took.
+    Unit(String, String),
+    Hint(usize),
+}
+
+/// A reading of the performance, with the boots recorded so far.
+type PerformanceReading = (performance::Performance, Vec<performance::Boot>);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Focus {
@@ -614,6 +633,14 @@ pub struct App {
     storage_rows: Vec<StorageRow>,
     /// A look at the storage running in the background, if any.
     reading_storage: Option<mpsc::Receiver<storage::Storage>>,
+    /// The performance as last read, the boots recorded, and which earlier
+    /// boot this one is set beside (0 is the one before).
+    performance_found: Option<PerformanceReading>,
+    performance_against: usize,
+    performance_rows: Vec<PerformanceRow>,
+    reading_performance: Option<mpsc::Receiver<PerformanceReading>>,
+    /// Recovery readiness, as last checked.
+    recovery_found: Vec<doctor::Diagnosis>,
 }
 
 /// A plan of the queue as it was, from when it was made, with what the
@@ -718,6 +745,11 @@ impl App {
             storage_found: None,
             storage_rows: Vec::new(),
             reading_storage: None,
+            performance_found: None,
+            performance_against: 0,
+            performance_rows: Vec::new(),
+            reading_performance: None,
+            recovery_found: Vec::new(),
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -967,6 +999,8 @@ impl App {
             Screen::Bundles => BUNDLE_ROWS.len(),
             Screen::Services => self.service_rows.len(),
             Screen::Storage => self.storage_rows.len(),
+            Screen::Performance => self.performance_rows.len(),
+            Screen::Recovery => self.recovery_found.len(),
             Screen::Doctor => self.diagnoses.len() + self.doctor_entries().len(),
             Screen::Settings => self.settings().len(),
         }
@@ -1046,6 +1080,16 @@ impl App {
                 self.build_storage_rows();
             }
         }
+        if screen == Screen::Performance {
+            if self.performance_found.is_none() {
+                self.read_performance();
+            } else {
+                self.build_performance_rows();
+            }
+        }
+        if screen == Screen::Recovery {
+            self.reload_recovery();
+        }
         self.update_rows();
     }
 
@@ -1084,6 +1128,18 @@ impl App {
                     return true;
                 }
                 Err(mpsc::TryRecvError::Disconnected) => self.examining = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(receiver) = &self.reading_performance {
+            match receiver.try_recv() {
+                Ok(found) => {
+                    self.performance_found = Some(found);
+                    self.reading_performance = None;
+                    self.build_performance_rows();
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.reading_performance = None,
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }
@@ -1178,6 +1234,8 @@ impl App {
             Screen::Bundles => Icon::Bundles,
             Screen::Services => Icon::Services,
             Screen::Storage => Icon::Storage,
+            Screen::Performance => Icon::Performance,
+            Screen::Recovery => Icon::Recovery,
             Screen::Favorites => Icon::Favorites,
             Screen::Doctor => Icon::Doctor,
             Screen::Settings => Icon::Settings,
@@ -1257,6 +1315,8 @@ impl App {
             Screen::Bundles => self.draw_bundles(frame, main),
             Screen::Services => self.draw_services(frame, main),
             Screen::Storage => self.draw_storage(frame, main),
+            Screen::Performance => self.draw_performance(frame, main),
+            Screen::Recovery => self.draw_recovery(frame, main),
             Screen::Doctor => self.draw_doctor(frame, main),
             Screen::Settings => self.draw_settings(frame, main),
         }
@@ -2692,6 +2752,39 @@ impl App {
                     list.push(Hint::new(&["d"], "Details"));
                     list.push(Hint::new(&["r"], "Read again"));
                 }
+                Screen::Performance => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    match self.selected_performance_row() {
+                        Some(PerformanceRow::Hint(_)) => {
+                            list.push(Hint::new(&["Enter"], "Act on it"));
+                            list.push(Hint::new(&["d"], "Details"));
+                        }
+                        Some(PerformanceRow::Unit(..)) => {
+                            list.push(Hint::new(&["Enter"], "In Services"))
+                        }
+                        _ => {}
+                    }
+                    if self.earlier_boots().len() > 1 {
+                        list.push(Hint::new(&["b"], "An earlier boot"));
+                    }
+                    list.push(Hint::new(&["r"], "Read again"));
+                }
+                Screen::Recovery => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    list.push(Hint::new(&["Enter"], "Details"));
+                    if self
+                        .selected_readiness()
+                        .and_then(|check| check.entry.as_deref())
+                        .and_then(|id| self.catalog.find(id))
+                        .is_some()
+                    {
+                        list.push(Hint::new(&["f"], "Set it up"));
+                    }
+                    if self.snapshots_here().is_some() {
+                        list.push(Hint::new(&["c"], "Check snapshots"));
+                    }
+                    list.push(Hint::new(&["r"], "Check again"));
+                }
                 Screen::Settings => list.push(Hint::new(&["Enter"], "Change")),
             },
         }
@@ -2924,6 +3017,9 @@ impl App {
                     }
                     if self.screen == Screen::Storage {
                         self.read_storage();
+                    }
+                    if self.screen == Screen::Recovery {
+                        self.reload_recovery();
                     }
                 }
                 return true;
@@ -3436,6 +3532,52 @@ impl App {
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
+            Screen::Performance => match key.code {
+                KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') | KeyCode::Right => {
+                    self.act_on_performance()
+                }
+                KeyCode::Char('d') => self.describe_performance(),
+                KeyCode::Char('b') => {
+                    let earlier = self.earlier_boots().len();
+                    if earlier > 1 {
+                        self.performance_against = (self.performance_against + 1) % earlier;
+                        self.build_performance_rows();
+                    }
+                }
+                KeyCode::Char('r') => self.read_performance(),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::Recovery => match key.code {
+                KeyCode::Enter | KeyCode::Char('d') | KeyCode::Char('l') | KeyCode::Right => {
+                    if let Some(check) = self.selected_readiness().cloned() {
+                        self.show_diagnosis(&check);
+                    }
+                }
+                KeyCode::Char('f') => {
+                    if let Some(entry) = self
+                        .selected_readiness()
+                        .and_then(|check| check.entry.as_deref())
+                        .and_then(|id| self.catalog.find(id))
+                        .cloned()
+                    {
+                        self.confirm(vec![entry]);
+                    }
+                }
+                KeyCode::Char('c') => match self.snapshots_here() {
+                    Some(tool) => self.confirm_plan(Ok(recovery::plan_check(tool))),
+                    None => {
+                        self.popup = Some(Popup::Text(TextPopup::new(
+                            "No snapshots",
+                            "Neither Snapper (with a root configuration) nor Timeshift is set up, so there are no snapshots to check.",
+                            true,
+                        )))
+                    }
+                },
+                KeyCode::Char('r') => self.reload_recovery(),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
             Screen::Bundles => match key.code {
                 KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') | KeyCode::Right => {
                     self.bundle_enter()
@@ -3781,9 +3923,13 @@ impl App {
     }
 
     fn describe_diagnosis(&mut self) {
-        let Some(diagnosis) = self.selected_diagnosis() else {
-            return;
-        };
+        if let Some(diagnosis) = self.selected_diagnosis().cloned() {
+            self.show_diagnosis(&diagnosis);
+        }
+    }
+
+    /// A check in full: what was found, what to do, and what f runs.
+    fn show_diagnosis(&mut self, diagnosis: &doctor::Diagnosis) {
         let mut text = format!("{}: {}\n", diagnosis.health.label(), diagnosis.summary);
         if !diagnosis.evidence.is_empty() {
             text.push_str("\nWhat was found:\n");
@@ -3808,6 +3954,11 @@ impl App {
                 "\nThe {} entry addresses it; f runs it.\n",
                 entry.name
             ));
+        }
+        if diagnosis.id == "snapshots" && self.screen == Screen::Recovery {
+            text.push_str(
+                "\nc lists the snapshots as root and looks inside the newest, reading only.\n",
+            );
         }
         self.popup = Some(Popup::Text(TextPopup::new(
             diagnosis.title.clone(),
@@ -6418,6 +6569,523 @@ impl App {
         frame.render_stateful_widget(list, inner, &mut self.main_state);
     }
 
+    // ----- Performance -----
+
+    /// Read the boot and the machine in the background, recording this boot.
+    fn read_performance(&mut self) {
+        if !self.examine_here {
+            self.build_performance_rows();
+            return;
+        }
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let state = history::state_dir();
+            let history = history::read(1000).unwrap_or_default();
+            let found = performance::gather(&doctor::Here, state.as_deref(), &history);
+            let boots = state
+                .map(|state| performance::load(&performance::boots_path(&state)))
+                .unwrap_or_default();
+            let _ = sender.send((found, boots));
+        });
+        self.reading_performance = Some(receiver);
+    }
+
+    /// The recorded boots before this one, newest first.
+    fn earlier_boots(&self) -> Vec<&performance::Boot> {
+        let Some((found, boots)) = &self.performance_found else {
+            return Vec::new();
+        };
+        let Some(boot) = &found.boot else {
+            return Vec::new();
+        };
+        boots
+            .iter()
+            .filter(|other| other.id != boot.id && other.booted <= boot.booted)
+            .collect()
+    }
+
+    /// This boot beside the chosen earlier one.
+    fn performance_comparison(&self) -> Option<performance::Comparison> {
+        let (found, _) = self.performance_found.as_ref()?;
+        if self.performance_against == 0 {
+            return found.previous.clone();
+        }
+        let before = self
+            .earlier_boots()
+            .get(self.performance_against)
+            .copied()?;
+        let history = if self.examine_here {
+            history::read(1000).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        Some(performance::compare(before, found.boot.as_ref()?, &history))
+    }
+
+    fn build_performance_rows(&mut self) {
+        let mut rows = Vec::new();
+        let comparison = self.performance_comparison();
+        if let Some((found, _)) = &self.performance_found {
+            rows.push(PerformanceRow::Heading("This boot".into()));
+            match &found.boot {
+                Some(boot) => {
+                    rows.push(PerformanceRow::Text(format!(
+                        "{}, kernel {}: {}",
+                        timestamp(boot.booted),
+                        boot.kernel,
+                        performance::shown(boot.phases.total)
+                    )));
+                    rows.push(PerformanceRow::Text(
+                        boot.phases
+                            .parts()
+                            .iter()
+                            .map(|(name, took)| format!("{name} {}", performance::shown(*took)))
+                            .collect::<Vec<_>>()
+                            .join(" · "),
+                    ));
+                }
+                None => rows.push(PerformanceRow::Text(
+                    found.no_boot.clone().unwrap_or_default(),
+                )),
+            }
+            match &comparison {
+                Some(compared) => {
+                    rows.push(PerformanceRow::Heading(format!(
+                        "Against the boot of {}: {}",
+                        timestamp(compared.before.booted),
+                        performance::shown_change(compared.total())
+                    )));
+                    for change in compared.phases.iter().skip(1).chain(&compared.units) {
+                        let now = change
+                            .after
+                            .map(performance::shown)
+                            .unwrap_or_else(|| "not now".into());
+                        let (how, slower) = match change.difference() {
+                            Some(difference) if difference.unsigned_abs() < 100 => continue,
+                            Some(difference) => {
+                                (performance::shown_change(difference), difference > 0)
+                            }
+                            None if change.before.is_none() => ("new".to_string(), true),
+                            None => ("gone".to_string(), false),
+                        };
+                        rows.push(PerformanceRow::Change(
+                            format!("{:<40} {now:>10}  ({how})", change.name),
+                            slower,
+                        ));
+                    }
+                    if compared.before.kernel != compared.after.kernel
+                        && !compared.before.kernel.is_empty()
+                    {
+                        rows.push(PerformanceRow::Text(format!(
+                            "The kernel changed: {} to {}",
+                            compared.before.kernel, compared.after.kernel
+                        )));
+                    }
+                    if compared.runs.is_empty() {
+                        rows.push(PerformanceRow::Text(
+                            "No Helix Toolbox runs in between.".into(),
+                        ));
+                    }
+                    for run in &compared.runs {
+                        rows.push(PerformanceRow::Text(format!(
+                            "Ran in between, {}: {}{}",
+                            timestamp(run.at),
+                            run.names.join(", "),
+                            if run.success { "" } else { " (failed)" }
+                        )));
+                    }
+                }
+                None if found.boot.is_some() => rows.push(PerformanceRow::Text(
+                    "No earlier boot is recorded yet; after the next boot, this one is compared with it."
+                        .into(),
+                )),
+                None => {}
+            }
+            if let Some(boot) = &found.boot {
+                let waited: Vec<&performance::Link> = boot
+                    .chain
+                    .iter()
+                    .filter(|link| link.took.is_some())
+                    .collect();
+                if !waited.is_empty() {
+                    rows.push(PerformanceRow::Heading(
+                        "The login screen waited for".into(),
+                    ));
+                    for link in waited {
+                        rows.push(PerformanceRow::Unit(
+                            link.name.clone(),
+                            performance::shown(link.took.unwrap_or(0)),
+                        ));
+                    }
+                }
+                if !boot.slowest.is_empty() {
+                    rows.push(PerformanceRow::Heading(
+                        "Slowest services since the boot".into(),
+                    ));
+                    for timed in &boot.slowest {
+                        rows.push(PerformanceRow::Unit(
+                            timed.name.clone(),
+                            performance::shown(timed.took),
+                        ));
+                    }
+                }
+            }
+            let now = &found.now;
+            rows.push(PerformanceRow::Heading("Now".into()));
+            if let Some([one, five, fifteen]) = now.load {
+                rows.push(PerformanceRow::Text(format!(
+                    "Load {one:.2} {five:.2} {fifteen:.2} on {} processors",
+                    now.cpus
+                )));
+            }
+            if now.memory_total > 0 {
+                rows.push(PerformanceRow::Text(format!(
+                    "Memory: {} free of {}",
+                    storage::shown(now.memory_available),
+                    storage::shown(now.memory_total)
+                )));
+            }
+            rows.push(PerformanceRow::Text(if now.swaps.is_empty() {
+                "Swap: none".to_string()
+            } else {
+                format!(
+                    "Swap: {} used of {}{}",
+                    storage::shown(now.swap_used()),
+                    storage::shown(now.swap_total()),
+                    if now.swaps.iter().any(|swap| swap.zram) {
+                        " (zram)"
+                    } else {
+                        ""
+                    }
+                )
+            }));
+            let pressure: Vec<String> = [
+                ("processor", now.pressure.cpu),
+                ("memory", now.pressure.memory),
+                ("disk", now.pressure.io),
+            ]
+            .into_iter()
+            .filter_map(|(what, waited)| Some(format!("{what} {:.0}%", waited?)))
+            .collect();
+            if !pressure.is_empty() {
+                rows.push(PerformanceRow::Text(format!(
+                    "Waiting in the last minute: {}",
+                    pressure.join(", ")
+                )));
+            }
+            if let Some(governor) = &now.governor {
+                rows.push(PerformanceRow::Text(format!(
+                    "Governor {governor}{}",
+                    now.power_profile
+                        .as_ref()
+                        .map(|profile| format!(", power profile {profile}"))
+                        .unwrap_or_default()
+                )));
+            }
+            if !now.heaviest.is_empty() {
+                rows.push(PerformanceRow::Text(format!(
+                    "Most memory: {}",
+                    now.heaviest
+                        .iter()
+                        .take(5)
+                        .map(|process| format!(
+                            "{} {}",
+                            helix_toolbox_core::printable(&process.name),
+                            storage::shown(process.memory)
+                        ))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
+            }
+            if !found.hints.is_empty() {
+                rows.push(PerformanceRow::Heading("Worth knowing".into()));
+                rows.extend((0..found.hints.len()).map(PerformanceRow::Hint));
+            }
+        }
+        self.performance_rows = rows;
+        self.clamp_main();
+    }
+
+    fn selected_performance_row(&self) -> Option<PerformanceRow> {
+        self.performance_rows
+            .get(self.main_state.selected()?)
+            .cloned()
+    }
+
+    fn selected_hint(&self) -> Option<performance::Hint> {
+        let Some(PerformanceRow::Hint(index)) = self.selected_performance_row() else {
+            return None;
+        };
+        let (found, _) = self.performance_found.as_ref()?;
+        found.hints.get(index).cloned()
+    }
+
+    fn describe_performance(&mut self) {
+        let (title, text) = match self.selected_performance_row() {
+            Some(PerformanceRow::Hint(_)) => {
+                let Some(hint) = self.selected_hint() else {
+                    return;
+                };
+                let mut text = hint.detail.clone();
+                if let Some(command) = &hint.command {
+                    text.push_str(&format!("\n\n{command}\nEnter plans it here, then asks."));
+                    if command.contains(" show ") {
+                        text = text.replace(
+                            "Enter plans it here, then asks.",
+                            "Enter shows it in Services.",
+                        );
+                    }
+                }
+                if let Some(entry) = hint.entry.as_deref().and_then(|id| self.catalog.find(id)) {
+                    text.push_str(&format!(
+                        "\n\nThe {} entry sets it up; Enter runs it after confirmation.",
+                        entry.name
+                    ));
+                }
+                (hint.title, text)
+            }
+            Some(PerformanceRow::Unit(name, took)) => (
+                name.clone(),
+                format!(
+                    "{name} took {took}.\n\nEnter shows it in Services, with what needs it and what stopping it costs."
+                ),
+            ),
+            _ => return,
+        };
+        self.popup = Some(Popup::Text(TextPopup::new(title, text, true)));
+    }
+
+    /// Show a unit in the Services screen, filtered to it.
+    fn show_unit(&mut self, name: &str) {
+        self.service_filter = name.to_string();
+        self.service_view = ServiceView::System;
+        self.open_screen(Screen::Services);
+    }
+
+    /// Enter on a hint plans what changes it; on a unit, shows it in
+    /// Services.
+    fn act_on_performance(&mut self) {
+        match self.selected_performance_row() {
+            Some(PerformanceRow::Unit(name, _)) => self.show_unit(&name),
+            Some(PerformanceRow::Hint(_)) => {
+                let Some(hint) = self.selected_hint() else {
+                    return;
+                };
+                match (&hint.unit, &hint.command, &hint.entry) {
+                    (Some(unit), Some(command), _) if command.contains(" disable ") => {
+                        let needed = if self.examine_here {
+                            services::needed_by(&doctor::Here, unit, false)
+                        } else {
+                            Vec::new()
+                        };
+                        match services::plan(
+                            unit,
+                            false,
+                            Verb::Disable,
+                            &needed,
+                            std::env::var_os("SSH_CONNECTION").is_some(),
+                        ) {
+                            Ok(planned) => self.confirm_plan(Ok(planned)),
+                            Err(why) => {
+                                self.popup =
+                                    Some(Popup::Text(TextPopup::new("Cannot plan", why, true)));
+                            }
+                        }
+                    }
+                    (Some(unit), _, _) => {
+                        let unit = unit.clone();
+                        self.show_unit(&unit);
+                    }
+                    (None, _, Some(entry)) => match self.catalog.find(entry).cloned() {
+                        Some(entry) => self.confirm(vec![entry]),
+                        None => self.describe_performance(),
+                    },
+                    _ => self.describe_performance(),
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn draw_performance(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Performance",
+            "How long the boot took and where the time went, and the machine now. It only reads.",
+        );
+        self.fill(frame, inner);
+        let focused = self.focus == Focus::Main;
+        let mut items: Vec<Line> = Vec::new();
+        if self.performance_rows.is_empty() {
+            items.push(Line::styled(
+                if self.reading_performance.is_some() {
+                    "Reading the boot…"
+                } else {
+                    "Press r to read this boot and the machine now."
+                },
+                Style::default().fg(self.theme.muted()),
+            ));
+        }
+        let hints = self
+            .performance_found
+            .as_ref()
+            .map(|(found, _)| found.hints.clone())
+            .unwrap_or_default();
+        for row in &self.performance_rows {
+            items.push(match row {
+                PerformanceRow::Heading(text) => {
+                    Line::styled(text.clone(), Style::default().fg(self.theme.group()).bold())
+                }
+                PerformanceRow::Text(text) => {
+                    Line::styled(format!("  {text}"), Style::default().fg(self.theme.entry()))
+                }
+                PerformanceRow::Change(text, slower) => Line::styled(
+                    format!("  {text}"),
+                    Style::default().fg(if *slower {
+                        self.theme.warning()
+                    } else {
+                        self.theme.success()
+                    }),
+                ),
+                PerformanceRow::Unit(name, took) => Line::from(vec![
+                    Span::styled(
+                        format!("  {took:>10}  "),
+                        Style::default().fg(self.theme.muted()),
+                    ),
+                    Span::styled(name.clone(), Style::default().fg(self.theme.entry())),
+                ]),
+                PerformanceRow::Hint(index) => {
+                    let hint = &hints[*index];
+                    let offer = match (&hint.command, &hint.entry) {
+                        (Some(command), _) if command.contains(" disable ") => {
+                            "  · Enter turns it off"
+                        }
+                        (Some(_), _) => "  · Enter shows it",
+                        (None, Some(_)) => "  · Enter sets it up",
+                        _ => "  · d details",
+                    };
+                    Line::from(vec![
+                        Span::styled(
+                            format!("  {}", hint.title),
+                            Style::default().fg(self.theme.warning()),
+                        ),
+                        Span::styled(offer, Style::default().fg(self.theme.focused())),
+                    ])
+                }
+            });
+        }
+        let title = if self.reading_performance.is_some() && !self.performance_rows.is_empty() {
+            "Boot and machine (reading again…)"
+        } else {
+            "Boot and machine"
+        };
+        let list = List::new(items)
+            .block(self.card(title))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused))
+            .scroll_padding(1);
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
+    }
+
+    // ----- Recovery -----
+
+    fn snapshots_here(&self) -> Option<backups::Snapshots> {
+        if self.examine_here {
+            backups::Snapshots::here()
+        } else {
+            self.snapshot_tool
+        }
+    }
+
+    fn reload_recovery(&mut self) {
+        if self.examine_here {
+            let found_backups = backups::discover(&backups::Roots::here());
+            let baselines = drift::dir()
+                .map(|directory| drift::load_all(&directory).0)
+                .unwrap_or_default();
+            self.recovery_found = recovery::examine(
+                &doctor::Here,
+                &recovery::Known {
+                    manager: self.platform.manager,
+                    backups: &found_backups,
+                    baselines: &baselines,
+                    now: history::now(),
+                },
+            );
+        }
+        self.clamp_main();
+    }
+
+    fn selected_readiness(&self) -> Option<&doctor::Diagnosis> {
+        self.recovery_found.get(self.main_state.selected()?)
+    }
+
+    fn draw_recovery(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Recovery",
+            "Whether this machine could be brought back after a bad update or a lost disk. It only reads.",
+        );
+        let focused = self.focus == Focus::Main;
+        let title_width = self
+            .recovery_found
+            .iter()
+            .map(|check| check.title.chars().count())
+            .max()
+            .unwrap_or(0)
+            + 2;
+        let can_check = self.snapshots_here().is_some();
+        let mut items: Vec<Line> = Vec::new();
+        if self.recovery_found.is_empty() {
+            items.push(Line::styled(
+                "Press r to check this machine.",
+                Style::default().fg(self.theme.muted()),
+            ));
+        }
+        for check in &self.recovery_found {
+            let color = match check.health {
+                doctor::Health::Good => self.theme.success(),
+                doctor::Health::Notice => self.theme.warning(),
+                doctor::Health::Problem => self.theme.failure(),
+            };
+            let offer = if check.id == "snapshots" && can_check {
+                "  · c checks them"
+            } else if check
+                .entry
+                .as_deref()
+                .and_then(|id| self.catalog.find(id))
+                .is_some()
+            {
+                "  · f sets it up"
+            } else {
+                ""
+            };
+            items.push(Line::from(vec![
+                Span::styled(
+                    format!("{:<8}", check.health.label()),
+                    Style::default().fg(color).bold(),
+                ),
+                Span::styled(
+                    format!("{:<title_width$}", check.title),
+                    Style::default().fg(self.theme.entry()),
+                ),
+                Span::styled(
+                    check.summary.clone(),
+                    Style::default().fg(self.theme.muted()),
+                ),
+                Span::styled(offer, Style::default().fg(self.theme.focused())),
+            ]));
+        }
+        self.fill(frame, inner);
+        let list = List::new(items)
+            .block(self.card("Readiness"))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused));
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
+    }
+
     // ----- Offline bundles -----
 
     fn selected_bundle_row(&self) -> Option<BundleRow> {
@@ -7200,6 +7868,16 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
     menu.push(MenuItem {
         label: "Storage".into(),
         screen: Screen::Storage,
+        section: "MORE TOOLS",
+    });
+    menu.push(MenuItem {
+        label: "Performance".into(),
+        screen: Screen::Performance,
+        section: "MORE TOOLS",
+    });
+    menu.push(MenuItem {
+        label: "Recovery".into(),
+        screen: Screen::Recovery,
         section: "MORE TOOLS",
     });
     menu.push(MenuItem {
@@ -8434,6 +9112,155 @@ mod tests {
         assert!(screen(&mut app, 140, 40).contains("Enter Clean"));
         press(&mut app, KeyCode::Char('d'));
         assert!(screen(&mut app, 140, 40).contains("frees about 1.5 GB"));
+    }
+
+    #[test]
+    fn the_performance_screen_sets_this_boot_beside_an_earlier_one() {
+        let mut app = app();
+        let boot = |id: &str, booted: u64, total: u64, waited: u64| performance::Boot {
+            id: id.into(),
+            booted,
+            kernel: format!("7.2.{booted}"),
+            phases: performance::Phases {
+                kernel: 1000,
+                userspace: total - 1000,
+                total,
+                ..Default::default()
+            },
+            slowest: vec![performance::Timed {
+                name: "plocate-updatedb.service".into(),
+                took: 4183,
+            }],
+            chain: vec![performance::Link {
+                name: "NetworkManager-wait-online.service".into(),
+                at: Some(1000),
+                took: Some(waited),
+            }],
+        };
+        let now = boot("now", 3000, 20_000, 6000);
+        let before = boot("before", 2000, 15_000, 1000);
+        let oldest = boot("oldest", 1000, 30_000, 1000);
+        let found = performance::Performance {
+            previous: Some(performance::compare(&before, &now, &[])),
+            hints: performance::hints(Some(&now), &performance::Now::default()),
+            boot: Some(now.clone()),
+            recorded: 3,
+            ..Default::default()
+        };
+        app.performance_found = Some((found, vec![now, before, oldest]));
+        app.open_screen(Screen::Performance);
+        app.focus = Focus::Main;
+        let shown = screen(&mut app, 140, 50);
+        for text in [
+            "Kernel 1.0 s · Services 19.0 s",
+            "Against the boot of 1970-01-01 00:33 UTC: +5.0 s",
+            "NetworkManager-wait-online.service",
+            "(+5.0 s)",
+            "The login screen waited for",
+            "The boot waited 6.0 s for NetworkManager-wait-online.service",
+            "Enter turns it off",
+            "b An earlier boot",
+        ] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+        // b sets it beside the boot before that one, and back.
+        press(&mut app, KeyCode::Char('b'));
+        let shown = screen(&mut app, 140, 50);
+        assert!(
+            shown.contains("Against the boot of 1970-01-01 00:16 UTC: -10.0 s"),
+            "{shown}"
+        );
+        press(&mut app, KeyCode::Char('b'));
+        assert!(screen(&mut app, 140, 50).contains("+5.0 s"));
+
+        let hint = app
+            .performance_rows
+            .iter()
+            .position(|row| matches!(row, PerformanceRow::Hint(_)))
+            .unwrap();
+        app.main_state.select(Some(hint));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let shown = screen(&mut app, 140, 50);
+        assert!(
+            shown.contains("sudo systemctl disable NetworkManager-wait-online.service"),
+            "{shown}"
+        );
+        press(&mut app, KeyCode::Char('n'));
+        // A unit opens in Services, filtered to it.
+        let unit = app
+            .performance_rows
+            .iter()
+            .position(|row| matches!(row, PerformanceRow::Unit(name, _) if name == "plocate-updatedb.service"))
+            .unwrap();
+        app.main_state.select(Some(unit));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.screen, Screen::Services);
+        assert_eq!(app.service_filter, "plocate-updatedb.service");
+    }
+
+    #[test]
+    fn the_recovery_screen_says_what_is_ready_and_offers_the_snapshot_check() {
+        let mut app = app();
+        let check =
+            |id: &str, title: &str, health, summary: &str, entry: Option<&str>| doctor::Diagnosis {
+                id: id.into(),
+                title: title.into(),
+                health,
+                summary: summary.into(),
+                evidence: vec!["The root file system is btrfs".into()],
+                advice: None,
+                repair: None,
+                entry: entry.map(str::to_string),
+            };
+        app.recovery_found = vec![
+            check(
+                "snapshots",
+                "System snapshots",
+                doctor::Health::Good,
+                "Snapper has 2 snapshots",
+                None,
+            ),
+            check(
+                "own-files",
+                "Your own files",
+                doctor::Health::Notice,
+                "Nothing Helix Toolbox knows of backs up your home folder",
+                None,
+            ),
+            check(
+                "second-kernel",
+                "A second kernel",
+                doctor::Health::Notice,
+                "Only one kernel",
+                Some("zram-swap"),
+            ),
+        ];
+        app.snapshot_tool = Some(backups::Snapshots::Snapper);
+        app.open_screen(Screen::Recovery);
+        app.focus = Focus::Main;
+        let shown = screen(&mut app, 140, 40);
+        for text in [
+            "Recovery",
+            "Snapper has 2 snapshots",
+            "c checks them",
+            "Notice  Your own files",
+            "f sets it up",
+        ] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+        press(&mut app, KeyCode::Enter);
+        let shown = screen(&mut app, 140, 40);
+        assert!(shown.contains("looks inside the newest"), "{shown}");
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Char('c'));
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let shown = screen(&mut app, 140, 40);
+        assert!(shown.contains("sudo snapper -c root list"), "{shown}");
+        press(&mut app, KeyCode::Char('n'));
+        app.main_state.select(Some(2));
+        press(&mut app, KeyCode::Char('f'));
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
     }
 
     #[test]

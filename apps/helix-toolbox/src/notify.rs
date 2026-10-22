@@ -1,16 +1,17 @@
 //! `helix-toolbox notifications`: the desktop notifications of what the
 //! scheduled check finds (updates waiting, and when chosen new health
 //! problems and Drift), turned on and off, and the check its timer runs
-//! (helix_toolbox_engine::notifications and watch).
+//! (helix_toolbox_engine::notifications and watch). The check also records
+//! the boot, for the Performance screen's comparisons.
 
 use anyhow::{Context, Result, bail};
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_engine::{
     doctor::{self, System},
-    drift as engine_drift,
+    drift as engine_drift, history,
     inventory::which,
     notifications::{self, Places, Started},
-    settings, updates,
+    performance, settings, updates,
     watch::{self, Watch},
 };
 use helix_toolbox_platform::LinuxInfo;
@@ -117,6 +118,11 @@ pub fn off() -> Result<()> {
 pub fn check(catalog: &Catalog, platform: &LinuxInfo) -> Result<()> {
     let places = places()?;
     let watch = watch::read(&places, settings::path().as_deref());
+    // Each boot the timer sees is recorded, so boots can be compared before
+    // and after a change without the Performance screen being opened.
+    if let (Some(state), Ok(boot)) = (history::state_dir(), performance::boot(&doctor::Here)) {
+        performance::record(&performance::boots_path(&state), &boot);
+    }
     let mut problems = Vec::new();
     // A timer from before the choices, or with them lost, still tells of
     // updates, as it always did.

@@ -1,7 +1,7 @@
 // Sample answers for working on the interface in a browser, where there is
 // no Tauri side. Nothing here reads or changes the machine.
 
-import type { AreaView, ChangesView, EntryView, ItemView, Prepared, RecordView, RunEvent, ServicesView, StatusView, StorageView, WindowTheme } from './types';
+import type { AreaView, ChangesView, EntryView, ItemView, PerformanceView, Prepared, RecordView, RecoveryView, RunEvent, ServicesView, StatusView, StorageView, WindowTheme } from './types';
 
 const entry = (id: string, name: string, description: string, flags = 'I', extra: Partial<EntryView> = {}): ItemView => ({
   type: 'entry',
@@ -431,6 +431,83 @@ export async function call(command: string, args: Record<string, unknown> = {}):
         privileged: true,
         header: ['Risk: low · asks for your password'],
         lines: [{ name: `Clean: ${String(args.id)}`, detail: 'sudo paccache -rk2; then sudo paccache -ruk0' }],
+      } satisfies Prepared;
+    case 'read_performance': {
+      const boot = (id: string, booted: number, userspace: number, waited: number) => ({
+        id,
+        booted,
+        kernel: '7.2.11-1-garuda',
+        phases: { firmware: 10_458, loader: 12_297, kernel: 1065, initrd: 2661, userspace, total: 26_481 + userspace },
+        slowest: [
+          { name: 'plocate-updatedb.service', took: 4183 },
+          { name: 'NetworkManager-wait-online.service', took: waited },
+        ],
+        chain: [
+          { name: 'graphical.target', at: userspace, took: null },
+          { name: 'NetworkManager-wait-online.service', at: 1003, took: waited },
+          { name: 'plymouth-quit.service', at: 3010, took: 2344 },
+        ],
+      });
+      const now = boot('3f2a', 1_792_600_000, 8394, 4344);
+      const before = boot('1b7c', 1_792_500_000, 5394, 1344);
+      const comparison = {
+        before,
+        after: now,
+        phases: [
+          { name: 'Whole boot', before: before.phases.total, after: now.phases.total },
+          { name: 'Services', before: 5394, after: 8394 },
+        ],
+        units: [{ name: 'NetworkManager-wait-online.service', before: 1344, after: 4344 }],
+        runs: [{ at: 1_792_550_000, names: ['Docker'], success: true }],
+      };
+      return {
+        found: {
+          boot: now,
+          no_boot: null,
+          now: {
+            cpus: 16,
+            load: [0.52, 0.61, 0.7],
+            memory_total: 16_000_000_000,
+            memory_available: 9_200_000_000,
+            swaps: [{ name: '/dev/zram0', zram: true, size: 8_000_000_000, used: 120_000_000 }],
+            pressure: { cpu: 0, memory: 0, io: 1.2 },
+            governor: 'powersave',
+            power_profile: 'balanced',
+            heaviest: [{ pid: 2001, name: 'firefox', memory: 2_400_000_000 }],
+          },
+          previous: comparison,
+          recorded: 2,
+          hints: [
+            {
+              title: 'The boot waited 4.3 s for NetworkManager-wait-online.service',
+              detail: 'It holds back what asks for a working network until one is up.',
+              command: 'helix-toolbox services disable NetworkManager-wait-online.service',
+              unit: 'NetworkManager-wait-online.service',
+              entry: null,
+            },
+          ],
+        },
+        boots: [now, before],
+      } satisfies PerformanceView;
+    }
+    case 'compare_boots':
+      return (await call('read_performance') as PerformanceView).found.previous;
+    case 'read_recovery':
+      return {
+        snapshots: 'Snapper',
+        checks: [
+          { id: 'snapshots', title: 'System snapshots', health: 'good', health_label: 'OK', summary: 'Snapper is set up; listing its snapshots needs root', evidence: ['The root file system is btrfs'], advice: 'helix-toolbox recovery --check-snapshots lists them and looks inside the newest, reading only.', repair: null, entry: null },
+          { id: 'second-kernel', title: 'A second kernel', health: 'good', health_label: 'OK', summary: '2 kernels can be started: linux-lts, linux-zen', evidence: [], advice: null, repair: null, entry: null },
+          { id: 'own-files', title: 'Your own files', health: 'notice', health_label: 'Notice', summary: 'Nothing Helix Toolbox knows of backs up your home folder', evidence: [], advice: 'A backup program such as Pika Backup, Déjà Dup, Borg or restic, copying to another disk, keeps your own files when the disk does not.', repair: null, entry: null },
+        ],
+      } satisfies RecoveryView;
+    case 'prepare_snapshot_check':
+      return {
+        kind: 'ready',
+        risk: 'low',
+        privileged: true,
+        header: ['Risk: low · asks for your password', 'Note: It only reads: nothing is rolled back, taken or removed.'],
+        lines: [{ name: "Look at Snapper's snapshots", detail: 'sudo snapper -c root list; sudo btrfs subvolume show /.snapshots/<newest>/snapshot' }],
       } satisfies Prepared;
     case 'prepare_remove': {
       planned = (args.ids as string[]).map((id) => find(id)).filter((e): e is EntryView => !!e);

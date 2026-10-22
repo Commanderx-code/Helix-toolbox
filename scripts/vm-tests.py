@@ -1056,6 +1056,60 @@ def services_and_storage(machine, shots):
     log('  services and storage: fstrim.timer through every verb; the journal cleaned')
 
 
+def restored_and_undone(machine, original, sudo):
+    """One file put back from its backup through helix-toolbox restore, then
+    the restore undone from the copy it kept, each checked by what the file
+    holds."""
+    stamp = '20260101000000'
+    machine.ssh(f'{sudo}mkdir -p "$(dirname {original})" && printf "new\\n" | {sudo}tee {original} >/dev/null'
+                f' && printf "old\\n" | {sudo}tee {original}.helix-toolbox-backup-{stamp} >/dev/null')
+    holds = lambda: machine.ssh(f'cat {original}').stdout.strip()
+    machine.ssh(f'./helix-toolbox restore {original}.helix-toolbox-backup-{stamp} --yes')
+    if holds() != 'old':
+        raise RuntimeError(f'restoring {original} left {holds()!r} in it')
+    kept = machine.ssh(f'find "$(dirname {original})" -name "$(basename {original}).helix-toolbox-backup-*"'
+                       f' ! -name "*-{stamp}"').stdout.split()
+    if len(kept) != 1:
+        raise RuntimeError(f'restoring {original} kept {kept}, not the one it replaced')
+    machine.ssh(f'./helix-toolbox restore {kept[0]} --yes')
+    if holds() != 'new':
+        raise RuntimeError(f'undoing the restore of {original} left {holds()!r} in it')
+
+
+def recovery_and_restores(machine, shots):
+    """Helix Toolbox's own restores for real, of a file of the user's and a
+    system file; then recovery readiness and, where Snapper is set up, a
+    snapshot taken and the snapshot check run as root, which only reads."""
+    restored_and_undone(machine, '$HOME/.config/hf-restore/config', '')
+    restored_and_undone(machine, '/etc/hf-restore/hf.conf', 'sudo ')
+    ready = json.loads(machine.ssh('./helix-toolbox --json recovery').stdout)['data']
+    ids = [check['id'] for check in ready['checks']]
+    if ids[0] != 'snapshots' or 'configuration-backups' not in ids:
+        raise RuntimeError(f'the recovery checks are {ids}')
+    log('  recovery: two restores put back and undone; the readiness checks read')
+
+
+def snapshot_check(machine, shots):
+    """Snapper set up on the Btrfs root as an installation would, a snapshot
+    taken, and helix-toolbox recovery --check-snapshots run as root, which
+    finds a system in it and changes nothing."""
+    root = machine.ssh('findmnt -no FSTYPE /').stdout.strip()
+    if root != 'btrfs':
+        raise RuntimeError(f'the root file system is {root}, not Btrfs, so Snapper cannot be set up')
+    machine.ssh('sudo dnf -y -q install snapper >/dev/null && sudo snapper -c root create-config /')
+    ready = json.loads(machine.ssh('./helix-toolbox --json recovery').stdout)['data']
+    if ready['snapshots'] != 'Snapper':
+        raise RuntimeError(f'recovery does not see Snapper set up: {ready}')
+    machine.ssh("sudo snapper -c root create --description 'Helix Toolbox test'")
+    before = machine.ssh('sudo snapper --csvout -c root list --columns number').stdout
+    checked = machine.ssh('./helix-toolbox recovery --check-snapshots --yes').stdout
+    if 'holds a system to roll back to' not in checked:
+        raise RuntimeError(f'the snapshot check did not find a system in the newest snapshot:\n{checked[-1500:]}')
+    if machine.ssh('sudo snapper --csvout -c root list --columns number').stdout != before:
+        raise RuntimeError('the snapshot check changed the snapshots')
+    log('  snapshot check: the newest Snapper snapshot holds a system, and the snapshots are as they were')
+
+
 def zypper_bundle(machine, shots):
     """zypper downloads a bundle as the user, without root, and it installs
     with no network."""
@@ -1153,11 +1207,12 @@ CASES = {
     'debian': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('plymouth-on', plymouth_on),
                ('plymouth-off', plymouth_off), ('apparmor', apparmor), ('sddm', sddm), ('enable-ssd-trim', ssd_trim)],
     'fedora': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('plymouth-on', plymouth_on),
-               ('plymouth-off', plymouth_off), ('selinux', selinux), ('sddm', sddm), ('enable-ssd-trim', ssd_trim)],
+               ('plymouth-off', plymouth_off), ('selinux', selinux), ('sddm', sddm), ('enable-ssd-trim', ssd_trim),
+               ('snapshot-check', snapshot_check)],
     'arch-uefi': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('limine-cachyos', limine_cachyos),
                   ('limine-garuda', limine_garuda)],
     'opensuse': [('bundle-zypper', zypper_bundle), ('update-notifications', update_notifications),
-                 ('services-and-storage', services_and_storage)],
+                 ('services-and-storage', services_and_storage), ('recovery-and-restores', recovery_and_restores)],
     'arch-iso': [('arch-server-setup', server_setup)],
     'steamdeck': [('linux-neptune-for-steamdeck', linux_neptune)],
     # What also applies on ARM64 boards and servers that boot through UEFI.
@@ -1173,7 +1228,7 @@ CASES = {
 # Cases with nothing for verify to check afterward: not catalog entries,
 # or an installation whose live system is gone once it finishes.
 NOT_ENTRIES = {'bundle-flatpak', 'bundle-zypper', 'update-notifications', 'arch-server-setup',
-               'services-and-storage'}
+               'services-and-storage', 'recovery-and-restores', 'snapshot-check'}
 
 
 def verify(machine, entry):

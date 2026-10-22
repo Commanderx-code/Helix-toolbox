@@ -45,6 +45,8 @@
     { screen: { kind: 'hardware' }, label: 'Hardware' },
     { screen: { kind: 'services' }, label: 'Services' },
     { screen: { kind: 'storage' }, label: 'Storage' },
+    { screen: { kind: 'performance' }, label: 'Performance' },
+    { screen: { kind: 'recovery' }, label: 'Recovery' },
     { screen: { kind: 'bundles' }, label: 'Offline bundles' },
     { screen: { kind: 'desktop' }, label: 'Desktop' },
     { screen: { kind: 'settings' }, label: 'Settings' },

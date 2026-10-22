@@ -52,6 +52,16 @@ The items:
     replaces a copy the user keeps outside any package tool, and the
     window's AppImage.
 
+## v1.18.0: performance and recovery
+
+- [x] A performance and boot analyzer: the boot's parts, what the login
+      screen waited for, the machine now, and each boot recorded and set
+      beside an earlier one with the runs in between
+- [x] Recovery readiness: snapshots and booting one, a second kernel,
+      configuration backups, a backup of your own files, a Drift baseline;
+      a read-only snapshot check, and Helix Toolbox's own restores tested
+      for real in the distribution containers and the openSUSE machine
+
 ## v1.17.0: services and space
 
 - [x] A service and startup manager: systemd's units of the machine and

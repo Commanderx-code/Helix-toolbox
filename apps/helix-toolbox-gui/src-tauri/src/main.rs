@@ -17,7 +17,7 @@ use helix_toolbox_engine::{
     inventory::{Inventory, which},
     notifications,
     overview::Overview,
-    plan, plan_removal, preflight, preview, profiles,
+    performance, plan, plan_removal, preflight, preview, profiles, recovery,
     reliability::{self, Evidence},
     services,
     settings::{self, RunChoices, WindowTheme},
@@ -1342,6 +1342,101 @@ async fn prepare_clean(app: AppHandle, id: String) -> Result<PreparedView, Strin
     .await
 }
 
+// Performance
+
+/// The boot, the machine now, and the boots recorded so far; this boot is
+/// recorded on the way.
+#[derive(Serialize)]
+struct PerformanceView {
+    found: performance::Performance,
+    boots: Vec<performance::Boot>,
+}
+
+#[tauri::command]
+async fn read_performance(app: AppHandle) -> Result<PerformanceView, String> {
+    blocking(app, |_| {
+        let state = history::state_dir();
+        let history = history::read(1000).unwrap_or_default();
+        let found = performance::gather(&doctor::Here, state.as_deref(), &history);
+        let boots = state
+            .map(|state| performance::load(&performance::boots_path(&state)))
+            .unwrap_or_default();
+        PerformanceView { found, boots }
+    })
+    .await
+}
+
+/// One recorded boot beside a later one, with the runs in between.
+#[tauri::command]
+async fn compare_boots(
+    app: AppHandle,
+    before: String,
+    after: String,
+) -> Result<performance::Comparison, String> {
+    blocking(app, move |_| {
+        let boots = history::state_dir()
+            .map(|state| performance::load(&performance::boots_path(&state)))
+            .unwrap_or_default();
+        let find = |id: &str| boots.iter().find(|boot| boot.id == id);
+        let (Some(before), Some(after)) = (find(&before), find(&after)) else {
+            return Err("That boot is no longer recorded.".to_string());
+        };
+        let history = history::read(1000).unwrap_or_default();
+        Ok(performance::compare(before, after, &history))
+    })
+    .await?
+}
+
+// Recovery
+
+#[derive(Serialize)]
+struct RecoveryView {
+    checks: Vec<DiagnosisView>,
+    /// The snapshot tool set up, whose snapshots can be checked.
+    snapshots: Option<&'static str>,
+}
+
+#[tauri::command]
+async fn read_recovery(app: AppHandle) -> Result<RecoveryView, String> {
+    blocking(app, |gui| {
+        let found_backups = backups::discover(&backups::Roots::here());
+        let baselines = drift::dir()
+            .map(|directory| drift::load_all(&directory).0)
+            .unwrap_or_default();
+        let found = recovery::examine(
+            &doctor::Here,
+            &recovery::Known {
+                manager: gui.platform.manager,
+                backups: &found_backups,
+                baselines: &baselines,
+                now: history::now(),
+            },
+        );
+        RecoveryView {
+            checks: found.iter().map(views::diagnosis).collect(),
+            snapshots: recovery::snapshot_tool(&doctor::Here).map(|tool| tool.label()),
+        }
+    })
+    .await
+}
+
+/// The snapshot check: it lists the snapshots as root and looks inside the
+/// newest, changing nothing.
+#[tauri::command]
+async fn prepare_snapshot_check(app: AppHandle) -> Result<PreparedView, String> {
+    blocking(app, |gui| {
+        let Some(tool) = recovery::snapshot_tool(&doctor::Here) else {
+            return cannot(
+                gui,
+                "Neither Snapper (with a root configuration) nor Timeshift is set up.".into(),
+            );
+        };
+        let catalog = gui.catalog.read().unwrap();
+        prepare_plan(gui, &catalog, recovery::plan_check(tool))
+    })
+    .await
+}
+
 // Hardware
 
 /// Firmware, disks, sensors, batteries and devices, read from this machine.
@@ -1982,6 +2077,7 @@ fn main() {
                 prepare_repair, updates,
                 prepare_channels, prepare_update, prepare_remove, list_backups, prepare_restore, drift_targets, check_entry, read_services, service_details,
                 prepare_service, prepare_autostart, read_storage, prepare_clean,
+                read_performance, compare_boots, read_recovery, prepare_snapshot_check,
                 drift_check, save_baseline, reliability, trust, read_hardware, prepare_firmware,
                 prepare_smart, read_desktop, save_look, prepare_look, read_settings,
                 save_settings, save_watch, save_theme, bundle_contents, prepare_bundle_create,

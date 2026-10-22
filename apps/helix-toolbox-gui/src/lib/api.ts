@@ -10,14 +10,17 @@ import type {
   BundleContents,
   BundleView,
   ChangesView,
+  Comparison,
   DesktopView,
   Diagnosis,
   DriftView,
   Hardware,
   HardwareReport,
+  PerformanceView,
   PickView,
   Prepared,
   RecordView,
+  RecoveryView,
   ReliabilityView,
   RunEvent,
   ServiceDetails,
@@ -92,6 +95,10 @@ export const prepareService = (name: string, user: boolean, verb: string) => cal
 export const prepareAutostart = (file: string, on: boolean) => call<Prepared>('prepare_autostart', { file, on });
 export const storage = () => call<StorageView>('read_storage');
 export const prepareClean = (id: string) => call<Prepared>('prepare_clean', { id });
+export const performance = () => call<PerformanceView>('read_performance');
+export const compareBoots = (before: string, after: string) => call<Comparison>('compare_boots', { before, after });
+export const recovery = () => call<RecoveryView>('read_recovery');
+export const prepareSnapshotCheck = () => call<Prepared>('prepare_snapshot_check');
 
 export const hardware = () => call<Hardware>('read_hardware');
 export const prepareFirmware = (index: number) => call<Prepared>('prepare_firmware', { index });

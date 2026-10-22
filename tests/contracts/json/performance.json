@@ -1,0 +1,76 @@
+{
+  "command": "string",
+  "data": {
+    "boot": {
+      "booted": "number",
+      "chain": [
+        {
+          "at": "number",
+          "name": "string",
+          "took": "null"
+        }
+      ],
+      "id": "string",
+      "kernel": "string",
+      "phases": {
+        "firmware": "number",
+        "initrd": "number",
+        "kernel": "number",
+        "loader": "number",
+        "total": "number",
+        "userspace": "number"
+      },
+      "slowest": [
+        {
+          "name": "string",
+          "took": "number"
+        }
+      ]
+    },
+    "hints": [
+      {
+        "command": "null",
+        "detail": "string",
+        "entry": "null",
+        "title": "string",
+        "unit": "null"
+      }
+    ],
+    "no_boot": "null",
+    "now": {
+      "cpus": "number",
+      "governor": "string",
+      "heaviest": [
+        {
+          "memory": "number",
+          "name": "string",
+          "pid": "number"
+        }
+      ],
+      "load": [
+        "number"
+      ],
+      "memory_available": "number",
+      "memory_total": "number",
+      "power_profile": "string",
+      "pressure": {
+        "cpu": "number",
+        "io": "number",
+        "memory": "number"
+      },
+      "swaps": [
+        {
+          "name": "string",
+          "size": "number",
+          "used": "number",
+          "zram": "boolean"
+        }
+      ]
+    },
+    "previous": "null",
+    "recorded": "number"
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

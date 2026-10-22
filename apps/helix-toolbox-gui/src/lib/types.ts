@@ -315,6 +315,68 @@ export type StorageView = {
   kept: { title: string; detail: string; size: number | null }[];
 };
 
+// Performance
+
+/** How long each part of a boot took, in milliseconds. */
+export type Phases = {
+  firmware: number | null;
+  loader: number | null;
+  kernel: number;
+  initrd: number | null;
+  userspace: number;
+  total: number;
+};
+
+export type Boot = {
+  id: string;
+  /** Seconds since 1970. */
+  booted: number;
+  kernel: string;
+  phases: Phases;
+  slowest: { name: string; took: number }[];
+  chain: { name: string; at: number | null; took: number | null }[];
+};
+
+export type BootChange = { name: string; before: number | null; after: number | null };
+
+export type Comparison = {
+  before: Boot;
+  after: Boot;
+  phases: BootChange[];
+  units: BootChange[];
+  runs: { at: number; names: string[]; success: boolean }[];
+};
+
+export type PerformanceHint = { title: string; detail: string; command: string | null; unit: string | null; entry: string | null };
+
+export type MachineNow = {
+  cpus: number;
+  load: [number, number, number] | null;
+  memory_total: number;
+  memory_available: number;
+  swaps: { name: string; zram: boolean; size: number; used: number }[];
+  pressure: { cpu: number | null; memory: number | null; io: number | null };
+  governor: string | null;
+  power_profile: string | null;
+  heaviest: { pid: number; name: string; memory: number }[];
+};
+
+export type PerformanceView = {
+  found: {
+    boot: Boot | null;
+    no_boot: string | null;
+    now: MachineNow;
+    previous: Comparison | null;
+    recorded: number;
+    hints: PerformanceHint[];
+  };
+  boots: Boot[];
+};
+
+// Recovery
+
+export type RecoveryView = { checks: Diagnosis[]; snapshots: string | null };
+
 // Offline bundles
 
 export type BundledEntry = { name: string; offline: boolean; network: string | null; flatpak: string | null };

@@ -178,8 +178,10 @@ pub fn restore_step(backup: &Backup) -> Step {
     let sudo = if backup.system { "sudo " } else { "" };
     let original = quote(&backup.original.to_string_lossy());
     let copy = quote(&backup.backup.to_string_lossy());
+    // The shell's process id keeps two restores in one second apart: an
+    // undo at once would otherwise move the file onto the backup it undoes.
     let program = format!(
-        "hf_stamp=$(date +%Y%m%d%H%M%S)\n\
+        "hf_stamp=$(date +%Y%m%d%H%M%S)-$$\n\
          if [ -e {original} ] || [ -L {original} ]; then\n  \
          {sudo}mv -- {original} {original}.helix-toolbox-backup-\"$hf_stamp\" || exit 1\n  \
          printf 'Helix Toolbox: the current one is kept as %s\\n' {original}.helix-toolbox-backup-\"$hf_stamp\"\n\
@@ -488,6 +490,27 @@ mod tests {
             .collect();
         assert_eq!(kept.len(), 1);
         assert_eq!(fs::read_to_string(&kept[0]).unwrap(), "current");
+        // Undone at once, within the same second, the kept one is not
+        // overwritten by the file it puts back.
+        let undo = plan_restore(&Backup {
+            backup: kept[0].clone(),
+            original: original.clone(),
+            taken: None,
+            system: false,
+            directory: false,
+        });
+        run(&undo);
+        assert_eq!(fs::read_to_string(&original).unwrap(), "current");
+        assert_eq!(fs::read_to_string(&kept[0]).unwrap(), "current");
+        let mut kept: Vec<String> = fs::read_dir(root.path())
+            .unwrap()
+            .flatten()
+            .map(|item| item.path())
+            .filter(|path| path.to_string_lossy().contains(".helix-toolbox-backup-"))
+            .map(|path| fs::read_to_string(path).unwrap())
+            .collect();
+        kept.sort();
+        assert_eq!(kept, ["current", "older"]);
         // A folder, with nothing in its place now.
         let folder = root.path().join("nvim");
         let saved = root.path().join("nvim.commander-backup-20261001000000-1");
