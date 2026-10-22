@@ -4,6 +4,71 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.20.0
+
+- **Command Center's settings.** Where Helix Toolbox has none of its own,
+  Restic, Repositories, Configs and Home Manager read the repository, the
+  project folders, the configuration files and the Home Manager flake from
+  the settings Command Center left, without changing them.
+- **Restic.** **Restic**, in the window and the terminal interface, shows
+  the restic repository of your own files and its snapshots: browse the
+  folders of one, look for every version of a file across all of them
+  (which changed, and whether newer snapshots no longer have it), and
+  restore a snapshot or one path of it into a new folder of your home
+  folder, so nothing is overwritten and what is restored is read back.
+  **Back up…** and **Check…** are plans you review, and a daily or weekly
+  timer of your session backs up by itself. Recovery tests record a
+  file's SHA-256, then restore it from a snapshot into a temporary folder
+  and compare. The repository is named under `[restic]` in
+  `settings.toml`, or read from restic's own variables or the settings
+  Command Center left; Helix Toolbox never keeps a password.
+  `helix-toolbox restic` (`files`, `history`, `backup`, `check`,
+  `restore`, `baseline`, `test`, `timer`) does the same.
+- **Repositories and project workspaces.** **Repositories**, in the window
+  and the terminal interface, lists the Git repositories under your project
+  folders (`~/github`, `~/projects`, `~/src`, `~/code` and `~/dotfiles`, or
+  `[repositories] roots` in `settings.toml`; Command Center's folders when
+  it was set up), each with its branch, changes and how it stands against
+  its upstream. One repository shows its changed files and their diffs, its
+  branches, stashes and recent commits, and its tasks: those its
+  `package.json`, Cargo, Makefile or justfile names, found without running
+  anything, and commands of your own. Staging, committing, creating and
+  switching branches, stashing and applying a stash, fetching, pulling
+  (fast-forward only) and pushing (never forced), and running a task are
+  plans, reviewed first, that check again when they run that the repository
+  is as the review showed it. Reading never runs the repository's hooks or
+  content filters. Favorites are listed first. `helix-toolbox repos` does
+  the same.
+- **Configs.** **Configs**, in the window and the terminal interface,
+  edits Ghostty's and Fastfetch's configuration: the file that is really
+  the one to change (named under `[configs]` in `settings.toml`, the one
+  Command Center was set up with, or, where Home Manager links the live
+  file into the Nix store, its source in your dotfiles), whether it checks
+  (Ghostty's own `+validate-config`; Fastfetch's JSONC read here), a few
+  common fields such as the font, the theme, the logo and the modules,
+  changed without touching the rest, comments included, and the whole file
+  in the window or your editor. Saving is a plan you review, with the file
+  side by side: it refuses a file that changed since it was read, keeps the
+  one there as a configuration backup beside it, which **Backups** and
+  `helix-toolbox restore` can put back, and says when Home Manager must
+  run to make it live. `helix-toolbox config` (`ghostty`, `fastfetch`;
+  `validate`, `set`, `edit`, `history`) does the same.
+- **Home Manager.** **Home Manager**, in the window and the terminal
+  interface, shows the configuration (named under `[home_manager]` in
+  `settings.toml`, else Command Center's dotfiles, else
+  `~/.config/home-manager`), the generations Home Manager built and which
+  is active, how the configuration's Git repository stands, and which of
+  your configuration files Home Manager links into the Nix store.
+  **Build…**, **Switch…**, going back to an earlier generation through its
+  own `activate` script, and pulling the repository are plans you review.
+  `helix-toolbox home-manager` (`generations`, `build`, `switch`,
+  `activate`, `pull`) does the same.
+- **The timed backup in Settings, and in Recovery.** Settings, in both
+  interfaces, turns the timed restic backup on, every day or every week,
+  and off. Recovery counts a restic repository set up for Helix Toolbox as
+  the backup of your own files, with its newest snapshot when Restic has
+  read them.
+
 ## v1.19.0
 
 - **Migration.** **Migration**, in the window and the terminal interface,

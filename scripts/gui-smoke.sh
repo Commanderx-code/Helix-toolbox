@@ -4,9 +4,9 @@
 # palette, the theme, the keyboard, every screen, a run with its change
 # preview, the removal of a package entry, a saved profile exported,
 # deleted and imported again, the offline bundles screen, a migration
-# exported and one read, a bug report and the update notifications turned
-# on and off, against the fixture catalog, and check what the drive script
-# reports.
+# exported and one read, a scratch repository's diff, stage and task
+# reviewed, a bug report and the update notifications turned on and off,
+# against the fixture catalog, and check what the drive script reports.
 # usage: scripts/gui-smoke.sh BINARY
 # BINARY is a debug build with the frontend in it (cargo build --features
 # tauri/custom-protocol in apps/helix-toolbox-gui/src-tauri, after npm run
@@ -63,6 +63,19 @@ chmod +x "$work/bin/systemctl" "$work/bin/systemd-analyze" "$work/bin/xdg-open" 
 export PATH="$work/bin:$PATH"
 mkdir -p "$work/home" "$work/config" "$work/state" "$work/data" "$work/cache"
 export HOME="$work/home"
+# A repository for the Repositories screen, under one of the folders it
+# looks in by default: a commit and a new file.
+repo="$work/home/projects/sample"
+mkdir -p "$repo"
+git_here() {
+    GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME=Smoke GIT_AUTHOR_EMAIL=smoke@example.com \
+        GIT_COMMITTER_NAME=Smoke GIT_COMMITTER_EMAIL=smoke@example.com git -C "$repo" "$@"
+}
+git_here init -q -b main
+printf 'one\n' > "$repo/one.txt"
+git_here add one.txt
+git_here commit -q -m First
+printf 'new\n' > "$repo/new.txt"
 export XDG_CONFIG_HOME="$work/config" XDG_STATE_HOME="$work/state" \
     XDG_DATA_HOME="$work/data" XDG_CACHE_HOME="$work/cache"
 # A migration made on Fedora, for the Migration screen to read: a fixture
@@ -73,6 +86,55 @@ printf '%s\n' 'version = 1' 'from = "Fedora Linux 43"' 'family = "fedora"' \
     'entries = ["marker", "not-in-this-catalog"]' \
     'flatpaks = ["com.example.Tool"]' 'packages = ["htop"]' \
     > "$work/config/helix-toolbox/from-fedora.toml"
+# A stand-in restic for the Restic screen: one snapshot of the home folder
+# with a file in it, found by a search; restores and tests are only
+# reviewed. The repository and its password are named as restic's own
+# variables and a KWallet entry would name them.
+cat > "$work/bin/restic" <<EOF
+#!/bin/sh
+echo "\$*" >> "$work/restic.log"
+snapshot=b6f77f6d00000000000000000000000000000000000000000000000000000000
+case "\$*" in
+    *' snapshots '*) printf '[{"id":"%s","short_id":"b6f77f6d","time":"2026-10-21T22:00:04+02:00","hostname":"smoke","paths":["%s"]}]\n' "\$snapshot" "$work/home" ;;
+    *' ls '*) printf '{"struct_type":"snapshot","id":"%s"}\n{"name":"home","type":"dir","path":"%s","struct_type":"node"}\n{"name":"notes.txt","type":"file","path":"%s/notes.txt","size":6,"struct_type":"node"}\n' "\$snapshot" "$work/home" "$work/home" ;;
+    *' find '*) printf '[{"matches":[{"type":"file","path":"%s/notes.txt","size":6}],"hits":1,"snapshot":"%s"}]\n' "$work/home" "\$snapshot" ;;
+    'restore --help') echo '      --overwrite behavior   (always|if-changed|if-newer|never)'; echo '      --verify               verify restored files' ;;
+esac
+EOF
+chmod +x "$work/bin/restic"
+printf 'hello\n' > "$work/home/notes.txt"
+unset RESTIC_PASSWORD RESTIC_PASSWORD_FILE RESTIC_PASSWORD_COMMAND
+export RESTIC_REPOSITORY="$work/repository" RESTIC_WALLET=smoke \
+    RESTIC_WALLET_ENTRY=restic RESTIC_WALLET_FOLDER=Passwords
+# Configurations for the Configs screen, and a stand-in ghostty that checks
+# Ghostty's, rejecting a "bogus" field.
+mkdir -p "$work/config/ghostty" "$work/config/fastfetch"
+printf 'font-size = 12\n' > "$work/config/ghostty/config"
+printf '{\n    "modules": ["title", "os"]\n}\n' > "$work/config/fastfetch/config.jsonc"
+cat > "$work/bin/ghostty" <<'EOF'
+#!/bin/sh
+[ "$1" = +validate-config ] || exit 2
+if grep -q bogus "${2#--config-file=}"; then
+    echo "unknown field: bogus"
+    exit 1
+fi
+EOF
+chmod +x "$work/bin/ghostty"
+# A stand-in home-manager for the Home Manager screen, with a flake where
+# Home Manager looks by itself: two generations, the earlier one not in
+# this machine's store; builds and switches are only reviewed.
+cat > "$work/bin/home-manager" <<EOF
+#!/bin/sh
+echo "\$*" >> "$work/home-manager.log"
+case "\$1" in
+    --version) echo 26.11-pre ;;
+    generations) printf '%s\n' '2026-10-20 12:01 : id 201 -> /nix/store/aaa-home-manager-generation (current)' \
+        '2026-10-16 13:23 : id 200 -> /nix/store/no-such-home-manager-generation' ;;
+esac
+EOF
+chmod +x "$work/bin/home-manager"
+mkdir -p "$work/home/.config/home-manager"
+printf '{ }\n' > "$work/home/.config/home-manager/flake.nix"
 # The marker fixture writes here, which shows the run really ran.
 export HELIX_TOOLBOX_TEST_OUT="$work/marker.txt"
 # WebKitGTK on a virtual display: no GPU, no compositor.
@@ -144,9 +206,44 @@ if [ -e "$work/config/systemd/user/helix-toolbox-updates.timer" ]; then
     echo "turning the update notifications off left the timer behind" >&2
     exit 1
 fi
+# The timed backup was started and stopped, and its files are gone; restic
+# was only asked to read.
+if ! grep -qx -- '--user restart helix-toolbox-restic.timer' "$work/systemctl.log" \
+    || [ -e "$work/config/systemd/user/helix-toolbox-restic.timer" ]; then
+    echo "the timed backup was not turned on and off" >&2
+    exit 1
+fi
+if grep -E ' (backup|restore [0-9a-f]|dump|check)( |$)' "$work/restic.log"; then
+    echo "restic was asked to change something" >&2
+    exit 1
+fi
+# Ghostty's configuration was saved, and the one before kept beside it.
+if ! grep -qx 'font-size = 14' "$work/config/ghostty/config"; then
+    echo "the Ghostty configuration was not saved" >&2
+    exit 1
+fi
+set -- "$work/config/ghostty/config.helix-toolbox-backup-"*
+if ! grep -qx 'font-size = 12' "$1" 2>/dev/null; then
+    echo "the Ghostty configuration before the save was not kept" >&2
+    exit 1
+fi
+# Home Manager was only asked to read.
+if grep -E "^(build|switch)" "$work/home-manager.log" 2>/dev/null; then
+    echo "home-manager was asked to build or switch" >&2
+    exit 1
+fi
 # The hardware report's issue went to the browser, filled in.
 if ! grep -q '^https://github.com/Commanderx-code/Helix-toolbox/issues/new?template=hardware_report.yml&.*records=' "$work/xdg-open.log" 2>/dev/null; then
     echo "the hardware report's issue was not opened" >&2
+    exit 1
+fi
+# The repository's stage was reviewed and canceled, and its task kept.
+if [ -n "$(git_here diff --cached --name-only)" ]; then
+    echo "something was staged in the scratch repository" >&2
+    exit 1
+fi
+if ! grep -q 'echo smoke' "$work/config/helix-toolbox/workspaces.toml" 2>/dev/null; then
+    echo "the task was not kept in workspaces.toml" >&2
     exit 1
 fi
 echo "the window's smoke test passed"

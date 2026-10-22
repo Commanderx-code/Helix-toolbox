@@ -1,0 +1,9 @@
+{
+  "command": "string",
+  "data": {
+    "generations": []
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

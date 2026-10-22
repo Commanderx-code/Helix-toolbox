@@ -78,10 +78,23 @@ settings, profiles and history over ([what changed](https://github.com/Commander
   started at login, each change told what it costs first; and where the disk
   space goes, with what each cleanup frees. Snapshots and bootable kernels
   are never cleaned.
+- **Repositories**: the Git repositories under your project folders, with
+  their changes, diffs, branches and stashes, staged, committed and synced
+  through reviewed plans, and each project's tasks run in its folder.
+- **Home Manager**: its generations and the active one, its
+  configuration's repository and the files it links, with build, switch
+  and going back to a generation as reviewed plans.
 - **Migration**: what this machine has, written to a file and read on
   another machine or distribution: catalog entries become that
   distribution's packages, Flatpaks come from Flathub, and the packages
   that do not translate are listed for you.
+- **Configs**: Ghostty's and Fastfetch's configuration, in its Home
+  Manager source when it has one: a few common fields or the whole file,
+  checked, shown side by side and kept as a backup before each save.
+- **Restic backups**: the snapshots of your own files, a file's history
+  across them, restores into a new folder that overwrite nothing, backups
+  on a timer, and recovery tests that restore a file and compare its
+  SHA-256.
 - **Performance and recovery**: how long the boot took and where the time
   went, each boot beside an earlier one with the runs in between; and
   whether the machine could be brought back: snapshots and booting one, a

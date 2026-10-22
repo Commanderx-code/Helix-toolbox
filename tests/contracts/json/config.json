@@ -1,0 +1,34 @@
+{
+  "command": "string",
+  "data": {
+    "backups": [
+      {
+        "backup": "string",
+        "taken": "string"
+      }
+    ],
+    "checked": {
+      "state": "string"
+    },
+    "exists": "boolean",
+    "flake": "null",
+    "kind": "string",
+    "live": "string",
+    "managed": "boolean",
+    "origin": "string",
+    "path": "string",
+    "problem": "null",
+    "revision": "string",
+    "values": [
+      {
+        "hint": "string",
+        "key": "string",
+        "label": "string",
+        "value": "null"
+      }
+    ]
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

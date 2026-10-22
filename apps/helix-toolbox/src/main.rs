@@ -3,8 +3,10 @@
 
 mod analyze;
 mod bundle;
+mod configs;
 mod docgen;
 mod drift;
+mod home;
 mod inspect;
 mod json;
 mod logging;
@@ -12,6 +14,8 @@ mod manage;
 mod migrate;
 mod notify;
 mod report;
+mod repos;
+mod restic;
 mod selfupdate;
 mod setup;
 mod tui;
@@ -277,6 +281,38 @@ enum Command {
     Migrate {
         #[command(subcommand)]
         action: migrate::MigrateCommand,
+    },
+    /// Restic backups of your own files: the repository and its snapshots,
+    /// the files in one, a file's history, and checks, backups, restores
+    /// into a new folder and recovery tests, each a plan you confirm.
+    Restic {
+        #[command(subcommand)]
+        action: Option<restic::ResticCommand>,
+    },
+    /// Home Manager: the configuration, its generations and which is
+    /// active, its Git repository, and the files it links. Reading changes
+    /// nothing; building, switching, going back to a generation and
+    /// pulling the repository are plans, confirmed first.
+    HomeManager {
+        #[command(subcommand)]
+        action: Option<home::HomeManagerCommand>,
+    },
+    /// The Git repositories under your project folders: their branch,
+    /// changes and upstream, one repository's files, diffs, branches and
+    /// stashes, and its tasks. Reading changes nothing; staging, commits,
+    /// branches, stashes, syncing and tasks are plans, confirmed first.
+    Repos {
+        #[command(subcommand)]
+        action: Option<repos::ReposCommand>,
+    },
+    /// Ghostty's and Fastfetch's configuration: which file is edited, its
+    /// checks, a few common fields, your editor on a copy and the backups
+    /// kept. Saving is a plan, confirmed first, that keeps the current file
+    /// as a backup.
+    Config {
+        program: configs::Program,
+        #[command(subcommand)]
+        action: Option<configs::ConfigCommand>,
     },
     /// The hardware and firmware: fwupd's devices and the firmware updates it
     /// knows of, disks, temperatures, batteries, PCI and USB devices. It only
@@ -982,6 +1018,14 @@ fn main() -> Result<()> {
             as_json,
         ),
         Command::Migrate { action } => migrate::migrate(action, &load(false)?, &platform, as_json),
+        Command::Restic { action } => restic::restic(action, &load(false)?, &platform, as_json),
+        Command::Repos { action } => repos::repos(action, &load(false)?, &platform, as_json),
+        Command::Config { program, action } => {
+            configs::config(program, action, &load(false)?, &platform, as_json)
+        }
+        Command::HomeManager { action } => {
+            home::home_manager(action, &load(false)?, &platform, as_json)
+        }
         Command::Hardware {
             smart,
             firmware,

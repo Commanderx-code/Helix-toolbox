@@ -264,6 +264,10 @@ export type SettingsView = {
   drift: string | null;
   /** The saved baselines: file name and name. */
   baselines: [string, string][];
+  /** How often the timed restic backup runs, or null when it is off. */
+  restic_timer: 'day' | 'week' | null;
+  /** Whether a restic repository is set up, so the timer can be. */
+  restic_ready: boolean;
 };
 
 // Services and startup
@@ -409,6 +413,42 @@ export type TranslationView = {
   yours: number;
 };
 
+// Restic
+
+export type ResticSnapshot = { id: string; short_id: string; time: string; hostname: string; paths: string[]; tags?: string[] | null };
+
+export type ResticNode = { name: string; type: string; path: string; size?: number | null; mtime?: string | null };
+
+export type ResticVersion = {
+  snapshot: string;
+  short_id: string;
+  time: string;
+  hostname: string;
+  size: number | null;
+  mtime: string | null;
+  change: 'first' | 'changed' | 'same';
+};
+
+export type ResticHistory = { path: string; versions: ResticVersion[]; missing_from: number };
+
+export type Baseline = { id: string; path: string; sha256: string; recorded: number };
+
+/** The repository and its snapshots, as `helix-toolbox restic` shows them. */
+export type ResticView = {
+  configured: boolean;
+  repository: string | null;
+  origin: string | null;
+  password: string | null;
+  paths: string[];
+  excludes: string[];
+  problem: string | null;
+  snapshots: ResticSnapshot[];
+  timer: string | null;
+  restores: boolean;
+  baselines: Baseline[];
+  home: string;
+};
+
 // Offline bundles
 
 export type BundledEntry = { name: string; offline: boolean; network: string | null; flatpak: string | null };
@@ -435,3 +475,114 @@ export type BundleView = {
   flatpaks: string[];
   entries: BundledEntry[];
 };
+
+// Repositories
+
+/** One repository in the list, as `helix-toolbox repos --json`. */
+export type RepoSummary = {
+  name: string;
+  path: string;
+  branch: string | null;
+  changed: number;
+  upstream: string | null;
+  ahead: number | null;
+  behind: number | null;
+  last: string | null;
+  last_at: number | null;
+  origin: string | null;
+  problem: string | null;
+  favorite: boolean;
+  group: string;
+};
+
+export type ReposView = { roots: string[]; depth: number; origin: string; repositories: RepoSummary[] };
+
+// Home Manager
+
+/** One generation Home Manager built. */
+export type HomeGeneration = { id: number; built: string; path: string; current: boolean };
+
+/** A configuration file, and whether Home Manager links it into the Nix store. */
+export type HomeLink = { name: string; path: string; target: string | null; managed: boolean };
+
+/** Home Manager, as `helix-toolbox home-manager --json`. */
+export type HomeManagerView = {
+  installed: boolean;
+  version: string | null;
+  config: { folder: string; flake: boolean; profile: string | null; origin: string } | null;
+  problem: string | null;
+  generations: HomeGeneration[];
+  repository: Omit<RepoSummary, 'favorite' | 'group'> | null;
+  links: HomeLink[];
+  /** The `--flake` reference built, for a flake. */
+  reference: string | null;
+  /** Where the configuration was named. */
+  origin: string | null;
+};
+
+export type RepoFile = { path: string; original: string | null; state: string; staged: boolean; unstaged: boolean; conflict: boolean };
+
+export type RepoTask = { id: string; name: string; command: string; shell: 'direct' | 'fish' | 'bash'; detected?: boolean };
+
+/** One repository, as `helix-toolbox repos show --json`, with its changes in words. */
+export type RepositoryView = {
+  summary: Omit<RepoSummary, 'favorite' | 'group'>;
+  changes: RepoFile[];
+  branches: string[];
+  remotes: string[];
+  stashes: { id: string; name: string; subject: string }[];
+  log: { hash: string; subject: string; at: number | null }[];
+  head: string | null;
+  branch_ref: string | null;
+  busy: string | null;
+  push_to: [string, string] | null;
+  staged_stat: string;
+  favorite: boolean;
+  tasks: RepoTask[];
+};
+
+export type RepoDiff = { text: string; truncated: boolean };
+
+/** A change to a repository, as `prepare_repository_change` takes it. */
+export type RepoChange =
+  | { kind: 'stage'; files: string[] }
+  | { kind: 'stage_all' }
+  | { kind: 'unstage'; files: string[] }
+  | { kind: 'commit'; message: string }
+  | { kind: 'create_branch'; name: string }
+  | { kind: 'switch_branch'; name: string }
+  | { kind: 'stash'; message: string; untracked: boolean }
+  | { kind: 'apply_stash'; id: string }
+  | { kind: 'fetch' }
+  | { kind: 'pull' }
+  | { kind: 'push' }
+  | { kind: 'publish'; remote: string };
+
+/** Ghostty's and Fastfetch's configuration, as `helix-toolbox config` reads them. */
+export type ConfigKind = 'ghostty' | 'fastfetch';
+
+/** What the checks say of a configuration's text. */
+export type ConfigChecked = { state: 'valid' } | { state: 'unchecked' | 'invalid'; message: string };
+
+export type ConfigField = { key: string; label: string; hint: string; value: string | null };
+
+export type ConfigView = {
+  kind: ConfigKind;
+  label: string;
+  /** Why it cannot be edited, when it cannot. */
+  problem: string | null;
+  path: string | null;
+  live: string | null;
+  origin: string | null;
+  managed: boolean;
+  flake: string | null;
+  exists: boolean;
+  revision: string | null;
+  content: string;
+  checked: ConfigChecked | null;
+  fields: ConfigField[];
+  backups: { backup: string; taken: string | null }[];
+};
+
+/** A field changed in a draft, not saved yet. */
+export type ConfigDraft = { content: string; fields: ConfigField[] };

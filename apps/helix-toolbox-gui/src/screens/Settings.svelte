@@ -61,6 +61,18 @@
     }
   }
 
+  /** The timed restic backup: off, every day or every week, at once. */
+  async function switchBackup(every: string) {
+    switching = true;
+    try {
+      toolbox.notice = { title: 'Timed backup', text: await api.setResticTimer(every !== '', every === 'week') };
+    } catch (error) {
+      toolbox.error = `The timed backup could not be changed: ${error}`;
+    } finally {
+      switching = false;
+      await load();
+    }
+  }
 
   async function save() {
     saving = true;
@@ -170,6 +182,29 @@
             {#each view.baselines as [slug, name] (slug)}
               <option value={slug}>From {name}</option>
             {/each}
+          </select>
+        </span>
+      </div>
+
+      <div class="toggle">
+        <span>
+          <label class="title" for="restic-timer">Back up with restic on a timer</label>
+          <span class="detail">
+            {#if view.restic_ready}
+              The folders Restic backs up, into its repository, while you are logged in; a run missed while the machine was off runs at the next login.
+            {:else}
+              Name a restic repository first; Restic says how.
+            {/if}
+          </span>
+          <select
+            id="restic-timer"
+            value={view.restic_timer ?? ''}
+            disabled={!view.restic_ready || view.notifications === null || switching}
+            onchange={(event) => switchBackup(event.currentTarget.value)}
+          >
+            <option value="">No</option>
+            <option value="day">Every day</option>
+            <option value="week">Every week</option>
           </select>
         </span>
       </div>

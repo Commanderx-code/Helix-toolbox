@@ -1,7 +1,7 @@
 // Sample answers for working on the interface in a browser, where there is
 // no Tauri side. Nothing here reads or changes the machine.
 
-import type { AreaView, ChangesView, EntryView, ItemView, Migration, MigrationExportView, PerformanceView, Prepared, RecordView, RecoveryView, RunEvent, TranslationView, ServicesView, StatusView, StorageView, WindowTheme } from './types';
+import type { AreaView, ChangesView, ConfigView, EntryView, HomeManagerView, ItemView, Migration, MigrationExportView, PerformanceView, Prepared, RecordView, RecoveryView, RepositoryView, ReposView, ResticView, ResticNode, ResticHistory, RunEvent, TranslationView, ServicesView, StatusView, StorageView, WindowTheme } from './types';
 
 const entry = (id: string, name: string, description: string, flags = 'I', extra: Partial<EntryView> = {}): ItemView => ({
   type: 'entry',
@@ -501,6 +501,55 @@ export async function call(command: string, args: Record<string, unknown> = {}):
           { id: 'own-files', title: 'Your own files', health: 'notice', health_label: 'Notice', summary: 'Nothing Helix Toolbox knows of backs up your home folder', evidence: [], advice: 'A backup program such as Pika Backup, Déjà Dup, Borg or restic, copying to another disk, keeps your own files when the disk does not.', repair: null, entry: null },
         ],
       } satisfies RecoveryView;
+    case 'read_repositories':
+      return {
+        roots: ['/home/me/github', '/home/me/dotfiles'],
+        depth: 3,
+        origin: 'default',
+        repositories: [
+          { name: 'helix-toolbox', path: '/home/me/github/helix-toolbox', branch: 'main', changed: 2, upstream: 'origin/main', ahead: 1, behind: 0, last: 'Helix Toolbox 1.19.0', last_at: 1_792_600_000, origin: 'https://github.com/me/helix-toolbox.git', problem: null, favorite: true, group: '' },
+          { name: 'dotfiles', path: '/home/me/dotfiles', branch: 'main', changed: 0, upstream: 'origin/main', ahead: 0, behind: 0, last: 'Ghostty: a smaller font', last_at: 1_792_400_000, origin: 'git@github.com:me/dotfiles.git', problem: null, favorite: false, group: '' },
+          { name: 'scratch', path: '/home/me/github/scratch', branch: null, changed: 1, upstream: null, ahead: null, behind: null, last: 'Try things', last_at: 1_790_000_000, origin: null, problem: null, favorite: false, group: '' },
+        ],
+      } satisfies ReposView;
+    case 'read_repository':
+      return {
+        summary: { name: 'helix-toolbox', path: (args.path as string) ?? '/home/me/github/helix-toolbox', branch: 'main', changed: 2, upstream: 'origin/main', ahead: 1, behind: 0, last: 'Helix Toolbox 1.19.0', last_at: 1_792_600_000, origin: 'https://github.com/me/helix-toolbox.git', problem: null },
+        changes: [
+          { path: 'README.md', original: null, state: 'modified', staged: true, unstaged: false, conflict: false },
+          { path: 'notes.txt', original: null, state: 'new', staged: false, unstaged: true, conflict: false },
+        ],
+        branches: ['main', 'topic'],
+        remotes: ['origin'],
+        stashes: [{ id: 'a1b2c3d4e5f6', name: 'stash@{0}', subject: 'On main: Halfway there' }],
+        log: [
+          { hash: 'b27349a', subject: 'Helix Toolbox 1.19.0', at: 1_792_600_000 },
+          { hash: '04b540e', subject: 'Helix Toolbox 1.18.0', at: 1_792_500_000 },
+        ],
+        head: 'b27349a0000000000000000000000000000000000',
+        branch_ref: 'refs/heads/main',
+        busy: null,
+        push_to: ['origin', 'refs/heads/main'],
+        staged_stat: ' README.md | 2 +-\n',
+        favorite: true,
+        tasks: [
+          { id: 'serve', name: 'npm run serve', command: 'npm run serve', shell: 'direct' },
+          { id: 'cargo-test', name: 'cargo test', command: 'cargo test', shell: 'direct', detected: true },
+        ],
+      } satisfies RepositoryView;
+    case 'repository_diff':
+      return { text: '--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-Old line\n+New line\n', truncated: false };
+    case 'prepare_repository_change':
+    case 'prepare_task':
+      return {
+        kind: 'ready',
+        risk: 'low',
+        privileged: false,
+        header: ['Risk: low'],
+        lines: [{ name: 'Commit 1 staged file to main', detail: "cd /home/me/github/helix-toolbox && git --literal-pathspecs commit -m 'Change the README'" }],
+      } satisfies Prepared;
+    case 'save_workspace':
+      return null;
     case 'read_migration_export':
     case 'export_migration': {
       const migration: Migration = {
@@ -549,6 +598,134 @@ export async function call(command: string, args: Record<string, unknown> = {}):
           { name: 'htop', detail: 'sudo pacman -S --needed htop' },
         ],
       } satisfies Prepared;
+    case 'read_configs':
+      return [
+        {
+          kind: 'ghostty',
+          label: 'Ghostty',
+          problem: null,
+          path: '/home/me/.config/ghostty/config',
+          live: '/home/me/.config/ghostty/config',
+          origin: 'the live file',
+          managed: false,
+          flake: null,
+          exists: true,
+          revision: '5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03',
+          content: 'font-family = JetBrains Mono\nfont-size = 12\ntheme = catppuccin-mocha\n',
+          checked: { state: 'valid' },
+          fields: [
+            { key: 'font-family', label: 'Font', hint: 'a font name', value: 'JetBrains Mono' },
+            { key: 'font-size', label: 'Font size', hint: 'points, such as 12', value: '12' },
+            { key: 'theme', label: 'Theme', hint: 'a theme name', value: 'catppuccin-mocha' },
+          ],
+          backups: [{ backup: '/home/me/.config/ghostty/config.helix-toolbox-backup-20261021220004-4120', taken: '2026-10-21 22:00:04' }],
+        },
+        {
+          kind: 'fastfetch',
+          label: 'Fastfetch',
+          problem: null,
+          path: '/home/me/dotfiles/configs/fastfetch/config.jsonc',
+          live: '/home/me/.config/fastfetch/config.jsonc',
+          origin: 'your dotfiles',
+          managed: true,
+          flake: '/home/me/dotfiles',
+          exists: true,
+          revision: '2ed6a3a00460219dd6d364e9556828467b0f39d52508d70f3dad19688ef8f9d0',
+          content: '{\n    "logo": { "source": "arch" },\n    "modules": ["title", "os", "memory"]\n}\n',
+          checked: { state: 'valid' },
+          fields: [
+            { key: 'logo.source', label: 'Logo', hint: 'a distribution name or a file', value: 'arch' },
+            { key: 'logo.type', label: 'Logo type', hint: 'auto, small, kitty…', value: null },
+            { key: 'modules', label: 'Modules', hint: 'their names in order', value: 'title, os, memory' },
+          ],
+          backups: [],
+        },
+      ] satisfies ConfigView[];
+    case 'validate_config':
+      return String(args.text).includes('bogus') ? { state: 'invalid', message: 'Ghostty rejected it: unknown field bogus' } : { state: 'valid' };
+    case 'set_config_field':
+      return { content: `${String(args.text).trimEnd()}\n${String(args.key)} = ${String(args.value)}\n`, fields: [] };
+    case 'prepare_config_save':
+    case 'prepare_config_restore':
+      return {
+        kind: 'ready',
+        risk: 'low',
+        privileged: false,
+        header: ['Risk: low'],
+        lines: [{ name: "Save Ghostty's configuration", detail: 'the new text written over /home/me/.config/ghostty/config (the current one kept as a backup first)' }],
+      } satisfies Prepared;
+    case 'read_restic':
+      return {
+        configured: true,
+        repository: '/run/media/me/Backup/restic',
+        origin: "Helix Toolbox's settings",
+        password: 'the file /home/me/.config/restic/password',
+        paths: ['/home/me'],
+        excludes: ['/home/me/.cache', '/home/me/.local/share/Trash'],
+        problem: null,
+        snapshots: [
+          { id: 'b6f77f6d0a1b2c3d', short_id: 'b6f77f6d', time: '2026-10-21T22:00:04+02:00', hostname: 't15p', paths: ['/home/me'] },
+          { id: 'aa0d9cfe9e8d7c6b', short_id: 'aa0d9cfe', time: '2026-10-20T22:00:02+02:00', hostname: 't15p', paths: ['/home/me'] },
+        ],
+        timer: 'every day',
+        restores: true,
+        baselines: [{ id: '1792600000000', path: '/home/me/Documents/taxes.ods', sha256: '5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03', recorded: 1_792_600_000 }],
+        home: '/home/me',
+      } satisfies ResticView;
+    case 'restic_files':
+      return [
+        { name: 'Documents', type: 'dir', path: '/home/me/Documents' },
+        { name: 'notes.txt', type: 'file', path: '/home/me/notes.txt', size: 1200 },
+      ] satisfies ResticNode[];
+    case 'restic_history':
+      return [
+        {
+          path: '/home/me/notes.txt',
+          missing_from: 0,
+          versions: [
+            { snapshot: 'b6f77f6d0a1b2c3d', short_id: 'b6f77f6d', time: '2026-10-21T22:00:04+02:00', hostname: 't15p', size: 1200, mtime: null, change: 'changed' },
+            { snapshot: 'aa0d9cfe9e8d7c6b', short_id: 'aa0d9cfe', time: '2026-10-20T22:00:02+02:00', hostname: 't15p', size: 1100, mtime: null, change: 'first' },
+          ],
+        },
+      ] satisfies ResticHistory[];
+    case 'prepare_restic':
+      return {
+        kind: 'ready',
+        risk: 'low',
+        privileged: false,
+        header: ['Risk: low'],
+        lines: [{ name: 'Restore from the restic repository', detail: "mkdir '/home/me/restored'; restic restore b6f77f6d --target /home/me/restored --overwrite never --verify" }],
+      } satisfies Prepared;
+    case 'record_baseline':
+      return { id: '1792600000001', path: String(args.path), sha256: '5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03', recorded: 1_792_600_001 };
+    case 'set_restic_timer':
+      return args.on ? 'The backup runs every day.' : 'The timed backup is off.';
+    case 'read_home_manager':
+      return {
+        installed: true,
+        version: '26.11-pre',
+        config: { folder: '/home/me/dotfiles/home-manager', flake: true, profile: 'me', origin: 'settings' },
+        problem: null,
+        generations: [
+          { id: 201, built: '2026-10-20 12:01', path: '/nix/store/aaa-home-manager-generation', current: true },
+          { id: 200, built: '2026-10-16 13:23', path: '/nix/store/bbb-home-manager-generation', current: false },
+        ],
+        repository: { name: 'dotfiles', path: '/home/me/dotfiles', branch: 'main', changed: 0, upstream: 'origin/main', ahead: 0, behind: 2, last: 'Ghostty: a smaller font', last_at: 1_792_400_000, origin: 'git@github.com:me/dotfiles.git', problem: null },
+        links: [
+          { name: 'Ghostty', path: '/home/me/.config/ghostty/config', target: '/nix/store/xyz-home-manager-files/.config/ghostty/config', managed: true },
+          { name: 'Fastfetch', path: '/home/me/.config/fastfetch/config.jsonc', target: null, managed: false },
+        ],
+        reference: '/home/me/dotfiles/home-manager#me',
+        origin: "Helix Toolbox's settings",
+      } satisfies HomeManagerView;
+    case 'prepare_home_manager':
+      return {
+        kind: 'ready',
+        risk: args.action === 'build' ? 'low' : 'medium',
+        privileged: false,
+        header: [`Risk: ${args.action === 'build' ? 'low' : 'medium'}`],
+        lines: [{ name: 'Switch to the Home Manager configuration', detail: "home-manager switch --flake '/home/me/dotfiles/home-manager#me'" }],
+      } satisfies Prepared;
     case 'prepare_snapshot_check':
       return {
         kind: 'ready',
@@ -580,7 +757,7 @@ export async function call(command: string, args: Record<string, unknown> = {}):
         : 'Notifications are off.';
     case 'read_settings':
     case 'save_settings':
-      return { keep_going: args.keepGoing ?? false, snapshots: args.snapshots ?? true, snapshot_tool: 'Snapper', path: '/home/me/.config/helix-toolbox/settings.toml', theme, notifications, health, drift: watched, baselines: [['fresh-install', 'Fresh install']] };
+      return { keep_going: args.keepGoing ?? false, snapshots: args.snapshots ?? true, snapshot_tool: 'Snapper', path: '/home/me/.config/helix-toolbox/settings.toml', theme, notifications, health, drift: watched, baselines: [['fresh-install', 'Fresh install']], restic_timer: null, restic_ready: true };
     default:
       return undefined;
   }

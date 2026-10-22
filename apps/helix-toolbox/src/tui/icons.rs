@@ -25,6 +25,10 @@ pub enum Icon {
     Performance,
     Recovery,
     Migration,
+    Restic,
+    Repositories,
+    Configs,
+    HomeManager,
     Settings,
     Area,
     Group,
@@ -63,6 +67,10 @@ impl Icon {
                 Icon::Performance => "\u{f201}",    // line chart
                 Icon::Recovery => "\u{f1cd}",       // life ring
                 Icon::Migration => "\u{f0ec}",      // exchange
+                Icon::Restic => "\u{f187}",         // archive
+                Icon::Repositories => "\u{f126}",   // code fork
+                Icon::Configs => "\u{f1de}",        // sliders
+                Icon::HomeManager => "\u{f015}",    // home
                 Icon::Settings => "\u{f013}",       // cog
                 Icon::Area => "\u{f07b}",           // folder
                 Icon::Group => "\u{f07b}",          // folder

@@ -12,7 +12,7 @@ use crate::{
     doctor::{Diagnosis, Health, System},
     drift::Baseline,
 };
-use helix_toolbox_core::{PackageManager, Risk};
+use helix_toolbox_core::{PackageManager, Risk, printable};
 use std::path::Path;
 
 /// What the checks are given besides the machine.
@@ -23,6 +23,17 @@ pub struct Known<'a> {
     pub baselines: &'a [(String, Baseline)],
     /// Now, in seconds since 1970.
     pub now: u64,
+    /// The restic repository Helix Toolbox backs up to, when one is set up.
+    pub restic: Option<Repository>,
+}
+
+/// A restic repository of the user's own files, and its newest snapshot
+/// when that was read already; reading it here could ask for a password.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Repository {
+    pub name: String,
+    /// When the newest snapshot was taken, as restic printed it.
+    pub newest: Option<String>,
 }
 
 /// The snapshots a tool lists without root: how many, and when the newest
@@ -104,7 +115,7 @@ pub fn examine(system: &dyn System, known: &Known) -> Vec<Diagnosis> {
         found.push(kernels);
     }
     found.push(configuration_backups(known.backups));
-    found.push(own_files(system));
+    found.push(own_files(system, known.restic.as_ref()));
     found.push(machine_record(known));
     found
 }
@@ -320,7 +331,7 @@ fn configuration_backups(backups: &[Backup]) -> Diagnosis {
                 "{} backup{} of files Helix Toolbox's entries changed, the newest of {} from {}",
                 backups.len(),
                 if backups.len() == 1 { "" } else { "s" },
-                helix_toolbox_core::printable(&newest.original.display().to_string()),
+                printable(&newest.original.display().to_string()),
                 newest.taken.as_deref().unwrap_or("an unknown time")
             ),
         ),
@@ -356,7 +367,27 @@ const BACKUP_FLATPAKS: [(&str, &str); 3] = [
     ("com.borgbase.Vorta", "Vorta"),
 ];
 
-fn own_files(system: &dyn System) -> Diagnosis {
+fn own_files(system: &dyn System, restic: Option<&Repository>) -> Diagnosis {
+    if let Some(repository) = restic {
+        let mut found = check(
+            "own-files",
+            "Your own files",
+            Health::Good,
+            match &repository.newest {
+                Some(newest) => format!(
+                    "Helix Toolbox backs up to the restic repository {}; its newest snapshot is from {newest}",
+                    printable(&repository.name)
+                ),
+                None => format!(
+                    "Helix Toolbox backs up to the restic repository {}",
+                    printable(&repository.name)
+                ),
+            },
+        );
+        found.advice =
+            Some("Restic lists its snapshots and tests a restore of a file you care about.".into());
+        return found;
+    }
     let (_, _, home) = system.user();
     let mut tools: Vec<&str> = BACKUP_TOOLS
         .iter()
@@ -612,6 +643,7 @@ mod tests {
             backups: &[],
             baselines: &baselines,
             now: NOW,
+            restic: None,
         };
         let found = examine(&fake, &known);
         assert_eq!(
@@ -664,6 +696,7 @@ mod tests {
             backups: &[],
             baselines: &baselines,
             now: NOW,
+            restic: None,
         };
         let found = examine(&fake, &known);
         assert_eq!(
@@ -700,6 +733,7 @@ mod tests {
             backups: &[],
             baselines: &[],
             now: NOW,
+            restic: None,
         };
         let found = examine(&fake, &known);
         assert_eq!(
@@ -752,6 +786,29 @@ mod tests {
         assert_eq!(
             plan_check(Snapshots::Timeshift).steps[0].display(),
             "sudo timeshift --list"
+        );
+    }
+
+    #[test]
+    fn a_restic_repository_backs_up_your_own_files() {
+        let mut fake = Fake::default();
+        fake.file("/proc/mounts", "/dev/sda2 / ext4 rw 0 0\n");
+        let known = Known {
+            manager: Some(PackageManager::Arch),
+            backups: &[],
+            baselines: &[],
+            now: NOW,
+            restic: Some(Repository {
+                name: "/mnt/backup/restic".into(),
+                newest: Some("2026-10-21 22:00".into()),
+            }),
+        };
+        let found = examine(&fake, &known);
+        let own = found.iter().find(|check| check.id == "own-files").unwrap();
+        assert_eq!(own.health, Health::Good);
+        assert_eq!(
+            own.summary,
+            "Helix Toolbox backs up to the restic repository /mnt/backup/restic; its newest snapshot is from 2026-10-21 22:00"
         );
     }
 }

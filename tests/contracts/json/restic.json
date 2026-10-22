@@ -1,0 +1,18 @@
+{
+  "command": "string",
+  "data": {
+    "configured": "boolean",
+    "excludes": [],
+    "origin": "null",
+    "password": "null",
+    "paths": [],
+    "problem": "null",
+    "repository": "null",
+    "snapshots": [],
+    "snapshots_problem": "null",
+    "timer": "null"
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

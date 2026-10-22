@@ -300,6 +300,82 @@ standing, detail}]}`. `family` is the package family the file was made on
 family, architecture, made, entries, flatpaks, packages}`, entry ids,
 Flatpak ids and package names; nothing is written.
 
+## restic
+
+`{configured, repository, origin, password, paths, excludes, problem,
+snapshots, snapshots_problem, timer}`. `origin` is `settings`,
+`environment` or `command-center`; `password` says where restic gets it
+(never the password); `problem` why the settings cannot be used, or
+`null`. `snapshots` are `[{id, short_id, time, hostname, paths, tags}]`,
+newest first, with `snapshots_problem` what restic said when it could not
+read them; `timer` is `day`, `week` or `null`.
+
+## restic-files, restic-history, restic-baselines
+
+`restic files`: `{snapshot, folder, nodes: [{name, type, path, size,
+mtime}]}`, folders first. `restic history`: `{pattern, files: [{path,
+versions: [{snapshot, short_id, time, hostname, size, mtime, change}],
+missing_from}]}`, `change` `first`, `changed` or `same`, newest version
+first. `restic baseline`: `{baselines: [{id, path, sha256, recorded}]}`,
+newest first; recording one prints it as `restic-baseline`.
+
+## repositories
+
+`repos`: `{roots, depth, origin, repositories: [{name, path, branch,
+changed, upstream, ahead, behind, last, last_at, origin, problem, favorite,
+group}]}`. `origin` at the top says where the roots come from
+(`settings`, `Command Center`, `default`); in a repository it is
+`origin`'s address without credentials. `branch` is `null` when HEAD is
+detached; `upstream`, `ahead` and `behind` are `null` without an upstream;
+`problem` says why a repository could not be read, and is `null` otherwise.
+`last_at` is in seconds since 1970.
+
+## repository
+
+`repos show <repo>`: `{summary, files: [{path, original, staged,
+unstaged, conflict}], branches, remotes, stashes: [{id, name, subject}],
+log: [{hash, subject, at}], head, branch_ref, index_tree, busy, push_to,
+staged_stat, tasks: [{id, name, command, shell, detected}]}`. `staged` and
+`unstaged` are git's status letters (` `, `M`, `A`, `D`, `R`, `C`, `U`,
+`?`); `busy` names a merge, rebase, cherry-pick or revert under way;
+`push_to` is `[remote, ref]` or `null`; `shell` is `direct`, `fish` or
+`bash`, and `detected` is true for a task found in a manifest. `repos
+tasks` is `tasks`: `{repository, tasks}`.
+
+## diff
+
+`repos diff <repo> [file]`: `{text, truncated}`, the patch as git prints
+it (an untracked file as its lines), `truncated` when it was cut short.
+
+## config
+
+`config <ghostty | fastfetch>`: `{kind, problem, path, live, origin,
+managed, flake, exists, revision, checked, values, backups}`. `problem`
+says why the file cannot be edited (then the rest is `null` or empty);
+`path` is the file edited, `live` where the program reads it, `origin`
+`settings`, `command-center`, `dotfiles` or `live`, `managed` whether the
+live file is a Home Manager link, `flake` the Home Manager flake it is part
+of or `null`. `revision` is the file's SHA-256, or `absent`. `checked` is
+`{state, message}`, `state` `valid`, `unchecked` or `invalid` and `message`
+there unless it is valid. `values` are `[{key, label, hint, value}]`
+(`value` `null` when not set); `backups` are `[{backup, taken}]`, newest
+first. `config <program> history` is `config-history`: `{kind, path,
+backups}`; `config <program> validate` is `config-validate`: `{kind,
+checked}`.
+
+## home-manager
+
+`home-manager`: `{installed, version, config, problem, generations,
+repository, links}`. `config` is `{folder, flake, profile, origin,
+reference}` or `null`, `origin` `settings`, `command-center` or `default`
+and `reference` the `--flake` argument (`null` for `home.nix`); `problem`
+says why a named configuration cannot be used. `generations` are `[{id,
+built, path, current}]`, newest first, `built` as Home Manager prints it;
+`repository` is the configuration's repository as `repos` lists one, or
+`null`; `links` are `[{name, path, target, managed}]`, `managed` when the
+file links into the Nix store. `home-manager generations` is
+`home-manager-generations`: `{generations}`.
+
 ## hardware_report
 
 `report --worked <entry>`: `{entries: [{id, name}], machine, system,

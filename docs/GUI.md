@@ -138,6 +138,28 @@ The other tools, under **More tools** in the sidebar:
   **Read it**) to read one made on another machine: what it would install here, what is here already, what
   cannot be, and the packages left to you, with **Install…** to review the
   plan.
+- **Restic**: the repository and how its password is found, with **Back
+  up…**, **Check…** and the daily or weekly timer; the snapshots, each
+  **Browse**d a folder at a time with **Restore this…**; a file's history
+  with **Restore this version…**; a restore into a new folder; and
+  recovery tests, a file's SHA-256 recorded and **Test…** against a
+  snapshot.
+- **Repositories**: the Git repositories under your project folders,
+  favorites (the star) first; one opened shows its changes with **Diff**
+  and **Stage…** or **Unstage…**, **Stage every change…**, a commit message
+  and **Commit…**, **Fetch…**, **Pull…** and **Push…** (or **Publish…**),
+  its branches with **Switch…** and **Create…**, its stashes with
+  **Apply…** and **Stash…**, its tasks with **Run…** and **Keep** for a
+  command of your own, and its recent commits.
+- **Configs**: Ghostty's and Fastfetch's configuration, each with the
+  file edited, where its program reads it, whether it checks and its Home
+  Manager flake; the common fields with **Apply** each, the whole file in a
+  text area, **Check**, **Save…** (the plan, the file side by side) and
+  **Discard changes**, and the backups kept with **Put back…**.
+- **Home Manager**: the configuration and its repository, with **Build…**,
+  **Switch…** and **Pull…**; the generations, the active one marked and
+  **Go back to it…** on the others; and which configuration files Home
+  Manager links.
 - **Offline bundles**: the Install Plan's entries and the packages they
   need, downloaded with Helix Toolbox into a new folder for a machine of
   the same distribution without reliable internet. **Check what it
@@ -254,6 +276,10 @@ Its commands:
 | `read_storage`, `prepare_clean` | `helix-toolbox storage`: the space, what can be cleaned, and a cleanup's plan |
 | `read_performance`, `compare_boots` | `helix-toolbox performance`: this boot, recorded, with the machine now and the boots recorded; one boot beside another |
 | `read_recovery`, `prepare_snapshot_check` | `helix-toolbox recovery`: the readiness checks, and the snapshot check's plan |
+| `read_restic`, `restic_files`, `restic_history`, `prepare_restic`, `record_baseline`, `set_restic_timer` | `helix-toolbox restic`: the repository and its snapshots, a folder of one, a file's history, a check, backup, restore or recovery test's plan, a baseline recorded, and the timer turned on or off |
+| `read_configs`, `validate_config`, `set_config_field`, `prepare_config_save`, `prepare_config_restore` | `helix-toolbox config`: both configurations with their text, a draft checked, a field changed in a draft, the plan that saves it over the file read (refused when it changed since), and a backup kept beside it put back |
+| `read_home_manager`, `prepare_home_manager` | `helix-toolbox home-manager`: the configuration, generations, repository and links, and a build's, switch's, generation's or pull's plan |
+| `read_repositories`, `read_repository`, `repository_diff`, `prepare_repository_change`, `prepare_task`, `save_workspace` | `helix-toolbox repos`: the repositories found, one in full, a diff, a change's plan, a task's plan, and favorites and tasks kept in `workspaces.toml`; only repositories among those found are taken |
 | `read_migration_export`, `export_migration`, `open_migration`, `prepare_migration` | `helix-toolbox migrate`: what this machine would export, written to a file, a migration file read here, and its install plan; the file is chosen in the file chooser unless a path is given |
 | `check_entry` | `helix-toolbox verify` for one entry, as text: **Check it now** in an entry's details |
 | `hardware_report`, `open_issue` | `helix-toolbox report --worked` for a run or an entry, and its issue opened by `xdg-open`, outside the AppImage's own libraries |

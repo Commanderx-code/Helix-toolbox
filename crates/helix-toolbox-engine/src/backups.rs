@@ -79,6 +79,9 @@ pub struct Roots {
     pub home: Option<PathBuf>,
     /// Searched a few levels deep; restoring these needs root.
     pub system: Vec<(PathBuf, usize)>,
+    /// Folders of files Helix Toolbox edits elsewhere (a Ghostty or
+    /// Fastfetch source in the dotfiles), one level.
+    pub beside: Vec<PathBuf>,
 }
 
 impl Roots {
@@ -107,6 +110,7 @@ impl Roots {
                 (PathBuf::from("/usr/share/sddm/themes"), 1),
                 (PathBuf::from("/usr/share/fonts"), 2),
             ],
+            beside: crate::configs::backup_folders(),
         }
     }
 }
@@ -135,6 +139,9 @@ pub fn discover(roots: &Roots) -> Vec<Backup> {
     }
     for (root, depth) in &roots.system {
         walk(root, *depth, true, &mut found);
+    }
+    for folder in &roots.beside {
+        walk(folder, 1, false, &mut found);
     }
     found.sort_by_key(|backup| std::cmp::Reverse(backup.stamp()));
     found.dedup_by(|a, b| a.backup == b.backup);
@@ -415,6 +422,7 @@ mod tests {
             user: vec![config.clone()],
             home: Some(home.clone()),
             system: vec![(etc.clone(), 3)],
+            beside: Vec::new(),
         };
         let found = discover(&roots);
         let shown: Vec<(String, bool, bool)> = found

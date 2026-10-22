@@ -58,6 +58,28 @@ fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<
                 if !app.handle_key(&key) {
                     return Ok(());
                 }
+                // A configuration to edit: the terminal goes to the user's
+                // editor, then comes back.
+                if let Some(request) = app.take_edit() {
+                    ratatui::restore();
+                    let closed = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(format!("{} \"$1\"", request.editor))
+                        .arg("sh")
+                        .arg(&request.copy)
+                        .status()
+                        .map_err(|error| format!("{} cannot start: {error}", request.editor))
+                        .and_then(|status| {
+                            if status.success() {
+                                Ok(())
+                            } else {
+                                Err(format!("{} exited with {status}", request.editor))
+                            }
+                        });
+                    *terminal = ratatui::init();
+                    terminal.clear()?;
+                    app.edited(request, closed);
+                }
             }
             Event::Resize(..) => {}
             _ => continue,

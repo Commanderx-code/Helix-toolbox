@@ -451,9 +451,11 @@ does the same.
   Arch the advice to keep `linux-lts` beside the kernel.
 - **Configuration backups**: how many Helix Toolbox's entries left, and
   the newest.
-- **Your own files**: a backup program for the home folder (Borg, restic,
-  Kopia, Déjà Dup, Pika Backup, Vorta, Back In Time and others), since
-  system snapshots leave `/home` out and share the disk.
+- **Your own files**: the restic repository Restic backs up to, with its
+  newest snapshot once Restic has read them (listing them here could ask
+  for its password), else a backup program for the home folder (Borg,
+  restic, Kopia, Déjà Dup, Pika Backup, Vorta, Back In Time and others),
+  since system snapshots leave `/home` out and share the disk.
 - **A record of this machine**: the newest Drift baseline, a notice when
   there is none or it is over 90 days old.
 
@@ -499,6 +501,170 @@ which continues past a failed install; `d` shows a row's details, `r` reads
 it again. `helix-toolbox migrate export [file]`, `migrate show <file>` and
 `migrate apply <file>` (`--dry-run`, `--yes`, confirmed by typing MIGRATE)
 do the same.
+
+## Restic
+
+**Restic** works with a restic repository of your own files. The repository
+comes from the `[restic]` table of `settings.toml`:
+
+```toml
+[restic]
+repository = "/run/media/me/Backup/restic"   # or sftp:, rest:, s3: and the others
+password_file = "~/.config/restic/password"   # or password_command = "…"
+paths = ["~/Documents", "~/Pictures"]         # what a backup takes; the home folder when left out
+excludes = ["~/.cache"]                       # restic --exclude patterns; ~/.cache and the trash when left out
+```
+
+Without it, restic's own `RESTIC_REPOSITORY` and `RESTIC_PASSWORD_FILE`,
+`RESTIC_PASSWORD_COMMAND` or `RESTIC_PASSWORD` are used, or a KWallet entry
+that `RESTIC_WALLET`, `RESTIC_WALLET_ENTRY` and `RESTIC_WALLET_FOLDER` name;
+then the settings Command Center left, read only. Helix Toolbox never
+keeps a password, and refuses a repository address with one in it.
+
+The screen lists the snapshots (the latest 30 of each machine and folder).
+`Enter` browses one, a folder at a time. `s` looks for a name or path, with
+`*` wildcards, in every snapshot: each version of each file it finds,
+whether it changed from the version before (its size or time), and how
+many newer snapshots of the same folder no longer have it. `R` on a
+snapshot, a file or a version restores it into a new folder of your home
+folder, which must not be there yet: restic restores with `--overwrite
+never` and reads what it wrote back (`--verify`, restic 0.17 or later).
+`b` backs up the folders named (`--exclude-caches` too), `c` checks the
+repository's structure. Each is a plan you review.
+
+Recovery tests prove a restore works before you need one. `n` records a
+file's SHA-256 (a file of your home folder, up to 100 MB) in
+`recovery-baselines.json` beside the history, the last 50. Back it up, then
+`v` on it restores it from a snapshot (the latest, or one you name) into a
+temporary folder, compares, says PASS or FAIL and removes the folder.
+
+`w` turns a daily backup on or off: `helix-toolbox-restic.timer` and its
+service in your systemd user folder, which run `helix-toolbox restic backup
+--yes`. It needs the password from a file or a command, since the timer
+has none of your environment, and it never replaces or removes a unit it
+did not write. `helix-toolbox restic` (`files <snapshot> [folder]`,
+`history <pattern>`, `backup`, `check`, `restore <snapshot> <folder>
+[--include <path>]`, `baseline [file]`, `test <baseline> [snapshot]` and
+`timer on|off [--weekly]`; plans with `--dry-run` and `--yes`, confirmed by
+typing BACKUP, CHECK, RESTORE or TEST) does the same. Settings turns the
+timed backup on, every day or every week, and off as well.
+
+## Repositories
+
+**Repositories** lists the Git repositories under your project folders:
+`[repositories]` in `settings.toml` names them (`roots`, absolute or under
+`~/`, and `depth`, 1 to 6 folders down, 3 by default); without it, the
+folders Command Center was set up with, read only; else those of
+`~/github`, `~/projects`, `~/src`, `~/code` and `~/dotfiles` that exist. A
+folder holding `.git` is a repository, and is not looked into for more;
+`node_modules`, `target`, `.cache` and links are passed over. Each shows its
+branch, how many files changed, how it stands against its upstream and its
+latest commit; favorites (`f`) come first.
+
+Reading changes nothing: git runs with optional locks off, without the
+repository's hooks or file system monitor, with every content filter its
+settings name emptied (through `GIT_CONFIG_COUNT`, so any name is given
+back exactly), and without submodules' changes, each probe within 15
+seconds. A repository whose settings cannot be listed, or names a filter
+that cannot be named back, is not looked into; nor is any where git is
+older than 2.31.
+
+`Enter` opens a repository: its changed files (`Enter` shows a file's diff,
+staged and not; `Space` stages it, or unstages it when it is all staged;
+`A` stages every change), its branches (`Enter` switches; `b` creates one
+and switches to it), its stashes (`s` stashes the changes, new files too;
+`Enter` applies one with its index, keeping it), its tasks and its recent
+commits. `c` commits what is staged, `F` fetches every remote, `p` pulls,
+fast-forward only, and `P` pushes to the upstream, never forcing, or
+publishes the branch to `origin` when it has none. Each is a plan, reviewed
+first, that checks again when it runs: a commit that what is staged, HEAD
+and the branch are as reviewed and nothing is under way; a branch switch,
+a pull and a stash applied that the repository has no changes. A
+repository in the middle of a merge, rebase, cherry-pick or revert is left
+to git. Network steps ask for no password: a remote that needs one fails.
+The repository's hooks and commit signing run as they do with git.
+
+Tasks are found in the repository's manifests, which are read, never run:
+`package.json` scripts (`build`, `test`, `dev`, `lint`, `check`, `start`),
+Cargo (`build`, `test`, `check`, `run`), a Makefile's `all`, `build`,
+`test`, `check` and `lint` and a justfile's `build`, `test`, `check`,
+`lint`, `run` and `dev`. `n` keeps a command of your own as a task, in
+`workspaces.toml` beside the settings, with your favorites; `x` removes it.
+`Enter` runs a task in the repository's folder after you review it, its
+command split into words and run as it is, or with fish or bash when you
+say so (`--shell`).
+
+`helix-toolbox repos` (`show`, `diff [file] [--staged]`, `stage [files] |
+--all`, `unstage`, `commit -m`, `branch [--create]`, `stash [-m]
+[--untracked]`, `stash-apply`, `fetch`, `pull`, `push`, `publish [remote]`,
+`tasks`, `task`, `task-add`, `task-remove`, `favorite [--off]`, `group`; a
+repository by its name, or its path when names repeat; changes with
+`--dry-run` and `--yes`, confirmed by typing GIT, a task by typing TASK)
+does the same.
+
+## Configs
+
+**Configs** edits Ghostty's and Fastfetch's configuration. The file edited
+is the one `[configs]` in `settings.toml` names (`ghostty_source`,
+`fastfetch_source`, absolute or under `~/`), else the one Command Center
+was set up with, read only, else the live file (`ghostty/config`, or
+`config.ghostty` where Ghostty 1.2 reads it, and `fastfetch/config.jsonc`
+in the configuration folder). Where Home Manager links the live file into
+the Nix store, it is never edited there: its source in your dotfiles
+(`configs/ghostty/config` or `configs/fastfetch/config.jsonc` under
+`~/dotfiles`, `~/github/projects/dotfiles` or the dotfiles Command Center
+named) is, and when that file is part of a Home Manager flake, you are
+told to run Home Manager afterward. A file is only edited when it is a
+full path without `..`, not in the Nix store, inside your home or
+configuration folder, and 512 KB at most.
+
+The checks: Ghostty's own `ghostty +validate-config` of a copy, in Helix
+Toolbox's private folder beside the history (never a shared one, a link or
+another user's), or, without Ghostty, said not to be checked; Fastfetch's
+JSONC read here, comments and trailing commas allowed: one object, and
+`modules` a list of names or objects with a `"type"`.
+
+`Enter` on a field changes it: Ghostty's font (the first `font-family`;
+the others stay as fallbacks), font size, theme, padding, background
+opacity and cursor, the last line that sets each; Fastfetch's logo, its
+type and the modules, in order, each kept with its options. The rest of
+the file, comments included, is left as it is. `E` opens a private copy in
+`$VISUAL` or `$EDITOR`, then checks it. Either way the save is a plan you
+review, the file side by side: run, it checks with `sha256sum` that the
+file is as it was read, keeps it as a configuration backup beside it
+(`<file>.helix-toolbox-backup-<time>`) and writes the new text, keeping the
+file's permissions. Text that does not check is not saved. `Enter` on a
+backup puts it back, the file there now kept as a backup first, as
+**Backups** and `helix-toolbox restore` do; `d` shows where the file is and
+its SHA-256, `r` reads both again. `helix-toolbox config <ghostty |
+fastfetch>` (`validate [file]`, `set <field> <value>`, `edit`, `history`;
+saving with `--dry-run` and `--yes`, confirmed by typing SAVE) does the
+same.
+
+## Home Manager
+
+**Home Manager** shows the configuration Home Manager builds: the folder
+`flake` names under `[home_manager]` in `settings.toml` (`~/` for the home
+folder; `folder#name` or `profile` for the flake's `homeConfigurations`
+name), else the dotfiles Command Center was set up with (their
+`home-manager` folder when it holds `flake.nix`) and its profile, read only,
+else `~/.config/home-manager`, holding `flake.nix` or `home.nix`. Below it,
+the generations `home-manager generations` lists, newest first, with the
+active one marked; the configuration's Git repository (the nearest folder
+above it holding `.git`, within your home folder), read as Repositories
+reads one; and which of your configuration files (Ghostty's, Fastfetch's,
+fish's, Git's, kitty's and Neovim's) Home Manager links into the Nix
+store, so are changed in the configuration rather than in place.
+
+`b` builds the configuration without activating it (`home-manager build`,
+in its folder, which leaves a `result` link), `s` switches to it, and
+`Enter` on an earlier generation goes back to it by running that
+generation's own `activate` script, as Home Manager's manual says to; a
+generation the Nix store has collected cannot be. `p` pulls the
+configuration's repository, fast-forward only. Each is a plan you review.
+`helix-toolbox home-manager` (`generations`, `build`, `switch`, `activate
+<generation>`, `pull`; plans with `--dry-run` and `--yes`, confirmed by
+typing BUILD, SWITCH, ACTIVATE or GIT) does the same.
 
 ## Reliability and trust
 
@@ -620,6 +786,11 @@ helix-toolbox performance                # this boot, the machine now, and the b
 helix-toolbox recovery                   # snapshots, kernels, backups; --check-snapshots looks inside, as root
 helix-toolbox migrate export [file]      # what this machine has, to take to another
 helix-toolbox migrate show <file>        # what a migration means here; migrate apply installs it
+helix-toolbox restic                     # the repository and its snapshots; history, restore, test
+helix-toolbox repos                      # the Git repositories under your project folders
+helix-toolbox config ghostty             # the file edited, its checks and fields; set, edit, history
+helix-toolbox repos show <repo>          # its changes, branches, stashes, commits and tasks; stage, commit, push...
+helix-toolbox home-manager               # its configuration and generations; build, switch, activate, pull
 helix-toolbox reliability --critical     # how far the boot, login and driver entries are tested
 helix-toolbox trust sddm                 # where an entry comes from and what checks it
 helix-toolbox doctor                     # health checks, read-only

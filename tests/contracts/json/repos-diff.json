@@ -1,0 +1,10 @@
+{
+  "command": "string",
+  "data": {
+    "text": "string",
+    "truncated": "boolean"
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

@@ -11,6 +11,10 @@ import type {
   BundleView,
   ChangesView,
   Comparison,
+  ConfigChecked,
+  ConfigDraft,
+  ConfigKind,
+  ConfigView,
   DesktopView,
   Diagnosis,
   DriftView,
@@ -21,8 +25,18 @@ import type {
   Prepared,
   RecordView,
   RecoveryView,
+  ResticHistory,
+  ResticNode,
+  ResticView,
+  Baseline,
   MigrationExportView,
   TranslationView,
+  RepoChange,
+  RepoDiff,
+  HomeManagerView,
+  ReposView,
+  RepositoryView,
+  RepoTask,
   ReliabilityView,
   RunEvent,
   ServiceDetails,
@@ -107,6 +121,39 @@ export const exportMigration = (path: string | null = null) => call<string | nul
 /** Read a migration file from `path`, or one the file chooser names; null when it was closed. */
 export const openMigration = (path: string | null = null) => call<TranslationView | null>('open_migration', { path });
 export const prepareMigration = (path: string) => call<Prepared>('prepare_migration', { path });
+export const restic = () => call<ResticView>('read_restic');
+export const resticFiles = (snapshot: string, folder: string) => call<ResticNode[]>('restic_files', { snapshot, folder });
+export const resticHistory = (pattern: string, ignoreCase: boolean) => call<ResticHistory[]>('restic_history', { pattern, ignoreCase });
+/** A restic plan: `check`, `backup`, `restore` (into the new folder `target`) or `test` (a baseline against a snapshot). */
+export const prepareRestic = (
+  action: 'check' | 'backup' | 'restore' | 'test',
+  options: { snapshot?: string; target?: string; include?: string; baseline?: string } = {},
+) => call<Prepared>('prepare_restic', { action, snapshot: null, target: null, include: null, baseline: null, ...options });
+export const recordBaseline = (path: string) => call<Baseline>('record_baseline', { path });
+export const setResticTimer = (on: boolean, weekly: boolean) => call<string>('set_restic_timer', { on, weekly });
+export const repositories = () => call<ReposView>('read_repositories');
+export const homeManager = () => call<HomeManagerView>('read_home_manager');
+/** A Home Manager plan: `build`, `switch`, `activate` (an earlier generation) or `pull` (its repository). */
+export const prepareHomeManager = (action: 'build' | 'switch' | 'activate' | 'pull', generation: number | null = null) =>
+  call<Prepared>('prepare_home_manager', { action, generation });
+export const repository = (path: string) => call<RepositoryView>('read_repository', { path });
+export const repositoryDiff = (path: string, file: string | null, staged: boolean) =>
+  call<RepoDiff>('repository_diff', { path, file, staged });
+export const prepareRepositoryChange = (path: string, change: RepoChange) =>
+  call<Prepared>('prepare_repository_change', { path, change });
+export const prepareTask = (path: string, id: string) => call<Prepared>('prepare_task', { path, id });
+/** Mark a favorite, keep a task of the user's or remove one, in workspaces.toml. */
+export const saveWorkspace = (path: string, change: { favorite?: boolean; task?: RepoTask; remove?: string }) =>
+  call<null>('save_workspace', { path, favorite: change.favorite ?? null, task: change.task ?? null, remove: change.remove ?? null });
+
+export const configs = () => call<ConfigView[]>('read_configs');
+export const validateConfig = (kind: ConfigKind, text: string) => call<ConfigChecked>('validate_config', { kind, text });
+export const setConfigField = (kind: ConfigKind, text: string, key: string, value: string) =>
+  call<ConfigDraft>('set_config_field', { kind, text, key, value });
+/** The plan that saves a draft over the file read (`path`, unchanged since `revision`). */
+export const prepareConfigSave = (kind: ConfigKind, path: string, revision: string, text: string) =>
+  call<Prepared>('prepare_config_save', { kind, path, revision, text });
+export const prepareConfigRestore = (kind: ConfigKind, backup: string) => call<Prepared>('prepare_config_restore', { kind, backup });
 
 export const hardware = () => call<Hardware>('read_hardware');
 export const prepareFirmware = (index: number) => call<Prepared>('prepare_firmware', { index });

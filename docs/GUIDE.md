@@ -235,6 +235,41 @@ what is there already, and what it cannot bring, such as packages another
 distribution names differently, so you can look for them yourself. `a`
 reviews the plan before anything is installed.
 
+## Your own files
+
+**Restic** looks after the backups of your own files, once the repository
+is named under `[restic]` in `settings.toml`. Lost a file? `s` finds every
+version of it across the snapshots, and `R` puts the one you want into a
+new folder, without touching anything else. A recovery test (`n` on a file
+that matters, then `v`) shows a restore of it really works, and `w` backs
+up every day by itself.
+
+## Your projects
+
+**Repositories** gathers the Git repositories under your project folders,
+favorites first, so you can see at a glance which have changes or commits
+to push. Open one to read its diffs, stage files with `Space`, commit with
+`c`, and fetch, pull or push; each step is shown before it runs. Its tasks,
+such as `npm run dev` or `cargo test`, are found in its files, and `n` adds
+a command of your own; `Enter` runs one in the project's folder.
+
+## Your terminal's look
+
+**Configs** changes Ghostty's font, theme and padding, or which modules
+Fastfetch shows, without hunting for the right file: where Home Manager
+manages it, the file in your dotfiles is the one changed, and you are told
+to run Home Manager. Each change is checked and shown side by side before
+it is saved, and the file before it is kept, so `Enter` on a backup puts
+it back.
+
+## Home Manager
+
+**Home Manager** shows which generation is active and which of your
+configuration files it links, so you know to change those in the
+configuration. `b` builds it first to see that it builds, `s` switches,
+and when a switch went wrong, `Enter` on the generation before it goes
+back. Settings also turns the timed restic backup on and off.
+
 ## A machine without internet
 
 On a machine of the same distribution that is online, `helix-toolbox bundle

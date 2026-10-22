@@ -19,16 +19,20 @@ use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, Item};
 use helix_toolbox_engine::{
     EngineError, Machine, Plan, Probe, backups, bundle,
+    configs::{self, Checked},
     confirmation::{self, Prepared},
-    doctor, drift, hardware_report, history,
+    doctor, drift, hardware_report, history, home_manager,
     inventory::{Inventory, Status, which},
     migration::{self, Standing, Translation},
     notifications,
     overview::Overview,
     performance, plan, plan_removal, preflight, profiles, recovery, reliability,
+    repositories::{self as repos, Change, Details, Summary},
+    restic::{self, Restic},
     services::{self, Verb},
     storage, updates,
     watch::{self, Watch},
+    workspaces::{self, Task, Workspaces},
 };
 use helix_toolbox_platform::LinuxInfo;
 use ratatui::{
@@ -89,9 +93,7 @@ Areas (Applications and the other catalog screens)
   u                 update the entry             U           update every entry with an update
   g                 flags guide     *   pin a favorite     i   show all, installed or updates
 
-Install Plan
-  Enter             run the plan                 x / Delete  remove the selected entry
-  c                 clear the plan               s           save it as a profile;  e  what it changes
+Install Plan   Enter run it   x / Del remove one   c clear   s save as a profile   e what it changes
 
 History, Backups, Doctor, Hardware, Desktop, Updates, Drift, Reliability, Settings
   Enter             log / restore / details / change   r   reload or check again; f repair; u / U update
@@ -101,7 +103,10 @@ History, Backups, Doctor, Hardware, Desktop, Updates, Drift, Reliability, Settin
   Reliability: i    critical or untested only    v   trust;  w (and History)  report it worked here
   Services: s start/stop  e enable/disable  R restart  i which  f filter   Storage: Enter cleans
   Performance: b an earlier boot  Enter acts on a hint   Recovery: c check snapshots  f set up
-  Migration: e export this machine  o open a migration file  a install what it can   d details
+  Migration: e export  o open  a install   Home Manager: b build  s switch  Enter go back  p pull
+  Restic: Enter browse  R restore  b back up  c check  s history  n baseline  v test it  w timer
+  Configs: Enter change a field or put a backup back   E your editor on the whole file
+  Repositories: Enter open/diff/run  Space stage  c commit  b branch  s stash  F p P sync
 
 Running window
   Ctrl-C            stop; again, kill what is left  Enter / q   close when finished
@@ -141,6 +146,14 @@ enum Screen {
     Recovery,
     /// What this machine has, to take elsewhere, and a migration brought here.
     Migration,
+    /// Restic backups of your own files, and recovery tests.
+    Restic,
+    /// The repositories under the project folders, and one of them.
+    Repositories,
+    /// Ghostty's and Fastfetch's configuration, changed and saved as a plan.
+    Configs,
+    /// Home Manager's generations, building and switching.
+    HomeManager,
     Settings,
 }
 
@@ -217,8 +230,103 @@ enum MigrationRow {
     Item(usize),
 }
 
+/// A line of the Configs screen.
+#[derive(Clone, Debug)]
+enum ConfigRow {
+    Heading(String),
+    Text(String),
+    /// A field of a configuration, by its place in the configuration's fields.
+    Field(configs::Kind, usize),
+    /// The whole file, in the user's editor.
+    Edit(configs::Kind),
+    /// A backup kept beside the file, by its place in its history.
+    Backup(configs::Kind, usize),
+}
+
+/// A configuration as read: the file to edit, its text, what its checks
+/// say and the backups kept beside it.
+struct ConfigPart {
+    kind: configs::Kind,
+    found: Result<configs::Located, String>,
+    loaded: Option<Result<configs::Loaded, String>>,
+    checked: Option<Checked>,
+    history: Vec<backups::Backup>,
+}
+
+/// A private copy of a configuration for the user's editor, which the
+/// event loop opens with the terminal handed back.
+pub struct EditRequest {
+    pub copy: PathBuf,
+    pub editor: String,
+    located: configs::Located,
+    loaded: configs::Loaded,
+}
+
 /// A migration file read here, or why it could not be.
 type MigrationOpened = (PathBuf, Result<Translation, String>);
+
+/// A line of the Home Manager screen.
+#[derive(Clone, Debug)]
+enum HomeRow {
+    Heading(String),
+    Text(String),
+    /// A generation, by its place in the status.
+    Generation(usize),
+    /// A linked configuration file, by its place in the status.
+    Link(usize),
+}
+
+/// A line of the Restic screen.
+#[derive(Clone, Debug)]
+enum ResticRow {
+    Heading(String),
+    Text(String),
+    Snapshot(usize),
+    /// The browsed folder's parent.
+    Up,
+    Node(usize),
+    /// A version of a file the search found: the file, then the version.
+    Version(usize, usize),
+    Baseline(usize),
+}
+
+/// The repository as last read, and what restic said of it.
+#[derive(Clone, Debug)]
+struct ResticReading {
+    found: restic::Found,
+    snapshots: Result<Vec<restic::Snapshot>, String>,
+    /// Whether this restic restores without overwriting (0.17 and later).
+    restores: bool,
+    timer: Option<restic::Every>,
+    baselines: Vec<restic::Baseline>,
+}
+
+/// A folder of a snapshot, and what it holds.
+#[derive(Clone, Debug)]
+struct ResticBrowse {
+    snapshot: restic::Snapshot,
+    folder: String,
+    nodes: Result<Vec<restic::Node>, String>,
+}
+
+/// A search for a file's history, and what it found.
+type ResticSearch = (String, Result<Vec<restic::History>, String>);
+/// A line of the Repositories screen: in the list, a repository; in one
+/// repository, a file, branch, stash, commit or task, by its place.
+#[derive(Clone, Debug)]
+enum RepoRow {
+    Heading(String),
+    Text(String),
+    Repository(usize),
+    File(usize),
+    Branch(usize),
+    Stash(usize),
+    Commit(usize),
+    Task(usize),
+}
+
+/// One repository read, with its tasks, or why it could not be.
+type RepoOpened = Result<(Details, Vec<Task>), String>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Focus {
@@ -270,6 +378,24 @@ enum Asked {
     ExportMigration,
     /// The migration file to read here.
     OpenMigration,
+    /// The name or path whose history to look for in the snapshots.
+    ResticHistory,
+    /// The new folder to restore this snapshot (and only this path) into.
+    ResticRestore(String, Option<String>),
+    /// The file to record a baseline of.
+    ResticBaseline,
+    /// The snapshot to test the baseline with this id against.
+    ResticTest(String),
+    /// The open repository's commit message.
+    CommitMessage,
+    /// A branch to create in the open repository.
+    NewBranch,
+    /// The stash's message.
+    StashMessage,
+    /// A command of the user's to keep as a task of the open repository.
+    AddTask,
+    /// A new value for this field of this configuration.
+    ConfigField(configs::Kind, &'static str),
 }
 
 /// A line of the Offline bundles screen.
@@ -666,6 +792,40 @@ pub struct App {
     migration_opened: Option<(PathBuf, Translation)>,
     opening_migration: Option<mpsc::Receiver<MigrationOpened>>,
     migration_rows: Vec<MigrationRow>,
+    /// Home Manager as last read, and the screen's lines.
+    home_status: Option<home_manager::Status>,
+    reading_home: Option<mpsc::Receiver<home_manager::Status>>,
+    home_rows: Vec<HomeRow>,
+    /// The restic repository as last read, and the screen's lines.
+    restic_reading: Option<ResticReading>,
+    reading_restic: Option<mpsc::Receiver<ResticReading>>,
+    restic_browse: Option<ResticBrowse>,
+    browsing_restic: Option<mpsc::Receiver<ResticBrowse>>,
+    restic_search: Option<ResticSearch>,
+    searching_restic: Option<mpsc::Receiver<ResticSearch>>,
+    restic_rows: Vec<ResticRow>,
+    /// What runs restic: restic itself, or a test's stand-in.
+    restic: std::sync::Arc<dyn Restic + Send + Sync>,
+    /// Where repositories are looked for; set by tests, else from the
+    /// settings.
+    repo_places: Option<repos::Places>,
+    /// The user's workspaces file: beside the settings, or set by tests.
+    workspaces_file: Option<PathBuf>,
+    repos_found: Option<(repos::Places, Vec<Summary>)>,
+    reading_repos: Option<mpsc::Receiver<(repos::Places, Vec<Summary>)>>,
+    /// The repository open, with its tasks.
+    repo_open: Option<(Details, Vec<Task>)>,
+    opening_repo: Option<mpsc::Receiver<RepoOpened>>,
+    repo_rows: Vec<RepoRow>,
+    config_parts: Vec<ConfigPart>,
+    config_rows: Vec<ConfigRow>,
+    /// The home and configuration folders configurations are found in, for
+    /// tests; this machine's otherwise.
+    config_places: Option<(PathBuf, PathBuf)>,
+    /// A configuration waiting to be opened in the user's editor.
+    edit_request: Option<EditRequest>,
+    /// The private folder for copies of configurations, for tests.
+    config_folder: Option<PathBuf>,
 }
 
 /// A plan of the queue as it was, from when it was made, with what the
@@ -780,6 +940,29 @@ impl App {
             migration_opened: None,
             opening_migration: None,
             migration_rows: Vec::new(),
+            home_status: None,
+            reading_home: None,
+            home_rows: Vec::new(),
+            restic_reading: None,
+            reading_restic: None,
+            restic_browse: None,
+            browsing_restic: None,
+            restic_search: None,
+            searching_restic: None,
+            restic_rows: Vec::new(),
+            restic: std::sync::Arc::new(restic::Here),
+            repo_places: None,
+            workspaces_file: None,
+            repos_found: None,
+            reading_repos: None,
+            repo_open: None,
+            opening_repo: None,
+            repo_rows: Vec::new(),
+            config_parts: Vec::new(),
+            config_rows: Vec::new(),
+            config_places: None,
+            edit_request: None,
+            config_folder: None,
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -1032,6 +1215,10 @@ impl App {
             Screen::Performance => self.performance_rows.len(),
             Screen::Recovery => self.recovery_found.len(),
             Screen::Migration => self.migration_rows.len(),
+            Screen::Restic => self.restic_rows.len(),
+            Screen::Repositories => self.repo_rows.len(),
+            Screen::Configs => self.config_rows.len(),
+            Screen::HomeManager => self.home_rows.len(),
             Screen::Doctor => self.diagnoses.len() + self.doctor_entries().len(),
             Screen::Settings => self.settings().len(),
         }
@@ -1128,6 +1315,30 @@ impl App {
                 self.build_migration_rows();
             }
         }
+        if screen == Screen::HomeManager {
+            if self.home_status.is_none() {
+                self.read_home();
+            } else {
+                self.build_home_rows();
+            }
+        }
+        if screen == Screen::Restic {
+            if self.restic_reading.is_none() {
+                self.read_restic();
+            } else {
+                self.build_restic_rows();
+            }
+        }
+        if screen == Screen::Configs {
+            self.read_configs();
+        }
+        if screen == Screen::Repositories {
+            if self.repos_found.is_none() {
+                self.read_repos();
+            } else {
+                self.build_repo_rows();
+            }
+        }
         self.update_rows();
     }
 
@@ -1193,6 +1404,54 @@ impl App {
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }
+        if let Some(receiver) = &self.reading_home {
+            match receiver.try_recv() {
+                Ok(found) => {
+                    self.home_status = Some(found);
+                    self.reading_home = None;
+                    self.build_home_rows();
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.reading_home = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(receiver) = &self.reading_restic {
+            match receiver.try_recv() {
+                Ok(found) => {
+                    self.restic_reading = Some(found);
+                    self.reading_restic = None;
+                    self.build_restic_rows();
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.reading_restic = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(receiver) = &self.browsing_restic {
+            match receiver.try_recv() {
+                Ok(found) => {
+                    self.restic_browse = Some(found);
+                    self.browsing_restic = None;
+                    self.build_restic_rows();
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.browsing_restic = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(receiver) = &self.searching_restic {
+            match receiver.try_recv() {
+                Ok(found) => {
+                    self.restic_search = Some(found);
+                    self.searching_restic = None;
+                    self.build_restic_rows();
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.searching_restic = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
         if let Some(receiver) = &self.opening_migration {
             match receiver.try_recv() {
                 Ok((path, read)) => {
@@ -1201,6 +1460,29 @@ impl App {
                     return true;
                 }
                 Err(mpsc::TryRecvError::Disconnected) => self.opening_migration = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(receiver) = &self.reading_repos {
+            match receiver.try_recv() {
+                Ok(found) => {
+                    self.reading_repos = None;
+                    self.repos_found = Some(found);
+                    self.build_repo_rows();
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.reading_repos = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(receiver) = &self.opening_repo {
+            match receiver.try_recv() {
+                Ok(read) => {
+                    self.opening_repo = None;
+                    self.opened_repo(read);
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.opening_repo = None,
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }
@@ -1298,6 +1580,10 @@ impl App {
             Screen::Performance => Icon::Performance,
             Screen::Recovery => Icon::Recovery,
             Screen::Migration => Icon::Migration,
+            Screen::Restic => Icon::Restic,
+            Screen::Repositories => Icon::Repositories,
+            Screen::Configs => Icon::Configs,
+            Screen::HomeManager => Icon::HomeManager,
             Screen::Favorites => Icon::Favorites,
             Screen::Doctor => Icon::Doctor,
             Screen::Settings => Icon::Settings,
@@ -1380,6 +1666,10 @@ impl App {
             Screen::Performance => self.draw_performance(frame, main),
             Screen::Recovery => self.draw_recovery(frame, main),
             Screen::Migration => self.draw_migration(frame, main),
+            Screen::Restic => self.draw_restic(frame, main),
+            Screen::Repositories => self.draw_repos(frame, main),
+            Screen::Configs => self.draw_configs(frame, main),
+            Screen::HomeManager => self.draw_home(frame, main),
             Screen::Doctor => self.draw_doctor(frame, main),
             Screen::Settings => self.draw_settings(frame, main),
         }
@@ -2465,6 +2755,10 @@ impl App {
                     Some(_) => "no".to_string(),
                 },
             ),
+            (
+                "Back up with restic on a timer".to_string(),
+                self.restic_timer_label(),
+            ),
             ("Setup wizard".to_string(), "Enter opens it".to_string()),
             (
                 "Bug report, to paste into an issue".to_string(),
@@ -2864,6 +3158,32 @@ impl App {
                     }
                     list.push(Hint::new(&["r"], "Read again"));
                 }
+                Screen::Restic => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    if self.restic_config().is_some() {
+                        match self
+                            .restic_rows
+                            .get(self.main_state.selected().unwrap_or(0))
+                        {
+                            Some(ResticRow::Snapshot(_)) => {
+                                list.push(Hint::new(&["Enter"], "Browse"));
+                                list.push(Hint::new(&["R"], "Restore"));
+                            }
+                            Some(ResticRow::Node(_) | ResticRow::Version(..)) => {
+                                list.push(Hint::new(&["R"], "Restore"));
+                            }
+                            Some(ResticRow::Baseline(_)) => list.push(Hint::new(&["v"], "Test")),
+                            _ => {}
+                        }
+                        list.push(Hint::new(&["b"], "Back up"));
+                        list.push(Hint::new(&["s"], "History"));
+                        list.push(Hint::new(&["n"], "Baseline"));
+                    }
+                    list.push(Hint::new(&["r"], "Read again"));
+                }
+                Screen::Repositories => self.repo_hints(&mut list),
+                Screen::Configs => self.config_hints(&mut list),
+                Screen::HomeManager => self.home_hints(&mut list),
                 Screen::Settings => list.push(Hint::new(&["Enter"], "Change")),
             },
         }
@@ -3102,6 +3422,18 @@ impl App {
                     }
                     if self.screen == Screen::Migration {
                         self.reload_migration();
+                    }
+                    if self.screen == Screen::Restic {
+                        self.read_restic();
+                    }
+                    if self.screen == Screen::Configs {
+                        self.read_configs();
+                    }
+                    if self.screen == Screen::Repositories {
+                        self.reload_repos();
+                    }
+                    if self.screen == Screen::HomeManager {
+                        self.read_home();
                     }
                 }
                 return true;
@@ -3703,6 +4035,43 @@ impl App {
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
+            Screen::Restic => match key.code {
+                KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.open_restic_row(),
+                KeyCode::Char('R') => self.ask_restore(),
+                KeyCode::Char('d') => self.describe_restic(),
+                KeyCode::Char('b') => self.plan_restic(restic::plan_backup),
+                KeyCode::Char('c') => self.plan_restic(restic::plan_check),
+                KeyCode::Char('s') if self.restic_config().is_some() => {
+                    let mut ask = InputPopup::new(
+                        "A file's history",
+                        "A file name or path to look for in every snapshot, with * wildcards, such as notes.txt:",
+                    )
+                    .answering("Look");
+                    if let Some((pattern, _)) = &self.restic_search {
+                        ask = ask.with_value(pattern.clone());
+                    }
+                    self.popup = Some(Popup::Ask(ask, Asked::ResticHistory));
+                }
+                KeyCode::Char('n') => {
+                    self.popup = Some(Popup::Ask(
+                        InputPopup::new(
+                            "Record a baseline",
+                            "A file of your home folder whose SHA-256 to record, to test restores of it against:",
+                        )
+                        .path()
+                        .answering("Record"),
+                        Asked::ResticBaseline,
+                    ));
+                }
+                KeyCode::Char('v') => self.ask_test(),
+                KeyCode::Char('w') => self.toggle_restic_timer(),
+                KeyCode::Char('r') => self.read_restic(),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::Repositories => self.repo_key(key.code),
+            Screen::Configs => self.config_key(key.code),
+            Screen::HomeManager => self.home_key(key.code),
             Screen::Bundles => match key.code {
                 KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') | KeyCode::Right => {
                     self.bundle_enter()
@@ -5873,8 +6242,18 @@ impl App {
                     watch.drift = slugs.get(next).cloned();
                 })
             }
-            9 => self.open_wizard(false),
-            10 => self.make_report(),
+            // Off, every day, every week, then off again.
+            9 if self.examine_here => {
+                let units = restic::units_here();
+                let next = match units.as_deref().and_then(restic::timer) {
+                    None => Some(restic::Every::Day),
+                    Some(restic::Every::Day) => Some(restic::Every::Week),
+                    Some(restic::Every::Week) => None,
+                };
+                self.set_restic_timer(next);
+            }
+            10 => self.open_wizard(false),
+            11 => self.make_report(),
             _ => {}
         }
     }
@@ -6046,7 +6425,40 @@ impl App {
                 self.build_service_rows();
                 return;
             }
+            Asked::CommitMessage => {
+                self.plan_repo_change(Change::Commit(text.to_string()));
+                return;
+            }
+            Asked::ConfigField(kind, key) => {
+                self.set_config(kind, key, text);
+                return;
+            }
+            Asked::NewBranch => {
+                self.plan_repo_change(Change::CreateBranch(text.trim().to_string()));
+                return;
+            }
+            Asked::StashMessage => {
+                self.plan_repo_change(Change::Stash {
+                    message: text.to_string(),
+                    untracked: true,
+                });
+                return;
+            }
+            Asked::AddTask => ("Task kept", self.add_repo_task(text)),
             Asked::ExportMigration => ("Migration exported", self.export_migration(text)),
+            Asked::ResticHistory => {
+                self.search_restic(text.trim().to_string());
+                return;
+            }
+            Asked::ResticRestore(snapshot, include) => {
+                self.restore_restic(&snapshot, include.as_deref(), text);
+                return;
+            }
+            Asked::ResticBaseline => ("Baseline recorded", self.record_baseline(text)),
+            Asked::ResticTest(baseline) => {
+                self.test_restic(&baseline, text.trim());
+                return;
+            }
             Asked::OpenMigration => {
                 match typed_path(text) {
                     Ok(path) => self.open_migration(path),
@@ -7134,6 +7546,22 @@ impl App {
         }
     }
 
+    /// The restic repository for the recovery checks, with its newest
+    /// snapshot when the Restic screen read them already.
+    fn restic_repository(&self) -> Option<recovery::Repository> {
+        let reading = self.restic_reading.as_ref();
+        match reading.map(|reading| &reading.found) {
+            Some(restic::Found::Ready(config)) => Some(recovery::Repository {
+                name: config.repository.clone(),
+                newest: reading
+                    .and_then(|reading| reading.snapshots.as_ref().ok()?.first())
+                    .map(restic::Snapshot::when),
+            }),
+            Some(_) => None,
+            None => restic::repository_here(),
+        }
+    }
+
     fn reload_recovery(&mut self) {
         if self.examine_here {
             let found_backups = backups::discover(&backups::Roots::here());
@@ -7147,6 +7575,7 @@ impl App {
                     backups: &found_backups,
                     baselines: &baselines,
                     now: history::now(),
+                    restic: self.restic_repository(),
                 },
             );
         }
@@ -7515,6 +7944,2160 @@ impl App {
         }
         let list = List::new(items)
             .block(self.card("Migration"))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused))
+            .scroll_padding(1);
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
+    }
+
+    // ----- Home Manager -----
+
+    /// Read Home Manager in the background: its generations, its
+    /// configuration's repository and the files it links.
+    fn read_home(&mut self) {
+        if !self.examine_here {
+            self.build_home_rows();
+            return;
+        }
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(home_manager::status(&doctor::Here, &repos::Here));
+        });
+        self.reading_home = Some(receiver);
+        self.build_home_rows();
+    }
+
+    fn selected_generation(&self) -> Option<&home_manager::Generation> {
+        let HomeRow::Generation(index) = self.home_rows.get(self.main_state.selected()?)? else {
+            return None;
+        };
+        self.home_status.as_ref()?.generations.get(*index)
+    }
+
+    fn selected_link(&self) -> Option<&home_manager::Link> {
+        let HomeRow::Link(index) = self.home_rows.get(self.main_state.selected()?)? else {
+            return None;
+        };
+        self.home_status.as_ref()?.links.get(*index)
+    }
+
+    /// The configuration to build, or a popup saying why there is none.
+    fn home_config(&mut self) -> Option<home_manager::Config> {
+        let why = match self.home_status.as_ref() {
+            None => "Home Manager has not been read yet; r reads it.".to_string(),
+            Some(status) if !status.installed => "home-manager is not installed here.".to_string(),
+            Some(home_manager::Status {
+                config: Some(config),
+                ..
+            }) => return Some(config.clone()),
+            Some(home_manager::Status {
+                problem: Some(problem),
+                ..
+            }) => problem.clone(),
+            Some(_) => "No Home Manager configuration was found: name its folder as flake under [home_manager] in settings.toml.".to_string(),
+        };
+        self.popup = Some(Popup::Text(TextPopup::new("Home Manager", why, true)));
+        None
+    }
+
+    fn confirm_home(&mut self, planned: Result<Plan, String>) {
+        match planned {
+            Ok(planned) => self.confirm_plan(Ok(planned)),
+            Err(why) => {
+                self.popup = Some(Popup::Text(TextPopup::new("Cannot plan", why, true)));
+            }
+        }
+    }
+
+    fn home_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Char('b') => {
+                if let Some(config) = self.home_config() {
+                    self.confirm_home(Ok(home_manager::plan_build(&config)));
+                }
+            }
+            KeyCode::Char('s') => {
+                if let Some(config) = self.home_config() {
+                    self.confirm_home(Ok(home_manager::plan_switch(&config)));
+                }
+            }
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.home_enter(),
+            KeyCode::Char('p') => self.pull_home(),
+            KeyCode::Char('d') => self.describe_home(),
+            KeyCode::Char('r') => self.read_home(),
+            KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+            _ => {}
+        }
+    }
+
+    /// Enter on an earlier generation plans going back to it; on anything
+    /// else it tells of it.
+    fn home_enter(&mut self) {
+        match self.selected_generation().cloned() {
+            Some(generation) if !generation.current => {
+                let planned = home_manager::plan_activate(&doctor::Here, &generation);
+                self.confirm_home(planned);
+            }
+            _ => self.describe_home(),
+        }
+    }
+
+    /// Pull the configuration's repository, fast-forward only.
+    fn pull_home(&mut self) {
+        if self.home_config().is_none() {
+            return;
+        }
+        let Some(repository) = self
+            .home_status
+            .as_ref()
+            .and_then(|status| status.repository.clone())
+        else {
+            self.popup = Some(Popup::Text(TextPopup::new(
+                "Home Manager",
+                "The configuration is not in a Git repository.",
+                true,
+            )));
+            return;
+        };
+        if !self.examine_here {
+            return;
+        }
+        let planned = repos::details(&repos::Here, &repository.path)
+            .and_then(|details| repos::plan(&repos::Here, &details, &Change::Pull));
+        self.confirm_home(planned);
+    }
+
+    fn describe_home(&mut self) {
+        let (title, text) = if let Some(generation) = self.selected_generation() {
+            (
+                format!("Generation {}", generation.id),
+                format!(
+                    "Built {}.\n{}\n\n{}",
+                    generation.built,
+                    generation.path.display(),
+                    if generation.current {
+                        "It is the active one."
+                    } else {
+                        "Enter goes back to it through its own activate script, after you review the plan."
+                    }
+                ),
+            )
+        } else if let Some(link) = self.selected_link() {
+            (
+                link.name.clone(),
+                match (&link.target, link.managed) {
+                    (Some(target), true) => format!(
+                        "{} links to {}.\n\nHome Manager manages it: change it in the configuration, then switch.",
+                        link.path.display(),
+                        target.display()
+                    ),
+                    (Some(target), false) => {
+                        format!("{} links to {}.", link.path.display(), target.display())
+                    }
+                    (None, _) => format!(
+                        "{} is a file of its own; Home Manager does not manage it.",
+                        link.path.display()
+                    ),
+                },
+            )
+        } else {
+            return;
+        };
+        self.popup = Some(Popup::Text(TextPopup::new(
+            helix_toolbox_core::printable(&title),
+            helix_toolbox_core::printable(&text),
+            true,
+        )));
+    }
+
+    fn home_hints(&self, list: &mut Vec<Hint>) {
+        list.push(Hint::new(&["↑↓"], "Navigate"));
+        if self
+            .selected_generation()
+            .is_some_and(|generation| !generation.current)
+        {
+            list.push(Hint::new(&["Enter"], "Go back to it"));
+        }
+        if let Some(status) = &self.home_status
+            && status.installed
+            && status.config.is_some()
+        {
+            list.push(Hint::new(&["b"], "Build"));
+            list.push(Hint::new(&["s"], "Switch"));
+            if status.repository.is_some() {
+                list.push(Hint::new(&["p"], "Pull"));
+            }
+        }
+        if self.selected_generation().is_some() || self.selected_link().is_some() {
+            list.push(Hint::new(&["d"], "Details"));
+        }
+        list.push(Hint::new(&["r"], "Read again"));
+    }
+
+    fn build_home_rows(&mut self) {
+        let mut rows = vec![HomeRow::Heading("Home Manager".into())];
+        let Some(status) = &self.home_status else {
+            rows.push(HomeRow::Text(if self.reading_home.is_some() {
+                "Reading Home Manager…".into()
+            } else {
+                "Press r to read Home Manager.".into()
+            }));
+            self.home_rows = rows;
+            self.clamp_main();
+            return;
+        };
+        rows.push(HomeRow::Text(match (&status.version, status.installed) {
+            (Some(version), _) => format!("Home Manager {version}"),
+            (None, true) => "Home Manager is installed".into(),
+            (None, false) => "home-manager is not installed here".into(),
+        }));
+        rows.push(HomeRow::Text(match (&status.config, &status.problem) {
+            (Some(config), _) => format!(
+                "Configuration: {} ({}, from {})",
+                config
+                    .flake_reference()
+                    .unwrap_or_else(|| config.folder.join("home.nix").display().to_string()),
+                if config.flake { "a flake" } else { "home.nix" },
+                config.origin.label()
+            ),
+            (None, Some(problem)) => format!("Configuration: {problem}"),
+            (None, None) => {
+                "No configuration found: name its folder as flake under [home_manager] in settings.toml".into()
+            }
+        }));
+        if let Some(repository) = &status.repository {
+            rows.push(HomeRow::Text(match &repository.problem {
+                Some(problem) => format!("Repository {}: {problem}", repository.path.display()),
+                None => format!(
+                    "Repository {}: {}, {} changed{}",
+                    repository.path.display(),
+                    repository.branch.as_deref().unwrap_or("detached"),
+                    repository.changed,
+                    match (repository.ahead, repository.behind) {
+                        (Some(ahead), Some(behind)) if ahead + behind > 0 => {
+                            format!(", {ahead} ahead and {behind} behind")
+                        }
+                        (Some(_), Some(_)) => ", up to date".to_string(),
+                        _ => String::new(),
+                    }
+                ),
+            }));
+        }
+        if !status.generations.is_empty() {
+            rows.push(HomeRow::Heading(format!(
+                "Generations ({})",
+                status.generations.len()
+            )));
+            rows.extend((0..status.generations.len()).map(HomeRow::Generation));
+        }
+        if !status.links.is_empty() {
+            rows.push(HomeRow::Heading("Configuration files".into()));
+            rows.extend((0..status.links.len()).map(HomeRow::Link));
+        }
+        self.home_rows = rows;
+        self.clamp_main();
+    }
+
+    fn draw_home(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Home Manager",
+            "Its generations and configuration; building, switching and going back are plans you review.",
+        );
+        self.fill(frame, inner);
+        let focused = self.focus == Focus::Main;
+        let muted = Style::default().fg(self.theme.muted());
+        let mut items: Vec<Line> = Vec::new();
+        for row in &self.home_rows {
+            items.push(match row {
+                HomeRow::Heading(text) => {
+                    Line::styled(text.clone(), Style::default().fg(self.theme.group()).bold())
+                }
+                HomeRow::Text(text) => {
+                    Line::styled(format!("  {}", helix_toolbox_core::printable(text)), muted)
+                }
+                HomeRow::Generation(index) => {
+                    let generation = &self.home_status.as_ref().unwrap().generations[*index];
+                    Line::from(vec![
+                        Span::styled(
+                            format!("  {:>5}  {}", generation.id, generation.built),
+                            Style::default().fg(if generation.current {
+                                self.theme.success()
+                            } else {
+                                self.theme.entry()
+                            }),
+                        ),
+                        Span::styled(
+                            if generation.current {
+                                "  active".to_string()
+                            } else {
+                                String::new()
+                            },
+                            Style::default().fg(self.theme.success()),
+                        ),
+                    ])
+                }
+                HomeRow::Link(index) => {
+                    let link = &self.home_status.as_ref().unwrap().links[*index];
+                    Line::from(vec![
+                        Span::styled(
+                            format!("  {:<12}", link.name),
+                            Style::default().fg(self.theme.entry()),
+                        ),
+                        Span::styled(
+                            if link.managed {
+                                "linked by Home Manager".to_string()
+                            } else if link.target.is_some() {
+                                "a link of its own".to_string()
+                            } else {
+                                "a file of its own".to_string()
+                            },
+                            muted,
+                        ),
+                    ])
+                }
+            });
+        }
+        let list = List::new(items)
+            .block(self.card("Home Manager"))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused))
+            .scroll_padding(1);
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
+    }
+
+    // ----- Restic -----
+
+    /// The repository, when one is set up and usable.
+    fn restic_config(&self) -> Option<&restic::Config> {
+        match &self.restic_reading.as_ref()?.found {
+            restic::Found::Ready(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    /// Read the repository and its snapshots in the background. Tests set
+    /// what was read themselves, so nothing of this machine's is asked.
+    fn read_restic(&mut self) {
+        if !self.examine_here {
+            self.build_restic_rows();
+            return;
+        }
+        let runner = self.restic.clone();
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let found = restic::here();
+            let snapshots = match &found {
+                restic::Found::Ready(config) => restic::snapshots(runner.as_ref(), config),
+                _ => Ok(Vec::new()),
+            };
+            let _ = sender.send(ResticReading {
+                restores: matches!(found, restic::Found::Ready(_))
+                    && restic::restores_safely(runner.as_ref()),
+                found,
+                snapshots,
+                timer: restic::units_here().and_then(|units| restic::timer(&units)),
+                baselines: history::state_dir()
+                    .map(|state| restic::baselines(&state))
+                    .unwrap_or_default(),
+            });
+        });
+        self.reading_restic = Some(receiver);
+        self.build_restic_rows();
+    }
+
+    /// List a folder of a snapshot: in the background, or at once in tests.
+    fn browse_restic(&mut self, snapshot: restic::Snapshot, folder: String) {
+        let Some(config) = self.restic_config().cloned() else {
+            return;
+        };
+        let runner = self.restic.clone();
+        let work = move || {
+            let nodes = restic::files(runner.as_ref(), &config, &snapshot.id, &folder);
+            ResticBrowse {
+                snapshot,
+                folder,
+                nodes,
+            }
+        };
+        if self.examine_here {
+            let (sender, receiver) = mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = sender.send(work());
+            });
+            self.browsing_restic = Some(receiver);
+        } else {
+            self.restic_browse = Some(work());
+        }
+        self.build_restic_rows();
+    }
+
+    /// Look for a file's history across the snapshots.
+    fn search_restic(&mut self, pattern: String) {
+        let Some(config) = self.restic_config().cloned() else {
+            return;
+        };
+        let runner = self.restic.clone();
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        let work = move || {
+            let found = restic::history(runner.as_ref(), &config, &home, &pattern, false);
+            (pattern, found)
+        };
+        if self.examine_here {
+            let (sender, receiver) = mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = sender.send(work());
+            });
+            self.searching_restic = Some(receiver);
+        } else {
+            self.restic_search = Some(work());
+        }
+        self.build_restic_rows();
+    }
+
+    fn restic_snapshots(&self) -> &[restic::Snapshot] {
+        self.restic_reading
+            .as_ref()
+            .and_then(|reading| reading.snapshots.as_ref().ok())
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
+    fn selected_restic_row(&self) -> Option<&ResticRow> {
+        self.restic_rows.get(self.main_state.selected()?)
+    }
+
+    /// Enter: browse a snapshot or folder, go up, restore a file, test a
+    /// baseline.
+    fn open_restic_row(&mut self) {
+        match self.selected_restic_row().cloned() {
+            Some(ResticRow::Snapshot(index)) => {
+                let snapshot = self.restic_snapshots()[index].clone();
+                let folder = snapshot
+                    .paths
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "/".into());
+                self.browse_restic(snapshot, folder);
+            }
+            Some(ResticRow::Up) => {
+                if let Some(browse) = &self.restic_browse {
+                    let parent = Path::new(&browse.folder)
+                        .parent()
+                        .map(|parent| parent.display().to_string())
+                        .unwrap_or_else(|| "/".into());
+                    let snapshot = browse.snapshot.clone();
+                    self.browse_restic(snapshot, parent);
+                }
+            }
+            Some(ResticRow::Node(index)) => {
+                let Some(browse) = &self.restic_browse else {
+                    return;
+                };
+                let Some(node) = browse
+                    .nodes
+                    .as_ref()
+                    .ok()
+                    .and_then(|nodes| nodes.get(index))
+                else {
+                    return;
+                };
+                if node.is_dir() {
+                    let (snapshot, folder) = (browse.snapshot.clone(), node.path.clone());
+                    self.browse_restic(snapshot, folder);
+                } else {
+                    self.ask_restore();
+                }
+            }
+            Some(ResticRow::Version(..)) => self.ask_restore(),
+            Some(ResticRow::Baseline(_)) => self.ask_test(),
+            _ => {}
+        }
+    }
+
+    /// The snapshot and path the selected row would restore.
+    fn restic_restore_target(&self) -> Option<(String, Option<String>)> {
+        match self.selected_restic_row()? {
+            ResticRow::Snapshot(index) => {
+                Some((self.restic_snapshots().get(*index)?.id.clone(), None))
+            }
+            ResticRow::Node(index) => {
+                let browse = self.restic_browse.as_ref()?;
+                let node = browse.nodes.as_ref().ok()?.get(*index)?;
+                Some((browse.snapshot.id.clone(), Some(node.path.clone())))
+            }
+            ResticRow::Version(file, version) => {
+                let found = self.restic_search.as_ref()?.1.as_ref().ok()?.get(*file)?;
+                Some((
+                    found.versions.get(*version)?.snapshot.clone(),
+                    Some(found.path.clone()),
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn ask_restore(&mut self) {
+        let Some((snapshot, include)) = self.restic_restore_target() else {
+            return;
+        };
+        if !self
+            .restic_reading
+            .as_ref()
+            .is_some_and(|reading| reading.restores)
+        {
+            self.popup = Some(Popup::Text(TextPopup::new(
+                "Cannot restore here",
+                "This restic cannot restore without overwriting and check what it wrote; restic 0.17 or later can.",
+                true,
+            )));
+            return;
+        }
+        let what = include
+            .as_deref()
+            .map(helix_toolbox_core::printable)
+            .unwrap_or_else(|| "the whole snapshot".to_string());
+        self.popup = Some(Popup::Ask(
+            InputPopup::new(
+                "Restore into a new folder",
+                format!(
+                    "Where to restore {what} from {}: a new folder of your home folder; nothing is overwritten.",
+                    &snapshot[..snapshot.len().min(8)]
+                ),
+            )
+            .with_value("~/restored".to_string())
+            .path()
+            .answering("Restore"),
+            Asked::ResticRestore(snapshot, include),
+        ));
+    }
+
+    fn restore_restic(&mut self, snapshot: &str, include: Option<&str>, text: &str) {
+        let planned = (|| -> Result<Plan, String> {
+            let config = self
+                .restic_config()
+                .ok_or("No restic repository is set up.")?;
+            let home = std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .ok_or("there is no home folder")?;
+            let target = restic::check_target(&home, &typed_path(text)?)?;
+            restic::plan_restore(config, snapshot, &target, include)
+        })();
+        self.confirm_restic(planned);
+    }
+
+    fn ask_test(&mut self) {
+        let Some(ResticRow::Baseline(index)) = self.selected_restic_row() else {
+            return;
+        };
+        let Some(baseline) = self
+            .restic_reading
+            .as_ref()
+            .and_then(|reading| reading.baselines.get(*index))
+        else {
+            return;
+        };
+        self.popup = Some(Popup::Ask(
+            InputPopup::new(
+                "Test a restore",
+                format!(
+                    "The snapshot to restore {} from and compare (latest, or a snapshot's id):",
+                    helix_toolbox_core::printable(&baseline.path)
+                ),
+            )
+            .with_value("latest".to_string())
+            .answering("Test"),
+            Asked::ResticTest(baseline.id.clone()),
+        ));
+    }
+
+    fn test_restic(&mut self, baseline: &str, snapshot: &str) {
+        let planned = (|| -> Result<Plan, String> {
+            let config = self
+                .restic_config()
+                .ok_or("No restic repository is set up.")?;
+            let reading = self.restic_reading.as_ref().ok_or("Nothing read yet.")?;
+            let chosen = restic::find_baseline(&reading.baselines, baseline)
+                .ok_or("That baseline is not there.")?;
+            restic::plan_test(
+                config,
+                chosen,
+                if snapshot.is_empty() {
+                    "latest"
+                } else {
+                    snapshot
+                },
+            )
+        })();
+        self.confirm_restic(planned);
+    }
+
+    /// A backup or check of the repository, to review.
+    fn plan_restic(&mut self, make: fn(&restic::Config) -> Plan) {
+        match self.restic_config() {
+            Some(config) => {
+                let planned = make(config);
+                self.confirm_plan(Ok(planned));
+            }
+            None => self.no_restic(),
+        }
+    }
+
+    fn confirm_restic(&mut self, planned: Result<Plan, String>) {
+        match planned {
+            Ok(planned) => self.confirm_plan(Ok(planned)),
+            Err(why) => {
+                self.popup = Some(Popup::Text(TextPopup::new("Cannot plan", why, true)));
+            }
+        }
+    }
+
+    fn no_restic(&mut self) {
+        self.popup = Some(Popup::Text(TextPopup::new(
+            "No repository",
+            "Name the repository and its password under [restic] in settings.toml (helix-toolbox restic says how), or with restic's RESTIC_REPOSITORY.",
+            true,
+        )));
+    }
+
+    fn record_baseline(&mut self, text: &str) -> Result<String, String> {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or("there is no home folder")?;
+        let state = history::state_dir().ok_or("cannot find the state folder")?;
+        let recorded = restic::record(&state, &home, &typed_path(text)?, history::now())?;
+        if let Some(reading) = &mut self.restic_reading {
+            reading.baselines = restic::baselines(&state);
+        }
+        self.build_restic_rows();
+        Ok(format!(
+            "{}: SHA-256 {}.\n\nBack it up, then v on it restores it from a snapshot and compares.",
+            recorded.path, recorded.sha256
+        ))
+    }
+
+    /// The daily backup on, or off when it is on.
+    fn toggle_restic_timer(&mut self) {
+        if !self.examine_here {
+            return;
+        }
+        let on = restic::units_here().and_then(|units| restic::timer(&units));
+        self.set_restic_timer(if on.is_some() {
+            None
+        } else {
+            Some(restic::Every::Day)
+        });
+    }
+
+    /// The timed backup's state, for Settings.
+    fn restic_timer_label(&self) -> String {
+        if !self.examine_here {
+            return "not available here".to_string();
+        }
+        match restic::units_here().and_then(|units| restic::timer(&units)) {
+            Some(every) => format!("yes, {}", every.label()),
+            None if self.restic_config().is_some() || restic::repository_here().is_some() => {
+                "no".to_string()
+            }
+            None => "no (name a repository in Restic first)".to_string(),
+        }
+    }
+
+    /// Turn the timed backup off, or on to run that often.
+    fn set_restic_timer(&mut self, every: Option<restic::Every>) {
+        let config = self
+            .restic_config()
+            .cloned()
+            .or_else(|| match restic::here() {
+                restic::Found::Ready(config) => Some(config),
+                _ => None,
+            });
+        let Some(config) = config else {
+            self.no_restic();
+            return;
+        };
+        let said = (|| -> Result<String, String> {
+            let units =
+                restic::units_here().ok_or("there is no home folder to keep the timer in")?;
+            let Some(every) = every else {
+                restic::timer_off(&units, &notifications::systemctl)?;
+                return Ok("The timed backup is off.".to_string());
+            };
+            let program = std::env::current_exe().map_err(|error| error.to_string())?;
+            let started =
+                restic::timer_on(&units, &program, &config, every, &notifications::systemctl)?;
+            Ok(format!(
+                "The backup runs {}{}. Settings, or w in Restic, change it.",
+                every.label(),
+                match started {
+                    notifications::Started::Now => "",
+                    notifications::Started::AtLogin => ", from the next login",
+                }
+            ))
+        })();
+        if let Some(reading) = &mut self.restic_reading {
+            reading.timer = restic::units_here().and_then(|units| restic::timer(&units));
+        }
+        self.build_restic_rows();
+        self.popup = Some(Popup::Text(match said {
+            Ok(text) => TextPopup::new("Timed backup", text, true),
+            Err(why) => TextPopup::new("The timer did not change", why, true),
+        }));
+    }
+
+    fn describe_restic(&mut self) {
+        let text = match self.selected_restic_row() {
+            Some(ResticRow::Snapshot(index)) => {
+                let Some(snapshot) = self.restic_snapshots().get(*index) else {
+                    return;
+                };
+                format!(
+                    "Snapshot {} of {}, taken {}.\nFolders: {}\n\nEnter browses it; R restores it into a new folder.",
+                    snapshot.id,
+                    helix_toolbox_core::printable(&snapshot.hostname),
+                    snapshot.when(),
+                    helix_toolbox_core::printable(&snapshot.paths.join(", "))
+                )
+            }
+            Some(ResticRow::Baseline(index)) => {
+                let Some(baseline) = self
+                    .restic_reading
+                    .as_ref()
+                    .and_then(|reading| reading.baselines.get(*index))
+                else {
+                    return;
+                };
+                format!(
+                    "{}\nSHA-256 {}, recorded {}.\n\nv restores it from a snapshot into a temporary folder and compares.",
+                    helix_toolbox_core::printable(&baseline.path),
+                    baseline.sha256,
+                    timestamp(baseline.recorded)
+                )
+            }
+            _ => return,
+        };
+        self.popup = Some(Popup::Text(TextPopup::new("Restic", text, true)));
+    }
+
+    fn build_restic_rows(&mut self) {
+        let mut rows = vec![ResticRow::Heading("The repository".into())];
+        match self.restic_reading.as_ref().map(|reading| &reading.found) {
+            None if self.reading_restic.is_some() => {
+                rows.push(ResticRow::Text("Asking restic…".into()))
+            }
+            None => rows.push(ResticRow::Text("Press r to read the repository.".into())),
+            Some(restic::Found::Missing) => {
+                rows.push(ResticRow::Text("No restic repository is set up.".into()));
+                rows.push(ResticRow::Text(
+                    "Name it under [restic] in settings.toml: repository = \"…\", password_file = \"…\"; helix-toolbox restic shows how.".into(),
+                ));
+            }
+            Some(restic::Found::Problem(why)) => rows.push(ResticRow::Text(why.clone())),
+            Some(restic::Found::Ready(config)) => {
+                rows.push(ResticRow::Text(format!(
+                    "{} (from {})",
+                    helix_toolbox_core::printable(&config.repository),
+                    config.origin.label()
+                )));
+                rows.push(ResticRow::Text(format!(
+                    "Password from {}",
+                    config.password.describe()
+                )));
+                rows.push(ResticRow::Text(format!(
+                    "Backs up {}; the timer is {}",
+                    config
+                        .paths
+                        .iter()
+                        .map(|path| path.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    self.restic_reading
+                        .as_ref()
+                        .and_then(|reading| reading.timer)
+                        .map(restic::Every::label)
+                        .unwrap_or("off")
+                )));
+                rows.push(ResticRow::Text(
+                    "b backs up, c checks, w turns the daily backup on or off, s looks for a file's history.".into(),
+                ));
+            }
+        }
+        if let Some(reading) = &self.restic_reading
+            && matches!(reading.found, restic::Found::Ready(_))
+        {
+            match &reading.snapshots {
+                Ok(snapshots) => {
+                    rows.push(ResticRow::Heading(format!(
+                        "Snapshots ({})",
+                        snapshots.len()
+                    )));
+                    rows.extend((0..snapshots.len()).map(ResticRow::Snapshot));
+                }
+                Err(why) => rows.push(ResticRow::Text(format!(
+                    "restic could not read the repository: {why}"
+                ))),
+            }
+        }
+        if self.browsing_restic.is_some() {
+            rows.push(ResticRow::Heading("Listing the folder…".into()));
+        } else if let Some(browse) = &self.restic_browse {
+            rows.push(ResticRow::Heading(format!(
+                "In {} at {}",
+                browse.snapshot.short_id,
+                helix_toolbox_core::printable(&browse.folder)
+            )));
+            if browse.folder != "/" {
+                rows.push(ResticRow::Up);
+            }
+            match &browse.nodes {
+                Ok(nodes) if nodes.is_empty() => rows.push(ResticRow::Text("Nothing here.".into())),
+                Ok(nodes) => rows.extend((0..nodes.len()).map(ResticRow::Node)),
+                Err(why) => rows.push(ResticRow::Text(why.clone())),
+            }
+        }
+        if self.searching_restic.is_some() {
+            rows.push(ResticRow::Heading("Looking through the snapshots…".into()));
+        } else if let Some((pattern, found)) = &self.restic_search {
+            rows.push(ResticRow::Heading(format!(
+                "History of {}",
+                helix_toolbox_core::printable(pattern)
+            )));
+            match found {
+                Ok(files) if files.is_empty() => rows.push(ResticRow::Text(
+                    "No snapshot has a file that matches.".into(),
+                )),
+                Ok(files) => {
+                    for (index, file) in files.iter().enumerate() {
+                        rows.push(ResticRow::Text(helix_toolbox_core::printable(&file.path)));
+                        rows.extend(
+                            (0..file.versions.len())
+                                .map(|version| ResticRow::Version(index, version)),
+                        );
+                        if file.missing_from > 0 {
+                            rows.push(ResticRow::Text(format!(
+                                "Not in the {} newer snapshot(s) of the same folder: deleted or moved since.",
+                                file.missing_from
+                            )));
+                        }
+                    }
+                }
+                Err(why) => rows.push(ResticRow::Text(why.clone())),
+            }
+        }
+        if let Some(reading) = &self.restic_reading {
+            rows.push(ResticRow::Heading(format!(
+                "Recovery tests ({} baselines)",
+                reading.baselines.len()
+            )));
+            rows.push(ResticRow::Text(
+                "n records a file's SHA-256; v on one restores it from a snapshot and compares."
+                    .into(),
+            ));
+            rows.extend((0..reading.baselines.len()).map(ResticRow::Baseline));
+        }
+        self.restic_rows = rows;
+        self.clamp_main();
+    }
+
+    fn draw_restic(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Restic",
+            "Backups of your own files: snapshots, a file's history, restores into a new folder and recovery tests.",
+        );
+        self.fill(frame, inner);
+        let focused = self.focus == Focus::Main;
+        let muted = Style::default().fg(self.theme.muted());
+        let printable = helix_toolbox_core::printable;
+        let size = |bytes: Option<u64>| bytes.map(storage::shown).unwrap_or_default();
+        let snapshots = self.restic_snapshots();
+        let mut items: Vec<Line> = Vec::new();
+        for row in &self.restic_rows {
+            items.push(match row {
+                ResticRow::Heading(text) => {
+                    Line::styled(text.clone(), Style::default().fg(self.theme.group()).bold())
+                }
+                ResticRow::Text(text) => Line::styled(format!("  {text}"), muted),
+                ResticRow::Snapshot(index) => {
+                    let snapshot = &snapshots[*index];
+                    Line::from(vec![
+                        Span::styled(
+                            format!("  {}  {}  ", snapshot.short_id, snapshot.when()),
+                            Style::default().fg(self.theme.entry()),
+                        ),
+                        Span::styled(
+                            format!(
+                                "{:<16} {}",
+                                printable(&snapshot.hostname),
+                                printable(&snapshot.paths.join(", "))
+                            ),
+                            muted,
+                        ),
+                    ])
+                }
+                ResticRow::Up => Line::styled("  ..", Style::default().fg(self.theme.entry())),
+                ResticRow::Node(index) => {
+                    let node =
+                        &self.restic_browse.as_ref().unwrap().nodes.as_ref().unwrap()[*index];
+                    if node.is_dir() {
+                        Line::styled(
+                            format!("  {}/", printable(&node.name)),
+                            Style::default().fg(self.theme.group()),
+                        )
+                    } else {
+                        Line::from(vec![
+                            Span::styled(
+                                format!("  {:<40} ", printable(&node.name)),
+                                Style::default().fg(self.theme.entry()),
+                            ),
+                            Span::styled(size(node.size), muted),
+                        ])
+                    }
+                }
+                ResticRow::Version(file, version) => {
+                    let found = &self.restic_search.as_ref().unwrap().1.as_ref().unwrap()[*file];
+                    let version = &found.versions[*version];
+                    Line::from(vec![
+                        Span::styled(
+                            format!(
+                                "    {}  {}  ",
+                                version.short_id,
+                                version
+                                    .time
+                                    .replace('T', " ")
+                                    .get(..16)
+                                    .unwrap_or(&version.time)
+                            ),
+                            Style::default().fg(self.theme.entry()),
+                        ),
+                        Span::styled(
+                            format!(
+                                "{:<10} {}",
+                                size(version.size),
+                                match version.change {
+                                    restic::Change::First => "first",
+                                    restic::Change::Changed => "changed",
+                                    restic::Change::Same => "same",
+                                }
+                            ),
+                            muted,
+                        ),
+                    ])
+                }
+                ResticRow::Baseline(index) => {
+                    let baseline = &self.restic_reading.as_ref().unwrap().baselines[*index];
+                    Line::from(vec![
+                        Span::styled(
+                            format!("  {}  ", &baseline.sha256[..baseline.sha256.len().min(12)]),
+                            Style::default().fg(self.theme.entry()),
+                        ),
+                        Span::styled(
+                            format!(
+                                "{}  {}",
+                                timestamp(baseline.recorded),
+                                printable(&baseline.path)
+                            ),
+                            muted,
+                        ),
+                    ])
+                }
+            });
+        }
+        let list = List::new(items)
+            .block(self.card("Restic"))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused))
+            .scroll_padding(1);
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
+    }
+
+    // ----- Repositories -----
+
+    /// Where repositories are looked for: the tests' places, else those the
+    /// settings name; none in a test that sets none.
+    fn places_here(&self) -> Option<repos::Places> {
+        if let Some(places) = &self.repo_places {
+            return Some(places.clone());
+        }
+        let settings = self.settings_path.as_ref()?;
+        let home = std::env::var_os("HOME").map(PathBuf::from)?;
+        Some(repos::places(settings, &home))
+    }
+
+    fn workspaces_path(&self) -> Option<PathBuf> {
+        self.workspaces_file.clone().or_else(|| {
+            self.settings_path
+                .as_ref()
+                .map(|settings| settings.with_file_name("workspaces.toml"))
+        })
+    }
+
+    fn kept_workspaces(&self) -> Workspaces {
+        self.workspaces_path()
+            .and_then(|path| workspaces::load(&path).ok())
+            .unwrap_or_default()
+    }
+
+    /// Find the repositories and read each, in the background on this
+    /// machine; favorites first.
+    fn read_repos(&mut self) {
+        let Some(places) = self.places_here() else {
+            self.repos_found = Some((
+                repos::Places {
+                    roots: Vec::new(),
+                    depth: repos::DEFAULT_DEPTH,
+                    origin: "default".to_string(),
+                },
+                Vec::new(),
+            ));
+            self.build_repo_rows();
+            return;
+        };
+        let kept = self.kept_workspaces();
+        let read = move || {
+            let found = repos::discover(&places);
+            let mut summaries = repos::summaries(&repos::Here, &found);
+            summaries.sort_by_key(|summary| !kept.favorite(&summary.path));
+            (places, summaries)
+        };
+        if self.examine_here {
+            let (sender, receiver) = mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = sender.send(read());
+            });
+            self.reading_repos = Some(receiver);
+        } else {
+            self.repos_found = Some(read());
+        }
+        self.build_repo_rows();
+    }
+
+    /// Read the list again, and the open repository with it.
+    fn reload_repos(&mut self) {
+        self.read_repos();
+        if let Some((found, _)) = &self.repo_open {
+            let path = found.summary.path.clone();
+            self.open_repo(path);
+        }
+    }
+
+    /// Read one repository and its tasks, in the background on this machine.
+    fn open_repo(&mut self, path: PathBuf) {
+        let kept = self.kept_workspaces();
+        let read = move || -> RepoOpened {
+            let found = repos::details(&repos::Here, &path)?;
+            let tasks = workspaces::tasks(&path, &kept);
+            Ok((found, tasks))
+        };
+        if self.examine_here {
+            let (sender, receiver) = mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = sender.send(read());
+            });
+            self.opening_repo = Some(receiver);
+            self.build_repo_rows();
+        } else {
+            self.opened_repo(read());
+        }
+    }
+
+    fn opened_repo(&mut self, read: RepoOpened) {
+        match read {
+            Ok(open) => {
+                let same = self
+                    .repo_open
+                    .as_ref()
+                    .map(|(found, _)| &found.summary.path)
+                    == Some(&open.0.summary.path);
+                self.repo_open = Some(open);
+                if !same {
+                    self.main_state.select(Some(0));
+                }
+                self.build_repo_rows();
+            }
+            Err(why) => {
+                self.popup = Some(Popup::Text(TextPopup::new(
+                    "Cannot read the repository",
+                    why,
+                    true,
+                )));
+            }
+        }
+    }
+
+    /// Back from a repository to the list; false when the list is shown.
+    fn close_repo(&mut self) -> bool {
+        if self.repo_open.take().is_none() {
+            return false;
+        }
+        self.main_state.select(Some(0));
+        self.build_repo_rows();
+        true
+    }
+
+    fn selected_repo_row(&self) -> Option<RepoRow> {
+        self.repo_rows.get(self.main_state.selected()?).cloned()
+    }
+
+    fn repo_key(&mut self, code: KeyCode) {
+        let open = self.repo_open.is_some();
+        match code {
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.repo_enter(),
+            KeyCode::Char('h') | KeyCode::Left | KeyCode::Backspace => {
+                if !self.close_repo() {
+                    self.focus = Focus::Sidebar;
+                }
+            }
+            KeyCode::Char('r') => self.reload_repos(),
+            KeyCode::Char('f') => self.toggle_repo_favorite(),
+            _ if !open => {}
+            KeyCode::Char(' ') => self.stage_selected(),
+            KeyCode::Char('A') => self.plan_repo_change(Change::StageAll),
+            KeyCode::Char('c') => {
+                self.popup = Some(Popup::Ask(
+                    InputPopup::new("Commit", "The commit message:").answering("Review"),
+                    Asked::CommitMessage,
+                ))
+            }
+            KeyCode::Char('b') => {
+                self.popup = Some(Popup::Ask(
+                    InputPopup::new("New branch", "The branch to create and switch to:")
+                        .answering("Review"),
+                    Asked::NewBranch,
+                ))
+            }
+            KeyCode::Char('s') => {
+                self.popup = Some(Popup::Ask(
+                    InputPopup::new("Stash", "A message for the stash (new files go in it too):")
+                        .answering("Review"),
+                    Asked::StashMessage,
+                ))
+            }
+            KeyCode::Char('F') => self.plan_repo_change(Change::Fetch),
+            KeyCode::Char('p') => self.plan_repo_change(Change::Pull),
+            KeyCode::Char('P') => self.push_repo(),
+            KeyCode::Char('n') => {
+                self.popup = Some(Popup::Ask(
+                    InputPopup::new(
+                        "A task of yours",
+                        "The command, run in the repository's folder, such as npm run serve:",
+                    )
+                    .answering("Keep"),
+                    Asked::AddTask,
+                ))
+            }
+            KeyCode::Char('x') => self.remove_repo_task(),
+            _ => {}
+        }
+    }
+
+    /// Enter: open a repository; in one, a file's diff, a branch to switch
+    /// to, a stash to apply or a task to run.
+    fn repo_enter(&mut self) {
+        let Some(row) = self.selected_repo_row() else {
+            return;
+        };
+        let Some((found, tasks)) = &self.repo_open else {
+            if let (RepoRow::Repository(index), Some((_, summaries))) = (row, &self.repos_found)
+                && let Some(summary) = summaries.get(index)
+            {
+                let path = summary.path.clone();
+                self.open_repo(path);
+            }
+            return;
+        };
+        match row {
+            RepoRow::File(index) => {
+                let Some(file) = found.files.get(index) else {
+                    return;
+                };
+                let path = found.summary.path.clone();
+                let mut text = String::new();
+                for (staged, heading) in [(true, "Staged"), (false, "Not staged")] {
+                    if (staged && !file.is_staged()) || (!staged && !file.has_unstaged()) {
+                        continue;
+                    }
+                    match repos::diff(&repos::Here, &path, found, Some(&file.path), staged) {
+                        Ok(shown) => {
+                            text.push_str(&format!("{heading}:\n{}", shown.text));
+                            if shown.truncated {
+                                text.push_str("(cut short)\n");
+                            }
+                        }
+                        Err(why) => text.push_str(&format!("{heading}: {why}\n")),
+                    }
+                }
+                let text: String = text
+                    .lines()
+                    .map(|line| format!("{}\n", helix_toolbox_core::printable(line)))
+                    .collect();
+                self.popup = Some(Popup::Text(TextPopup::new(
+                    helix_toolbox_core::printable(&file.path),
+                    text,
+                    false,
+                )));
+            }
+            RepoRow::Branch(index) => {
+                if let Some(branch) = found.branches.get(index).cloned()
+                    && Some(&branch) != found.summary.branch.as_ref()
+                {
+                    self.plan_repo_change(Change::SwitchBranch(branch));
+                }
+            }
+            RepoRow::Stash(index) => {
+                if let Some(stash) = found.stashes.get(index) {
+                    let id = stash.id.clone();
+                    self.plan_repo_change(Change::ApplyStash(id));
+                }
+            }
+            RepoRow::Task(index) => {
+                if let Some(task) = tasks.get(index) {
+                    match workspaces::plan_task(&found.summary.path, task) {
+                        Ok(planned) => self.confirm_plan(Ok(planned)),
+                        Err(why) => {
+                            self.popup = Some(Popup::Text(TextPopup::new("Cannot plan", why, true)))
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Review a change to the open repository.
+    fn plan_repo_change(&mut self, change: Change) {
+        let Some((found, _)) = &self.repo_open else {
+            return;
+        };
+        match repos::plan(&repos::Here, found, &change) {
+            Ok(planned) => self.confirm_plan(Ok(planned)),
+            Err(why) => self.popup = Some(Popup::Text(TextPopup::new("Cannot plan", why, true))),
+        }
+    }
+
+    /// Space: stage the file's changes, or unstage it when all are staged.
+    fn stage_selected(&mut self) {
+        let (Some(RepoRow::File(index)), Some((found, _))) =
+            (self.selected_repo_row(), &self.repo_open)
+        else {
+            return;
+        };
+        let Some(file) = found.files.get(index) else {
+            return;
+        };
+        let paths = vec![file.path.clone()];
+        let change = if file.has_unstaged() || file.conflict {
+            Change::Stage(paths)
+        } else {
+            Change::Unstage(paths)
+        };
+        self.plan_repo_change(change);
+    }
+
+    /// P: push to the upstream, or publish the branch to origin (or the
+    /// only remote) when it has none.
+    fn push_repo(&mut self) {
+        let Some((found, _)) = &self.repo_open else {
+            return;
+        };
+        let change = if found.push_to.is_some() {
+            Change::Push
+        } else {
+            match found
+                .remotes
+                .iter()
+                .find(|remote| *remote == "origin")
+                .or(found.remotes.first())
+            {
+                Some(remote) => Change::Publish(remote.clone()),
+                None => Change::Push,
+            }
+        };
+        self.plan_repo_change(change);
+    }
+
+    fn toggle_repo_favorite(&mut self) {
+        let path = match (&self.repo_open, self.selected_repo_row(), &self.repos_found) {
+            (Some((found, _)), ..) => found.summary.path.clone(),
+            (None, Some(RepoRow::Repository(index)), Some((_, summaries))) => {
+                match summaries.get(index) {
+                    Some(summary) => summary.path.clone(),
+                    None => return,
+                }
+            }
+            _ => return,
+        };
+        let Some(file) = self.workspaces_path() else {
+            return;
+        };
+        let mut kept = self.kept_workspaces();
+        let favorite = !kept.favorite(&path);
+        kept.set_favorite(&path, favorite);
+        if let Err(why) = workspaces::save(&file, &kept) {
+            self.popup = Some(Popup::Text(TextPopup::new("It did not work", why, true)));
+            return;
+        }
+        self.reload_repos();
+    }
+
+    /// Keep a command as a task of the open repository.
+    fn add_repo_task(&mut self, text: &str) -> Result<String, String> {
+        let Some((found, _)) = &self.repo_open else {
+            return Err("No repository is open.".to_string());
+        };
+        let command = text.trim().to_string();
+        let mut id: String = command
+            .to_lowercase()
+            .chars()
+            .map(|character| {
+                if character.is_ascii_alphanumeric() {
+                    character
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        while id.contains("--") {
+            id = id.replace("--", "-");
+        }
+        let id: String = id.trim_matches('-').chars().take(40).collect();
+        let path = found.summary.path.clone();
+        let file = self
+            .workspaces_path()
+            .ok_or("There is no configuration folder to keep it in.")?;
+        let mut kept = self.kept_workspaces();
+        kept.add_task(
+            &path,
+            Task {
+                id: if id.is_empty() {
+                    "task".to_string()
+                } else {
+                    id
+                },
+                name: command.chars().take(80).collect(),
+                command: command.clone(),
+                shell: workspaces::Shell::Direct,
+                detected: false,
+            },
+        )?;
+        workspaces::save(&file, &kept)?;
+        self.open_repo(path);
+        Ok(format!(
+            "{command} is kept as a task in {}. Enter on it runs it, after you review it.",
+            file.display()
+        ))
+    }
+
+    /// x: remove the selected task, when it is one of the user's.
+    fn remove_repo_task(&mut self) {
+        let (Some(RepoRow::Task(index)), Some((found, tasks))) =
+            (self.selected_repo_row(), &self.repo_open)
+        else {
+            return;
+        };
+        let Some(task) = tasks.get(index) else {
+            return;
+        };
+        if task.detected {
+            self.popup = Some(Popup::Text(TextPopup::new(
+                "Not yours to remove",
+                "The repository's manifest names this task; only tasks you added are removed.",
+                true,
+            )));
+            return;
+        }
+        let (path, id) = (found.summary.path.clone(), task.id.clone());
+        let Some(file) = self.workspaces_path() else {
+            return;
+        };
+        let mut kept = self.kept_workspaces();
+        let removed = kept
+            .remove_task(&path, &id)
+            .and_then(|_| workspaces::save(&file, &kept));
+        if let Err(why) = removed {
+            self.popup = Some(Popup::Text(TextPopup::new("It did not work", why, true)));
+            return;
+        }
+        self.open_repo(path);
+    }
+
+    fn repo_hints(&self, list: &mut Vec<Hint>) {
+        list.push(Hint::new(&["↑↓"], "Navigate"));
+        let Some((found, _)) = &self.repo_open else {
+            list.push(Hint::new(&["Enter"], "Open"));
+            list.push(Hint::new(&["f"], "Favorite"));
+            list.push(Hint::new(&["r"], "Read again"));
+            return;
+        };
+        match self.selected_repo_row() {
+            Some(RepoRow::File(_)) => {
+                list.push(Hint::new(&["Enter"], "Diff"));
+                list.push(Hint::new(&["Space"], "Stage"));
+            }
+            Some(RepoRow::Branch(_)) => list.push(Hint::new(&["Enter"], "Switch")),
+            Some(RepoRow::Stash(_)) => list.push(Hint::new(&["Enter"], "Apply")),
+            Some(RepoRow::Task(_)) => {
+                list.push(Hint::new(&["Enter"], "Run"));
+                list.push(Hint::new(&["x"], "Remove"));
+            }
+            _ => {}
+        }
+        if found.staged() > 0 {
+            list.push(Hint::new(&["c"], "Commit"));
+        }
+        list.push(Hint::new(&["b"], "Branch"));
+        if !found.clean() {
+            list.push(Hint::new(&["s"], "Stash"));
+        }
+        if !found.remotes.is_empty() {
+            list.push(Hint::new(&["F", "p", "P"], "Fetch, pull, push"));
+        }
+        list.push(Hint::new(&["n"], "Task"));
+        list.push(Hint::new(&["h"], "Back"));
+    }
+
+    fn build_repo_rows(&mut self) {
+        let mut rows: Vec<RepoRow> = Vec::new();
+        if let Some((found, tasks)) = &self.repo_open {
+            let summary = &found.summary;
+            rows.push(RepoRow::Heading(format!(
+                "{} on {}: {}",
+                summary.name,
+                summary.branch.as_deref().unwrap_or("a detached HEAD"),
+                crate::repos::sync_words(summary)
+            )));
+            rows.push(RepoRow::Text(summary.path.display().to_string()));
+            if let Some(origin) = &summary.origin {
+                rows.push(RepoRow::Text(format!("origin {origin}")));
+            }
+            if let Some(busy) = &found.busy {
+                rows.push(RepoRow::Text(format!(
+                    "In the middle of {busy}: finish it with git."
+                )));
+            }
+            if found.files.is_empty() {
+                rows.push(RepoRow::Heading("No changes".into()));
+            } else {
+                rows.push(RepoRow::Heading(format!(
+                    "Changes ({}, {} staged)",
+                    found.files.len(),
+                    found.staged()
+                )));
+                rows.extend((0..found.files.len()).map(RepoRow::File));
+            }
+            if !found.branches.is_empty() {
+                rows.push(RepoRow::Heading("Branches".into()));
+                rows.extend((0..found.branches.len()).map(RepoRow::Branch));
+            }
+            if !found.stashes.is_empty() {
+                rows.push(RepoRow::Heading("Stashes".into()));
+                rows.extend((0..found.stashes.len()).map(RepoRow::Stash));
+            }
+            rows.push(RepoRow::Heading("Tasks".into()));
+            if tasks.is_empty() {
+                rows.push(RepoRow::Text(
+                    "None found in its manifests; n keeps a command of yours.".into(),
+                ));
+            }
+            rows.extend((0..tasks.len()).map(RepoRow::Task));
+            if !found.log.is_empty() {
+                rows.push(RepoRow::Heading("Recent commits".into()));
+                rows.extend((0..found.log.len()).map(RepoRow::Commit));
+            }
+        } else if self.opening_repo.is_some() {
+            rows.push(RepoRow::Heading("Reading the repository…".into()));
+        } else {
+            match &self.repos_found {
+                None => rows.push(RepoRow::Heading("Looking for repositories…".into())),
+                Some((places, summaries)) => {
+                    let roots = if places.roots.is_empty() {
+                        "no folders".to_string()
+                    } else {
+                        places
+                            .roots
+                            .iter()
+                            .map(|root| root.display().to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    };
+                    if summaries.is_empty() {
+                        rows.push(RepoRow::Heading("No repositories found".into()));
+                    } else {
+                        rows.push(RepoRow::Heading(format!(
+                            "{} repositories",
+                            summaries.len()
+                        )));
+                        rows.extend((0..summaries.len()).map(RepoRow::Repository));
+                    }
+                    rows.push(RepoRow::Text(format!(
+                        "Under {roots}, {} folders deep (from the {}); [repositories] roots in settings.toml changes it.",
+                        places.depth, places.origin
+                    )));
+                }
+            }
+            if self.reading_repos.is_some() && self.repos_found.is_some() {
+                rows.push(RepoRow::Text("Reading them again…".into()));
+            }
+        }
+        self.repo_rows = rows;
+        self.clamp_main();
+    }
+
+    fn draw_repos(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Repositories",
+            "The Git repositories under your project folders. Reading changes nothing; every change is reviewed first.",
+        );
+        self.fill(frame, inner);
+        let focused = self.focus == Focus::Main;
+        let printable = helix_toolbox_core::printable;
+        let muted = Style::default().fg(self.theme.muted());
+        let kept = self.kept_workspaces();
+        let mut items: Vec<Line> = Vec::new();
+        for row in &self.repo_rows {
+            items.push(match row {
+                RepoRow::Heading(text) => Line::styled(
+                    printable(text),
+                    Style::default().fg(self.theme.group()).bold(),
+                ),
+                RepoRow::Text(text) => Line::styled(format!("  {}", printable(text)), muted),
+                RepoRow::Repository(index) => {
+                    let Some(summary) = self
+                        .repos_found
+                        .as_ref()
+                        .and_then(|(_, summaries)| summaries.get(*index))
+                    else {
+                        continue;
+                    };
+                    let changes = match (&summary.problem, summary.changed) {
+                        (Some(problem), _) => problem.clone(),
+                        (None, 0) => "clean".to_string(),
+                        (None, count) => format!("{count} changed"),
+                    };
+                    let color = if summary.problem.is_some() {
+                        self.theme.failure()
+                    } else if summary.changed > 0 {
+                        self.theme.warning()
+                    } else {
+                        self.theme.success()
+                    };
+                    Line::from(vec![
+                        Span::styled(
+                            format!(
+                                "{}{:<26}",
+                                if kept.favorite(&summary.path) {
+                                    "★ "
+                                } else {
+                                    "  "
+                                },
+                                printable(&summary.name)
+                            ),
+                            Style::default().fg(self.theme.entry()),
+                        ),
+                        Span::styled(
+                            format!(
+                                "{:<20}",
+                                printable(summary.branch.as_deref().unwrap_or("(detached)"))
+                            ),
+                            muted,
+                        ),
+                        Span::styled(format!("{changes:<14}"), Style::default().fg(color)),
+                        Span::styled(format!("{:<18}", crate::repos::sync_words(summary)), muted),
+                        Span::styled(
+                            printable(summary.last.as_deref().unwrap_or_default()),
+                            muted,
+                        ),
+                    ])
+                }
+                RepoRow::File(index) => {
+                    let Some(file) = self
+                        .repo_open
+                        .as_ref()
+                        .and_then(|(found, _)| found.files.get(*index))
+                    else {
+                        continue;
+                    };
+                    let color = if file.conflict {
+                        self.theme.failure()
+                    } else if file.is_staged() && !file.has_unstaged() {
+                        self.theme.success()
+                    } else {
+                        self.theme.warning()
+                    };
+                    Line::from(vec![
+                        Span::styled(
+                            format!(
+                                "  {} {:<13}",
+                                if file.is_staged() { "●" } else { "○" },
+                                file.state()
+                            ),
+                            Style::default().fg(color),
+                        ),
+                        Span::styled(
+                            format!(
+                                "{}{}",
+                                printable(&file.path),
+                                file.original
+                                    .as_deref()
+                                    .map(|original| format!(" (was {})", printable(original)))
+                                    .unwrap_or_default()
+                            ),
+                            Style::default().fg(self.theme.entry()),
+                        ),
+                    ])
+                }
+                RepoRow::Branch(index) => {
+                    let Some((found, _)) = &self.repo_open else {
+                        continue;
+                    };
+                    let branch = &found.branches[*index];
+                    let current = found.summary.branch.as_ref() == Some(branch);
+                    Line::styled(
+                        format!(
+                            "  {} {}",
+                            if current { "●" } else { " " },
+                            printable(branch)
+                        ),
+                        Style::default().fg(if current {
+                            self.theme.success()
+                        } else {
+                            self.theme.entry()
+                        }),
+                    )
+                }
+                RepoRow::Stash(index) => {
+                    let Some((found, _)) = &self.repo_open else {
+                        continue;
+                    };
+                    let stash = &found.stashes[*index];
+                    Line::from(vec![
+                        Span::styled(
+                            format!("  {:<12}", stash.name),
+                            Style::default().fg(self.theme.entry()),
+                        ),
+                        Span::styled(printable(&stash.subject), muted),
+                    ])
+                }
+                RepoRow::Commit(index) => {
+                    let Some((found, _)) = &self.repo_open else {
+                        continue;
+                    };
+                    let commit = &found.log[*index];
+                    Line::from(vec![
+                        Span::styled(format!("  {:<10}", commit.hash), muted),
+                        Span::styled(
+                            format!(
+                                "{:<12}",
+                                commit
+                                    .at
+                                    .map(helix_toolbox_engine::date)
+                                    .unwrap_or_default()
+                            ),
+                            muted,
+                        ),
+                        Span::styled(
+                            printable(&commit.subject),
+                            Style::default().fg(self.theme.entry()),
+                        ),
+                    ])
+                }
+                RepoRow::Task(index) => {
+                    let Some((_, tasks)) = &self.repo_open else {
+                        continue;
+                    };
+                    let task = &tasks[*index];
+                    Line::from(vec![
+                        Span::styled(
+                            format!("  {:<28}", printable(&task.name)),
+                            Style::default().fg(self.theme.entry()),
+                        ),
+                        Span::styled(
+                            format!(
+                                "{}{}",
+                                if task.detected { "" } else { "yours: " },
+                                printable(&task.command)
+                            ),
+                            muted,
+                        ),
+                    ])
+                }
+            });
+        }
+        let list = List::new(items)
+            .block(self.card("Repositories"))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused))
+            .scroll_padding(1);
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
+    }
+
+    // ----- Configs -----
+
+    /// Where a configuration is: in the tests' folders, else this machine's.
+    fn locate_config(&self, kind: configs::Kind) -> Result<configs::Located, String> {
+        match &self.config_places {
+            Some((home, config)) => configs::locate(
+                kind,
+                &configs::Facts {
+                    home,
+                    config_home: config,
+                    settings: None,
+                    command_center: None,
+                    store: Path::new("/nix/store"),
+                },
+            ),
+            None if self.examine_here => configs::here(kind),
+            None => Err("configurations are not read here".to_string()),
+        }
+    }
+
+    /// The private folder for copies: the tests' own, else beside the
+    /// history; never a shared one.
+    fn copies_folder(&self) -> Option<PathBuf> {
+        self.config_folder.clone().or_else(configs::private_folder)
+    }
+
+    fn no_copies_folder(&mut self) {
+        self.cannot_config(
+            "There is no state folder for Helix Toolbox's private copies; nothing is saved.".into(),
+        );
+    }
+
+    /// Ghostty's own check on this machine; none in tests.
+    fn config_check(&self) -> fn(&Path) -> Option<(bool, String)> {
+        if self.examine_here {
+            configs::ghostty_here
+        } else {
+            |_| None
+        }
+    }
+
+    /// Read both configurations, their checks and their backups.
+    fn read_configs(&mut self) {
+        let check = self.config_check();
+        self.config_parts = configs::Kind::ALL
+            .into_iter()
+            .map(|kind| {
+                let found = self.locate_config(kind);
+                let (loaded, checked, history) = match &found {
+                    Ok(located) => {
+                        let loaded = configs::read(located);
+                        let checked = loaded.as_ref().ok().map(|loaded| {
+                            configs::validate(
+                                kind,
+                                &loaded.content,
+                                &check,
+                                self.copies_folder().as_deref(),
+                            )
+                        });
+                        (Some(loaded), checked, configs::history(located))
+                    }
+                    Err(_) => (None, None, Vec::new()),
+                };
+                ConfigPart {
+                    kind,
+                    found,
+                    loaded,
+                    checked,
+                    history,
+                }
+            })
+            .collect();
+        self.build_config_rows();
+    }
+
+    fn config_part(&self, kind: configs::Kind) -> Option<&ConfigPart> {
+        self.config_parts.iter().find(|part| part.kind == kind)
+    }
+
+    /// The configuration ready to change: where it is and its text.
+    fn config_ready(
+        &self,
+        kind: configs::Kind,
+    ) -> Result<(configs::Located, configs::Loaded), String> {
+        let part = self.config_part(kind).ok_or("it has not been read")?;
+        let located = part.found.clone()?;
+        let loaded = part.loaded.clone().ok_or("it has not been read")??;
+        Ok((located, loaded))
+    }
+
+    fn selected_config_row(&self) -> Option<ConfigRow> {
+        self.config_rows.get(self.main_state.selected()?).cloned()
+    }
+
+    /// The configuration the selected row belongs to.
+    fn selected_config_kind(&self) -> Option<configs::Kind> {
+        let at = self.main_state.selected()?;
+        self.config_rows[..=at.min(self.config_rows.len().saturating_sub(1))]
+            .iter()
+            .rev()
+            .find_map(|row| match row {
+                ConfigRow::Field(kind, _) | ConfigRow::Edit(kind) | ConfigRow::Backup(kind, _) => {
+                    Some(*kind)
+                }
+                ConfigRow::Heading(text) => configs::Kind::ALL
+                    .into_iter()
+                    .find(|kind| text.starts_with(kind.label())),
+                ConfigRow::Text(_) => None,
+            })
+    }
+
+    fn config_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+                match self.selected_config_row() {
+                    Some(ConfigRow::Field(kind, index)) => self.ask_config_field(kind, index),
+                    Some(ConfigRow::Edit(kind)) => self.start_edit(kind),
+                    Some(ConfigRow::Backup(kind, index)) => self.restore_config(kind, index),
+                    _ => self.describe_config(),
+                }
+            }
+            KeyCode::Char('E') => {
+                if let Some(kind) = self.selected_config_kind() {
+                    self.start_edit(kind);
+                }
+            }
+            KeyCode::Char('d') => self.describe_config(),
+            KeyCode::Char('v') | KeyCode::Char('r') => self.read_configs(),
+            KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+            _ => {}
+        }
+    }
+
+    fn config_hints(&self, list: &mut Vec<Hint>) {
+        list.push(Hint::new(&["↑↓"], "Navigate"));
+        match self.selected_config_row() {
+            Some(ConfigRow::Field(..)) => list.push(Hint::new(&["Enter"], "Change")),
+            Some(ConfigRow::Backup(..)) => list.push(Hint::new(&["Enter"], "Put back")),
+            _ => {}
+        }
+        if self.selected_config_kind().is_some() {
+            list.push(Hint::new(&["E"], "Edit in your editor"));
+        }
+        list.push(Hint::new(&["d"], "Details"));
+        list.push(Hint::new(&["r"], "Read again"));
+    }
+
+    fn cannot_config(&mut self, why: String) {
+        self.popup = Some(Popup::Text(TextPopup::new("Cannot change it", why, true)));
+    }
+
+    fn ask_config_field(&mut self, kind: configs::Kind, index: usize) {
+        let Some(field) = kind.fields().get(index) else {
+            return;
+        };
+        let (_, loaded) = match self.config_ready(kind) {
+            Ok(ready) => ready,
+            Err(why) => return self.cannot_config(why),
+        };
+        let now = configs::values(kind, &loaded.content)
+            .into_iter()
+            .find(|(key, _)| *key == field.key)
+            .and_then(|(_, value)| value)
+            .unwrap_or_default();
+        self.popup = Some(Popup::Ask(
+            InputPopup::new(
+                format!("{}: {}", kind.label(), field.label),
+                format!("{} ({}):", field.key, field.hint),
+            )
+            .with_value(now)
+            .answering("Review"),
+            Asked::ConfigField(kind, field.key),
+        ));
+    }
+
+    /// Change a field and review saving it.
+    fn set_config(&mut self, kind: configs::Kind, key: &str, value: &str) {
+        let (located, loaded) = match self.config_ready(kind) {
+            Ok(ready) => ready,
+            Err(why) => return self.cannot_config(why),
+        };
+        match configs::set(kind, &loaded.content, key, value) {
+            Ok(after) => self.save_config(&located, &loaded, &after),
+            Err(why) => self.cannot_config(why),
+        }
+    }
+
+    /// Check new text and review the plan that saves it.
+    fn save_config(&mut self, located: &configs::Located, loaded: &configs::Loaded, after: &str) {
+        let Some(folder) = self.copies_folder() else {
+            return self.no_copies_folder();
+        };
+        let checked = configs::validate(located.kind, after, &self.config_check(), Some(&folder));
+        if let Checked::Invalid(why) = &checked {
+            return self.cannot_config(format!("Not saved: {why}."));
+        }
+        if loaded.content == after {
+            self.popup = Some(Popup::Text(TextPopup::new(
+                "Nothing changed",
+                "The file is as it was; nothing is saved.",
+                true,
+            )));
+            return;
+        }
+        match configs::plan_save(located, &loaded.revision, after, &checked, &folder) {
+            Ok(planned) => self.confirm_plan(Ok(planned)),
+            Err(why) => self.cannot_config(why),
+        }
+    }
+
+    /// A private copy of the file for the user's editor, opened when the
+    /// key has been handled.
+    fn start_edit(&mut self, kind: configs::Kind) {
+        let (located, loaded) = match self.config_ready(kind) {
+            Ok(ready) => ready,
+            Err(why) => return self.cannot_config(why),
+        };
+        let Some(folder) = self.copies_folder() else {
+            return self.no_copies_folder();
+        };
+        let copy = match configs::private_copy(kind, "edit", &loaded.content, &folder) {
+            Ok(copy) => copy,
+            Err(why) => return self.cannot_config(why),
+        };
+        let editor = ["VISUAL", "EDITOR"]
+            .iter()
+            .filter_map(|name| std::env::var(name).ok())
+            .find(|editor| !editor.trim().is_empty())
+            .unwrap_or_else(|| "nano".to_string());
+        self.edit_request = Some(EditRequest {
+            copy,
+            editor,
+            located,
+            loaded,
+        });
+    }
+
+    /// The copy to open in the user's editor, once.
+    pub fn take_edit(&mut self) -> Option<EditRequest> {
+        self.edit_request.take()
+    }
+
+    /// The editor closed: check the copy, and review saving it.
+    pub fn edited(&mut self, request: EditRequest, closed: Result<(), String>) {
+        let after = std::fs::read_to_string(&request.copy);
+        let _ = std::fs::remove_file(&request.copy);
+        if let Err(why) = closed {
+            return self.cannot_config(format!("{why}; nothing is saved."));
+        }
+        match after {
+            Ok(after) => self.save_config(&request.located, &request.loaded, &after),
+            Err(error) => self.cannot_config(format!(
+                "The edited copy cannot be read: {error}; nothing is saved."
+            )),
+        }
+    }
+
+    /// Put a backup back, after review: the file there now is kept too.
+    fn restore_config(&mut self, kind: configs::Kind, index: usize) {
+        let Some(backup) = self
+            .config_part(kind)
+            .and_then(|part| part.history.get(index))
+            .cloned()
+        else {
+            return;
+        };
+        self.confirm_plan(Ok(backups::plan_restore(&backup)));
+    }
+
+    fn describe_config(&mut self) {
+        let Some(kind) = self.selected_config_kind() else {
+            return;
+        };
+        let Some(part) = self.config_part(kind) else {
+            return;
+        };
+        let text = match (&part.found, &part.loaded) {
+            (Err(why), _) => format!("{why}."),
+            (Ok(located), loaded) => {
+                let mut text = format!(
+                    "{}, named by {}.\n\n{} reads {}{}.",
+                    helix_toolbox_core::printable(&located.path.display().to_string()),
+                    located.origin.label(),
+                    kind.label(),
+                    helix_toolbox_core::printable(&located.live.display().to_string()),
+                    if located.managed {
+                        ", a Home Manager link into the Nix store"
+                    } else {
+                        ""
+                    }
+                );
+                if let Some(Ok(loaded)) = loaded {
+                    text.push_str(&format!(
+                        "\n\n{} bytes; SHA-256 {}.",
+                        loaded.content.len(),
+                        loaded.revision
+                    ));
+                }
+                if let Some(flake) = &located.flake {
+                    text.push_str(&format!(
+                        "\n\nIt is part of the Home Manager flake in {}: run Home Manager after a change to make it live.",
+                        helix_toolbox_core::printable(&flake.display().to_string())
+                    ));
+                }
+                text.push_str("\n\nA save keeps the file there now as a backup beside it, which Backups and helix-toolbox restore can put back.");
+                text
+            }
+        };
+        self.popup = Some(Popup::Text(TextPopup::new(
+            format!("{}'s configuration", kind.label()),
+            text,
+            true,
+        )));
+    }
+
+    fn build_config_rows(&mut self) {
+        let mut rows = Vec::new();
+        for part in &self.config_parts {
+            let kind = part.kind;
+            let located = match &part.found {
+                Ok(located) => located,
+                Err(why) => {
+                    rows.push(ConfigRow::Heading(kind.label().to_string()));
+                    rows.push(ConfigRow::Text(format!("{why}.")));
+                    continue;
+                }
+            };
+            rows.push(ConfigRow::Heading(format!(
+                "{}  {}",
+                kind.label(),
+                located.path.display()
+            )));
+            let mut about = format!("named by {}", located.origin.label());
+            if located.managed {
+                about.push_str("; the live file is a Home Manager link");
+            }
+            if located.flake.is_some() {
+                about.push_str("; run Home Manager after a change");
+            }
+            rows.push(ConfigRow::Text(about));
+            match &part.loaded {
+                Some(Err(why)) => {
+                    rows.push(ConfigRow::Text(format!("{why}.")));
+                    continue;
+                }
+                Some(Ok(loaded)) if !loaded.exists => {
+                    rows.push(ConfigRow::Text(
+                        "not there yet; a change makes it".to_string(),
+                    ));
+                }
+                _ => {}
+            }
+            if let Some(checked) = &part.checked {
+                rows.push(ConfigRow::Text(match checked {
+                    Checked::Valid => "Checks: valid".to_string(),
+                    Checked::Unchecked(why) | Checked::Invalid(why) => {
+                        format!("Checks: {}: {why}", checked.label())
+                    }
+                }));
+            }
+            rows.extend((0..kind.fields().len()).map(|index| ConfigRow::Field(kind, index)));
+            rows.push(ConfigRow::Edit(kind));
+            if !part.history.is_empty() {
+                rows.push(ConfigRow::Text(format!(
+                    "backups kept ({}), newest first:",
+                    part.history.len()
+                )));
+                rows.extend((0..part.history.len()).map(|index| ConfigRow::Backup(kind, index)));
+            }
+        }
+        self.config_rows = rows;
+        self.clamp_main();
+    }
+
+    fn draw_configs(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Configs",
+            "Ghostty's and Fastfetch's configuration. Each change is checked and shown before it is saved, and the file there now is kept as a backup.",
+        );
+        self.fill(frame, inner);
+        let focused = self.focus == Focus::Main;
+        let muted = Style::default().fg(self.theme.muted());
+        let mut items: Vec<Line> = Vec::new();
+        for row in &self.config_rows {
+            items.push(match row {
+                ConfigRow::Heading(text) => Line::styled(
+                    helix_toolbox_core::printable(text),
+                    Style::default().fg(self.theme.group()).bold(),
+                ),
+                ConfigRow::Text(text) => {
+                    let color = if text.starts_with("Checks: Invalid") {
+                        self.theme.failure()
+                    } else {
+                        self.theme.muted()
+                    };
+                    Line::styled(
+                        format!("  {}", helix_toolbox_core::printable(text)),
+                        Style::default().fg(color),
+                    )
+                }
+                ConfigRow::Field(kind, index) => {
+                    let field = &kind.fields()[*index];
+                    let value = self
+                        .config_part(*kind)
+                        .and_then(|part| part.loaded.as_ref()?.as_ref().ok())
+                        .and_then(|loaded| {
+                            configs::values(*kind, &loaded.content)
+                                .into_iter()
+                                .find(|(key, _)| *key == field.key)?
+                                .1
+                        });
+                    Line::from(vec![
+                        Span::styled(
+                            format!("  {:<26}", field.label),
+                            Style::default().fg(self.theme.entry()),
+                        ),
+                        Span::styled(
+                            value
+                                .as_deref()
+                                .map(helix_toolbox_core::printable)
+                                .unwrap_or_else(|| "(not set)".to_string()),
+                            muted,
+                        ),
+                    ])
+                }
+                ConfigRow::Edit(_) => Line::styled(
+                    "  Edit the whole file in your editor…".to_string(),
+                    Style::default().fg(self.theme.entry()),
+                ),
+                ConfigRow::Backup(kind, index) => {
+                    let backup = self
+                        .config_part(*kind)
+                        .and_then(|part| part.history.get(*index));
+                    Line::from(vec![
+                        Span::styled(
+                            format!(
+                                "    {}  ",
+                                backup
+                                    .and_then(|backup| backup.taken.clone())
+                                    .unwrap_or_default()
+                            ),
+                            Style::default().fg(self.theme.entry()),
+                        ),
+                        Span::styled(
+                            backup
+                                .map(|backup| {
+                                    helix_toolbox_core::printable(
+                                        &backup.backup.display().to_string(),
+                                    )
+                                })
+                                .unwrap_or_default(),
+                            muted,
+                        ),
+                    ])
+                }
+            });
+        }
+        let list = List::new(items)
+            .block(self.card("Configs"))
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused))
             .scroll_padding(1);
@@ -8321,6 +10904,26 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
         section: "MORE TOOLS",
     });
     menu.push(MenuItem {
+        label: "Restic".into(),
+        screen: Screen::Restic,
+        section: "MORE TOOLS",
+    });
+    menu.push(MenuItem {
+        label: "Repositories".into(),
+        screen: Screen::Repositories,
+        section: "MORE TOOLS",
+    });
+    menu.push(MenuItem {
+        label: "Home Manager".into(),
+        screen: Screen::HomeManager,
+        section: "MORE TOOLS",
+    });
+    menu.push(MenuItem {
+        label: "Configs".into(),
+        screen: Screen::Configs,
+        section: "MORE TOOLS",
+    });
+    menu.push(MenuItem {
         label: "Offline bundles".into(),
         screen: Screen::Bundles,
         section: "MORE TOOLS",
@@ -8684,7 +11287,7 @@ mod tests {
         app.reports_dir = Some(directory.path().to_path_buf());
         app.open_screen(Screen::Settings);
         app.focus = Focus::Main;
-        app.main_state.select(Some(10));
+        app.main_state.select(Some(11));
         assert!(screen(&mut app, 120, 40).contains("Bug report, to paste into an issue"));
         press(&mut app, KeyCode::Enter);
         assert!(screen(&mut app, 120, 40).contains("Gathering the report"));
@@ -9723,6 +12326,293 @@ mod tests {
         path
     }
 
+    /// restic answering from a fixed repository, for the Restic screen's
+    /// tests.
+    struct FakeRestic;
+
+    impl Restic for FakeRestic {
+        fn run(&self, args: &[String]) -> Result<String, String> {
+            let line = args.join(" ");
+            if line.contains(" ls ") {
+                Ok([
+                    r#"{"struct_type":"snapshot","id":"b6f77f6d00"}"#,
+                    r#"{"name":"me","type":"dir","path":"/home/me","struct_type":"node"}"#,
+                    r#"{"name":"Documents","type":"dir","path":"/home/me/Documents","struct_type":"node"}"#,
+                    r#"{"name":"notes.txt","type":"file","path":"/home/me/notes.txt","size":6,"struct_type":"node"}"#,
+                ]
+                .join("\n"))
+            } else if line.contains(" snapshots ") {
+                Ok(r#"[{"id":"b6f77f6d00","short_id":"b6f77f6d","time":"2026-10-21T22:00:04+02:00","hostname":"t15p","paths":["/home/me"]},{"id":"aa0d9cfe00","short_id":"aa0d9cfe","time":"2026-10-20T22:00:04+02:00","hostname":"t15p","paths":["/home/me"]}]"#.to_string())
+            } else if line.contains(" find ") {
+                Ok(r#"[{"matches":[{"type":"file","path":"/home/me/notes.txt","size":6}],"snapshot":"b6f77f6d00"},{"matches":[{"type":"file","path":"/home/me/notes.txt","size":5}],"snapshot":"aa0d9cfe00"}]"#.to_string())
+            } else {
+                Err(format!("not answered: {line}"))
+            }
+        }
+    }
+
+    fn restic_app(baselines: Vec<restic::Baseline>) -> App {
+        let mut app = app();
+        app.restic = std::sync::Arc::new(FakeRestic);
+        let config = restic::Config {
+            repository: "/run/media/me/Backup/restic".into(),
+            origin: restic::Origin::Settings,
+            password: restic::Password::File("/home/me/.restic-password".into()),
+            paths: vec!["/home/me".into()],
+            excludes: Vec::new(),
+        };
+        app.restic_reading = Some(ResticReading {
+            snapshots: restic::snapshots(&FakeRestic, &config),
+            found: restic::Found::Ready(config),
+            restores: true,
+            timer: None,
+            baselines,
+        });
+        app
+    }
+
+    #[test]
+    fn the_restic_screen_lists_snapshots_browses_them_and_finds_a_files_history() {
+        let mut app = app();
+        app.restic_reading = Some(ResticReading {
+            found: restic::Found::Missing,
+            snapshots: Ok(Vec::new()),
+            restores: false,
+            timer: None,
+            baselines: Vec::new(),
+        });
+        app.open_screen(Screen::Restic);
+        let shown = screen(&mut app, 140, 40);
+        assert!(shown.contains("No restic repository is set up"), "{shown}");
+        let mut app = restic_app(Vec::new());
+        app.open_screen(Screen::Restic);
+        app.focus = Focus::Main;
+        let shown = screen(&mut app, 140, 40);
+        for text in [
+            "/run/media/me/Backup/restic (from Helix Toolbox's settings)",
+            "Snapshots (2)",
+            "b6f77f6d  2026-10-21 22:00",
+            "Recovery tests (0 baselines)",
+        ] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+        let first = app
+            .restic_rows
+            .iter()
+            .position(|row| matches!(row, ResticRow::Snapshot(0)))
+            .unwrap();
+        app.main_state.select(Some(first));
+        press(&mut app, KeyCode::Enter);
+        let shown = screen(&mut app, 140, 40);
+        for text in ["In b6f77f6d at /home/me", "Documents/", "notes.txt", ".."] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+        press(&mut app, KeyCode::Char('s'));
+        assert!(matches!(
+            app.popup,
+            Some(Popup::Ask(_, Asked::ResticHistory))
+        ));
+        type_text(&mut app, "notes.txt");
+        press(&mut app, KeyCode::Enter);
+        let shown = screen(&mut app, 140, 40);
+        for text in [
+            "History of notes.txt",
+            "/home/me/notes.txt",
+            "changed",
+            "first",
+        ] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+    }
+
+    #[test]
+    fn the_restic_screen_reviews_restores_backups_and_recovery_tests_before_they_run() {
+        let baseline = restic::Baseline {
+            id: "1792600000000".into(),
+            path: "/home/me/notes.txt".into(),
+            sha256: "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03".into(),
+            recorded: 1_792_600_000,
+        };
+        let mut app = restic_app(vec![baseline]);
+        app.open_screen(Screen::Restic);
+        app.focus = Focus::Main;
+        press(&mut app, KeyCode::Char('b'));
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        assert!(screen(&mut app, 140, 40).contains("'backup' '--exclude-caches'"));
+        press(&mut app, KeyCode::Char('n'));
+        assert!(!matches!(app.popup, Some(Popup::Running(_))));
+        // A restore asks for a new folder, which must not be there yet.
+        let first = app
+            .restic_rows
+            .iter()
+            .position(|row| matches!(row, ResticRow::Snapshot(0)))
+            .unwrap();
+        app.main_state.select(Some(first));
+        press(&mut app, KeyCode::Char('R'));
+        assert!(matches!(
+            app.popup,
+            Some(Popup::Ask(_, Asked::ResticRestore(..)))
+        ));
+        let home = std::env::var("HOME").unwrap();
+        for _ in 0.."~/restored".len() {
+            press(&mut app, KeyCode::Backspace);
+        }
+        type_text(&mut app, &home);
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 140, 40).contains("is there already"));
+        press(&mut app, KeyCode::Esc);
+        // v on a baseline tests a restore of it, after review.
+        let baseline = app
+            .restic_rows
+            .iter()
+            .position(|row| matches!(row, ResticRow::Baseline(0)))
+            .unwrap();
+        app.main_state.select(Some(baseline));
+        press(&mut app, KeyCode::Char('v'));
+        assert!(matches!(
+            app.popup,
+            Some(Popup::Ask(_, Asked::ResticTest(_)))
+        ));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let shown = screen(&mut app, 140, 40);
+        assert!(
+            shown.contains("Test a restore against its baseline"),
+            "{shown}"
+        );
+        press(&mut app, KeyCode::Char('n'));
+        assert!(!matches!(app.popup, Some(Popup::Running(_))));
+    }
+
+    /// An app reading configurations in a home of its own: a Ghostty
+    /// configuration with a backup beside it, and a Fastfetch one that does
+    /// not check.
+    fn configs_app(home: &Path) -> App {
+        let config = home.join(".config");
+        std::fs::create_dir_all(config.join("ghostty")).unwrap();
+        std::fs::create_dir_all(config.join("fastfetch")).unwrap();
+        std::fs::write(config.join("ghostty/config"), "font-size = 11\n").unwrap();
+        std::fs::write(
+            config.join("ghostty/config.helix-toolbox-backup-20261001000000-1"),
+            "font-size = 10\n",
+        )
+        .unwrap();
+        std::fs::write(
+            config.join("fastfetch/config.jsonc"),
+            "{ \"modules\": \"os\" }\n",
+        )
+        .unwrap();
+        let mut app = app();
+        app.config_places = Some((home.to_path_buf(), config));
+        app.config_folder = Some(home.join("copies"));
+        app
+    }
+
+    #[test]
+    fn the_configs_screen_shows_both_files_their_checks_fields_and_backups() {
+        let directory = tempfile::tempdir().unwrap();
+        let home = directory.path().canonicalize().unwrap();
+        let mut app = configs_app(&home);
+        app.open_screen(Screen::Configs);
+        app.focus = Focus::Main;
+        let shown = screen(&mut app, 160, 50);
+        for text in [
+            "Ghostty",
+            "named by the live file",
+            "Checks: Not checked: Ghostty is not installed here",
+            "Font size",
+            "11",
+            "Edit the whole file in your editor",
+            "backups kept (1), newest first:",
+            "2026-10-01 00:00:00",
+            "Fastfetch",
+            "Checks: Invalid: \"modules\" must be a list",
+        ] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+        // d tells where it is and what a save keeps.
+        let field = app
+            .config_rows
+            .iter()
+            .position(|row| matches!(row, ConfigRow::Field(configs::Kind::Ghostty, 1)))
+            .unwrap();
+        app.main_state.select(Some(field));
+        press(&mut app, KeyCode::Char('d'));
+        let told = screen(&mut app, 160, 50);
+        assert!(told.contains("SHA-256"), "{told}");
+        assert!(told.contains("as a backup beside it"), "{told}");
+    }
+
+    #[test]
+    fn the_configs_screen_reviews_a_change_an_edit_and_a_backup_before_anything_is_saved() {
+        let directory = tempfile::tempdir().unwrap();
+        let home = directory.path().canonicalize().unwrap();
+        let file = home.join(".config/ghostty/config");
+        let mut app = configs_app(&home);
+        app.open_screen(Screen::Configs);
+        app.focus = Focus::Main;
+        // Enter on a field asks for its value, then reviews the save.
+        let field = app
+            .config_rows
+            .iter()
+            .position(|row| matches!(row, ConfigRow::Field(configs::Kind::Ghostty, 1)))
+            .unwrap();
+        app.main_state.select(Some(field));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(
+            app.popup,
+            Some(Popup::Ask(
+                _,
+                Asked::ConfigField(configs::Kind::Ghostty, "font-size")
+            ))
+        ));
+        press(&mut app, KeyCode::Backspace);
+        press(&mut app, KeyCode::Backspace);
+        type_text(&mut app, "14");
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let shown = screen(&mut app, 160, 50);
+        assert!(shown.contains("Save Ghostty's configuration"), "{shown}");
+        press(&mut app, KeyCode::Char('n'));
+        assert!(!matches!(app.popup, Some(Popup::Running(_))));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "font-size = 11\n");
+        // E hands a private copy to the editor; what comes back is reviewed.
+        press(&mut app, KeyCode::Char('E'));
+        let request = app.take_edit().expect("a copy for the editor");
+        assert!(request.copy.starts_with(home.join("copies")));
+        std::fs::write(&request.copy, "font-size = 16\n").unwrap();
+        let copy = request.copy.clone();
+        app.edited(request, Ok(()));
+        assert!(!copy.exists(), "the copy is removed");
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        press(&mut app, KeyCode::Char('n'));
+        // An edit of Fastfetch that does not check is refused.
+        let fastfetch = app
+            .config_rows
+            .iter()
+            .position(|row| matches!(row, ConfigRow::Edit(configs::Kind::Fastfetch)))
+            .unwrap();
+        app.main_state.select(Some(fastfetch));
+        press(&mut app, KeyCode::Enter);
+        let request = app.take_edit().unwrap();
+        std::fs::write(&request.copy, "{ \"modules\": [ { } ] }").unwrap();
+        app.edited(request, Ok(()));
+        let shown = screen(&mut app, 160, 50);
+        assert!(shown.contains("Not saved: module 1"), "{shown}");
+        press(&mut app, KeyCode::Esc);
+        // A backup is put back after review.
+        let backup = app
+            .config_rows
+            .iter()
+            .position(|row| matches!(row, ConfigRow::Backup(configs::Kind::Ghostty, 0)))
+            .unwrap();
+        app.main_state.select(Some(backup));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        press(&mut app, KeyCode::Char('n'));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "font-size = 11\n");
+    }
+
     #[test]
     fn the_migration_screen_says_what_a_migration_means_here() {
         let directory = tempfile::tempdir().unwrap();
@@ -9853,6 +12743,147 @@ mod tests {
         let written = migration::read(&target).unwrap();
         assert_eq!(written.packages, ["htop"]);
         assert!(screen(&mut app, 140, 40).contains("Migration exported"));
+    }
+
+    /// A repository of the test's own under `folder/projects`: one commit
+    /// and a new file.
+    fn sample_repository(folder: &Path) -> PathBuf {
+        let repo = folder.join("projects/sample");
+        std::fs::create_dir_all(&repo).unwrap();
+        let git = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_AUTHOR_NAME", "Test")
+                .env("GIT_AUTHOR_EMAIL", "test@example.com")
+                .env("GIT_COMMITTER_NAME", "Test")
+                .env("GIT_COMMITTER_EMAIL", "test@example.com")
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {args:?}");
+        };
+        git(&["init", "-q", "-b", "main"]);
+        std::fs::write(repo.join("one.txt"), "one\n").unwrap();
+        git(&["add", "one.txt"]);
+        git(&["commit", "-q", "-m", "First"]);
+        std::fs::write(repo.join("new.txt"), "new\n").unwrap();
+        repo.canonicalize().unwrap()
+    }
+
+    fn repository_app(folder: &Path) -> App {
+        let mut app = app();
+        app.repo_places = Some(repos::Places {
+            roots: vec![folder.join("projects")],
+            depth: 3,
+            origin: "settings".into(),
+        });
+        app.workspaces_file = Some(folder.join("workspaces.toml"));
+        app
+    }
+
+    fn select_repo_row(app: &mut App, wanted: impl Fn(&RepoRow) -> bool) {
+        let index = app.repo_rows.iter().position(wanted).unwrap();
+        app.main_state.select(Some(index));
+    }
+
+    #[test]
+    fn the_repositories_screen_lists_them_and_opens_one() {
+        let folder = tempfile::tempdir().unwrap();
+        sample_repository(folder.path());
+        let mut app = repository_app(folder.path());
+        app.open_screen(Screen::Repositories);
+        app.focus = Focus::Main;
+        let shown = screen(&mut app, 160, 40);
+        for text in [
+            "1 repositories",
+            "sample",
+            "main",
+            "1 changed",
+            "no upstream",
+            "First",
+        ] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+        select_repo_row(&mut app, |row| matches!(row, RepoRow::Repository(0)));
+        press(&mut app, KeyCode::Enter);
+        let shown = screen(&mut app, 160, 40);
+        for text in [
+            "sample on main: no upstream",
+            "Changes (1, 0 staged)",
+            "new.txt",
+            "Branches",
+            "Tasks",
+            "n keeps a command of yours",
+            "Recent commits",
+        ] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+        // Enter on a file shows its diff.
+        select_repo_row(&mut app, |row| matches!(row, RepoRow::File(0)));
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 160, 40).contains("+new"));
+        press(&mut app, KeyCode::Esc);
+        // f keeps it as a favorite, marked in the list.
+        press(&mut app, KeyCode::Char('f'));
+        let kept = std::fs::read_to_string(folder.path().join("workspaces.toml")).unwrap();
+        assert!(kept.contains("favorite = true"), "{kept}");
+        press(&mut app, KeyCode::Char('h'));
+        assert!(app.repo_open.is_none());
+        assert!(screen(&mut app, 160, 40).contains("★ sample"));
+    }
+
+    #[test]
+    fn changes_to_a_repository_are_reviewed_before_anything_runs() {
+        let folder = tempfile::tempdir().unwrap();
+        let repo = sample_repository(folder.path());
+        let mut app = repository_app(folder.path());
+        app.open_screen(Screen::Repositories);
+        app.focus = Focus::Main;
+        app.open_repo(repo.clone());
+        select_repo_row(&mut app, |row| matches!(row, RepoRow::File(0)));
+        press(&mut app, KeyCode::Char(' '));
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let shown = screen(&mut app, 160, 40);
+        for text in ["Stage 1 file in sample", "add --all -- new.txt"] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+        // Declined: nothing is staged.
+        press(&mut app, KeyCode::Char('n'));
+        assert!(!matches!(app.popup, Some(Popup::Running(_))));
+        let staged = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["diff", "--cached", "--name-only"])
+            .output()
+            .unwrap();
+        assert!(staged.stdout.is_empty());
+        // A commit with nothing staged says why.
+        press(&mut app, KeyCode::Char('c'));
+        assert!(matches!(
+            app.popup,
+            Some(Popup::Ask(_, Asked::CommitMessage))
+        ));
+        app.answered(Asked::CommitMessage, "Second");
+        assert!(screen(&mut app, 160, 40).contains("nothing is staged"));
+        press(&mut app, KeyCode::Esc);
+        // A command of the user's becomes a task, reviewed before it runs.
+        press(&mut app, KeyCode::Char('n'));
+        assert!(matches!(app.popup, Some(Popup::Ask(_, Asked::AddTask))));
+        app.answered(Asked::AddTask, "sh -c 'echo hi'");
+        let kept = std::fs::read_to_string(folder.path().join("workspaces.toml")).unwrap();
+        assert!(kept.contains("id = \"sh-c-echo-hi\""), "{kept}");
+        press(&mut app, KeyCode::Esc);
+        select_repo_row(&mut app, |row| matches!(row, RepoRow::Task(0)));
+        press(&mut app, KeyCode::Enter);
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        assert!(screen(&mut app, 160, 40).contains("sh -c 'echo hi'"));
+        press(&mut app, KeyCode::Char('n'));
+        // x takes the task away again.
+        press(&mut app, KeyCode::Char('x'));
+        let kept = std::fs::read_to_string(folder.path().join("workspaces.toml")).unwrap();
+        assert!(!kept.contains("sh-c-echo-hi"), "{kept}");
     }
 
     #[test]
@@ -10498,5 +13529,122 @@ mod tests {
         assert_eq!(timestamp(0), "1970-01-01 00:00 UTC");
         assert_eq!(timestamp(1_700_000_000), "2023-11-14 22:13 UTC");
         assert_eq!(strip_escapes("a\u{1b}[31mb\u{1b}[0m\r\n"), "ab\n");
+    }
+
+    /// Home Manager as the tests' screens see it: a flake, two generations
+    /// and a configuration file it links.
+    fn home_status() -> home_manager::Status {
+        home_manager::Status {
+            installed: true,
+            version: Some("26.11-pre".into()),
+            config: Some(home_manager::Config {
+                folder: "/home/me/dotfiles/home-manager".into(),
+                flake: true,
+                profile: Some("me".into()),
+                origin: home_manager::Origin::Settings,
+            }),
+            problem: None,
+            generations: vec![
+                home_manager::Generation {
+                    id: 201,
+                    built: "2026-10-20 12:01".into(),
+                    path: "/nix/store/aaa-home-manager-generation".into(),
+                    current: true,
+                },
+                home_manager::Generation {
+                    id: 200,
+                    built: "2026-10-16 13:23".into(),
+                    path: "/nix/store/no-such-home-manager-generation".into(),
+                    current: false,
+                },
+            ],
+            repository: Some(Summary {
+                name: "dotfiles".into(),
+                path: "/home/me/dotfiles".into(),
+                branch: Some("main".into()),
+                changed: 2,
+                ahead: Some(1),
+                behind: Some(0),
+                ..Summary::default()
+            }),
+            links: vec![home_manager::Link {
+                name: "Ghostty".into(),
+                path: "/home/me/.config/ghostty/config".into(),
+                target: Some("/nix/store/xyz-home-manager-files/.config/ghostty/config".into()),
+                managed: true,
+            }],
+        }
+    }
+
+    #[test]
+    fn the_home_manager_screen_shows_generations_its_repository_and_links() {
+        let mut app = app();
+        app.home_status = Some(home_status());
+        app.open_screen(Screen::HomeManager);
+        app.focus = Focus::Main;
+        let shown = screen(&mut app, 140, 40);
+        for text in [
+            "Home Manager 26.11-pre",
+            "Configuration: /home/me/dotfiles/home-manager#me (a flake, from Helix Toolbox's settings)",
+            "Repository /home/me/dotfiles: main, 2 changed, 1 ahead and 0 behind",
+            "Generations (2)",
+            "201  2026-10-20 12:01  active",
+            "Ghostty",
+            "linked by Home Manager",
+            "b Build",
+            "p Pull",
+        ] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+        // d tells of the linked file.
+        let link = app
+            .home_rows
+            .iter()
+            .position(|row| matches!(row, HomeRow::Link(0)))
+            .unwrap();
+        app.main_state.select(Some(link));
+        press(&mut app, KeyCode::Char('d'));
+        assert!(screen(&mut app, 140, 40).contains("Home Manager manages it"));
+        // Not installed: building says so instead of planning.
+        press(&mut app, KeyCode::Esc);
+        app.home_status = Some(home_manager::Status::default());
+        app.build_home_rows();
+        press(&mut app, KeyCode::Char('b'));
+        assert!(screen(&mut app, 140, 40).contains("home-manager is not installed here"));
+    }
+
+    #[test]
+    fn the_home_manager_screen_reviews_build_switch_and_going_back() {
+        let mut app = app();
+        app.home_status = Some(home_status());
+        app.open_screen(Screen::HomeManager);
+        app.focus = Focus::Main;
+        press(&mut app, KeyCode::Char('b'));
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let shown = screen(&mut app, 160, 40);
+        assert!(
+            shown.contains("home-manager build --flake '/home/me/dotfiles/home-manager#me'"),
+            "{shown}"
+        );
+        press(&mut app, KeyCode::Char('n'));
+        assert!(!matches!(app.popup, Some(Popup::Running(_))));
+        press(&mut app, KeyCode::Char('s'));
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        assert!(screen(&mut app, 160, 40).contains("home-manager switch --flake"));
+        press(&mut app, KeyCode::Char('n'));
+        // The earlier generation was collected: there is no script to run.
+        let earlier = app
+            .home_rows
+            .iter()
+            .position(|row| matches!(row, HomeRow::Generation(1)))
+            .unwrap();
+        app.main_state.select(Some(earlier));
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 160, 40).contains("has no activate script"));
+        // Enter on the active one only tells of it.
+        press(&mut app, KeyCode::Esc);
+        app.main_state.select(Some(earlier - 1));
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 160, 40).contains("It is the active one."));
     }
 }

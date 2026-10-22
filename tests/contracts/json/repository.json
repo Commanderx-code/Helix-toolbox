@@ -1,0 +1,65 @@
+{
+  "command": "string",
+  "data": {
+    "branch_ref": "string",
+    "branches": [
+      "string"
+    ],
+    "busy": "null",
+    "files": [
+      {
+        "conflict": "boolean",
+        "original": "null",
+        "path": "string",
+        "staged": "string",
+        "unstaged": "string"
+      }
+    ],
+    "head": "string",
+    "index_tree": "string",
+    "log": [
+      {
+        "at": "number",
+        "hash": "string",
+        "subject": "string"
+      }
+    ],
+    "push_to": "null",
+    "remotes": [],
+    "staged_stat": "string",
+    "stashes": [
+      {
+        "id": "string",
+        "name": "string",
+        "subject": "string"
+      }
+    ],
+    "summary": {
+      "ahead": "null",
+      "behind": "null",
+      "branch": "string",
+      "changed": "number",
+      "favorite": "boolean",
+      "group": "string",
+      "last": "string",
+      "last_at": "number",
+      "name": "string",
+      "origin": "null",
+      "path": "string",
+      "problem": "null",
+      "upstream": "null"
+    },
+    "tasks": [
+      {
+        "command": "string",
+        "detected": "boolean",
+        "id": "string",
+        "name": "string",
+        "shell": "string"
+      }
+    ]
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

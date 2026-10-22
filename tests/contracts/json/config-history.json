@@ -1,0 +1,16 @@
+{
+  "command": "string",
+  "data": {
+    "backups": [
+      {
+        "backup": "string",
+        "taken": "string"
+      }
+    ],
+    "kind": "string",
+    "path": "string"
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

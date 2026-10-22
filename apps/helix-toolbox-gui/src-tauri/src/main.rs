@@ -9,20 +9,20 @@ mod views;
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, printable};
 use helix_toolbox_engine::{
-    Plan, backups, bundle,
+    Plan, backups, bundle, configs,
     confirmation::{self, Prepared},
     desktop, doctor, drift,
     execution::{Execution, Options},
-    hardware, hardware_report, history,
+    hardware, hardware_report, history, home_manager,
     inventory::{Inventory, which},
     migration::{self, Standing},
     notifications,
     overview::Overview,
     performance, plan, plan_removal, preflight, preview, profiles, recovery,
     reliability::{self, Evidence},
-    services,
+    repositories, restic, services,
     settings::{self, RunChoices, WindowTheme},
-    setup, storage, trust, updates, verification, watch,
+    setup, storage, trust, updates, verification, watch, workspaces,
 };
 use helix_toolbox_platform::LinuxInfo;
 use serde::Serialize;
@@ -1425,6 +1425,7 @@ async fn read_recovery(app: AppHandle) -> Result<RecoveryView, String> {
                 backups: &found_backups,
                 baselines: &baselines,
                 now: history::now(),
+                restic: restic::repository_here(),
             },
         );
         RecoveryView {
@@ -1570,6 +1571,805 @@ async fn prepare_migration(app: AppHandle, path: String) -> Result<PreparedView,
                 migration::plan_here(&translation, &entries, &gui.platform)
                     .map_err(|error| error.to_string())
             });
+        match planned {
+            Ok(planned) => prepare_plan(gui, &catalog, planned),
+            Err(why) => cannot(gui, why),
+        }
+    })
+    .await
+}
+
+// Restic
+
+/// The repository and its snapshots, as `helix-toolbox restic` shows them.
+#[derive(Serialize)]
+struct ResticView {
+    configured: bool,
+    repository: Option<String>,
+    origin: Option<&'static str>,
+    password: Option<String>,
+    paths: Vec<String>,
+    excludes: Vec<String>,
+    /// Why the settings cannot be used, or restic could not read the
+    /// repository.
+    problem: Option<String>,
+    snapshots: Vec<restic::Snapshot>,
+    /// How often the timer backs up, when it is on.
+    timer: Option<&'static str>,
+    /// Whether this restic restores without overwriting (0.17 and later).
+    restores: bool,
+    baselines: Vec<restic::Baseline>,
+    home: String,
+}
+
+fn restic_ready() -> Result<restic::Config, String> {
+    match restic::here() {
+        restic::Found::Ready(config) => Ok(config),
+        restic::Found::Problem(why) => Err(why),
+        restic::Found::Missing => Err("No restic repository is set up.".to_string()),
+    }
+}
+
+fn restic_home() -> Result<PathBuf, String> {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "there is no home folder".to_string())
+}
+
+/// `~/` made the home folder.
+fn typed_path(home: &Path, text: &str) -> PathBuf {
+    match text.trim().strip_prefix("~/") {
+        Some(rest) => home.join(rest),
+        None => PathBuf::from(text.trim()),
+    }
+}
+
+#[tauri::command]
+async fn read_restic(app: AppHandle) -> Result<ResticView, String> {
+    blocking(app, |_| {
+        let found = restic::here();
+        let mut view = ResticView {
+            configured: false,
+            repository: None,
+            origin: None,
+            password: None,
+            paths: Vec::new(),
+            excludes: Vec::new(),
+            problem: None,
+            snapshots: Vec::new(),
+            timer: restic::units_here()
+                .and_then(|units| restic::timer(&units))
+                .map(restic::Every::label),
+            restores: false,
+            baselines: history::state_dir()
+                .map(|state| restic::baselines(&state))
+                .unwrap_or_default(),
+            home: std::env::var("HOME").unwrap_or_default(),
+        };
+        match found {
+            restic::Found::Ready(config) => {
+                view.configured = true;
+                view.repository = Some(config.repository.clone());
+                view.origin = Some(config.origin.label());
+                view.password = Some(config.password.describe());
+                view.paths = config
+                    .paths
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect();
+                view.excludes = config.excludes.clone();
+                match restic::snapshots(&restic::Here, &config) {
+                    Ok(listed) => view.snapshots = listed,
+                    Err(why) => {
+                        view.problem = Some(format!("restic could not read the repository: {why}"))
+                    }
+                }
+                view.restores = restic::restores_safely(&restic::Here);
+            }
+            restic::Found::Problem(why) => view.problem = Some(why),
+            restic::Found::Missing => {}
+        }
+        view
+    })
+    .await
+}
+
+/// What a folder of a snapshot holds.
+#[tauri::command]
+async fn restic_files(
+    app: AppHandle,
+    snapshot: String,
+    folder: String,
+) -> Result<Vec<restic::Node>, String> {
+    blocking(app, move |_| {
+        restic::files(&restic::Here, &restic_ready()?, &snapshot, &folder)
+    })
+    .await?
+}
+
+/// Every version of the files a pattern matches.
+#[tauri::command]
+async fn restic_history(
+    app: AppHandle,
+    pattern: String,
+    ignore_case: bool,
+) -> Result<Vec<restic::History>, String> {
+    blocking(app, move |_| {
+        restic::history(
+            &restic::Here,
+            &restic_ready()?,
+            &restic_home()?,
+            &pattern,
+            ignore_case,
+        )
+    })
+    .await?
+}
+
+/// A restic plan: check, back up, restore into a new folder, or test a
+/// restore against a baseline.
+#[tauri::command]
+async fn prepare_restic(
+    app: AppHandle,
+    action: String,
+    snapshot: Option<String>,
+    target: Option<String>,
+    include: Option<String>,
+    baseline: Option<String>,
+) -> Result<PreparedView, String> {
+    blocking(app, move |gui| {
+        let planned = (|| -> Result<helix_toolbox_engine::Plan, String> {
+            let config = restic_ready()?;
+            let home = restic_home()?;
+            match action.as_str() {
+                "check" => Ok(restic::plan_check(&config)),
+                "backup" => Ok(restic::plan_backup(&config)),
+                "restore" => {
+                    if !restic::restores_safely(&restic::Here) {
+                        return Err("This restic cannot restore without overwriting; restic 0.17 or later can.".into());
+                    }
+                    let target = typed_path(&home, target.as_deref().unwrap_or_default());
+                    let target = restic::check_target(&home, &target)?;
+                    restic::plan_restore(
+                        &config,
+                        snapshot.as_deref().unwrap_or("latest"),
+                        &target,
+                        include.as_deref().filter(|path| !path.is_empty()),
+                    )
+                }
+                "test" => {
+                    let state = history::state_dir().ok_or("cannot find the state folder")?;
+                    let all = restic::baselines(&state);
+                    let chosen = restic::find_baseline(&all, baseline.as_deref().unwrap_or("1"))
+                        .ok_or("That baseline is not there.")?;
+                    restic::plan_test(&config, chosen, snapshot.as_deref().unwrap_or("latest"))
+                }
+                other => Err(format!("{} is not a restic plan", printable(other))),
+            }
+        })();
+        let catalog = gui.catalog.read().unwrap();
+        match planned {
+            Ok(planned) => prepare_plan(gui, &catalog, planned),
+            Err(why) => cannot(gui, why),
+        }
+    })
+    .await
+}
+
+/// Record a file's SHA-256 as a baseline, as `helix-toolbox restic baseline`.
+#[tauri::command]
+async fn record_baseline(app: AppHandle, path: String) -> Result<restic::Baseline, String> {
+    blocking(app, move |_| {
+        let home = restic_home()?;
+        let state = history::state_dir().ok_or("cannot find the state folder")?;
+        restic::record(&state, &home, &typed_path(&home, &path), history::now())
+    })
+    .await?
+}
+
+/// Turn the timed backup on or off, as `helix-toolbox restic timer`.
+#[tauri::command]
+async fn set_restic_timer(app: AppHandle, on: bool, weekly: bool) -> Result<String, String> {
+    blocking(app, move |gui| {
+        let units = restic::units_here().ok_or("there is no home folder to keep the timer in")?;
+        if !on {
+            restic::timer_off(&units, &notifications::systemctl)?;
+            return Ok("The timed backup is off.".to_string());
+        }
+        let every = if weekly {
+            restic::Every::Week
+        } else {
+            restic::Every::Day
+        };
+        let started = restic::timer_on(
+            &units,
+            &gui.this,
+            &restic_ready()?,
+            every,
+            &notifications::systemctl,
+        )?;
+        Ok(format!(
+            "The backup runs {}{}.",
+            every.label(),
+            match started {
+                notifications::Started::Now => "",
+                notifications::Started::AtLogin => ", from the next login",
+            }
+        ))
+    })
+    .await?
+}
+
+// Configs
+
+/// A field of a configuration, with its value now.
+#[derive(Serialize)]
+struct ConfigFieldView {
+    key: &'static str,
+    label: &'static str,
+    hint: &'static str,
+    value: Option<String>,
+}
+
+/// A backup kept beside a configuration.
+#[derive(Serialize)]
+struct ConfigBackupView {
+    backup: PathBuf,
+    taken: Option<String>,
+}
+
+/// One configuration as `helix-toolbox config <program> --json` shows it,
+/// with its text to edit.
+#[derive(Serialize)]
+struct ConfigView {
+    kind: configs::Kind,
+    label: &'static str,
+    /// Why it cannot be edited, when it cannot.
+    problem: Option<String>,
+    path: Option<PathBuf>,
+    live: Option<PathBuf>,
+    origin: Option<&'static str>,
+    managed: bool,
+    flake: Option<PathBuf>,
+    exists: bool,
+    revision: Option<String>,
+    content: String,
+    checked: Option<configs::Checked>,
+    fields: Vec<ConfigFieldView>,
+    backups: Vec<ConfigBackupView>,
+}
+
+/// Helix Toolbox's private folder for copies of configurations; never a
+/// shared one.
+fn copies_folder() -> Result<PathBuf, String> {
+    configs::private_folder().ok_or_else(|| {
+        "There is no state folder for Helix Toolbox's private copies; nothing is saved.".to_string()
+    })
+}
+
+fn config_kind(kind: &str) -> Result<configs::Kind, String> {
+    configs::Kind::from_id(kind)
+        .ok_or_else(|| format!("{} is not a configuration here", printable(kind)))
+}
+
+fn fields_of(kind: configs::Kind, text: &str) -> Vec<ConfigFieldView> {
+    let values = configs::values(kind, text);
+    kind.fields()
+        .iter()
+        .map(|field| ConfigFieldView {
+            key: field.key,
+            label: field.label,
+            hint: field.hint,
+            value: values
+                .iter()
+                .find(|(key, _)| *key == field.key)
+                .and_then(|(_, value)| value.clone()),
+        })
+        .collect()
+}
+
+fn config_view(kind: configs::Kind) -> ConfigView {
+    let mut view = ConfigView {
+        kind,
+        label: kind.label(),
+        problem: None,
+        path: None,
+        live: None,
+        origin: None,
+        managed: false,
+        flake: None,
+        exists: false,
+        revision: None,
+        content: String::new(),
+        checked: None,
+        fields: Vec::new(),
+        backups: Vec::new(),
+    };
+    let located = match configs::here(kind) {
+        Ok(located) => located,
+        Err(why) => {
+            view.problem = Some(why);
+            return view;
+        }
+    };
+    view.path = Some(located.path.clone());
+    view.live = Some(located.live.clone());
+    view.origin = Some(located.origin.label());
+    view.managed = located.managed;
+    view.flake = located.flake.clone();
+    view.backups = configs::history(&located)
+        .into_iter()
+        .map(|backup| ConfigBackupView {
+            backup: backup.backup,
+            taken: backup.taken,
+        })
+        .collect();
+    match configs::read(&located) {
+        Ok(loaded) => {
+            view.checked = Some(configs::validate(
+                kind,
+                &loaded.content,
+                &configs::ghostty_here,
+                copies_folder().ok().as_deref(),
+            ));
+            view.fields = fields_of(kind, &loaded.content);
+            view.exists = loaded.exists;
+            view.revision = Some(loaded.revision);
+            view.content = loaded.content;
+        }
+        Err(why) => view.problem = Some(why),
+    }
+    view
+}
+
+/// Ghostty's and Fastfetch's configuration, as `helix-toolbox config` reads
+/// them.
+#[tauri::command]
+async fn read_configs(app: AppHandle) -> Result<Vec<ConfigView>, String> {
+    blocking(app, |_| {
+        configs::Kind::ALL.into_iter().map(config_view).collect()
+    })
+    .await
+}
+
+/// What the checks say of a draft, before it is saved.
+#[tauri::command]
+async fn validate_config(
+    app: AppHandle,
+    kind: String,
+    text: String,
+) -> Result<configs::Checked, String> {
+    blocking(app, move |_| {
+        let kind = config_kind(&kind)?;
+        Ok(configs::validate(
+            kind,
+            &text,
+            &configs::ghostty_here,
+            copies_folder().ok().as_deref(),
+        ))
+    })
+    .await?
+}
+
+/// A field changed in a draft: the new text and the fields' values, not
+/// saved yet.
+#[derive(Serialize)]
+struct ConfigDraftView {
+    content: String,
+    fields: Vec<ConfigFieldView>,
+}
+
+#[tauri::command]
+fn set_config_field(
+    kind: String,
+    text: String,
+    key: String,
+    value: String,
+) -> Result<ConfigDraftView, String> {
+    let kind = config_kind(&kind)?;
+    let content = configs::set(kind, &text, &key, &value)?;
+    Ok(ConfigDraftView {
+        fields: fields_of(kind, &content),
+        content,
+    })
+}
+
+/// The plan that saves a draft, as `helix-toolbox config` saves one: the
+/// file must be the one read (`path`) and unchanged since (`revision`).
+#[tauri::command]
+async fn prepare_config_save(
+    app: AppHandle,
+    kind: String,
+    path: String,
+    revision: String,
+    text: String,
+) -> Result<PreparedView, String> {
+    blocking(app, move |gui| {
+        let planned = (|| -> Result<Plan, String> {
+            let kind = config_kind(&kind)?;
+            let located = configs::here(kind)?;
+            if located.path != Path::new(&path) {
+                return Err(
+                    "Which file is edited changed since it was read; read it again.".into(),
+                );
+            }
+            let folder = copies_folder()?;
+            let checked = configs::validate(kind, &text, &configs::ghostty_here, Some(&folder));
+            configs::plan_save(&located, &revision, &text, &checked, &folder)
+        })();
+        let catalog = gui.catalog.read().unwrap();
+        match planned {
+            Ok(planned) => prepare_plan(gui, &catalog, planned),
+            Err(why) => cannot(gui, why),
+        }
+    })
+    .await
+}
+
+/// A backup of a configuration put back, the file there now kept too:
+/// only one of the backups kept beside it.
+#[tauri::command]
+async fn prepare_config_restore(
+    app: AppHandle,
+    kind: String,
+    backup: String,
+) -> Result<PreparedView, String> {
+    blocking(app, move |gui| {
+        let planned = (|| -> Result<Plan, String> {
+            let located = configs::here(config_kind(&kind)?)?;
+            let found = configs::history(&located)
+                .into_iter()
+                .find(|kept| kept.backup == Path::new(&backup))
+                .ok_or("That backup is not kept beside the file.")?;
+            Ok(backups::plan_restore(&found))
+        })();
+        let catalog = gui.catalog.read().unwrap();
+        match planned {
+            Ok(planned) => prepare_plan(gui, &catalog, planned),
+            Err(why) => cannot(gui, why),
+        }
+    })
+    .await
+}
+
+// Repositories
+
+/// The repositories found, as `helix-toolbox repos --json` lists them.
+#[derive(Serialize)]
+struct ReposView {
+    roots: Vec<PathBuf>,
+    depth: usize,
+    origin: String,
+    repositories: Vec<RepoView>,
+}
+
+#[derive(Serialize)]
+struct RepoView {
+    #[serde(flatten)]
+    summary: repositories::Summary,
+    favorite: bool,
+    group: String,
+}
+
+/// A changed file, with its state in words.
+#[derive(Serialize)]
+struct FileView {
+    path: String,
+    original: Option<String>,
+    state: &'static str,
+    staged: bool,
+    unstaged: bool,
+    conflict: bool,
+}
+
+/// One repository, as `helix-toolbox repos show --json`, with its tasks.
+#[derive(Serialize)]
+struct RepositoryView {
+    #[serde(flatten)]
+    details: repositories::Details,
+    changes: Vec<FileView>,
+    favorite: bool,
+    tasks: Vec<workspaces::Task>,
+}
+
+/// The places repositories are looked for, and those found there.
+fn repositories_here(gui: &Gui) -> (repositories::Places, Vec<PathBuf>) {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    let places = repositories::places(gui.settings.as_deref().unwrap_or(Path::new("")), &home);
+    let found = repositories::discover(&places);
+    (places, found)
+}
+
+/// A repository the window was given, only when it is among those found.
+fn repository(gui: &Gui, path: &str) -> Result<PathBuf, String> {
+    let (_, found) = repositories_here(gui);
+    let wanted = std::fs::canonicalize(path).map_err(|_| format!("no folder {path}"))?;
+    found
+        .into_iter()
+        .find(|repo| *repo == wanted)
+        .ok_or_else(|| format!("{path} is not among the repositories found"))
+}
+
+fn workspaces_file(gui: &Gui) -> Result<PathBuf, String> {
+    gui.settings
+        .as_ref()
+        .map(|settings| settings.with_file_name("workspaces.toml"))
+        .ok_or_else(|| "there is no configuration folder".to_string())
+}
+
+fn kept_workspaces(gui: &Gui) -> workspaces::Workspaces {
+    workspaces_file(gui)
+        .ok()
+        .and_then(|file| workspaces::load(&file).ok())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+async fn read_repositories(app: AppHandle) -> Result<ReposView, String> {
+    blocking(app, |gui| {
+        let (places, found) = repositories_here(gui);
+        let kept = kept_workspaces(gui);
+        let mut summaries = repositories::summaries(&repositories::Here, &found);
+        summaries.sort_by_key(|summary| !kept.favorite(&summary.path));
+        ReposView {
+            roots: places.roots,
+            depth: places.depth,
+            origin: places.origin,
+            repositories: summaries
+                .into_iter()
+                .map(|summary| {
+                    let project = kept.project(&summary.path);
+                    RepoView {
+                        favorite: project.is_some_and(|project| project.favorite),
+                        group: project
+                            .map(|project| project.group.clone())
+                            .unwrap_or_default(),
+                        summary,
+                    }
+                })
+                .collect(),
+        }
+    })
+    .await
+}
+
+#[tauri::command]
+async fn read_repository(app: AppHandle, path: String) -> Result<RepositoryView, String> {
+    blocking(app, move |gui| {
+        let repo = repository(gui, &path)?;
+        let details = repositories::details(&repositories::Here, &repo)?;
+        let kept = kept_workspaces(gui);
+        Ok(RepositoryView {
+            changes: details
+                .files
+                .iter()
+                .map(|file| FileView {
+                    path: file.path.clone(),
+                    original: file.original.clone(),
+                    state: file.state(),
+                    staged: file.is_staged(),
+                    unstaged: file.has_unstaged(),
+                    conflict: file.conflict,
+                })
+                .collect(),
+            favorite: kept.favorite(&repo),
+            tasks: workspaces::tasks(&repo, &kept),
+            details,
+        })
+    })
+    .await?
+}
+
+/// The diff of the repository or of one file, staged or not.
+#[tauri::command]
+async fn repository_diff(
+    app: AppHandle,
+    path: String,
+    file: Option<String>,
+    staged: bool,
+) -> Result<repositories::Diff, String> {
+    blocking(app, move |gui| {
+        let repo = repository(gui, &path)?;
+        let details = repositories::details(&repositories::Here, &repo)?;
+        repositories::diff(
+            &repositories::Here,
+            &repo,
+            &details,
+            file.as_deref(),
+            staged,
+        )
+    })
+    .await?
+}
+
+/// A change the window asks for, as `helix-toolbox repos` takes it.
+#[derive(serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum ChangeRequest {
+    Stage { files: Vec<String> },
+    StageAll,
+    Unstage { files: Vec<String> },
+    Commit { message: String },
+    CreateBranch { name: String },
+    SwitchBranch { name: String },
+    Stash { message: String, untracked: bool },
+    ApplyStash { id: String },
+    Fetch,
+    Pull,
+    Push,
+    Publish { remote: String },
+}
+
+impl From<ChangeRequest> for repositories::Change {
+    fn from(request: ChangeRequest) -> Self {
+        use repositories::Change;
+        match request {
+            ChangeRequest::Stage { files } => Change::Stage(files),
+            ChangeRequest::StageAll => Change::StageAll,
+            ChangeRequest::Unstage { files } => Change::Unstage(files),
+            ChangeRequest::Commit { message } => Change::Commit(message),
+            ChangeRequest::CreateBranch { name } => Change::CreateBranch(name),
+            ChangeRequest::SwitchBranch { name } => Change::SwitchBranch(name),
+            ChangeRequest::Stash { message, untracked } => Change::Stash { message, untracked },
+            ChangeRequest::ApplyStash { id } => Change::ApplyStash(id),
+            ChangeRequest::Fetch => Change::Fetch,
+            ChangeRequest::Pull => Change::Pull,
+            ChangeRequest::Push => Change::Push,
+            ChangeRequest::Publish { remote } => Change::Publish(remote),
+        }
+    }
+}
+
+/// A change to a repository, planned from how it is now, to confirm.
+#[tauri::command]
+async fn prepare_repository_change(
+    app: AppHandle,
+    path: String,
+    change: ChangeRequest,
+) -> Result<PreparedView, String> {
+    blocking(app, move |gui| {
+        let planned = repository(gui, &path).and_then(|repo| {
+            let details = repositories::details(&repositories::Here, &repo)?;
+            repositories::plan(&repositories::Here, &details, &change.into())
+        });
+        let catalog = gui.catalog.read().unwrap();
+        match planned {
+            Ok(planned) => prepare_plan(gui, &catalog, planned),
+            Err(why) => cannot(gui, why),
+        }
+    })
+    .await
+}
+
+/// One of a repository's tasks, to confirm before it runs in its folder.
+#[tauri::command]
+async fn prepare_task(app: AppHandle, path: String, id: String) -> Result<PreparedView, String> {
+    blocking(app, move |gui| {
+        let planned = repository(gui, &path).and_then(|repo| {
+            let tasks = workspaces::tasks(&repo, &kept_workspaces(gui));
+            let task = tasks
+                .iter()
+                .find(|task| task.id == id)
+                .ok_or_else(|| format!("it has no task {id}"))?;
+            workspaces::plan_task(&repo, task)
+        });
+        let catalog = gui.catalog.read().unwrap();
+        match planned {
+            Ok(planned) => prepare_plan(gui, &catalog, planned),
+            Err(why) => cannot(gui, why),
+        }
+    })
+    .await
+}
+
+/// Keep a task of the user's, remove one, or mark a favorite, in
+/// `workspaces.toml`.
+#[tauri::command]
+async fn save_workspace(
+    app: AppHandle,
+    path: String,
+    favorite: Option<bool>,
+    task: Option<workspaces::Task>,
+    remove: Option<String>,
+) -> Result<(), String> {
+    blocking(app, move |gui| {
+        let repo = repository(gui, &path)?;
+        let file = workspaces_file(gui)?;
+        let mut kept = workspaces::load(&file)?;
+        if let Some(favorite) = favorite {
+            kept.set_favorite(&repo, favorite);
+        }
+        if let Some(task) = task {
+            kept.add_task(&repo, task)?;
+        }
+        if let Some(id) = remove {
+            kept.remove_task(&repo, &id)?;
+        }
+        workspaces::save(&file, &kept)
+    })
+    .await?
+}
+
+// Home Manager
+
+/// Home Manager, as `helix-toolbox home-manager --json` shows it.
+#[derive(Serialize)]
+struct HomeManagerView {
+    #[serde(flatten)]
+    status: home_manager::Status,
+    /// The `--flake` reference built, for a flake.
+    reference: Option<String>,
+    /// Where the configuration was named.
+    origin: Option<&'static str>,
+}
+
+/// Home Manager: its configuration, generations, repository and links.
+#[tauri::command]
+async fn read_home_manager(app: AppHandle) -> Result<HomeManagerView, String> {
+    blocking(app, |_| {
+        let status = home_manager::status(&doctor::Here, &repositories::Here);
+        HomeManagerView {
+            reference: status
+                .config
+                .as_ref()
+                .and_then(home_manager::Config::flake_reference),
+            origin: status.config.as_ref().map(|config| config.origin.label()),
+            status,
+        }
+    })
+    .await
+}
+
+/// A Home Manager plan to review: `build`, `switch`, `activate` (an
+/// earlier generation, by its number) or `pull` (its repository).
+#[tauri::command]
+async fn prepare_home_manager(
+    app: AppHandle,
+    action: String,
+    generation: Option<u32>,
+) -> Result<PreparedView, String> {
+    blocking(app, move |gui| {
+        let planned = (|| -> Result<Plan, String> {
+            let status = home_manager::status(&doctor::Here, &repositories::Here);
+            if !status.installed {
+                return Err("home-manager is not installed here.".into());
+            }
+            let config = match (&status.config, &status.problem) {
+                (Some(config), _) => config,
+                (None, Some(problem)) => return Err(problem.clone()),
+                (None, None) => {
+                    return Err("No Home Manager configuration was found: name its folder as flake under [home_manager] in settings.toml.".into());
+                }
+            };
+            match action.as_str() {
+                "build" => Ok(home_manager::plan_build(config)),
+                "switch" => Ok(home_manager::plan_switch(config)),
+                "activate" => {
+                    let wanted = generation.ok_or("no generation was chosen")?;
+                    let found = home_manager::find_generation(
+                        &status.generations,
+                        &wanted.to_string(),
+                    )?;
+                    home_manager::plan_activate(&doctor::Here, &found)
+                }
+                "pull" => {
+                    let repository = status
+                        .repository
+                        .as_ref()
+                        .ok_or("The configuration is not in a Git repository.")?;
+                    let details = repositories::details(&repositories::Here, &repository.path)?;
+                    repositories::plan(
+                        &repositories::Here,
+                        &details,
+                        &repositories::Change::Pull,
+                    )
+                }
+                other => Err(format!("{} is not a Home Manager plan", printable(other))),
+            }
+        })();
+        let catalog = gui.catalog.read().unwrap();
         match planned {
             Ok(planned) => prepare_plan(gui, &catalog, planned),
             Err(why) => cannot(gui, why),
@@ -2000,6 +2800,10 @@ struct SettingsView {
     drift: Option<String>,
     /// The saved baselines to choose from: file name and name.
     baselines: Vec<(String, String)>,
+    /// How often the timed restic backup runs (`day`, `week`), or none.
+    restic_timer: Option<&'static str>,
+    /// Whether a restic repository is set up, so the timer can be.
+    restic_ready: bool,
 }
 
 #[tauri::command]
@@ -2029,6 +2833,13 @@ fn read_settings(gui: State<Gui>) -> SettingsView {
                     .collect()
             })
             .unwrap_or_default(),
+        restic_timer: restic::units_here()
+            .and_then(|units| restic::timer(&units))
+            .map(|every| match every {
+                restic::Every::Day => "day",
+                restic::Every::Week => "week",
+            }),
+        restic_ready: restic_ready().is_ok(),
     }
 }
 
@@ -2220,6 +3031,13 @@ fn main() {
                 prepare_service, prepare_autostart, read_storage, prepare_clean,
                 read_performance, compare_boots, read_recovery, prepare_snapshot_check,
                 read_migration_export, export_migration, open_migration, prepare_migration,
+                read_restic, restic_files, restic_history, prepare_restic, record_baseline,
+                set_restic_timer,
+                read_repositories, read_repository, repository_diff, prepare_repository_change,
+                read_home_manager, prepare_home_manager,
+                prepare_task, save_workspace,
+                read_configs, validate_config, set_config_field, prepare_config_save,
+                prepare_config_restore,
                 drift_check, save_baseline, reliability, trust, read_hardware, prepare_firmware,
                 prepare_smart, read_desktop, save_look, prepare_look, read_settings,
                 save_settings, save_watch, save_theme, bundle_contents, prepare_bundle_create,

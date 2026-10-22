@@ -1,0 +1,21 @@
+{
+  "command": "string",
+  "data": {
+    "config": {
+      "flake": "boolean",
+      "folder": "string",
+      "origin": "string",
+      "profile": "null",
+      "reference": "string"
+    },
+    "generations": [],
+    "installed": "boolean",
+    "links": [],
+    "problem": "null",
+    "repository": "null",
+    "version": "string"
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

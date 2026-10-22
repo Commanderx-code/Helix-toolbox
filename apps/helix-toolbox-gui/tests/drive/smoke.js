@@ -195,7 +195,7 @@
     await until('the focus back on Marker', () => document.activeElement === marker);
   });
 
-  const screens = ['Updates','Backups', 'Drift', 'Reliability', 'Hardware', 'Services', 'Storage', 'Performance', 'Recovery', 'Migration', 'Desktop', 'History', 'Favorites', 'Dashboard'];
+  const screens = ['Updates','Backups', 'Drift', 'Reliability', 'Hardware', 'Services', 'Storage', 'Performance', 'Recovery', 'Migration', 'Restic', 'Repositories', 'Home Manager', 'Configs', 'Desktop', 'History', 'Favorites', 'Dashboard'];
   for (const name of screens) {
     await step(`the ${name} screen opens`, async () => {
       await click(name, document.querySelector('nav'));
@@ -411,6 +411,171 @@
     await click(button('Cancel', review) ? 'Cancel' : 'OK', review);
     await until('the review to close', () => !document.querySelector('#confirm-title'));
     return `exported; ${install.querySelectorAll('li').length} to install reviewed; nothing ran`;
+  });
+
+  await step('restic snapshots are browsed and searched, a restore and a recovery test reviewed, the timer turned on and off, and nothing runs', async () => {
+    await click('Restic', document.querySelector('nav'));
+    await until('Restic', () => screenTitle().startsWith('Restic'));
+    // scripts/gui-smoke.sh's stand-in restic answers with one snapshot.
+    const snapshot = await until('the snapshots', () => withText('[aria-label="Snapshots"] li', 'b6f77f6d'), 30000);
+    await click('Browse', snapshot);
+    const file = await until('the files', () => withText('[aria-label="Files in the snapshot"] li', 'notes.txt'), 30000);
+    await accessible('a snapshot browsed');
+    await click('Restore this', file);
+    const restore = withText('.part h2', 'Restore into a new folder').closest('.part');
+    const include = withText('.field', 'Only this path').querySelector('input');
+    if (!include.value.endsWith('/notes.txt')) throw new Error(`the path to restore: ${include.value}`);
+    await click('Restore…', restore);
+    let review = await until('the review', () => document.querySelector('#confirm-title')?.closest('[role="dialog"]'), 30000);
+    if (!review.textContent.includes('--overwrite') || !review.textContent.includes('--verify')) throw new Error(review.textContent);
+    await click(button('Cancel', review) ? 'Cancel' : 'OK', review);
+    await until('the review to close', () => !document.querySelector('#confirm-title'));
+    await type(withText('.field', 'A file name or path').querySelector('input'), 'notes.txt');
+    await click('Look for it');
+    await until('the versions', () => withText('[aria-label^="Versions of"] li', 'First'), 30000);
+    await type(withText('.field', 'A file of your home folder').querySelector('input'), '~/notes.txt');
+    await click('Record its SHA-256');
+    const baseline = await until('the baseline', () => withText('[aria-label="Baselines"] li', 'notes.txt'), 30000);
+    await click('Test…', baseline);
+    review = await until('the test', () => document.querySelector('#confirm-title')?.closest('[role="dialog"]'), 30000);
+    if (!review.textContent.includes('Test a restore against its baseline')) throw new Error(review.textContent);
+    await accessible('a recovery test under review');
+    await click(button('Cancel', review) ? 'Cancel' : 'OK', review);
+    await until('the review to close', () => !document.querySelector('#confirm-title'));
+    await click('Back up every day');
+    await until('the timer on', () => withText('#notice-title', 'Timed backup'));
+    await click('OK');
+    await click('Stop the timer');
+    await until('the timer off', () => withText('#notice-title', 'Timed backup'));
+    await click('OK');
+    await until('the timer button back', () => button('Back up every day'));
+    return 'browsed, searched, a restore and a test reviewed; the timer on and off; nothing ran';
+  });
+
+  await step('a repository is opened, its diff shown, a stage and a task reviewed, and nothing runs', async () => {
+    await click('Repositories', document.querySelector('nav'));
+    await until('Repositories', () => screenTitle().startsWith('Repositories'));
+    // scripts/gui-smoke.sh made it under the scratch home's projects folder.
+    const open = await until('the scratch repository', () => withText('.open .name', 'sample')?.closest('button'), 60000);
+    open.click();
+    const changes = await until('its changes', () => document.querySelector('[aria-label="Changes"]'), 30000);
+    if (!changes.textContent.includes('new.txt')) throw new Error(`changes: ${changes.textContent.trim()}`);
+    await click('Diff', changes);
+    await until('the diff', () => document.querySelector('pre[aria-label="Diff"]')?.textContent.includes('+new'));
+    await accessible('a repository open');
+    await click('Stage…', changes);
+    let review = await until('the review', () => document.querySelector('#confirm-title')?.closest('[role="dialog"]'), 30000);
+    if (!review.textContent.includes('Stage 1 file in sample')) throw new Error(review.textContent);
+    await click(button('Cancel', review) ? 'Cancel' : 'OK', review);
+    await until('the review to close', () => !document.querySelector('#confirm-title'));
+    // A command of the user's, kept for the repository, is reviewed before it runs.
+    const command = await until('the task field', () => withText('.field', 'A command of yours')?.querySelector('input'));
+    await type(command, 'sh -c "echo smoke"');
+    await click('Keep');
+    const tasks = await until('the task', () => withText('[aria-label="Tasks"] li', 'echo smoke'), 30000);
+    await click('Run…', tasks);
+    review = await until('its review', () => document.querySelector('#confirm-title')?.closest('[role="dialog"]'), 30000);
+    if (!review.textContent.includes('echo smoke')) throw new Error(review.textContent);
+    await accessible('a task under review');
+    await click(button('Cancel', review) ? 'Cancel' : 'OK', review);
+    await until('the review to close', () => !document.querySelector('#confirm-title'));
+    await click('All repositories');
+    return 'diff shown; a stage and a task reviewed; nothing ran';
+  });
+
+  await step('a configuration field is changed, checked and saved, and its backup reviewed', async () => {
+    await click('Configs', document.querySelector('nav'));
+    await until('Configs', () => screenTitle().startsWith('Configs'));
+    const card = await until('the Ghostty card', () => document.querySelector('[aria-label="Ghostty\'s configuration"]'), 30000);
+    // The stand-in ghostty of scripts/gui-smoke.sh checks it.
+    await until('its check', () => [...card.querySelectorAll('.pill')].some((pill) => pill.textContent.includes('Valid')));
+    const size = await until('the font size', () => card.querySelector('#ghostty-font-size'));
+    await type(size, '14');
+    size.parentElement.querySelector('button').click();
+    const text = card.querySelector('#ghostty-text');
+    await until('the draft', () => text.value.includes('font-size = 14'));
+    await click('Check', card);
+    await until('the draft checked', () => [...card.querySelectorAll('.pill')].some((pill) => pill.textContent.includes('Valid')));
+    await accessible('a configuration with a draft');
+    await click('Save', card);
+    const title = await until('the confirmation', () => document.querySelector('#confirm-title'), 30000);
+    const dialog = title.closest('[role="dialog"]');
+    if (!dialog.textContent.includes("Save Ghostty's configuration")) throw new Error(dialog.textContent.trim());
+    // The file now and after, side by side.
+    await click('What it changes', dialog);
+    await until('the side by side', () => document.querySelector('[role="dialog"] .change'), 30000);
+    await click('Side by side', document.querySelector('[role="dialog"]'));
+    await until('the rows', () => document.querySelector('[role="dialog"]').textContent.includes('font-size = 14'));
+    const preview = document.querySelector('[role="dialog"]').textContent;
+    if (!preview.includes('font-size = 14')) throw new Error(`the change preview does not show the new size: ${preview.slice(0, 600)}`);
+    await click('Back to the confirmation', dialog);
+    const primary = await until('the confirm button', () => dialog.querySelector('.button.primary'));
+    primary.click();
+    const result = await until('the result', () => withText('.good, .bad', 'Result:'), 60000);
+    if (!result.classList.contains('good')) throw new Error(result.textContent.trim());
+    await click('Close');
+    await until('the run panel to close', () => !document.querySelector('#run-title'));
+    // Read again after the run: the one before is kept, and putting it back is reviewed.
+    const again = await until('the backup', () => document.querySelector('[aria-label="Backups of Ghostty\'s configuration"]'), 30000);
+    await click('Put back', again);
+    const review = await until('the review', () => document.querySelector('#confirm-title')?.closest('[role="dialog"]'), 30000);
+    if (!review.textContent.includes('Restore')) throw new Error(review.textContent.trim());
+    await click('Cancel', review);
+    await until('the review to close', () => !document.querySelector('#confirm-title'));
+    // A draft Ghostty rejects is not offered to save.
+    const fresh = document.querySelector('[aria-label="Ghostty\'s configuration"]');
+    await type(fresh.querySelector('#ghostty-text'), 'bogus = 1\n');
+    await click('Check', fresh);
+    await until('the refusal', () => fresh.textContent.includes('Ghostty rejected it'));
+    if (!button('Save', fresh)?.disabled) throw new Error('a rejected draft can be saved');
+    await click('Discard changes', fresh);
+    return 'a field saved for real with a backup kept; a put-back reviewed; a rejected draft refused';
+  });
+
+  await step('Home Manager generations are shown, a build and going back reviewed, the timed backup set from Settings, and nothing runs', async () => {
+    await click('Home Manager', document.querySelector('nav'));
+    await until('Home Manager', () => screenTitle().startsWith('Home Manager'));
+    // scripts/gui-smoke.sh's stand-in home-manager lists two generations.
+    const generations = await until('the generations', () => document.querySelector('[aria-label="Generations"]'), 30000);
+    if (!generations.textContent.includes('201') || !generations.textContent.includes('Active')) {
+      throw new Error(`generations: ${generations.textContent.trim()}`);
+    }
+    await accessible('Home Manager');
+    await click('Build…');
+    let review = await until('the review', () => document.querySelector('#confirm-title')?.closest('[role="dialog"]'), 30000);
+    if (!review.textContent.includes('home-manager build --flake')) throw new Error(review.textContent);
+    await accessible('a build under review');
+    await click(button('Cancel', review) ? 'Cancel' : 'OK', review);
+    await until('the review to close', () => !document.querySelector('#confirm-title'));
+    // The earlier generation is not in this machine's Nix store: going
+    // back to it says so instead of planning.
+    await click('Go back to it…', generations);
+    review = await until('what going back says', () => document.querySelector('#confirm-title')?.closest('[role="dialog"]'), 30000);
+    if (!review.textContent.includes('no activate script')) throw new Error(review.textContent);
+    await click(button('Cancel', review) ? 'Cancel' : 'OK', review);
+    await until('it to close', () => !document.querySelector('#confirm-title'));
+    // Settings turns the timed restic backup on, every day, and off again.
+    await click('Settings', document.querySelector('nav'));
+    await until('Settings', () => screenTitle().startsWith('Settings'));
+    const choose = async (value) => {
+      const timer = await until('the backup timer', () => {
+        const found = document.querySelector('#restic-timer');
+        return found && !found.disabled && found;
+      });
+      timer.value = value;
+      timer.dispatchEvent(new Event('change', { bubbles: true }));
+      const told = await until('what the timer did', () => document.querySelector('#notice-title')?.closest('[role="dialog"]'));
+      await click('OK', told);
+      return told.textContent;
+    };
+    const on = await choose('day');
+    if (!on.includes('every day')) throw new Error(on);
+    if ((await invoke('read_settings')).restic_timer !== 'day') throw new Error('the timed backup is not on');
+    await accessible('Settings with the timed backup on');
+    const off = await choose('');
+    if (!off.includes('off')) throw new Error(off);
+    if ((await invoke('read_settings')).restic_timer !== null) throw new Error('the timed backup is not off');
+    return 'two generations; a build and going back reviewed; the timed backup on and off from Settings; nothing ran';
   });
 
   await step('an entry is checked now, without changing anything', async () => {

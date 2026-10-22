@@ -653,6 +653,122 @@ jobs:
           assert [(item["id"], item["standing"]) for item in items] in ([("tree", "install")], [("tree", "here")]), items'
           yes | bin/helix-toolbox migrate apply own.toml --yes
           command -v tree
+      - name: Restic backups, a file's history, recovery tests and a restore into a new folder, for real
+        run: |
+          case "${{ matrix.family }}" in
+            Arch) pacman -S --noconfirm --needed restic ;;
+            Debian) apt-get install -y restic ;;
+            Fedora) dnf install -y restic ;;
+            openSUSE) zypper -n install restic ;;
+          esac
+          # A scratch repository, named in Helix Toolbox's settings with its
+          # password file; the backup takes one folder.
+          printf 'secret\n' > "$HOME/.restic-password"
+          restic init -q --repo "$HOME/restic-repo" --password-file "$HOME/.restic-password"
+          mkdir -p "$HOME/hf-restic"
+          printf 'first\n' > "$HOME/hf-restic/notes.txt"
+          config="${XDG_CONFIG_HOME:-$HOME/.config}/helix-toolbox"
+          mkdir -p "$config"
+          printf '\n[restic]\nrepository = "~/restic-repo"\npassword_file = "~/.restic-password"\npaths = ["~/hf-restic"]\n' >> "$config/settings.toml"
+          bin/helix-toolbox restic backup --yes
+          bin/helix-toolbox restic baseline "$HOME/hf-restic/notes.txt"
+          printf 'second\n' > "$HOME/hf-restic/notes.txt"
+          bin/helix-toolbox restic backup --yes
+          bin/helix-toolbox restic
+          bin/helix-toolbox --json restic > restic.json
+          python3 -c 'import json; d = json.load(open("restic.json"))["data"]; assert d["configured"] and d["origin"] == "settings" and len(d["snapshots"]) == 2, d'
+          first=$(python3 -c 'import json; print(json.load(open("restic.json"))["data"]["snapshots"][-1]["short_id"])')
+          bin/helix-toolbox restic files latest | grep -q 'notes.txt'
+          bin/helix-toolbox restic history notes.txt | tee history.txt
+          grep -qE ' changed$' history.txt
+          grep -qE ' first$' history.txt
+          # The first snapshot's copy matches the baseline; the latest's,
+          # changed since, does not.
+          bin/helix-toolbox restic test 1 "$first" --yes | tee pass.txt
+          grep -q '^PASS: ' pass.txt
+          if bin/helix-toolbox restic test 1 --yes > fail.txt; then
+            echo "a recovery test of a changed file passed" >&2
+            exit 1
+          fi
+          grep -q '^FAIL: ' fail.txt
+          bin/helix-toolbox restic check --yes
+          # Restoring without overwriting needs restic 0.17 or later.
+          if restic restore --help | grep -q -- '--overwrite' && restic restore --help | grep -q -- '--verify'; then
+            bin/helix-toolbox restic restore "$first" "$HOME/hf-restored" --include "$HOME/hf-restic/notes.txt" --yes
+            [ "$(cat "$HOME/hf-restored$HOME/hf-restic/notes.txt")" = first ]
+            [ "$(cat "$HOME/hf-restic/notes.txt")" = second ]
+            if bin/helix-toolbox restic restore latest "$HOME/hf-restored" --yes 2> refused.txt; then
+              echo "a restore went into a folder that is there" >&2
+              exit 1
+            fi
+            grep -q 'is there already' refused.txt
+          else
+            if bin/helix-toolbox restic restore latest "$HOME/hf-new" --dry-run 2> refused.txt; then
+              echo "an older restic was trusted to restore" >&2
+              exit 1
+            fi
+            grep -q 'restic 0.17 or later' refused.txt
+          fi
+      - name: Fastfetch and Ghostty configurations changed, saved with a backup and put back, for real
+        run: |
+          mkdir -p "$HOME/.config/fastfetch" "$HOME/.config/ghostty" hf-bin
+          printf '{\n    // mine\n    "logo": { "source": "arch" },\n    "modules": ["title", "os"]\n}\n' > "$HOME/.config/fastfetch/config.jsonc"
+          bin/helix-toolbox --json config fastfetch > fastfetch.json
+          python3 -c 'import json
+          d = json.load(open("fastfetch.json"))["data"]
+          assert d["origin"] == "live" and d["checked"]["state"] == "valid", d
+          assert [field["value"] for field in d["values"]] == ["arch", None, "title, os"], d["values"]'
+          # A field changed: the comment and the rest stay, the one before is kept.
+          bin/helix-toolbox config fastfetch set modules "os, kernel, title" --yes | tee saved.txt
+          grep -q '^Helix Toolbox: the previous one is kept as ' saved.txt
+          grep -q '"kernel"' "$HOME/.config/fastfetch/config.jsonc"
+          grep -q '// mine' "$HOME/.config/fastfetch/config.jsonc"
+          bin/helix-toolbox --json config fastfetch history > history.json
+          backup=$(python3 -c 'import json; print(json.load(open("history.json"))["data"]["backups"][0]["backup"])')
+          grep -q '"modules": \["title", "os"\]' "$backup"
+          # An edit through the editor, which here is sed.
+          VISUAL='' EDITOR='sed -i s/kernel/memory/' bin/helix-toolbox config fastfetch edit --yes
+          grep -q '"memory"' "$HOME/.config/fastfetch/config.jsonc"
+          # What does not read as Fastfetch's JSONC is refused, and nothing is written.
+          printf '{ "modules": "os" }\n' > bad.jsonc
+          if bin/helix-toolbox config fastfetch validate bad.jsonc 2> refused.txt; then
+            echo "a configuration that does not check passed" >&2
+            exit 1
+          fi
+          grep -q 'must be a list' refused.txt
+          if VISUAL='' EDITOR='sed -i 1d' bin/helix-toolbox config fastfetch edit --yes 2> refused.txt; then
+            echo "an edit that does not check was saved" >&2
+            exit 1
+          fi
+          grep -q '"memory"' "$HOME/.config/fastfetch/config.jsonc"
+          # The first backup put back; what was there is kept too.
+          bin/helix-toolbox restore "$backup" --yes
+          grep -q '"modules": \["title", "os"\]' "$HOME/.config/fastfetch/config.jsonc"
+          # Ghostty, checked by a stand-in that rejects a bogus field.
+          cat > hf-bin/ghostty <<'EOF'
+          #!/bin/sh
+          if grep -q bogus "${2#--config-file=}"; then
+              echo "unknown field: bogus"
+              exit 1
+          fi
+          EOF
+          chmod +x hf-bin/ghostty
+          printf 'font-family = Iosevka\nfont-family = Noto Color Emoji\nfont-size = 11\n' > "$HOME/.config/ghostty/config"
+          PATH="$PWD/hf-bin:$PATH" bin/helix-toolbox config ghostty set font-size 13 --yes
+          grep -qx 'font-size = 13' "$HOME/.config/ghostty/config"
+          grep -qx 'font-family = Noto Color Emoji' "$HOME/.config/ghostty/config"
+          if PATH="$PWD/hf-bin:$PATH" bin/helix-toolbox config ghostty set theme bogus --yes 2> refused.txt; then
+            echo "a field Ghostty rejects was saved" >&2
+            exit 1
+          fi
+          grep -q 'Ghostty rejected it' refused.txt
+          # Without Ghostty it is saved, and the plan says it was not checked.
+          bin/helix-toolbox config ghostty set font-size 14 --yes | tee saved.txt
+          if ! command -v ghostty > /dev/null; then
+            grep -q '^Warning: Ghostty is not installed here' saved.txt
+          fi
+          grep -qx 'font-size = 14' "$HOME/.config/ghostty/config"
+          test "$(bin/helix-toolbox --json config ghostty history | python3 -c 'import json, sys; print(len(json.load(sys.stdin)["data"]["backups"]))')" = 2
       - name: Script and native entries
         run: |
           bin/helix-toolbox run system-report machine-summary --yes | tee report.txt
@@ -662,6 +778,59 @@ jobs:
         run: |
           printf 'name = "Fail"\n\n[command]\nline = "exit 7"\n' > /dev/null
           ! bin/helix-toolbox run definitely-not-an-entry --yes
+      - name: A repository staged, committed, branched, stashed and synced for real, and a task run
+        run: |
+          export GIT_AUTHOR_NAME=CI GIT_AUTHOR_EMAIL=ci@example.com GIT_COMMITTER_NAME=CI GIT_COMMITTER_EMAIL=ci@example.com
+          # Under ~/projects, one of the folders looked in by default.
+          repo="$HOME/projects/sample"
+          mkdir -p "$repo"
+          git -C "$repo" init -q -b main
+          printf 'one\n' > "$repo/one.txt"
+          bin/helix-toolbox repos | tee repos.txt
+          grep -q '^  sample ' repos.txt
+          bin/helix-toolbox repos stage sample one.txt --yes
+          [ "$(git -C "$repo" diff --cached --name-only)" = one.txt ]
+          bin/helix-toolbox repos commit sample -m First --yes
+          [ "$(git -C "$repo" log -1 --format=%s)" = First ]
+          bin/helix-toolbox repos branch sample topic --create --yes
+          [ "$(git -C "$repo" branch --show-current)" = topic ]
+          printf 'changed\n' > "$repo/one.txt"
+          if bin/helix-toolbox repos branch sample main --yes 2> refused.txt; then
+            echo "a branch was switched over changes" >&2
+            exit 1
+          fi
+          grep -q 'has changes' refused.txt
+          bin/helix-toolbox repos stash sample -m Aside --yes
+          [ "$(cat "$repo/one.txt")" = one ]
+          bin/helix-toolbox repos stash-apply sample 'stash@{0}' --yes
+          [ "$(cat "$repo/one.txt")" = changed ]
+          [ "$(git -C "$repo" stash list | wc -l)" -eq 1 ]
+          git -C "$repo" checkout -q -- one.txt
+          bin/helix-toolbox repos branch sample main --yes
+          # A bare remote: the branch published, a commit from another clone
+          # fetched and pulled, and one of this repository's pushed.
+          git init -q --bare -b main "$HOME/remote.git"
+          git -C "$repo" remote add origin "$HOME/remote.git"
+          bin/helix-toolbox repos publish sample --yes
+          git clone -q "$HOME/remote.git" "$HOME/other"
+          printf 'two\n' > "$HOME/other/two.txt"
+          git -C "$HOME/other" add two.txt
+          git -C "$HOME/other" commit -q -m Second
+          git -C "$HOME/other" push -q
+          bin/helix-toolbox repos fetch sample --yes
+          bin/helix-toolbox repos pull sample --yes
+          [ "$(git -C "$repo" log -1 --format=%s)" = Second ]
+          printf 'three\n' > "$repo/three.txt"
+          bin/helix-toolbox repos stage sample --all --yes
+          bin/helix-toolbox repos commit sample -m Third --yes
+          bin/helix-toolbox repos push sample --yes
+          [ "$(git -C "$HOME/remote.git" log -1 --format=%s main)" = Third ]
+          bin/helix-toolbox --json repos show sample > repository.json
+          python3 -c 'import json; d = json.load(open("repository.json"))["data"]; assert d["summary"]["upstream"] == "origin/main" and d["summary"]["ahead"] == 0 and not d["files"], d'
+          # A task of the user's, run in the repository's folder.
+          bin/helix-toolbox repos task-add sample where 'sh -c "pwd > ran.txt"'
+          bin/helix-toolbox repos task sample where --yes
+          [ "$(cat "$repo/ran.txt")" = "$repo" ]
       - name: Installer tests under this distribution's shell
         run: |
           ls -l /bin/sh

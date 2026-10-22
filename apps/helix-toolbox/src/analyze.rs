@@ -336,6 +336,7 @@ pub fn recovery(
             backups: &found_backups,
             baselines: &baselines,
             now: history::now(),
+            restic: helix_toolbox_engine::restic::repository_here(),
         },
     );
     if as_json {

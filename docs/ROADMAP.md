@@ -52,6 +52,31 @@ The items:
     replaces a copy the user keeps outside any package tool, and the
     window's AppImage.
 
+## v1.20.0: Command Center brought in
+
+- [x] Restic backups of your own files: the snapshots, a folder of one, a
+      file's history, restores into a new folder, backups and checks as
+      plans, a timer, and recovery tests against a recorded SHA-256;
+      backed up, tested and restored for real in the distribution
+      containers
+- [x] A Git repositories dashboard: the repositories under the project
+      folders with their branch, changes and upstream; one repository's
+      files, diffs, branches, stashes and commits; staging, commits,
+      branches, stashes, fetch, pull and push as reviewed plans checked
+      again when they run, and reading that never runs a repository's hooks
+      or filters
+- [x] Project workspaces: tasks found in `package.json`, Cargo, Makefiles
+      and justfiles without running them, your own kept with favorites in
+      `workspaces.toml`, each run in its folder after review
+- [x] Ghostty and Fastfetch configuration editors: the file to edit, its
+      Home Manager source found, checks, common fields and the whole file,
+      saved as a reviewed plan that keeps a backup and refuses a file
+      changed since it was read; changed, refused and put back for real in
+      the distribution containers
+- [x] Home Manager: the configuration, its generations and the active one,
+      its repository and the files it links; build, switch, going back to
+      a generation and pulling the repository as reviewed plans
+
 ## v1.19.0: moving machines
 
 - [x] A migration hub: what this machine has, exported to a file, and that

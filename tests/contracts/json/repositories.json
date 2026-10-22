@@ -1,0 +1,30 @@
+{
+  "command": "string",
+  "data": {
+    "depth": "number",
+    "origin": "string",
+    "repositories": [
+      {
+        "ahead": "null",
+        "behind": "null",
+        "branch": "string",
+        "changed": "number",
+        "favorite": "boolean",
+        "group": "string",
+        "last": "string",
+        "last_at": "number",
+        "name": "string",
+        "origin": "null",
+        "path": "string",
+        "problem": "null",
+        "upstream": "null"
+      }
+    ],
+    "roots": [
+      "string"
+    ]
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}
