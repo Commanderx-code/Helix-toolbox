@@ -150,8 +150,9 @@ backup_system() { :; }
 curl() { printf 'test key' > "$4"; }
 gpg() {
     case "$3" in
+        --import) cp "$4" "$GNUPGHOME/imported" ;;
+        --export) [ "$4" = "$KEY_FPR" ] && cat "$GNUPGHOME/imported" ;;
         --show-keys) printf 'pub:-:4096:1:DDCAE044F796ECB0:::\\nfpr:::::::::%s:\\n' "$KEY_FPR" ;;
-        --dearmor) cp "$6" "$5" ;;
     esac
 }
 . ./helper.sh
@@ -161,6 +162,50 @@ resolve_apt_nvidia
         (root / 'apt-get').chmod(0o755)
         env = dict(os.environ, PATH=str(root) + ':' + os.environ['PATH'], KEY_FPR=key_fpr)
         return subprocess.run(['sh', '-e', './run.sh'], cwd=root, env=env, capture_output=True, text=True)
+
+    @unittest.skipUnless(shutil.which('gpg'), 'needs gpg')
+    def test_apt_nvidia_repository_keeps_only_the_pinned_key(self):
+        # A real GnuPG, in a scratch home: the downloaded file carries the
+        # pinned key and a second certificate; only the pinned one reaches apt.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / 'gnupg'
+            home.mkdir(mode=0o700)
+            gpg = ['gpg', '--homedir', str(home), '--batch', '--quiet', '--passphrase', '', '--pinentry-mode', 'loopback']
+            fprs = []
+            for name in ('Pinned', 'Other'):
+                subprocess.run(gpg + ['--quick-gen-key', f'{name} <{name.lower()}@example.com>', 'ed25519', 'sign', 'never'], check=True)
+                listing = subprocess.run(gpg + ['--with-colons', '--list-keys', f'{name.lower()}@example.com'],
+                                         check=True, capture_output=True, text=True).stdout
+                fprs.append(next(line.split(':')[9] for line in listing.splitlines() if line.startswith('fpr')))
+            served = root / 'served.asc'
+            served.write_bytes(subprocess.run(gpg + ['--armor', '--export'] + fprs, check=True, capture_output=True).stdout)
+            sources, keys = root / 'sources', root / 'keys'
+            sources.mkdir()
+            keys.mkdir()
+            helper = ((TOOLS / 'resolve-apt.sh').read_text()
+                      .replace('/etc/apt/sources.list.d', str(sources)).replace('/usr/share/keyrings', str(keys))
+                      .replace('C95B321B61E88C1809C4F759DDCAE044F796ECB0', fprs[0]))
+            (root / 'helper.sh').write_text(helper)
+            (root / 'run.sh').write_text(f'''#!/bin/sh -e
+ESCALATION_TOOL=env
+confirm() {{ :; }}
+install_packages() {{ :; }}
+backup_system() {{ :; }}
+curl() {{ cp {served} "$4"; }}
+. ./helper.sh
+resolve_apt_nvidia
+''')
+            (root / 'apt-get').write_text('#!/bin/sh\nexit 0\n')
+            (root / 'apt-get').chmod(0o755)
+            env = dict(os.environ, PATH=str(root) + ':' + os.environ['PATH'])
+            result = subprocess.run(['sh', '-e', './run.sh'], cwd=root, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            keyring = keys / 'commander-nvidia-container-toolkit.gpg'
+            listing = subprocess.run(gpg + ['--with-colons', '--show-keys', str(keyring)], check=True, capture_output=True, text=True).stdout
+            primaries = [line.split(':')[9] for i, line in enumerate(listing.splitlines())
+                         if line.startswith('fpr') and listing.splitlines()[i - 1].startswith('pub')]
+            self.assertEqual(primaries, [fprs[0]])
 
     def test_apt_nvidia_repository_rejects_unpinned_key(self):
         with tempfile.TemporaryDirectory() as tmp:

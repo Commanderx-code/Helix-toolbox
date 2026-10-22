@@ -49,6 +49,36 @@ class StartScriptTests(unittest.TestCase):
         self.assertIn('checksum', result.stdout)
         self.assertFalse((self.root / 'ran').exists())
 
+    def plant_checkout(self, where):
+        # A Cargo project shaped like a Helix Toolbox checkout, with a cargo
+        # that only says it was asked.
+        (where / 'apps/helix-toolbox').mkdir(parents=True)
+        (where / 'Cargo.toml').write_text('[workspace]\n')
+        (where / 'apps/helix-toolbox/Cargo.toml').write_text('[package]\nname = "helix-toolbox"\n')
+        cargo = self.root / 'cargo'
+        cargo.write_text('#!/bin/sh\necho "cargo $*" > "$RAN"\n')
+        cargo.chmod(0o755)
+
+    def test_a_checkout_runs_from_source(self):
+        self.plant_checkout(self.root)
+        result = self.run_start()
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual((self.root / 'ran').read_text(), 'cargo run --locked -p helix-toolbox -- --help\n')
+
+    def test_piped_to_sh_it_never_builds_the_current_directory(self):
+        # curl ... | sh from inside someone else's Cargo project.
+        here = self.root / 'elsewhere'
+        here.mkdir()
+        self.plant_checkout(here)
+        (here / 'start.sh').write_text('')
+        (here / 'sh').write_text('')
+        result = subprocess.run(['sh', '-s', '--', '--help'], input=(ROOT / 'start.sh').read_text(), cwd=here,
+                                text=True, capture_output=True,
+                                env=dict(os.environ, PATH=str(self.root) + ':' + os.environ['PATH'],
+                                         HELIX_TOOLBOX_RELEASE=f'file://{self.release}', RAN=str(self.root / 'ran')))
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertEqual((self.root / 'ran').read_text(), 'helix-toolbox ran --help\n')
+
     def test_release_without_the_asset_sum_is_refused(self):
         (self.release / 'SHA256SUMS').write_text('')
         result = self.run_start()

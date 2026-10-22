@@ -47,7 +47,14 @@ common_cleanup() {
         "$ESCALATION_TOOL" find /tmp -type f -atime +5 -delete
     fi
     if [ -d /var/log ]; then
-        "$ESCALATION_TOOL" find /var/log -type f -name "*.log" -exec truncate -s 0 {} \;
+        # truncate opens each name again and follows a symlink, so it only
+        # goes where no other account can swap names: directories owned by
+        # root that neither their group nor others can write, and files
+        # owned by root. Logs a service keeps in its own directory are left
+        # to logrotate.
+        "$ESCALATION_TOOL" find /var/log -xdev \
+            \( -type d \( ! -user root -o -perm -020 -o -perm -002 \) -prune \) \
+            -o \( -type f -name "*.log" -user root -exec truncate -s 0 {} + \)
     fi
     if [ "$INIT_MANAGER" = "systemctl" ]; then
         "$ESCALATION_TOOL" journalctl --vacuum-time=3d

@@ -4,6 +4,48 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.21.1
+
+- **Offline bundles check what they install.** An RPM in a bundle must
+  carry a signature by a key in the installing machine's rpm keyring,
+  checked when the plan is made and again on the copy about to install, and
+  dnf checks local packages too; `rpm -K` alone had passed a package with
+  no signature at all. A bundle's `packages` folder may hold only its
+  family's package files, and every Debian package apt is handed must be in
+  the machine's signed repository index, where a file not named `.deb` had
+  gone to apt unchecked. Either is refused unless `--trust-bundle` is given.
+- **Installers trust only the repositories and keys they name.** Thorium's
+  apt source is written locally over HTTPS instead of fetched over HTTP as
+  root. The Chrome, Sublime Text, FreeOffice, Brave Origin, Vivaldi and
+  podman-compose installers import their vendor's signing keys pinned by
+  fingerprint, from HTTPS, and refresh only the repository they add: no
+  `apt-key` and no `--gpg-auto-import-keys` refresh of every repository.
+  The Resolve installer's NVIDIA keyring holds only the pinned key, whatever
+  else the downloaded file carries. The bootable USB creator saves a
+  download under a plain name in a folder of its own, from HTTPS only, and
+  `start.sh` piped to `sh` always runs the checksum-checked release instead
+  of building whatever Cargo project the current folder holds.
+- **Passwords off the command line and the screen.** The file encryption
+  tool hands its password to OpenSSL on a descriptor, not its command line
+  where other local users could read it, asks for it without showing it and
+  twice when encrypting, and derives the key with 600,000 PBKDF2 iterations;
+  files encrypted before still open. Add User and the encryption tool no
+  longer show passwords as they are typed, the WiFi Manager lets
+  NetworkManager ask for the passphrase instead of passing it on nmcli's
+  command line, and the Bluetooth Manager shows device names as plain text,
+  so a nearby device's name cannot send escape sequences to the terminal.
+  The virtual machine tests check Fedora's image against a digest pinned
+  from its signed checksum, and take the other checksums only from their
+  projects' own hosts.
+- **Installers no longer trust what other accounts can reach.** The Steam
+  mod installers (Starfield, Fallout 76, Arc Raiders and Diablo II) clone
+  into a new private folder on every run instead of reusing a fixed folder
+  in /tmp that another account could have made first, and Arc Raiders will
+  not make a symbolic link read-only. The Samba setup gives its share to the
+  Samba user with mode 0770 instead of making it, and everything already in
+  it, writable by every account. Full System Cleanup only empties logs
+  where no other account can swap their names.
+
 ## v1.21.0
 
 - **The terminal interface's running window shows each step.** Beside the

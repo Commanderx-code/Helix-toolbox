@@ -113,7 +113,9 @@ curl -fsSL https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/
 ```
 
 From a checkout with Rust installed, `./start.sh` builds and runs the source
-instead.
+instead. Piped to `sh`, it always downloads the release: it builds only when
+it runs as the `start.sh` file of a Helix Toolbox checkout, never whatever
+Cargo project the current folder holds.
 
 ## Checking a download
 

@@ -26,8 +26,16 @@ installBraveOrigin() {
                     "$ESCALATION_TOOL" "$PACKAGER" install -y brave-origin
                     ;;
                 zypper)
+                    # Brave's signing keys, pinned; only this repository is refreshed.
+                    key_dir=$(mktemp -d)
+                    for brave_key in DBF1A116C220B8C7164F98230686B78420038257 47D32A74E9A9E013A4B4926C68D513D36A73CD96 \
+                        B2A3DCA350E67256740DF904DE4EC67BE4B0DCA0; do
+                        pinnedKeys https://brave-browser-rpm-release.s3.brave.com/brave-core.asc "$key_dir/$brave_key.asc" "$brave_key"
+                        "$ESCALATION_TOOL" rpm --import "$key_dir/$brave_key.asc"
+                    done
+                    rm -rf -- "$key_dir"
                     "$ESCALATION_TOOL" "$PACKAGER" addrepo https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
-                    "$ESCALATION_TOOL" "$PACKAGER" --gpg-auto-import-keys refresh
+                    "$ESCALATION_TOOL" "$PACKAGER" refresh brave-browser
                     "$ESCALATION_TOOL" "$PACKAGER" install -y brave-origin
                     ;;
                 pacman)

@@ -16,10 +16,17 @@ createUser() {
         exit 1
     fi
 
+    # Not shown as it is typed, so it is not on the screen or in a saved log.
     printf "%b" "${YELLOW}Enter the password: ${RC}"
+    stty -echo
     read -r password
+    stty echo
+    printf "\n"
     printf "%b" "${YELLOW}Enter the password again: ${RC}"
+    stty -echo
     read -r password_confirmation
+    stty echo
+    printf "\n"
 
     if [ "$password" != "$password_confirmation" ]; then
         printf "%b\n" "${RED}Passwords do not match${RC}"

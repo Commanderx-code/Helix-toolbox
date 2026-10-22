@@ -12,8 +12,13 @@ installFreeOffice() {
             "$ESCALATION_TOOL" rm ./softmaker-freeoffice-2024_1218-01_amd64.deb
             ;;
         zypper)
+            # SoftMaker's signing key, pinned; only this repository is refreshed.
+            key_dir=$(mktemp -d)
+            pinnedKeys https://shop.softmaker.com/repo/rpm/softmaker-repo.asc "$key_dir/softmaker.asc" CC7D2EDF4808EFFA0E00FC723413DA98AA3E7F5E
+            "$ESCALATION_TOOL" rpm --import "$key_dir/softmaker.asc"
+            rm -rf -- "$key_dir"
             "$ESCALATION_TOOL" "$PACKAGER" addrepo -f https://shop.softmaker.com/repo/rpm SoftMaker
-            "$ESCALATION_TOOL" "$PACKAGER" --gpg-auto-import-keys refresh
+            "$ESCALATION_TOOL" "$PACKAGER" refresh SoftMaker
             "$ESCALATION_TOOL" "$PACKAGER" --non-interactive install softmaker-freeoffice-2024
             ;;
         pacman)

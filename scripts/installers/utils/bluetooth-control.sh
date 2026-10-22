@@ -59,6 +59,12 @@ main_menu() {
     done
 }
 
+# Device names are chosen by whoever owns the device: shown as text, with
+# control characters dropped, so none of them can steer the terminal.
+printable() {
+    printf '%s\n' "$1" | LC_ALL=C tr -d '\000-\010\013-\037\177'
+}
+
 scan_devices() {
     clear
     printf "%b\n" "${YELLOW}Scanning for devices...${RC}"
@@ -68,7 +74,7 @@ scan_devices() {
         printf "%b\n" "${RED}No devices found.${RC}"
     else
         printf "%b\n" "${GREEN}Devices found:${RC}"
-        printf "%b\n" "$devices"
+        printable "$devices"
     fi
     printf "%b" "Press any key to return to the main menu..."
     read -r _
@@ -92,7 +98,7 @@ prompt_for_mac() {
 
         # Display devices with numbers
         i=1
-        echo "$devices" | while IFS= read -r device; do
+        printable "$devices" | while IFS= read -r device; do
             printf "%d. %s\n" "$i" "$device"
             i=$((i + 1))
         done
@@ -100,7 +106,7 @@ prompt_for_mac() {
         printf "%b" "$prompt_msg"
         read -r choice
 
-        count=$(printf "%b" "$devices" | wc -l)
+        count=$(printf '%s' "$devices" | wc -l)
         count=$((count + 1))
 
         if echo "$choice" | grep -qE '^[0-9]+$' && [ -n "$choice" ] && [ "$choice" -le "$count" ] && [ "$choice" -gt 0 ]; then

@@ -212,16 +212,10 @@ prompt_for_network() {
         ssid=$(sed -n "${SELECTED_NETWORK_INDEX}p" "$temp_file")
         case "$action" in
             connect)
-                printf "%b" "Enter password for SSID: $ssid "
-                read -r password
-                printf "\n"
-                if [ -n "$password" ]; then
-                    if nmcli dev wifi connect "$ssid" password "$password"; then
-                        printf "%b\n" "${GREEN}$success_msg${RC}"
-                    else
-                        printf "%b\n" "${RED}$failure_msg${RC}"
-                    fi
-                elif nmcli dev wifi connect "$ssid"; then
+                # nmcli asks for the password itself when the network needs
+                # one, without showing it or putting it on a command line.
+                printf "%b\n" "Connecting to $ssid; enter its password if asked."
+                if nmcli --ask dev wifi connect "$ssid"; then
                     printf "%b\n" "${GREEN}$success_msg${RC}"
                 else
                     printf "%b\n" "${RED}$failure_msg${RC}"

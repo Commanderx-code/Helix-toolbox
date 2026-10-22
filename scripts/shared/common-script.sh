@@ -164,6 +164,46 @@ checkFlatpak() {
     fi
 }
 
+# Fetch a vendor's signing keys over HTTPS and keep only the pinned ones:
+# pinnedKeys URL OUTPUT FINGERPRINT... writes exactly those keys to OUTPUT,
+# binary when it ends in .gpg (an apt keyring) and armored otherwise (for
+# rpm --import), and fails when the file lacks any of them. Whatever else the
+# file holds stays behind.
+pinnedKeys() {
+    pinned_url=$1
+    pinned_output=$2
+    shift 2
+    if ! command_exists gpg; then
+        printf '%b\n' "${YELLOW}Installing GnuPG to check the signing key...${RC}"
+        case "$PACKAGER" in
+            apt-get | nala) "$ESCALATION_TOOL" "$PACKAGER" install -y gnupg ;;
+            zypper) "$ESCALATION_TOOL" "$PACKAGER" --non-interactive install gpg2 ;;
+            *) "$ESCALATION_TOOL" "$PACKAGER" install -y gnupg2 ;;
+        esac
+    fi
+    pinned_work=$(mktemp -d)
+    mkdir -m 700 "$pinned_work/gnupg"
+    pinned_armor=--armor
+    case "$pinned_output" in *.gpg) pinned_armor= ;; esac
+    # shellcheck disable=SC2086 # $pinned_armor is empty or one option.
+    if ! curl -fsSL --proto '=https' "$pinned_url" -o "$pinned_work/key.asc" ||
+        ! GNUPGHOME="$pinned_work/gnupg" gpg --batch --quiet --import "$pinned_work/key.asc" ||
+        ! GNUPGHOME="$pinned_work/gnupg" gpg --batch --quiet $pinned_armor --export "$@" > "$pinned_work/pinned" ||
+        ! pinned_listing=$(GNUPGHOME="$pinned_work/gnupg" gpg --batch --quiet --show-keys --with-colons "$pinned_work/pinned"); then
+        pinned_listing=
+    fi
+    pinned_found=$(printf '%s\n' "$pinned_listing" |
+        awk -F: '$1 == "pub" { want = 1; next } want && $1 == "fpr" { print $10; want = 0 }' | sort)
+    pinned_wanted=$(printf '%s\n' "$@" | sort)
+    if [ -z "$pinned_listing" ] || [ "$pinned_found" != "$pinned_wanted" ]; then
+        rm -rf -- "$pinned_work"
+        printf '%b\n' "${RED}The signing key at $pinned_url is not the one expected; nothing was added.${RC}" >&2
+        return 1
+    fi
+    "$ESCALATION_TOOL" install -D -m 644 "$pinned_work/pinned" "$pinned_output"
+    rm -rf -- "$pinned_work"
+}
+
 checkEnv() {
     checkArch
     checkEscalationTool

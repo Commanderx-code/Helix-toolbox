@@ -1,7 +1,7 @@
 {
   "name": "helix-toolbox-gui",
   "private": true,
-  "version": "1.21.0",
+  "version": "1.21.1",
   "type": "module",
   "description": "Helix Toolbox in a window: the frontend of the Tauri application.",
   "license": "MIT",

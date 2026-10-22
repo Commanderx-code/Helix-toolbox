@@ -546,6 +546,31 @@ fn plain_file(name: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"+._@:~-".contains(&byte))
 }
 
+/// Whether a file in a bundle's packages/ folder is named as this family's
+/// packages are: an Arch package or its detached signature, a Debian
+/// package, an RPM. Nothing else is handed to the package manager.
+fn package_file(family: &str, name: &str) -> bool {
+    match family {
+        "arch" => {
+            let package = name.strip_suffix(".sig").unwrap_or(name);
+            package
+                .rsplit_once(".pkg.tar")
+                .is_some_and(|(stem, compression)| {
+                    !stem.is_empty()
+                        && matches!(
+                            compression,
+                            "" | ".zst" | ".xz" | ".gz" | ".bz2" | ".lz4" | ".lzo" | ".lrz" | ".Z"
+                        )
+                })
+        }
+        "debian" => name.len() > ".deb".len() && name.ends_with(".deb"),
+        "fedora" | "opensuse" => {
+            name.len() > ".rpm".len() && name.ends_with(".rpm") && !name.ends_with(".src.rpm")
+        }
+        _ => false,
+    }
+}
+
 fn sha256_file(path: &Path) -> Result<(String, u64), BundleError> {
     let mut file = std::fs::File::open(path).map_err(|error| BundleError::Io(error.to_string()))?;
     let mut hasher = Sha256::new();
@@ -736,7 +761,10 @@ pub fn create(
                 sha256,
                 bytes,
                 source: Some(label.to_string()),
-                assurance: Some("signed: rpm -K checks it before it installs".to_string()),
+                assurance: Some(
+                    "signed: its signature is checked against the installing machine's rpm keyring before it installs"
+                        .to_string(),
+                ),
             });
         }
     }
@@ -903,6 +931,18 @@ pub fn verify(directory: &Path, platform: &LinuxInfo) -> Result<Manifest, Bundle
         if !inside || !name_ok || !place {
             return Err(BundleError::Damaged(format!(
                 "it names {}",
+                printable(&file.path)
+            )));
+        }
+        // Everything under packages/ goes to the package manager, so it
+        // holds only what this family's packages are named.
+        if file.path.starts_with("packages/")
+            && !relative
+                .file_name()
+                .is_some_and(|name| package_file(family_name, &name.to_string_lossy()))
+        {
+            return Err(BundleError::Damaged(format!(
+                "{} is not a {family_name} package",
                 printable(&file.path)
             )));
         }
@@ -1108,12 +1148,14 @@ fn plain_manifest(manifest: &Manifest) -> bool {
 /// a new private folder and checked there against the checksums of the
 /// manifest verified here, which are written into the plan itself, so
 /// nothing changed in the bundle afterward is installed. Then each
-/// package's signature is checked (pacman's with pacman-key, rpm's with rpm
-/// -K), and the package manager installs them from the files.
+/// package's signature is checked (pacman's with pacman-key; an RPM's must
+/// be by a key in this machine's rpm keyring), and the package manager
+/// installs them from the files.
 ///
 /// Debian packages carry no signature of their own: each must be known to
 /// this machine's repository index (signed, and checked by apt) with the
-/// same checksum, unless `trust` takes the bundle's word for them.
+/// same checksum. `trust` takes the bundle's word for RPMs without such a
+/// signature and Debian packages the index does not know.
 pub fn plan_install(
     directory: &Path,
     manifest: &Manifest,
@@ -1197,9 +1239,16 @@ fn native_step(
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default()
     };
+    // What the package manager is handed: every package file but Arch's
+    // signatures, which pacman-key checks.
+    let installable: Vec<&&BundledFile> = packages
+        .iter()
+        .filter(|file| !file.path.ends_with(".sig"))
+        .collect();
+    let rpm = matches!(manager, PackageManager::Fedora | PackageManager::Suse);
     if manager == PackageManager::Debian && !trust {
         let mut unknown = Vec::new();
-        for file in packages.iter().filter(|file| file.path.ends_with(".deb")) {
+        for file in &installable {
             if !known_to_apt(&directory.join(&file.path), &file.sha256, system) {
                 unknown.push(name(file));
             }
@@ -1208,6 +1257,19 @@ fn native_step(
             return Err(BundleError::Damaged(format!(
                 "this machine's repository index does not know {} with the same checksum, so nothing but the bundle vouches for them; install with --trust-bundle only if you made the bundle yourself",
                 unknown.join(", ")
+            )));
+        }
+    }
+    if rpm && !trust {
+        let unsigned: Vec<String> = installable
+            .iter()
+            .filter(|file| !signed_for_rpm(&directory.join(&file.path), system))
+            .map(|file| name(file))
+            .collect();
+        if !unsigned.is_empty() {
+            return Err(BundleError::Damaged(format!(
+                "{} carry no signature by a key in this machine's rpm keyring, so nothing but the bundle vouches for them; install with --trust-bundle only if you made the bundle yourself",
+                unsigned.join(", ")
             )));
         }
     }
@@ -1231,10 +1293,6 @@ fn native_step(
         "( cd \"$hf_staging\" && printf '%s\\n' {} | sha256sum --quiet --check - ) || {{ echo 'Helix Toolbox: the bundle changed after it was checked; nothing was installed' >&2; exit 1; }}",
         sums.join(" ")
     ));
-    let installable: Vec<&&BundledFile> = packages
-        .iter()
-        .filter(|file| !file.path.ends_with(".sig"))
-        .collect();
     let mut requires = vec![
         "sha256sum".to_string(),
         "sudo".to_string(),
@@ -1253,7 +1311,19 @@ fn native_step(
         }
         PackageManager::Fedora | PackageManager::Suse => {
             let files: Vec<String> = installable.iter().map(|file| staged(file)).collect();
-            lines.push(format!("rpm -K {} || exit 1", files.join(" ")));
+            if trust {
+                // The bundle's word, as asked: its digests still have to hold.
+                lines.push(format!("rpm -K {} || exit 1", files.join(" ")));
+            } else {
+                // rpm -K alone passes a package with no signature at all:
+                // each copy must show a signature by a key in the keyring,
+                // and no check that failed or could not be made.
+                lines.push(format!(
+                    "for hf_package in {}; do hf_checked=$(LC_ALL=C {RPM_SIGNATURE} -- \"$hf_package\") && printf '%s\\n' \"$hf_checked\" | grep -Eiq '{RPM_SIGNED}' && ! printf '%s\\n' \"$hf_checked\" | grep -Eq '{RPM_FAILED}' || {{ echo \"Helix Toolbox: ${{hf_package##*/}} is not signed by a key this machine trusts; nothing was installed\" >&2; exit 1; }}; done",
+                    files.join(" ")
+                ));
+                requires.push("grep".to_string());
+            }
             requires.push("rpm".to_string());
         }
         _ => {}
@@ -1266,7 +1336,11 @@ fn native_step(
         PackageManager::Debian => ("sudo apt-get install", "apt-get"),
         // The remote repositories set aside, as dnf's are.
         PackageManager::Suse => ("sudo zypper --no-refresh --no-remote install", "zypper"),
-        _ => ("sudo dnf install --disablerepo='*'", "dnf"),
+        _ if trust => ("sudo dnf install --disablerepo='*'", "dnf"),
+        _ => (
+            "sudo dnf install --disablerepo='*' --setopt=localpkg_gpgcheck=1",
+            "dnf",
+        ),
     };
     if manager == PackageManager::Suse {
         // zypper reads its answer only from a terminal; with none attached,
@@ -1297,8 +1371,11 @@ fn native_step(
             directory.display(),
             match manager {
                 PackageManager::Arch => " and their signatures (pacman-key --verify)",
+                PackageManager::Fedora | PackageManager::Suse if trust => {
+                    " and their digests (rpm -K)"
+                }
                 PackageManager::Fedora | PackageManager::Suse => {
-                    " and their signatures (rpm -K)"
+                    " and their signatures against this machine's rpm keyring (rpm -Kv)"
                 }
                 _ => "",
             },
@@ -1441,6 +1518,53 @@ fn flatpak_step(
         changes: Vec::new(),
     };
     Ok((step, requires, privileged))
+}
+
+/// rpm asked to check a package's signatures, not only its digests: with
+/// `_pkgverify_level` at `signature`, a package with none fails too.
+const RPM_SIGNATURE: &str = "rpm --define '_pkgverify_level signature' -Kv";
+/// The line rpm -Kv prints for a signature a key in the keyring verifies,
+/// in rpm 4's words ("key ID") and rpm 6's ("key fingerprint").
+const RPM_SIGNED: &str = "signature, key (id|fingerprint):? *[0-9a-f]+: OK$";
+/// What rpm -Kv prints for a check that failed or could not be made.
+const RPM_FAILED: &str = ": (BAD|NOKEY|NOTTRUSTED|NOTFOUND)$";
+
+/// Whether rpm says this package file carries a signature by a key in this
+/// machine's rpm keyring, and that no check of it failed.
+fn signed_for_rpm(file: &Path, system: &dyn System) -> bool {
+    let path = file.display().to_string();
+    let Some((true, shown)) = system.run(&[
+        "rpm",
+        "--define",
+        "_pkgverify_level signature",
+        "-Kv",
+        "--",
+        &path,
+    ]) else {
+        return false;
+    };
+    rpm_signed(&shown)
+}
+
+/// rpm -Kv's report on a package: a signature by a key it holds, and no
+/// check bad, missing or untrusted.
+fn rpm_signed(shown: &str) -> bool {
+    let mut signed = false;
+    for line in shown.lines() {
+        let Some((check, status)) = line.trim().rsplit_once(": ") else {
+            continue;
+        };
+        match status {
+            "OK" => {
+                let check = check.to_ascii_lowercase();
+                signed |= check.contains("signature, key id")
+                    || check.contains("signature, key fingerprint");
+            }
+            "BAD" | "NOKEY" | "NOTTRUSTED" | "NOTFOUND" => return false,
+            _ => {}
+        }
+    }
+    signed
 }
 
 /// Whether this machine's apt index lists the package in this file, at its
@@ -2175,11 +2299,41 @@ mod tests {
             Some("zypper install --download-only")
         );
         let read = verify(&bundle, &suse).unwrap();
-        let planned = plan_install(&bundle, &read, &[], &suse, &Fake::default(), false).unwrap();
+        // Nothing in this machine's rpm keyring vouches for them: refused.
+        let refused =
+            plan_install(&bundle, &read, &[], &suse, &Fake::default(), false).unwrap_err();
+        assert!(refused.to_string().contains("--trust-bundle"), "{refused}");
+        let mut signed = Fake::default();
+        for name in [
+            "htop-3.5.3-1.1.x86_64.rpm",
+            "libhwloc15-2.13.0-1.3.x86_64.rpm",
+        ] {
+            let file = std::fs::canonicalize(bundle.join("packages").join(name)).unwrap();
+            signed.commands.insert(
+                format!(
+                    "rpm --define _pkgverify_level signature -Kv -- {}",
+                    file.display()
+                ),
+                format!(
+                    "{}:\n    Header V4 RSA/SHA512 Signature, key ID 29b700a4: OK\n    Header SHA256 digest: OK\n    Payload SHA256 digest: OK\n",
+                    file.display()
+                ),
+            );
+        }
+        let planned = plan_install(&bundle, &read, &[], &suse, &signed, false).unwrap();
         let Step::Shell { program, .. } = &planned.steps[0] else {
             panic!("a shell step");
         };
-        assert!(program.contains("rpm -K"), "{program}");
+        // Each staged copy's signature is checked again before it installs.
+        assert!(
+            program.contains(&format!("{RPM_SIGNATURE} -- \"$hf_package\"")),
+            "{program}"
+        );
+        assert!(
+            program.contains(RPM_SIGNED) && program.contains(RPM_FAILED),
+            "{program}"
+        );
+        assert!(planned.steps[0].display().contains("rpm keyring"));
         assert!(
             program.contains("sudo zypper $hf_answer --no-refresh --no-remote install"),
             "{program}"
@@ -2193,6 +2347,167 @@ mod tests {
             verify(&bundle, &platform(PackageManager::Fedora, "fedora")),
             Err(BundleError::Machine(..))
         ));
+    }
+
+    #[test]
+    fn only_the_familys_package_files_are_handed_to_its_package_manager() {
+        assert!(package_file("arch", "htop-3.4.1-1-x86_64.pkg.tar.zst"));
+        assert!(package_file("arch", "htop-3.4.1-1-x86_64.pkg.tar.zst.sig"));
+        assert!(package_file("arch", "zlib-1:1.3.2-4-x86_64.pkg.tar.xz"));
+        assert!(!package_file("arch", ".pkg.tar.zst"));
+        assert!(!package_file("arch", "htop.pkg.tar.exe"));
+        assert!(!package_file("arch", "htop_3.3_amd64.deb"));
+        assert!(package_file("debian", "htop_3.3_amd64.deb"));
+        assert!(!package_file("debian", "htop_3.3_amd64.ddeb"));
+        assert!(!package_file("debian", "htop_3.3_amd64.changes"));
+        assert!(!package_file("debian", ".deb"));
+        assert!(!package_file("debian", "htop_3.3_amd64.deb.sig"));
+        assert!(package_file("fedora", "htop-3.3.0-3.fc44.x86_64.rpm"));
+        assert!(package_file("opensuse", "htop-3.5.3-1.1.x86_64.rpm"));
+        assert!(!package_file("fedora", "htop-3.3.0-3.fc44.src.rpm"));
+        assert!(!package_file("fedora", "htop_3.3_amd64.deb"));
+        assert!(!package_file("alpine", "htop-3.3.0-r0.apk"));
+    }
+
+    /// A bundle of one file under packages/, its manifest made to match it.
+    fn bundle_of(at: &Path, family: &str, name: &str, bytes: &[u8]) -> Manifest {
+        std::fs::create_dir_all(at.join("packages")).unwrap();
+        std::fs::write(at.join("packages").join(name), bytes).unwrap();
+        let manifest = Manifest {
+            format: FORMAT,
+            family: family.into(),
+            architecture: std::env::consts::ARCH.into(),
+            entries: vec![BundledEntry {
+                id: "htop".into(),
+                name: "htop".into(),
+                offline: true,
+                packages: vec!["htop".into()],
+                ..BundledEntry::default()
+            }],
+            files: vec![BundledFile {
+                path: format!("packages/{name}"),
+                sha256: hex(&Sha256::digest(bytes)),
+                bytes: bytes.len() as u64,
+                ..BundledFile::default()
+            }],
+            ..Manifest::default()
+        };
+        std::fs::write(at.join(MANIFEST), toml::to_string(&manifest).unwrap()).unwrap();
+        manifest
+    }
+
+    #[test]
+    fn a_file_apt_would_install_but_not_named_as_a_deb_is_refused() {
+        let debian = platform(PackageManager::Debian, "debian");
+        let directory = tempfile::tempdir().unwrap();
+        bundle_of(directory.path(), "debian", "htop_3.3_amd64.ddeb", b"deb");
+        let refused = verify(directory.path(), &debian).unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .contains("htop_3.3_amd64.ddeb is not a debian package"),
+            "{refused}"
+        );
+        // Named as a Debian package, it must still be known to the signed
+        // index, every one that apt is handed, unless the bundle is trusted.
+        let named = directory.path().join("named");
+        let manifest = bundle_of(&named, "debian", "htop_3.3_amd64.deb", b"deb");
+        verify(&named, &debian).unwrap();
+        let refused =
+            plan_install(&named, &manifest, &[], &debian, &Fake::default(), false).unwrap_err();
+        assert!(
+            refused.to_string().contains("htop_3.3_amd64.deb"),
+            "{refused}"
+        );
+        assert!(plan_install(&named, &manifest, &[], &debian, &Fake::default(), true).is_ok());
+    }
+
+    #[test]
+    fn rpm_bundles_need_a_signature_by_a_key_in_the_keyring() {
+        // rpm 4's words, and rpm 6's.
+        assert!(rpm_signed(
+            "/b/htop.rpm:\n    Header V4 RSA/SHA256 Signature, key ID a15b79cc: OK\n    Header SHA256 digest: OK\n    Payload SHA256 digest: OK\n    V4 RSA/SHA256 Signature, key ID a15b79cc: OK\n"
+        ));
+        assert!(rpm_signed(
+            "/b/htop.rpm:\n    Header OpenPGP V4 RSA/SHA256 signature, key fingerprint: 36f612dcf27f7d1a48a835e4dbfcf71c6d9f90a6: OK\n    Header SHA256 digest: OK\n"
+        ));
+        // No signature at all: rpm -K alone passes this.
+        assert!(!rpm_signed(
+            "/b/htop.rpm:\n    Header SHA256 digest: OK\n    Header SHA1 digest: OK\n    Payload SHA256 digest: OK\n    MD5 digest: OK\n"
+        ));
+        // A key the keyring lacks, or one check that failed.
+        assert!(!rpm_signed(
+            "/b/htop.rpm:\n    Header V4 RSA/SHA256 Signature, key ID a15b79cc: NOKEY\n    Header SHA256 digest: OK\n"
+        ));
+        assert!(!rpm_signed(
+            "/b/htop.rpm:\n    Header V4 RSA/SHA256 Signature, key ID a15b79cc: OK\n    Payload SHA256 digest: BAD\n"
+        ));
+        let fedora = platform(PackageManager::Fedora, "fedora");
+        let directory = tempfile::tempdir().unwrap();
+        let manifest = bundle_of(
+            directory.path(),
+            "fedora",
+            "foo-1.0-1.x86_64.rpm",
+            b"unsigned",
+        );
+        let read = verify(directory.path(), &fedora).unwrap();
+        assert_eq!(read, manifest);
+        // Unsigned: refused, unless the bundle is trusted.
+        let refused = plan_install(
+            directory.path(),
+            &read,
+            &[],
+            &fedora,
+            &Fake::default(),
+            false,
+        )
+        .unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .contains("foo-1.0-1.x86_64.rpm carry no signature"),
+            "{refused}"
+        );
+        let trusted = plan_install(
+            directory.path(),
+            &read,
+            &[],
+            &fedora,
+            &Fake::default(),
+            true,
+        )
+        .unwrap();
+        let Step::Shell { program, .. } = &trusted.steps[0] else {
+            panic!("a shell step");
+        };
+        assert!(program.contains("rpm -K \"$hf_staging\"/'foo-1.0-1.x86_64.rpm' || exit 1"));
+        assert!(!program.contains("localpkg_gpgcheck"), "{program}");
+        assert!(
+            trusted.steps[0]
+                .display()
+                .contains("their digests (rpm -K)")
+        );
+        // Signed by a key in the keyring: dnf checks it again, and so does
+        // the step, on the copy it installs.
+        let file =
+            std::fs::canonicalize(directory.path().join("packages/foo-1.0-1.x86_64.rpm")).unwrap();
+        let mut signed = Fake::default();
+        signed.commands.insert(
+            format!(
+                "rpm --define _pkgverify_level signature -Kv -- {}",
+                file.display()
+            ),
+            "    Header V4 RSA/SHA256 Signature, key ID a15b79cc: OK\n".into(),
+        );
+        let planned = plan_install(directory.path(), &read, &[], &fedora, &signed, false).unwrap();
+        let Step::Shell { program, .. } = &planned.steps[0] else {
+            panic!("a shell step");
+        };
+        assert!(
+            program.contains("sudo dnf install --disablerepo='*' --setopt=localpkg_gpgcheck=1"),
+            "{program}"
+        );
+        assert!(program.contains(RPM_SIGNATURE), "{program}");
     }
 
     #[test]

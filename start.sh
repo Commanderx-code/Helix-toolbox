@@ -19,8 +19,19 @@ check() {
     unset message
 }
 
-SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-if [ -f "$SCRIPT_DIR/Cargo.toml" ] && command -v cargo >/dev/null 2>&1; then
+# From source only when this file itself sits in a Helix Toolbox checkout.
+# Piped to sh, $0 names the shell rather than this file, and the directory it
+# runs in could hold anyone's Cargo project.
+SCRIPT_DIR=
+case "$0" in
+    start.sh | */start.sh)
+        if [ -f "$0" ]; then
+            SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+        fi
+        ;;
+esac
+if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/Cargo.toml" ] &&
+    [ -f "$SCRIPT_DIR/apps/helix-toolbox/Cargo.toml" ] && command -v cargo >/dev/null 2>&1; then
     cd "$SCRIPT_DIR"
     check $? "Entering the Helix Toolbox directory"
     cargo run --locked -p helix-toolbox -- "$@"

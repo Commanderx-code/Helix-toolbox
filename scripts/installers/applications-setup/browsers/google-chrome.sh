@@ -12,8 +12,13 @@ installChrome() {
                 "$ESCALATION_TOOL" rm ./google-chrome-stable_current_amd64.deb
                 ;;
             zypper)
-                "$ESCALATION_TOOL" "$PACKAGER" addrepo http://dl.google.com/linux/chrome/rpm/stable/x86_64 Google-Chrome
-                "$ESCALATION_TOOL" "$PACKAGER" refresh
+                # Google's signing key, pinned, before the repository it vouches for.
+                key_dir=$(mktemp -d)
+                pinnedKeys https://dl.google.com/linux/linux_signing_key.pub "$key_dir/google.asc" EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796
+                "$ESCALATION_TOOL" rpm --import "$key_dir/google.asc"
+                rm -rf -- "$key_dir"
+                "$ESCALATION_TOOL" "$PACKAGER" addrepo https://dl.google.com/linux/chrome/rpm/stable/x86_64 Google-Chrome
+                "$ESCALATION_TOOL" "$PACKAGER" refresh Google-Chrome
                 "$ESCALATION_TOOL" "$PACKAGER" --non-interactive install google-chrome-stable
                 ;;
             pacman)

@@ -16,7 +16,7 @@ package installs happen only in the Distributions workflow's containers.
 | What 1.x promises | `apps/helix-toolbox/tests/contracts.rs` | what [STABILITY.md](STABILITY.md) promises, against the built program: every `--json` command's shape compared with the one saved in `tests/contracts/json` (fields may be added, never removed or given another kind), and the settings, favorites, history, profile, baseline and look files as 1.0, 1.1 and 1.4 wrote them (`tests/contracts/files`) read back, with settings a release does not know kept. A new command's shape is saved with `HELIX_TOOLBOX_BLESS_CONTRACTS=1 cargo test --test contracts`; a saved one is never rewritten |
 | Program in a terminal | `apps/helix-toolbox/tests/terminal.rs` | the built `helix-toolbox` driven through a pseudo-terminal, below |
 | The window | `apps/helix-toolbox-gui`, `scripts/gui-smoke.sh` | the frontend type-checked and built, the crate's tests of the shapes the window reads, and the smoke test: a debug build opened on a virtual display and driven through the setup wizard, the command palette, the theme, the keyboard, every screen, a run with its change preview, a saved profile exported, deleted and imported again, the offline bundles screen, the removal of a package entry, a bug report, a hardware report, an entry checked now, a service change and a cleanup reviewed and canceled against a stand-in `systemctl`, a boot hint's service change reviewed and canceled against stand-in `systemctl` and `systemd-analyze` answers, the recovery checks, this machine exported as a migration and one from another distribution read with its install reviewed and canceled, a stand-in restic's snapshot browsed and searched, a restore and a recovery test reviewed and canceled and the timed backup turned on and off, a scratch repository opened with a file's diff shown and its stage and a task of the user's reviewed and canceled, a stand-in `home-manager`'s generations shown with a build and going back reviewed and the timed backup turned on and off from Settings, a Ghostty configuration's field changed and saved for real in the scratch folders with the change preview side by side and the one before kept, its backup's put-back reviewed and canceled and a draft a stand-in `ghostty` rejects refused, and the notifications of updates and health problems turned on and off against the fixture catalog, with axe-core checking each screen and dialog for labels, roles and contrast ([GUI.md](GUI.md)) |
-| Installer tests | `tests/installers/` | the Commander installers against stand-in commands and temporary homes |
+| Installer tests | `tests/installers/` | the Commander installers against stand-in commands and temporary homes; the file encryption tool round-tripping a file and a folder through a stand-in `openssl` that records every command line, with no password on any and a file from the earlier version still opening, password reads with echo off, and Bluetooth device names with escapes shown without them |
 | Shellcheck | `scripts/verify.sh` | every shared helper and installer, with errors gated for the general catalog |
 | Workflow lint | `scripts/verify.sh` | actionlint over every workflow, including the shell in each step |
 | Source render | `scripts/verify.sh` | rendering the dotfiles and Myfish exports again changes no catalog file |
@@ -145,7 +145,10 @@ an interrupted source, and removals that leave the package behind.
 
 `scripts/vm-tests.py --distro MACHINE` boots one of these under QEMU, with
 KVM where the host has the machine's processor, each image checked against
-its published checksum:
+a digest its publisher stands behind: pinned for Fedora's fixed release,
+from its CHECKSUM file signed by the Fedora 44 key, and for the images that
+change, the checksum file their own project's host serves, fetched with no
+redirect (a mirror may serve the image itself, over HTTPS only):
 
 | Machine | What it is |
 |---|---|

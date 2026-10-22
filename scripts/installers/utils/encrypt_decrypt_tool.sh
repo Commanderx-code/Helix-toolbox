@@ -29,6 +29,44 @@ if ! command_exists openssl; then
     esac
 fi
 
+# Files this tool encrypts start with this line, so decryption knows their
+# PBKDF2 work factor; a file without it was encrypted by an earlier version,
+# with OpenSSL's default of 10,000 iterations, and still opens.
+ITERATIONS=600000
+ENC_HEADER="Helix Toolbox enc pbkdf2 $ITERATIONS"
+
+# Read a password into the variable named $1 without showing it, so it is not
+# on the screen or in a saved transcript.
+read_secret() {
+    printf "%b" "$2"
+    stty -echo 2>/dev/null || true
+    trap 'stty echo 2>/dev/null' EXIT
+    trap 'stty echo 2>/dev/null; exit 130' INT TERM
+    read -r "$1"
+    stty echo 2>/dev/null || true
+    trap - EXIT INT TERM
+    printf "\n"
+}
+
+# The password goes to OpenSSL on its standard input or another descriptor,
+# never on its command line, where any local user could read it.
+encrypt_one() {
+    {
+        printf '%s\n' "$ENC_HEADER"
+        printf '%s\n' "$PASSWORD" | openssl enc -aes-256-cbc -salt -pbkdf2 -iter "$ITERATIONS" -pass stdin -in "$1"
+    } > "$2"
+}
+
+decrypt_one() {
+    if [ "$(head -c "${#ENC_HEADER}" "$1" | tr -d '\000')" = "$ENC_HEADER" ]; then
+        printf '%s\n' "$PASSWORD" | {
+            tail -c +"$((${#ENC_HEADER} + 2))" "$1" | openssl enc -aes-256-cbc -d -pbkdf2 -iter "$ITERATIONS" -pass fd:3 -out "$2"
+        } 3<&0
+    else
+        printf '%s\n' "$PASSWORD" | openssl enc -aes-256-cbc -d -pbkdf2 -pass stdin -in "$1" -out "$2"
+    fi
+}
+
 show_menu() {
     printf "%b\n" "========================================================"
     printf "%b\n" " File/Directory Encryption/Decryption"
@@ -56,8 +94,14 @@ encrypt_file() {
     printf "%b" "Enter the path for the encrypted file or directory: "
     read -r OUTPUT_PATH
 
-    printf "%b" "Enter the encryption password: "
-    read -r PASSWORD
+    read_secret PASSWORD "Enter the encryption password: "
+    read_secret PASSWORD_CONFIRM "Enter the password again: "
+    if [ "$PASSWORD" != "$PASSWORD_CONFIRM" ]; then
+        unset PASSWORD PASSWORD_CONFIRM
+        printf "%b\n" "Passwords do not match."
+        return
+    fi
+    unset PASSWORD_CONFIRM
 
     if [ -d "$INPUT_PATH" ]; then
         # Encrypt each file in the directory
@@ -66,7 +110,7 @@ encrypt_file() {
             OUTPUT_FILE="$OUTPUT_PATH/$REL_PATH.enc"
             mkdir -p "$(dirname "$OUTPUT_FILE")"
 
-            if openssl enc -aes-256-cbc -salt -pbkdf2 -in "$FILE" -out "$OUTPUT_FILE" -k "$PASSWORD"; then
+            if encrypt_one "$FILE" "$OUTPUT_FILE"; then
                 printf "%b\n" "Encrypted: $OUTPUT_FILE"
             else
                 printf "%b\n" "Failed to encrypt: $FILE"
@@ -80,12 +124,13 @@ encrypt_file() {
         fi
         mkdir -p "$(dirname "$OUTPUT_PATH")"
 
-        if openssl enc -aes-256-cbc -salt -pbkdf2 -in "$INPUT_PATH" -out "$OUTPUT_PATH" -k "$PASSWORD"; then
+        if encrypt_one "$INPUT_PATH" "$OUTPUT_PATH"; then
             printf "%b\n" "Encrypted: $OUTPUT_PATH"
         else
             printf "%b\n" "Failed to encrypt: $INPUT_PATH"
         fi
     fi
+    unset PASSWORD
 }
 
 # Function to decrypt a file
@@ -101,8 +146,7 @@ decrypt_file() {
     printf "%b" "Enter the path for the decrypted file or directory: "
     read -r OUTPUT_PATH
 
-    printf "%b" "Enter the decryption password: "
-    read -r PASSWORD
+    read_secret PASSWORD "Enter the decryption password: "
 
     if [ -d "$INPUT_PATH" ]; then
         # Decrypt each file in the directory
@@ -111,7 +155,7 @@ decrypt_file() {
             OUTPUT_FILE="$OUTPUT_PATH/${REL_PATH%.enc}"
             mkdir -p "$(dirname "$OUTPUT_FILE")"
 
-            if openssl enc -aes-256-cbc -d -pbkdf2 -in "$FILE" -out "$OUTPUT_FILE" -k "$PASSWORD"; then
+            if decrypt_one "$FILE" "$OUTPUT_FILE"; then
                 printf "%b\n" "Decrypted: $OUTPUT_FILE"
             else
                 printf "%b\n" "Failed to decrypt: $FILE"
@@ -125,12 +169,13 @@ decrypt_file() {
         fi
         mkdir -p "$(dirname "$OUTPUT_PATH")"
 
-        if openssl enc -aes-256-cbc -d -pbkdf2 -in "$INPUT_PATH" -out "$OUTPUT_PATH" -k "$PASSWORD"; then
+        if decrypt_one "$INPUT_PATH" "$OUTPUT_PATH"; then
             printf "%b\n" "Decrypted: $OUTPUT_PATH"
         else
             printf "%b\n" "Failed to decrypt: $INPUT_PATH"
         fi
     fi
+    unset PASSWORD
 }
 
 main(){

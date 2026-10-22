@@ -20,9 +20,15 @@ installPodmanCompose() {
                 ;;
             zypper)
                 if [ "$ID" = "opensuse-leap" ]; then
+                    # The build service project's signing key, pinned; only this repository is refreshed.
+                    key_dir=$(mktemp -d)
+                    pinnedKeys "https://download.opensuse.org/repositories/devel:/languages:/python/$VERSION_ID/repodata/repomd.xml.key" \
+                        "$key_dir/python.asc" 172CCD6B0CF49B7388F1C61127163A4EEDF0D733
+                    "$ESCALATION_TOOL" rpm --import "$key_dir/python.asc"
+                    rm -rf -- "$key_dir"
                     "$ESCALATION_TOOL" "$PACKAGER" addrepo "https://download.opensuse.org/repositories/devel:languages:python/$VERSION_ID/devel:languages:python.repo"
-                    "$ESCALATION_TOOL" "$PACKAGER" --gpg-auto-import-keys refresh
-                    "$ESCALATION_TOOL" "$PACKAGER" --gpg-auto-import-keys install -y podman-compose
+                    "$ESCALATION_TOOL" "$PACKAGER" refresh devel_languages_python
+                    "$ESCALATION_TOOL" "$PACKAGER" install -y podman-compose
                 elif [ "$ID" = "opensuse-tumbleweed" ]; then
                     "$ESCALATION_TOOL" "$PACKAGER" install -y podman-compose
                 else

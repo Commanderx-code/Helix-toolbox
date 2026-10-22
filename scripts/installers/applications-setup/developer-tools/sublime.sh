@@ -7,8 +7,10 @@ installSublime() {
         printf "%b\n" "${YELLOW}Installing Sublime...${RC}"
         case "$PACKAGER" in
             apt-get|nala)
-                curl -fsSL https://download.sublimetext.com/sublimehq-pub.gpg | "$ESCALATION_TOOL" apt-key add -
-                echo "deb https://download.sublimetext.com/ apt/stable/" | "$ESCALATION_TOOL" tee /etc/apt/sources.list.d/sublime-text.list
+                # Sublime HQ's apt signing keys, pinned, and trusted for its repository only.
+                pinnedKeys https://download.sublimetext.com/sublimehq-pub.gpg /etc/apt/keyrings/sublimehq.gpg \
+                    1EDDE2CDFC025D17F6DA9EC0ADAE6AD28A8F901A EBC733B78AAB352DC773BF857FE2FA12CF6E38F2
+                echo "deb [signed-by=/etc/apt/keyrings/sublimehq.gpg] https://download.sublimetext.com/ apt/stable/" | "$ESCALATION_TOOL" tee /etc/apt/sources.list.d/sublime-text.list
                 "$ESCALATION_TOOL" "$PACKAGER" update
                 "$ESCALATION_TOOL" "$PACKAGER" install -y sublime-text
                 ;;

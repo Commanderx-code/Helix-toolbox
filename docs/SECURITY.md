@@ -17,15 +17,23 @@ update before reporting.
 
 A bundle's manifest is checked before anything in it is used: plain text,
 made for this distribution family and architecture, every file inside the
-bundle under a plain name and matching its SHA-256, and every pacman package
-with its signature, a detached one made only of signature packets. The
+bundle under a plain name and matching its SHA-256, only package files of
+the bundle's distribution family in its `packages` folder (`.pkg.tar.*` and
+their `.sig` for Arch, `.deb` for Debian, `.rpm` for Fedora and openSUSE),
+and every pacman package with its signature, a detached one made only of
+signature packets. The
 install copies the files into a new private folder
 and checks the copies against the sums it verified, carried in the plan
 itself, so a bundle changed after the check (on a shared drive, say) is not
 installed. Each pacman package's signature is checked with `pacman-key
---verify` and each RPM's with `rpm -K` before the package manager runs; a
-Debian package must match this machine's signed repository index unless
-`--trust-bundle` is given. Flatpaks install from the bundle's copy of their
+--verify` before the package manager runs. Each RPM must carry a signature
+by a key in this machine's rpm keyring, checked with `rpm -Kv` when the
+plan is made and again on the copy about to install, with dnf told to check
+local packages too (`localpkg_gpgcheck`); `rpm -K` alone would pass a
+package with no signature at all. A Debian package must match this
+machine's signed repository index. Either is refused unless
+`--trust-bundle` is given, which takes the bundle's word for a bundle you
+made yourself. Flatpaks install from the bundle's copy of their
 repository, and flatpak checks each commit's signature against the remote's
 key on the installing machine; the bundle's copy of that key is used only
 to add a remote the machine lacks, with `--trust-bundle`, and is checked

@@ -15,18 +15,21 @@ clone_git_repo() {
         return 1
     fi
 
-    [ -d "$tmp_dir" ] || {
-        printf "%b\n" "${YELLOW}Cloning configuration repository...${RC}"
-        git clone "$git_repo" "$tmp_dir" || {
-            printf "%b\n" "${RED}Failed to clone repository.${RC}"
-            rm -rf "$tmp_dir"
-            return 1
-        }
+    printf "%b\n" "${YELLOW}Cloning configuration repository...${RC}"
+    git clone "$git_repo" "$tmp_dir" || {
+        printf "%b\n" "${RED}Failed to clone repository.${RC}"
+        rm -rf "$tmp_dir"
+        return 1
     }
 
     printf "%b\n" "${YELLOW}Copying configuration files...${RC}"
     copy_files "$tmp_dir/compatdata" "$compatdata_path" "compatdata" || return 1
-    # Change Engine.ini to be read-only to prevent game from overwriting settings
+    # Change Engine.ini to be read-only to prevent game from overwriting settings.
+    # chmod follows a symlink, so one in its place is refused.
+    if [ -L "$compatdata_path/Engine.ini" ]; then
+        printf "%b\n" "${RED}Engine.ini is a symbolic link; refusing to change its mode.${RC}"
+        return 1
+    fi
     chmod 444 "$compatdata_path/Engine.ini"
     copy_files "$tmp_dir/common" "$common_path" "common" || return 1
 

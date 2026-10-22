@@ -101,10 +101,22 @@ check_hash() {
     fi
 }
 
+# The name to save a download under, from the remote list's file_name: only
+# its last part, and never one that is hidden, reads as an option or holds
+# anything but plain file name characters.
+iso_file_name() {
+    name=${1##*/}
+    case "$name" in
+        '' | . | .. | -* | .*) return 1 ;;
+        *[!A-Za-z0-9._+~-]*) return 1 ;;
+    esac
+    printf '%s\n' "$name"
+}
+
 download_iso() {
     printf "\n%b\n" "${YELLOW}Found URL: ${ISO_URL}${RC}"
     printf "%b\n" "${YELLOW}Downloading ISO to ${ISO_PATH}...${RC}"
-    if ! curl -L -o "$ISO_PATH" "$ISO_URL"; then
+    if ! curl -L -o "$ISO_PATH" -- "$ISO_URL"; then
         printf "%b\n" "${RED}Failed to download the ISO file.${RC}"
         exit 1
     fi
@@ -200,8 +212,21 @@ get_online_iso() {
     if [ "${ISO_FILENAME}" = "null" ]; then
         ISO_FILENAME="$(basename "${ISO_URL}")"
     fi
+    case "${ISO_URL}" in
+        https://*) ;;
+        *)
+            printf "%b\n" "${RED}The download is not over HTTPS, so it is not used: ${ISO_URL}${RC}"
+            exit 1
+            ;;
+    esac
+    if ! ISO_FILENAME="$(iso_file_name "${ISO_FILENAME}")"; then
+        printf "%b\n" "${RED}The list names a file that is not safe to save. Try choosing a local ISO file instead.${RC}"
+        exit 1
+    fi
 
-    ISO_PATH="${HOME}/Downloads/${ISO_FILENAME}"
+    # A new folder of its own, so the name cannot reach anything already there.
+    mkdir -p "${HOME}/Downloads"
+    ISO_PATH="$(mktemp -d "${HOME}/Downloads/iso.XXXXXX")/${ISO_FILENAME}"
     download_iso
 
     if [ "${ISO_CHECKSUM}" != "null" ]; then

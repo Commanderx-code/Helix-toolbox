@@ -6,8 +6,16 @@
 
 . ../common-script.sh
 
-# Derive the tmp directory from the repo name (e.g. /tmp/arc-raiders)
-tmp_dir="/tmp/$(basename "$git_repo" .git)"
+# Each run clones into a new private directory, removed when the script
+# exits: a fixed name in the shared /tmp could be made in advance by another
+# account, and its files would be copied into the game.
+tmp_parent=$(mktemp -d) || {
+    printf "%b\n" "${RED}Failed to create a temporary directory.${RC}"
+    exit 1
+}
+trap 'rm -rf "$tmp_parent"' 0
+trap 'exit 1' HUP INT TERM
+tmp_dir="$tmp_parent/$(basename "$git_repo" .git)"
 
 # Required variables – set in each game script BEFORE sourcing this file:
 #   steam_game       Display name and top-level directory under steamapps/common/
@@ -19,7 +27,8 @@ tmp_dir="/tmp/$(basename "$git_repo" .git)"
 #   git_repo         Full git clone URL for the game's configuration repository
 #
 # Variables derived or set automatically:
-#   tmp_dir          Derived from git_repo basename (e.g., /tmp/arc-raiders)
+#   tmp_dir          Where git_repo is cloned: its basename (e.g., arc-raiders)
+#                    in a new private directory made by mktemp -d
 #
 # Variables set by find_steamapps_dirs() for use in clone_git_repo():
 #   steamapps_dir    The steamapps directory that contains the game

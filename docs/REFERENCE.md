@@ -314,7 +314,8 @@ machine lacks, which suits a machine set up like it; `--complete` takes every
 dependency. pacman's packages come with their signatures, which `pacman -U`
 checks against its keyring when it installs them; apt's are checked against
 the checksums in the repository's signed index as they are downloaded; dnf's
-are signed, and `rpm -K` checks them before they install; so are zypper's,
+are signed, and their signatures are checked against the installing
+machine's rpm keyring before they install; so are zypper's,
 which zypper downloads as you, without root, into a scratch root that
 shares this machine's repositories (an empty package database for
 `--complete`, this machine's own otherwise), checking each against the
@@ -333,15 +334,21 @@ its `.flatpakrepo` file, has none until it is given its own:
 
 On the other machine, `./helix-toolbox bundle verify .` checks that the bundle
 was made for this distribution and architecture and that every file matches
-its checksum. `./helix-toolbox bundle install .`, after confirmation, copies the
+its checksum, and that its `packages` folder holds only that family's
+package files (`.pkg.tar.*` and their `.sig` for Arch, `.deb` for Debian,
+`.rpm` for Fedora and openSUSE), since everything there goes to the package
+manager. `./helix-toolbox bundle install .`, after confirmation, copies the
 packages into a new private folder, checks the copies against the checksums
 it verified (written into the plan, not read from the bundle again), checks
-each signature (`pacman-key --verify`, `rpm -K`), and installs them from the
-files (dnf and zypper without their repositories; zypper asks its own
+each signature (`pacman-key --verify`; for an RPM, `rpm -Kv` must show a
+signature by a key in this machine's rpm keyring, and nothing failed, both
+when the plan is made and on the copy, and dnf checks it too), and installs
+them from the files (dnf and zypper without their repositories; zypper asks its own
 question only in a terminal, as it reads answers from nowhere else). Debian packages have no
 signature of their own: each must be in this machine's signed repository
-index with the same checksum, or the install is refused unless
-`--trust-bundle` takes the bundle's word, for a bundle you made yourself.
+index with the same checksum. An RPM without such a signature, or a Debian
+package the index does not know, is refused unless `--trust-bundle` takes
+the bundle's word, for a bundle you made yourself.
 A bundle installs as a whole, since its entries share their dependencies.
 pacman and apt fetch only a dependency the bundle lacks, and only when the
 network is there; a `--complete` bundle lacks none.

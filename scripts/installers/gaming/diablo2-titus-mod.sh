@@ -15,13 +15,11 @@ clone_git_repo() {
         return 1
     fi
 
-    [ -d "$tmp_dir" ] || {
-        printf "%b\n" "${YELLOW}Cloning loot filter repository...${RC}"
-        git clone "$git_repo" "$tmp_dir" || {
-            printf "%b\n" "${RED}Failed to clone repository.${RC}"
-            rm -rf "$tmp_dir"
-            return 1
-        }
+    printf "%b\n" "${YELLOW}Cloning loot filter repository...${RC}"
+    git clone "$git_repo" "$tmp_dir" || {
+        printf "%b\n" "${RED}Failed to clone repository.${RC}"
+        rm -rf "$tmp_dir"
+        return 1
     }
 
     printf "%b\n" "${YELLOW}Copying mod files...${RC}"

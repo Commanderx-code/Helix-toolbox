@@ -92,13 +92,27 @@ setup_samba() {
         read -r SHARED_DIR
         SHARED_DIR=${SHARED_DIR:-/srv/samba/share}
 
-        # Create the shared directory if it doesn't exist
-        "$ESCALATION_TOOL" mkdir -p "$SHARED_DIR"
-        "$ESCALATION_TOOL" chmod -R 0777 "$SHARED_DIR"
-
         # Add a new Samba user
         printf "%b" "Enter Samba username: "
         read -r SAMBA_USER
+
+        # The share belongs to the Samba user and nobody else: other local
+        # accounts are kept out as "valid users" keeps them out over the
+        # network. A directory already in use keeps its permissions, and
+        # nothing is changed recursively.
+        if [ ! -e "$SHARED_DIR" ]; then
+            "$ESCALATION_TOOL" mkdir -p "$SHARED_DIR"
+            "$ESCALATION_TOOL" chown -- "$SAMBA_USER": "$SHARED_DIR"
+            "$ESCALATION_TOOL" chmod 0770 "$SHARED_DIR"
+        elif [ -d "$SHARED_DIR" ] && [ -z "$(ls -A "$SHARED_DIR")" ]; then
+            "$ESCALATION_TOOL" chown -- "$SAMBA_USER": "$SHARED_DIR"
+            "$ESCALATION_TOOL" chmod 0770 "$SHARED_DIR"
+        elif [ -d "$SHARED_DIR" ]; then
+            printf "%b\n" "${YELLOW}$SHARED_DIR already holds files; its permissions are left as they are. Make sure $SAMBA_USER can read and write it.${RC}"
+        else
+            printf "%b\n" "${RED}$SHARED_DIR exists and is not a directory.${RC}"
+            exit 1
+        fi
 
         # Loop until the passwords match
         while true; do

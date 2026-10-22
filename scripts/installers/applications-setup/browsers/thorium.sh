@@ -7,8 +7,11 @@ installThrorium() {
         printf "%b\n" "${YELLOW}Installing Thorium Browser...${RC}"
         case "$PACKAGER" in
             apt-get|nala)
-                "$ESCALATION_TOOL" rm -fv /etc/apt/sources.list.d/thorium.list
-                "$ESCALATION_TOOL" curl http://dl.thorium.rocks/debian/dists/stable/thorium.list -o /etc/apt/sources.list.d/thorium.list
+                # Thorium's repository is unsigned (its own list says trusted=yes), so
+                # HTTPS is all that vouches for it; the line is written here, so what
+                # the network serves cannot name other repositories or options.
+                printf '%s\n' 'deb [trusted=yes arch=amd64] https://dl.thorium.rocks/debian/ stable main' |
+                    "$ESCALATION_TOOL" tee /etc/apt/sources.list.d/thorium.list >/dev/null
                 "$ESCALATION_TOOL" "$PACKAGER" update
                 "$ESCALATION_TOOL" "$PACKAGER" install -y thorium-browser
                 ;;

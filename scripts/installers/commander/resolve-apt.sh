@@ -8,15 +8,21 @@ resolve_apt_nvidia() {
         repo_work=$(mktemp -d)
         trap 'rm -rf -- "$repo_work"' 0
         curl -fLsS https://nvidia.github.io/libnvidia-container/gpgkey -o "$repo_work/key.asc"
-        # Pin NVIDIA's published signing key instead of trusting whatever the URL serves.
+        # Pin NVIDIA's published signing key instead of trusting whatever the URL serves:
+        # only that key leaves a private keyring, whatever else the file holds.
         mkdir -m 700 "$repo_work/gnupg"
-        key_fprs=$(GNUPGHOME="$repo_work/gnupg" gpg --batch --quiet --show-keys --with-colons "$repo_work/key.asc" |
+        nvidia_key=C95B321B61E88C1809C4F759DDCAE044F796ECB0
+        if ! GNUPGHOME="$repo_work/gnupg" gpg --batch --quiet --import "$repo_work/key.asc" ||
+            ! GNUPGHOME="$repo_work/gnupg" gpg --batch --quiet --export "$nvidia_key" > "$repo_work/key.gpg" ||
+            ! key_listing=$(GNUPGHOME="$repo_work/gnupg" gpg --batch --quiet --show-keys --with-colons "$repo_work/key.gpg"); then
+            key_listing=
+        fi
+        key_fprs=$(printf '%s\n' "$key_listing" |
             awk -F: '$1 == "pub" { want = 1; next } want && $1 == "fpr" { print $10; want = 0 }')
-        if [ "$key_fprs" != C95B321B61E88C1809C4F759DDCAE044F796ECB0 ]; then
+        if [ "$key_fprs" != "$nvidia_key" ]; then
             printf '%s\n' 'NVIDIA signing key fingerprint mismatch; the repository was not added.' >&2
             exit 1
         fi
-        GNUPGHOME="$repo_work/gnupg" gpg --batch --quiet --dearmor --output "$repo_work/key.gpg" "$repo_work/key.asc"
         # Write the source line locally so downloaded content cannot add other repositories or options.
         # shellcheck disable=SC2016 # $(ARCH) is expanded by apt, not the shell.
         printf '%s\n' 'deb [signed-by=/usr/share/keyrings/commander-nvidia-container-toolkit.gpg] https://nvidia.github.io/libnvidia-container/stable/deb/$(ARCH) /' \

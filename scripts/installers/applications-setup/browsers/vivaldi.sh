@@ -24,8 +24,14 @@ installVivaldi() {
                 "$ESCALATION_TOOL" "$PACKAGER" install -y vivaldi-stable
                 ;;
             zypper)
+                # Vivaldi's signing key, pinned; only this repository is refreshed.
+                key_dir=$(mktemp -d)
+                pinnedKeys https://repo.vivaldi.com/archive/linux_signing_key.pub "$key_dir/vivaldi.asc" 8D1FA52AEF58A09D889DD4221256C34716BD9233
+                "$ESCALATION_TOOL" rpm --import "$key_dir/vivaldi.asc"
+                rm -rf -- "$key_dir"
                 "$ESCALATION_TOOL" zypper ar https://repo.vivaldi.com/archive/vivaldi-suse.repo
-                "$ESCALATION_TOOL" zypper --non-interactive --gpg-auto-import-keys in vivaldi-stable
+                "$ESCALATION_TOOL" zypper refresh vivaldi
+                "$ESCALATION_TOOL" zypper --non-interactive in vivaldi-stable
                 ;;
             pacman)
                 "$ESCALATION_TOOL" "$PACKAGER" -S --needed --noconfirm vivaldi

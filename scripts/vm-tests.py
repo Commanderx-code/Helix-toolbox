@@ -32,8 +32,14 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 
+# Each image is checked against a digest the publisher stands behind: one
+# pinned here for a fixed release (Fedora's, from its CHECKSUM file with a good
+# signature by the Fedora 44 key 36F612DCF27F7D1A48A835E4DBFCF71C6D9F90A6), or
+# for an image that changes ("latest") the checksum file its own project's
+# host serves itself, never one a mirror hands out with the image.
 IMAGES = {
     'arch': {
         'url': 'https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2',
@@ -50,8 +56,7 @@ IMAGES = {
     'fedora': {
         'url': 'https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/'
                'Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2',
-        'sums': 'https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/'
-                'Fedora-Cloud-44-1.7-x86_64-CHECKSUM',
+        'digest': '28680fe5b371a5a82ebf43a31926e086a168e59949d03969c5093e7071f90b7f',
         'hash': 'sha256',
         'admins': 'wheel',
     },
@@ -72,8 +77,7 @@ IMAGES = {
     'fedora-arm64': {
         'url': 'https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/aarch64/images/'
                'Fedora-Cloud-Base-Generic-44-1.7.aarch64.qcow2',
-        'sums': 'https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/aarch64/images/'
-                'Fedora-Cloud-44-1.7-aarch64-CHECKSUM',
+        'digest': '55c60a3b80d3616a08705afd0459e75fe9f03c54aba7a46e4002a41a72fa0d5b',
         'hash': 'sha256',
         'admins': 'wheel',
     },
@@ -121,6 +125,49 @@ AAVMF = [
 ]
 
 PORT = 2222
+
+
+class HttpsOnly(urllib.request.HTTPRedirectHandler):
+    """Follows a redirect only to another HTTPS address."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not newurl.lower().startswith('https://'):
+            raise urllib.error.HTTPError(newurl, code, f'refused a redirect to {newurl}', headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Follows no redirect: a checksum comes from the host named, not a mirror."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(newurl, code, f'refused a redirect to {newurl}', headers, fp)
+
+
+MIRRORS = urllib.request.build_opener(HttpsOnly)
+PUBLISHER = urllib.request.build_opener(NoRedirect)
+
+
+def parse_sums(text, name):
+    """The digest a checksum file gives for `name`: "HASH  NAME", "HASH *NAME",
+    or "SHA256 (NAME) = HASH"."""
+    want = None
+    for line in text.splitlines():
+        tagged = re.fullmatch(r'\w+ \((.+)\) = ([0-9a-f]+)', line.strip())
+        if tagged and tagged.group(1) == name:
+            want = tagged.group(2)
+        elif line.split() and line.split()[-1].lstrip('*') == name:
+            want = line.split()[0]
+    return want
+
+
+def expected_digest(image, name):
+    """The digest `name` must have: pinned, or from the publisher's own host."""
+    if 'digest' in image:
+        return image['digest']
+    if not image['sums'].startswith('https://'):
+        sys.exit(f'the checksum of {name} is not fetched over HTTPS')
+    with PUBLISHER.open(image['sums'], timeout=60) as response:
+        return parse_sums(response.read().decode(), name)
 
 
 def log(message):
@@ -178,21 +225,16 @@ class Machine:
         if not base.exists():
             log(f'downloading {image["url"]}')
             partial = base.with_name(name + '.part')
-            urllib.request.urlretrieve(image['url'], partial)
-            sums = urllib.request.urlopen(image['sums'], timeout=60).read().decode()
-            want = None
-            for line in sums.splitlines():
-                # "HASH  NAME", "HASH *NAME", or Fedora's "SHA256 (NAME) = HASH".
-                tagged = re.fullmatch(r'\w+ \((.+)\) = ([0-9a-f]+)', line.strip())
-                if tagged and tagged.group(1) == name:
-                    want = tagged.group(2)
-                elif line.split() and line.split()[-1].lstrip('*') == name:
-                    want = line.split()[0]
+            # A mirror may serve the image, over HTTPS only.
+            with MIRRORS.open(image['url'], timeout=60) as response, open(partial, 'wb') as out:
+                for block in iter(lambda: response.read(1 << 20), b''):
+                    out.write(block)
+            want = expected_digest(image, name)
             digest = hashlib.new(image['hash'])
             with open(partial, 'rb') as stream:
                 for block in iter(lambda: stream.read(1 << 20), b''):
                     digest.update(block)
-            if digest.hexdigest() != want:
+            if want is None or digest.hexdigest() != want:
                 partial.unlink()
                 sys.exit(f'{name} does not match its published checksum')
             partial.rename(base)
