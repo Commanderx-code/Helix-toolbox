@@ -1,5 +1,5 @@
 <script lang="ts">
-  import emblem from '../../../../assets/icon.svg';
+  import emblem from '../../../../assets/icon-round.svg';
   import Icon, { type IconName } from '../components/Icon.svelte';
   import { toolbox } from '../lib/state.svelte';
 
@@ -256,8 +256,10 @@
 
   .emblem {
     position: relative;
-    width: 72px;
-    height: 72px;
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    box-shadow: 0 0 24px color-mix(in srgb, var(--purple) 30%, transparent);
   }
 
   @keyframes spin {

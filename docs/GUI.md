@@ -332,7 +332,8 @@ when npm and WebKitGTK are installed, and the Checks workflow always.
 release does.
 Every icon is drawn from the logo, `assets/icon.svg`: after a change to it,
 run `scripts/icons.sh` from the repository root and commit what it writes.
-The window's header draws `icon.svg` itself.
+The window's header draws `icon.svg` itself, and the Dashboard draws its
+round copy, `assets/icon-round.svg`; change both together.
 
 The window takes `--updates`, `--doctor` or `--drift` to open on that
 screen, as a click on a notification starts it, and `--catalog-dir DIR`, like the command line, to read a
