@@ -1156,16 +1156,21 @@ fn stand_in_tools(bin: &Path) -> String {
             "flatpak",
             // Installs into the user's directory; an app's version is in its
             // version file, and a newer file there means an update waits.
+            // Like Flatpak away from a terminal, it changes nothing without -y.
             r#"#!/bin/sh
 apps="$HOME/.local/share/flatpak/app"
+case $1 in install|uninstall|update)
+  case " $* " in *" -y "*) ;; *) echo "stand-in: Proceed with these changes? n" >&2; exit 1 ;; esac ;;
+esac
+for app; do :; done
 case $1 in
-  install) case $3 in *Missing*) ;; *) mkdir -p "$apps/$3" ;; esac ;;
-  uninstall) rm -r "$apps/$2" ;;
+  install) case $app in *Missing*) ;; *) mkdir -p "$apps/$app" ;; esac ;;
+  uninstall) rm -r "$apps/$app" ;;
   list) case " $* " in *" --user "*)
     for app in "$apps"/*; do [ -d "$app" ] && printf '%s\t%s\n' "${app##*/}" "$(cat "$app/version" 2>/dev/null)"; done ;; esac ;;
   remote-ls) case " $* " in *" --user "*)
     for app in "$apps"/*; do [ -f "$app/newer" ] && printf '%s\n' "${app##*/}"; done ;; esac ;;
-  update) mv "$apps/$3/newer" "$apps/$3/version" ;;
+  update) mv "$apps/$app/newer" "$apps/$app/version" ;;
 esac
 "#
             .to_string(),
@@ -1485,7 +1490,7 @@ fn an_update_is_found_run_and_verified_from_the_command_line() {
     let (ok, out, err) = toolbox(&["update", "--yes"]);
     assert!(ok, "{out}\n{err}");
     assert!(
-        out.contains("flatpak update --user org.helixtoolbox.FallbackSample"),
+        out.contains("flatpak update -y --user org.helixtoolbox.FallbackSample"),
         "{out}"
     );
     assert!(

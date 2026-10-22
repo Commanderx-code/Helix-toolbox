@@ -487,13 +487,18 @@ jobs:
         run: |
           # The distribution's own package manager is real and finds no
           # package for the fixture entries; flatpak is a stand-in, put
-          # where sudo's secure path finds it.
+          # where sudo's secure path finds it. Like Flatpak away from a
+          # terminal, it changes nothing without -y.
           test ! -e /usr/bin/flatpak
           cat > /usr/bin/flatpak <<'STANDIN'
           #!/bin/sh
+          case $1 in install|uninstall)
+            case " $* " in *" -y "*) ;; *) echo "stand-in: Proceed with these changes? n" >&2; exit 1 ;; esac ;;
+          esac
+          for app; do :; done
           case $1 in
-            install) case $3 in *Missing*) ;; *) mkdir -p "/var/lib/flatpak/app/$3" ;; esac ;;
-            uninstall) rm -r "/var/lib/flatpak/app/$2" ;;
+            install) case $app in *Missing*) ;; *) mkdir -p "/var/lib/flatpak/app/$app" ;; esac ;;
+            uninstall) rm -r "/var/lib/flatpak/app/$app" ;;
           esac
           STANDIN
           chmod +x /usr/bin/flatpak

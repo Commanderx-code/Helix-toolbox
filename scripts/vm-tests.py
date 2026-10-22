@@ -977,10 +977,9 @@ def flatpak_bundle(machine, shots):
 
 
 def migrate_flatpak(machine, shots):
-    """A Flatpak goes into a migration as itself, and is planned from
-    Flathub on a machine without it. Flatpak asks again before installing
-    and takes an answer only from a terminal, so the plan is shown, not
-    run."""
+    """A Flatpak goes into a migration as itself, and installs from Flathub
+    on a machine without it, with no terminal: the confirmed plan answers
+    Flatpak's own question."""
     app = 'org.flycast.Flycast'
     machine.ssh('./helix-toolbox migrate export migration.toml')
     if f'"{app}"' not in machine.ssh('cat migration.toml').stdout:
@@ -990,9 +989,11 @@ def migrate_flatpak(machine, shots):
     if not re.search(rf'^  {re.escape(app)} +Flatpak +Flathub$', shown, re.M):
         raise RuntimeError(f'{app} is not to be installed from Flathub:\n{shown}')
     planned = machine.ssh('./helix-toolbox migrate apply migration.toml --dry-run').stdout
-    if f'sudo flatpak install flathub {app}' not in planned:
+    if f'sudo flatpak install -y flathub {app}' not in planned:
         raise RuntimeError(f'{app} is not planned from Flathub:\n{planned}')
-    log(f'migration: {app} exported, removed and planned from Flathub')
+    machine.ssh('./helix-toolbox migrate apply migration.toml --yes </dev/null')
+    machine.ssh(f'flatpak info {app} >/dev/null && flatpak run --command=true {app}')
+    log(f'migration: {app} exported, removed and installed again from Flathub')
 
 
 # A notify-send that writes down what it was asked to show.

@@ -4,6 +4,14 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.20.1
+
+- **Flatpak steps answer Flatpak's question.** Flatpak asked again before
+  installing, removing or updating, and took the answer only from a
+  terminal, so a Flatpak in a plan confirmed in the window, or with `--yes`
+  and no terminal, was not installed. Every Flatpak step now carries `-y`,
+  shown in the plan you confirm.
+
 ## v1.20.0
 
 - **Command Center's settings.** Where Helix Toolbox has none of its own,

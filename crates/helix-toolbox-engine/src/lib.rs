@@ -917,7 +917,7 @@ fn install_sources(
                     ],
                     &[FLATHUB],
                 ),
-                words(vec!["sudo", "flatpak", "install", "flathub"], &[id]),
+                words(vec!["sudo", "flatpak", "install", "-y", "flathub"], &[id]),
             ],
             requires: vec!["flatpak".to_string(), "sudo".to_string()],
             probe: Some(Probe::Flatpak(id.to_string())),
@@ -978,7 +978,7 @@ pub fn plan_removal_with<'a>(
         let source = match found {
             Some(Probe::Flatpak(id)) => Source {
                 label: "Flathub".to_string(),
-                commands: vec![words(vec!["sudo", "flatpak", "uninstall"], &[&id])],
+                commands: vec![words(vec!["sudo", "flatpak", "uninstall", "-y"], &[&id])],
                 requires: vec!["flatpak".to_string(), "sudo".to_string()],
                 probe: Some(Probe::Flatpak(id)),
             },
@@ -2040,7 +2040,7 @@ mod tests {
         assert_eq!(
             suse.steps[0].fallbacks(),
             [format!(
-                "if that fails, Flathub: sudo flatpak remote-add --if-not-exists flathub {FLATHUB} && sudo flatpak install flathub org.example.Sample"
+                "if that fails, Flathub: sudo flatpak remote-add --if-not-exists flathub {FLATHUB} && sudo flatpak install -y flathub org.example.Sample"
             )]
         );
         let arch = plan([&entry], &platform(Some(PackageManager::Arch)), &none).unwrap();
@@ -2054,7 +2054,7 @@ mod tests {
         assert_eq!(
             fedora.steps[0].display(),
             format!(
-                "sudo flatpak remote-add --if-not-exists flathub {FLATHUB} && sudo flatpak install flathub org.example.Sample"
+                "sudo flatpak remote-add --if-not-exists flathub {FLATHUB} && sudo flatpak install -y flathub org.example.Sample"
             )
         );
         assert_eq!(fedora.requirements, ["flatpak", "sudo"]);
@@ -2238,7 +2238,7 @@ mod tests {
         let removed = remove(&flatpak, PackageManager::Arch, only_flatpak);
         assert_eq!(
             removed.steps[0].display(),
-            "sudo flatpak uninstall org.example.Sample"
+            "sudo flatpak uninstall -y org.example.Sample"
         );
         let mut fixed = package_entry();
         if let Action::Package { removable, .. } = &mut fixed.action {

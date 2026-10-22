@@ -727,9 +727,9 @@ pub fn overview(
                     "from Flatpak's cached remote metadata".into()
                 },
                 commands: vec![if system_wide {
-                    words(&["sudo", "flatpak", "update", "--system"])
+                    words(&["sudo", "flatpak", "update", "-y", "--system"])
                 } else {
-                    words(&["flatpak", "update", "--user"])
+                    words(&["flatpak", "update", "-y", "--user"])
                 }],
                 requires: if system_wide {
                     strings(&["flatpak", "sudo"])

@@ -110,7 +110,7 @@ emulator and types keys. It checks:
   command line prints the blocker, exits without starting a step or
   recording a run, and the menu shows "Cannot run yet" instead of asking
 - an update through a stand-in Flatpak: status shows it, `update` with no
-  names finds it, runs `flatpak update --user` and verifies 1.0 → 1.1, and
+  names finds it, runs `flatpak update -y --user` and verifies 1.0 → 1.1, and
   an update that installs nothing newer is not verified
 - package entries from `tests/fixtures/packages`, against stand-in `sudo`,
   package managers and `flatpak` on the PATH: the distribution's package
@@ -147,7 +147,7 @@ its published checksum:
 |---|---|
 | `arch`, `debian`, `fedora` | the distribution's cloud image on BIOS firmware, with a USB stick plugged into the Arch one; on Fedora's Btrfs root, Snapper set up, a snapshot taken and `helix-toolbox recovery --check-snapshots` run as root, which finds a system in it and leaves the snapshots as they were |
 | `opensuse` | the openSUSE Tumbleweed cloud image on BIOS firmware, for offline bundles and the notifications' timer under the user's own systemd: updates, then health problems and a package removed since a Drift baseline, told once; and `fstrim.timer` enabled, started, disabled, stopped and enabled again through `helix-toolbox services`, each checked with `systemctl`, with old journal entries cleaned through `helix-toolbox storage`; and a file of the user's and a system file put back through `helix-toolbox restore` and the restores undone, each checked by its contents, then the recovery checks |
-| `arch-bundle` | the Arch cloud image on BIOS firmware, for the Flatpak offline bundle, whose runtimes take a long time to download, and a migration of the same Flatpak: exported, removed, and planned from Flathub by `helix-toolbox migrate apply --dry-run` |
+| `arch-bundle` | the Arch cloud image on BIOS firmware, for the Flatpak offline bundle, whose runtimes take a long time to download, and a migration of the same Flatpak: exported, removed, planned from Flathub by `helix-toolbox migrate apply --dry-run`, and installed again by `migrate apply --yes` with no terminal |
 | `arch-themes`, `arch-ctt-themes` | the Arch cloud image on BIOS firmware, for the GRUB themes, split in two so they run at once, with Garuda's repository added for its theme |
 | `arch-uefi` | the Arch cloud image on UEFI firmware (OVMF) |
 | `arch-iso` | the Arch live ISO on UEFI firmware, as root, with an empty disk |

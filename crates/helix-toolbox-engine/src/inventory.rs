@@ -344,9 +344,9 @@ impl Inventory {
                     Source {
                         label: "Flathub".to_string(),
                         commands: vec![if system_wide {
-                            crate::words(vec!["sudo", "flatpak", "update"], &[id])
+                            crate::words(vec!["sudo", "flatpak", "update", "-y"], &[id])
                         } else {
-                            crate::words(vec!["flatpak", "update", "--user"], &[id])
+                            crate::words(vec!["flatpak", "update", "-y", "--user"], &[id])
                         }],
                         requires: if system_wide {
                             vec!["flatpak".to_string(), "sudo".to_string()]
@@ -1032,7 +1032,7 @@ mod tests {
         // The Flatpak on its own, for the installation that has it.
         assert_eq!(
             planned.steps[0].display(),
-            "flatpak update --user org.example.Old"
+            "flatpak update -y --user org.example.Old"
         );
         // Both Arch packages through one whole-system update.
         let Step::Update { targets, .. } = &planned.steps[1] else {

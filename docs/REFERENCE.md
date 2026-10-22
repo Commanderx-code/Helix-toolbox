@@ -63,7 +63,7 @@ background when the menu opens and after every run; `d` repeats it in the
 description.
 
 `u` updates the selected entry and `U` every entry with an update, after
-the same confirmation as a run: `flatpak update` for its installation, `apt-get
+the same confirmation as a run: `flatpak update -y` for its installation, `apt-get
 install --only-upgrade`, `dnf upgrade` or `zypper update` for that package,
 and on Arch `pacman -Syu`, the whole system, since updating one package alone
 is a partial upgrade, which Arch does not support. Afterward each package's
@@ -501,6 +501,12 @@ which continues past a failed install; `d` shows a row's details, `r` reads
 it again. `helix-toolbox migrate export [file]`, `migrate show <file>` and
 `migrate apply <file>` (`--dry-run`, `--yes`, confirmed by typing MIGRATE)
 do the same.
+
+Flatpak asks again before it installs, removes or updates anything, and
+takes an answer only from a terminal, so the window and `--yes` without one
+could not install a Flatpak. A Flatpak step in a plan therefore carries
+`-y`: the plan you confirmed is the answer, and the `-y` is in the command
+you review.
 
 ## Restic
 

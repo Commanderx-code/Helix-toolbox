@@ -594,7 +594,7 @@ export async function call(command: string, args: Record<string, unknown> = {}):
         header: ['Risk: medium · asks for your password'],
         lines: [
           { name: 'Kitty', detail: '/bin/sh -e kitty-setup.sh' },
-          { name: 'com.spotify.Client', detail: 'sudo flatpak install flathub com.spotify.Client' },
+          { name: 'com.spotify.Client', detail: 'sudo flatpak install -y flathub com.spotify.Client' },
           { name: 'htop', detail: 'sudo pacman -S --needed htop' },
         ],
       } satisfies Prepared;
