@@ -116,6 +116,15 @@ The other tools, under **More tools** in the sidebar:
 - **Hardware**: firmware updates through fwupd (typing FIRMWARE first, as
   in the terminal interface), disks with **Check health…** (SMART, after
   confirmation), temperatures, batteries, and the PCI and USB devices.
+- **Services**: the machine's and your session's services, timers and
+  sockets, and what starts at login, with a filter; a unit's details say
+  what needs it and what stopping it costs, then **Start…**, **Stop…**,
+  **Restart…**, **Enable…** or **Disable…** review the plan, as `s`, `e`
+  and `R` do in the terminal interface. An application at login is turned
+  off or on for you.
+- **Storage**: the space on each file system, what can be cleaned with what
+  each frees and **Clean…** to review its plan, and what is never cleaned
+  here (kernels, snapshots, configuration backups).
 - **Offline bundles**: the Install Plan's entries and the packages they
   need, downloaded with Helix Toolbox into a new folder for a machine of
   the same distribution without reliable internet. **Check what it
@@ -228,6 +237,8 @@ Its commands:
 | `runs` | the history |
 | `save_profile` | the Install Plan as a profile |
 | `bug_report`, `copy_text` | `helix-toolbox report` with the window's facts, and text put on the clipboard |
+| `read_services`, `service_details`, `prepare_service`, `prepare_autostart` | `helix-toolbox services` and `startup`: the units and applications at login, what needs a unit and what stopping it costs, and a change's plan |
+| `read_storage`, `prepare_clean` | `helix-toolbox storage`: the space, what can be cleaned, and a cleanup's plan |
 | `check_entry` | `helix-toolbox verify` for one entry, as text: **Check it now** in an entry's details |
 | `hardware_report`, `open_issue` | `helix-toolbox report --worked` for a run or an entry, and its issue opened by `xdg-open`, outside the AppImage's own libraries |
 | `import_profile`, `export_profile`, `delete_profile` | your profiles: one added from a file, written to one, or deleted; the file is chosen in the file chooser unless a path is given |

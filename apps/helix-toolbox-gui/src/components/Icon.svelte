@@ -36,6 +36,7 @@
     eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
     trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6',
     external: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6',
+    disk: 'M4 5h16v14H4zM4 13h16M8 16.5h.01M12 16.5h4',
   } as const;
 
   export type IconName = keyof typeof PATHS;

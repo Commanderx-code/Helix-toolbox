@@ -15,6 +15,8 @@
   import Backups from './screens/Backups.svelte';
   import Drift from './screens/Drift.svelte';
   import Reliability from './screens/Reliability.svelte';
+  import Services from './screens/Services.svelte';
+  import Storage from './screens/Storage.svelte';
   import Hardware from './screens/Hardware.svelte';
   import Bundles from './screens/Bundles.svelte';
   import Desktop from './screens/Desktop.svelte';
@@ -62,6 +64,10 @@
         <Drift />
       {:else if toolbox.screen.kind === 'reliability'}
         <Reliability />
+      {:else if toolbox.screen.kind === 'services'}
+        <Services />
+      {:else if toolbox.screen.kind === 'storage'}
+        <Storage />
       {:else if toolbox.screen.kind === 'hardware'}
         <Hardware />
       {:else if toolbox.screen.kind === 'bundles'}

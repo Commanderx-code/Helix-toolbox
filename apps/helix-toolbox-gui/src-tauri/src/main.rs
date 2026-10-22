@@ -19,8 +19,9 @@ use helix_toolbox_engine::{
     overview::Overview,
     plan, plan_removal, preflight, preview, profiles,
     reliability::{self, Evidence},
+    services,
     settings::{self, RunChoices, WindowTheme},
-    setup, trust, updates, verification, watch,
+    setup, storage, trust, updates, verification, watch,
 };
 use helix_toolbox_platform::LinuxInfo;
 use serde::Serialize;
@@ -1214,6 +1215,133 @@ async fn check_entry(app: AppHandle, id: String) -> Result<String, String> {
     .await?
 }
 
+// Services and startup
+
+/// The machine's and the session's units and what starts at login.
+#[tauri::command]
+async fn read_services(app: AppHandle) -> Result<services::Services, String> {
+    blocking(app, |_| {
+        let desktop = std::env::var("XDG_CURRENT_DESKTOP").ok();
+        services::gather(&doctor::Here, desktop.as_deref())
+    })
+    .await
+}
+
+#[derive(Serialize)]
+struct ServiceDetailsView {
+    needed_by: Vec<String>,
+    /// What stopping or disabling it costs, when the machine or the
+    /// session needs it.
+    consequence: Option<&'static str>,
+}
+
+#[tauri::command]
+async fn service_details(
+    app: AppHandle,
+    name: String,
+    user: bool,
+) -> Result<ServiceDetailsView, String> {
+    blocking(app, move |_| ServiceDetailsView {
+        needed_by: services::needed_by(&doctor::Here, &name, user),
+        consequence: services::consequence(
+            &name,
+            user,
+            std::env::var_os("SSH_CONNECTION").is_some(),
+        ),
+    })
+    .await
+}
+
+/// Plan starting, stopping, restarting, enabling or disabling a unit.
+#[tauri::command]
+async fn prepare_service(
+    app: AppHandle,
+    name: String,
+    user: bool,
+    verb: String,
+) -> Result<PreparedView, String> {
+    blocking(app, move |gui| {
+        let Some(verb) = services::Verb::parse(&verb) else {
+            return cannot(
+                gui,
+                format!("{} is not something a unit can do.", printable(&verb)),
+            );
+        };
+        let needed = services::needed_by(&doctor::Here, &name, user);
+        match services::plan(
+            &name,
+            user,
+            verb,
+            &needed,
+            std::env::var_os("SSH_CONNECTION").is_some(),
+        ) {
+            Ok(planned) => {
+                let catalog = gui.catalog.read().unwrap();
+                prepare_plan(gui, &catalog, planned)
+            }
+            Err(why) => cannot(gui, why),
+        }
+    })
+    .await
+}
+
+/// Plan turning an application started at login off, or on again.
+#[tauri::command]
+async fn prepare_autostart(app: AppHandle, file: String, on: bool) -> Result<PreparedView, String> {
+    blocking(app, move |gui| {
+        let dirs = services::AutostartDirs::here(&doctor::Here);
+        let desktop = std::env::var("XDG_CURRENT_DESKTOP").ok();
+        let found = services::autostart_in(&doctor::Here, &dirs, desktop.as_deref());
+        let Some(item) = found.iter().find(|item| item.file == file) else {
+            return cannot(
+                gui,
+                format!("There is no autostart file {}.", printable(&file)),
+            );
+        };
+        match services::plan_autostart(item, on, &dirs, &doctor::Here) {
+            Ok(planned) => {
+                let catalog = gui.catalog.read().unwrap();
+                prepare_plan(gui, &catalog, planned)
+            }
+            Err(why) => cannot(gui, why),
+        }
+    })
+    .await
+}
+
+// Storage
+
+/// Where the space goes and what can be cleaned.
+#[tauri::command]
+async fn read_storage(app: AppHandle) -> Result<storage::Storage, String> {
+    blocking(app, |gui| {
+        storage::gather(&doctor::Here, gui.platform.manager)
+    })
+    .await
+}
+
+/// Plan cleaning one item, as it is found now.
+#[tauri::command]
+async fn prepare_clean(app: AppHandle, id: String) -> Result<PreparedView, String> {
+    blocking(app, move |gui| {
+        let found = storage::gather(&doctor::Here, gui.platform.manager);
+        let Some(item) = found.items.iter().find(|item| item.id == id) else {
+            return cannot(
+                gui,
+                format!("{} is not something Helix Toolbox cleans.", printable(&id)),
+            );
+        };
+        match storage::plan(item, gui.platform.manager, &doctor::Here) {
+            Ok(planned) => {
+                let catalog = gui.catalog.read().unwrap();
+                prepare_plan(gui, &catalog, planned)
+            }
+            Err(why) => cannot(gui, why),
+        }
+    })
+    .await
+}
+
 // Hardware
 
 /// Firmware, disks, sensors, batteries and devices, read from this machine.
@@ -1852,7 +1980,8 @@ fn main() {
                 stop, close_run, runs, save_profile, import_profile, export_profile,
                 delete_profile, bug_report, copy_text, hardware_report, open_issue, doctor,
                 prepare_repair, updates,
-                prepare_channels, prepare_update, prepare_remove, list_backups, prepare_restore, drift_targets, check_entry,
+                prepare_channels, prepare_update, prepare_remove, list_backups, prepare_restore, drift_targets, check_entry, read_services, service_details,
+                prepare_service, prepare_autostart, read_storage, prepare_clean,
                 drift_check, save_baseline, reliability, trust, read_hardware, prepare_firmware,
                 prepare_smart, read_desktop, save_look, prepare_look, read_settings,
                 save_settings, save_watch, save_theme, bundle_contents, prepare_bundle_create,

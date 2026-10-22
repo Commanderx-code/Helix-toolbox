@@ -1037,6 +1037,25 @@ def update_notifications(machine, shots):
         raise RuntimeError('turning notifications off left the timer behind')
 
 
+def services_and_storage(machine, shots):
+    """A unit disabled, enabled, stopped and started through helix-toolbox
+    services, each checked with systemctl itself, and old journal entries
+    cleaned through helix-toolbox storage."""
+    unit = 'fstrim.timer'
+    state = lambda question: machine.ssh(f'systemctl {question} {unit}', check=False).stdout.strip()
+    for verb, question, wanted in (('enable', 'is-enabled', 'enabled'), ('start', 'is-active', 'active'),
+                                   ('disable', 'is-enabled', 'disabled'), ('stop', 'is-active', 'inactive'),
+                                   ('enable', 'is-enabled', 'enabled')):
+        machine.ssh(f'./helix-toolbox services {verb} {unit} --yes')
+        if state(question) != wanted:
+            raise RuntimeError(f'after services {verb} {unit}, systemctl {question} says {state(question)!r}')
+    shown = machine.ssh(f'./helix-toolbox --json services list {unit}').stdout
+    if json.loads(shown)['data']['units'][0]['enablement'] != 'enabled':
+        raise RuntimeError(f'the list does not show {unit} enabled:\n{shown}')
+    machine.ssh('./helix-toolbox storage clean journal --yes')
+    log('  services and storage: fstrim.timer through every verb; the journal cleaned')
+
+
 def zypper_bundle(machine, shots):
     """zypper downloads a bundle as the user, without root, and it installs
     with no network."""
@@ -1137,7 +1156,8 @@ CASES = {
                ('plymouth-off', plymouth_off), ('selinux', selinux), ('sddm', sddm), ('enable-ssd-trim', ssd_trim)],
     'arch-uefi': [('grub-dracula', grub_theme), ('grub-default', grub_default), ('limine-cachyos', limine_cachyos),
                   ('limine-garuda', limine_garuda)],
-    'opensuse': [('bundle-zypper', zypper_bundle), ('update-notifications', update_notifications)],
+    'opensuse': [('bundle-zypper', zypper_bundle), ('update-notifications', update_notifications),
+                 ('services-and-storage', services_and_storage)],
     'arch-iso': [('arch-server-setup', server_setup)],
     'steamdeck': [('linux-neptune-for-steamdeck', linux_neptune)],
     # What also applies on ARM64 boards and servers that boot through UEFI.
@@ -1152,7 +1172,8 @@ CASES = {
 
 # Cases with nothing for verify to check afterward: not catalog entries,
 # or an installation whose live system is gone once it finishes.
-NOT_ENTRIES = {'bundle-flatpak', 'bundle-zypper', 'update-notifications', 'arch-server-setup'}
+NOT_ENTRIES = {'bundle-flatpak', 'bundle-zypper', 'update-notifications', 'arch-server-setup',
+               'services-and-storage'}
 
 
 def verify(machine, entry):

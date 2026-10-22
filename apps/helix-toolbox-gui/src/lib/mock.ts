@@ -1,7 +1,7 @@
 // Sample answers for working on the interface in a browser, where there is
 // no Tauri side. Nothing here reads or changes the machine.
 
-import type { AreaView, ChangesView, EntryView, ItemView, Prepared, RecordView, RunEvent, StatusView, WindowTheme } from './types';
+import type { AreaView, ChangesView, EntryView, ItemView, Prepared, RecordView, RunEvent, ServicesView, StatusView, StorageView, WindowTheme } from './types';
 
 const entry = (id: string, name: string, description: string, flags = 'I', extra: Partial<EntryView> = {}): ItemView => ({
   type: 'entry',
@@ -384,6 +384,53 @@ export async function call(command: string, args: Record<string, unknown> = {}):
         privileged: true,
         header: ['Risk: medium · asks for your password', 'Note: The packages are checked against the bundle\'s checksums and signatures first.'],
         lines: [{ name: 'Install the bundle\'s packages', detail: 'sudo pacman -U --needed packages/*.pkg.tar.zst' }],
+      } satisfies Prepared;
+    case 'read_services':
+      return {
+        systemd: true,
+        session: true,
+        units: [
+          { name: 'bluetooth.service', description: 'Bluetooth service', enablement: 'enabled', active: 'active', sub: 'running', user: false },
+          { name: 'cups.service', description: 'CUPS Scheduler', enablement: 'disabled', active: 'inactive', sub: 'dead', user: false },
+          { name: 'logrotate.service', description: 'Rotate log files', enablement: 'static', active: 'failed', sub: 'failed', user: false },
+          { name: 'sddm.service', description: 'Simple Desktop Display Manager', enablement: 'enabled', active: 'active', sub: 'running', user: false },
+          { name: 'fstrim.timer', description: 'Discard unused filesystem blocks once a week', enablement: 'enabled', active: 'active', sub: 'waiting', user: false },
+          { name: 'pipewire.service', description: 'PipeWire Multimedia Service', enablement: 'indirect', active: 'active', sub: 'running', user: true },
+        ],
+        autostart: [
+          { file: 'org.kde.discover.notifier.desktop', name: 'Discover', comment: 'Update notifier', exec: '/usr/lib/DiscoverNotifier --check-delay 20', enabled: true, here: true, system: true, own: null },
+        ],
+      } satisfies ServicesView;
+    case 'service_details':
+      return args.name === 'sddm.service'
+        ? { needed_by: ['graphical.target'], consequence: 'It runs the login screen: stopped, your desktop session ends now; disabled, the next boot stops at a text console, where you log in and enable it again.' }
+        : { needed_by: [], consequence: null };
+    case 'prepare_service':
+    case 'prepare_autostart':
+      return {
+        kind: 'ready',
+        risk: args.name === 'sddm.service' ? 'high' : 'medium',
+        privileged: !args.user,
+        header: ['Risk: medium · asks for your password'],
+        lines: [{ name: `${String(args.verb ?? (args.on ? 'start' : 'stop'))} ${String(args.name ?? args.file)}`, detail: `sudo systemctl ${String(args.verb)} ${String(args.name)}` }],
+      } satisfies Prepared;
+    case 'read_storage':
+      return {
+        filesystems: [{ path: '/', free: 588_000_000_000, total: 1_000_000_000_000 }],
+        items: [
+          { id: 'package-cache', title: 'Package cache', detail: 'Downloaded packages pacman keeps: the two newest versions of each installed package stay.', size: 2_000_000_000, frees: 34_200_000, packages: [], not_offered: null },
+          { id: 'unused-packages', title: 'Unused packages', detail: 'Packages nothing needs now. Kernels are never among them.', size: 184_000_000, frees: 184_000_000, packages: ['libfoo', 'python-old'], not_offered: null },
+          { id: 'trash', title: 'The trash', detail: 'Files you deleted to the trash, deleted for good.', size: 0, frees: 0, packages: [], not_offered: 'the trash is empty' },
+        ],
+        kept: [{ title: 'Kernels', detail: '2 installed: the kernels the machine can boot are never removed here.', size: null }],
+      } satisfies StorageView;
+    case 'prepare_clean':
+      return {
+        kind: 'ready',
+        risk: 'low',
+        privileged: true,
+        header: ['Risk: low · asks for your password'],
+        lines: [{ name: `Clean: ${String(args.id)}`, detail: 'sudo paccache -rk2; then sudo paccache -ruk0' }],
       } satisfies Prepared;
     case 'prepare_remove': {
       planned = (args.ids as string[]).map((id) => find(id)).filter((e): e is EntryView => !!e);

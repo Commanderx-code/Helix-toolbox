@@ -1,0 +1,20 @@
+{
+  "command": "string",
+  "data": {
+    "applications": [
+      {
+        "comment": "string",
+        "enabled": "boolean",
+        "exec": "string",
+        "file": "string",
+        "here": "boolean",
+        "name": "string",
+        "own": "null",
+        "system": "boolean"
+      }
+    ]
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

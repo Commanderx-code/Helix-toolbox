@@ -32,8 +32,10 @@ pub mod preview;
 pub mod profiles;
 pub mod pty;
 pub mod reliability;
+pub mod services;
 pub mod settings;
 pub mod setup;
+pub mod storage;
 pub mod trust;
 pub mod updates;
 pub mod verification;
@@ -465,6 +467,9 @@ pub struct Plan {
     /// After a failed step, continue with the steps that do not depend on it
     /// instead of stopping.
     pub keep_going: bool,
+    /// What it may cost, shown first in the confirmation: what stops working
+    /// when a service it stops is needed.
+    pub warnings: Vec<String>,
 }
 
 impl Plan {

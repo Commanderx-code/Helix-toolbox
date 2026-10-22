@@ -233,6 +233,32 @@ later, detail}`, `label` being `Verified`, `Not verified`, `Not checked`
 (`unsure`: it could not be checked here) or `After the reboot` (`later`: it
 holds only once the machine has started since the entry's last run).
 
+## services
+
+`services list`: `{units: [{name, description, enablement, active, sub,
+user}], session}`. `enablement` is the unit file's state (`enabled`,
+`disabled`, `static`, `masked`, `indirect`…) or `null` for a unit without a
+file of its own, `active` and `sub` how it runs or `null` when it is not
+loaded, `user` whether it is the session's; `session` whether the user's
+own systemd answered. `services show <unit>` is `service`: `{unit,
+needed_by, consequence}`, `consequence` what stopping or disabling it costs
+or `null`.
+
+## startup
+
+`{applications: [{file, name, comment, exec, enabled, here, system, own}]}`:
+`here` whether it applies to this desktop (`OnlyShowIn`, `NotShowIn`),
+`system` whether it comes from the system's folder, `own` the user's file
+when there is one.
+
+## storage
+
+`{filesystems: [{path, free, total}], items: [{id, title, detail, size,
+frees, packages, not_offered}], kept: [{title, detail, size}]}`, sizes in
+bytes, `null` when unknown; `frees` is `null` when only the cleanup can
+tell, `not_offered` why an item cannot be cleaned now, `packages` what
+unused packages would remove.
+
 ## hardware_report
 
 `report --worked <entry>`: `{entries: [{id, name}], machine, system,

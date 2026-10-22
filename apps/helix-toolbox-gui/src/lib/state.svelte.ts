@@ -17,6 +17,8 @@ export type Screen =
   | { kind: 'backups' }
   | { kind: 'drift' }
   | { kind: 'reliability' }
+  | { kind: 'services' }
+  | { kind: 'storage' }
   | { kind: 'hardware' }
   | { kind: 'bundles' }
   | { kind: 'desktop' }
@@ -72,6 +74,8 @@ class Toolbox {
   prompt = $state<Prompt | null>(null);
   /** The bug report being shown: its text once gathered, or what went wrong. */
   report = $state<{ text: string | null; problem: string | null } | null>(null);
+  /** How many runs have closed, for screens that read again after one. */
+  runs = $state(0);
   /** The hardware report being shown, before it is sent. */
   worked = $state<HardwareReport | null>(null);
   /** The setup wizard is open; on the first start it opens by itself. */
@@ -210,6 +214,7 @@ class Toolbox {
     if (fromPlan) {
       this.queue = this.queue.filter((id) => !finished.includes(id));
     }
+    this.runs += 1;
     await this.refresh();
   }
 

@@ -195,7 +195,7 @@
     await until('the focus back on Marker', () => document.activeElement === marker);
   });
 
-  const screens = ['Updates','Backups', 'Drift', 'Reliability', 'Hardware', 'Desktop', 'History', 'Favorites', 'Dashboard'];
+  const screens = ['Updates','Backups', 'Drift', 'Reliability', 'Hardware', 'Services', 'Storage', 'Desktop', 'History', 'Favorites', 'Dashboard'];
   for (const name of screens) {
     await step(`the ${name} screen opens`, async () => {
       await click(name, document.querySelector('nav'));
@@ -329,6 +329,35 @@
     await click('Close', dialog);
     await until('the report to close', () => !document.querySelector('#report-title'));
     return text.split('\n').find((line) => line.startsWith('- WebKitGTK')) ?? 'gathered and copied';
+  });
+
+  await step('a service change and a cleanup are planned and reviewed, and nothing runs', async () => {
+    await click('Services', document.querySelector('nav'));
+    await until('Services', () => screenTitle().startsWith('Services'));
+    const row = await until('a unit', () => document.querySelector('.row-item.unit'), 30000);
+    row.click();
+    const aside = await until('its details', () => document.querySelector('aside h2')?.closest('aside'));
+    const change = await until('a change button', () => [...aside.querySelectorAll('.actions .button')].find((button) => !button.disabled));
+    const asked = change.textContent.trim();
+    change.click();
+    const title = await until('the review', () => document.querySelector('#confirm-title'));
+    const dialog = title.closest('[role="dialog"]');
+    if (!dialog.textContent.includes('systemctl')) throw new Error(dialog.textContent);
+    await accessible('a service change under review');
+    await click('Cancel', dialog);
+    await until('the review to close', () => !document.querySelector('#confirm-title'));
+    await click('Storage', document.querySelector('nav'));
+    await until('Storage', () => screenTitle().startsWith('Storage'));
+    await until('the storage read', () => document.querySelector('.items') || withText('.empty-note', 'Error'), 60000);
+    const clean = [...document.querySelectorAll('.items .button')].find((button) => !button.disabled);
+    if (clean) {
+      clean.click();
+      const cleaning = await until('the cleanup review', () => document.querySelector('#confirm-title')?.closest('[role="dialog"]'));
+      await accessible('a cleanup under review');
+      await click('Cancel', cleaning);
+      await until('the review to close', () => !document.querySelector('#confirm-title'));
+    }
+    return `${asked} reviewed${clean ? ', and a cleanup' : ''}; nothing ran`;
   });
 
   await step('an entry is checked now, without changing anything', async () => {

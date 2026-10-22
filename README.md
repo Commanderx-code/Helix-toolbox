@@ -74,6 +74,10 @@ settings, profiles and history over ([what changed](https://github.com/Commander
   updates behind their own confirmation.
 - **Offline bundles**: packages, installed Flatpaks and Helix Toolbox in one
   checked folder, for a machine without reliable internet.
+- **Services and storage**: systemd's services, timers and the applications
+  started at login, each change told what it costs first; and where the disk
+  space goes, with what each cleanup frees. Snapshots and bootable kernels
+  are never cleaned.
 - **Know what you are running**: the Reliability screen shows how far each
   entry has been tested (in distribution containers, with stand-ins, on real
   machines), critical boot and driver entries first, and the trust inspector

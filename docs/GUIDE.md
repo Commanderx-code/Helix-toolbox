@@ -193,6 +193,22 @@ read without changing anything. `f` updates a device's firmware after you
 type FIRMWARE and confirm its plan; keep a laptop on mains power while it
 runs. `s` checks a disk's SMART health, which asks for your password.
 
+## Services and space
+
+**Services** lists what systemd starts on the machine and in your session,
+and what your desktop starts at login; `i` switches between them and `f`
+filters by name. Select one to see what needs it; `s` starts or stops it
+and `e` enables or disables it at boot, each after its plan. For what the
+machine depends on (the login screen, the network, the firewall) the plan
+says first what stops working. An application at login is turned off for you
+only, and can be turned on again the same way.
+
+**Storage** shows how full the disk is and what can be cleaned, with what
+each would free: the package cache, packages nothing needs any more,
+unused Flatpak runtimes, old logs, the trash and picture previews. `Enter`
+on one shows its plan. Snapshots, bootable kernels and configuration
+backups are never offered.
+
 ## A machine without internet
 
 On a machine of the same distribution that is online, `helix-toolbox bundle

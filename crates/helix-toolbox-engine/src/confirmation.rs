@@ -96,6 +96,12 @@ pub fn prepare<'a>(
         }
     )];
     header.extend(findings.iter().map(preflight::Finding::line));
+    header.extend(
+        planned
+            .warnings
+            .iter()
+            .map(|warning| format!("Warning: {warning}")),
+    );
     // The warnings borrow the step ids only as long as the entries they find.
     let near = |id: &str| lookup(id);
     header.extend(

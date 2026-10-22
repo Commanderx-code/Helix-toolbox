@@ -366,6 +366,50 @@ leave a device unusable; a SMART health check (`s`) reads the disk's health
 record and needs your password. `helix-toolbox hardware`, `--smart <disk>` and
 `--firmware <device>` do the same from the command line.
 
+## Services and startup
+
+**Services** lists systemd's units of the machine and of your own session:
+every installed service, timer and socket with whether it is enabled
+(starts at boot or login) and whether it runs now, and those running or
+failed without a unit file of their own (the per-application units desktops
+start are left out). `i` shows the machine's services, timers and sockets,
+your session's, what starts at login, or what failed; `f` narrows them to a
+name or description. `Enter` shows a unit's state, what needs it (`systemctl
+list-dependencies --reverse`) and, for a unit the machine or the session
+needs, what stopping or disabling it costs: the login screen (your session
+ends, or the next boot stops at a text console), networking and name
+lookups, the firewall, SSH while you are connected through it, D-Bus,
+polkit and systemd's own units, and in your session sound and the desktop
+portals. `s` starts or stops it, `e` enables or disables it (not static,
+masked or generated units, which something else starts), `R` restarts it;
+each is a plan with that cost as a warning first, high risk for those units,
+and the machine's own ask for your password. Masking is not offered.
+
+**At login** lists the XDG autostart applications (`/etc/xdg/autostart` and
+`~/.config/autostart`), whether each starts and whether it applies to this
+desktop. `Enter` turns one off for you only, with a file of yours in
+`~/.config/autostart` that says `Hidden=true` (the system's stays as it
+is), or on again by taking that out. `helix-toolbox services` (`list
+[filter] [--user] [--failed]`, `show <unit>`, `start`, `stop`, `restart`,
+`enable`, `disable` with `--user`, `--dry-run` and `--yes`) and
+`helix-toolbox startup` (`list`, `on <file>`, `off <file>`) do the same.
+
+## Storage
+
+**Storage** shows the space on `/` (and the home folder's file system when
+it is apart), then what can be cleaned, each with what it takes and what
+cleaning it frees: the package cache (pacman keeps the two newest versions
+of each installed package through `paccache`, whose own dry run says what
+it frees; apt, dnf and zypper clean theirs), unused packages (pacman's
+orphans, apt's and dnf's autoremove, zypper's unneeded, by name, never a
+kernel), unused Flatpak runtimes (`flatpak uninstall --unused`), system logs
+older than four weeks (`journalctl --vacuum-time=4weeks`), the trash,
+thumbnails and, on Arch, paru's and yay's build folders. `Enter` shows one's
+plan, which asks first. The kernels the machine can boot, snapshots and
+Helix Toolbox's configuration backups are listed and never offered: what
+could undo a mistake stays. `helix-toolbox storage` and `storage clean
+<item>` (`--dry-run`, `--yes`) do the same.
+
 ## Reliability and trust
 
 **Reliability** lists every entry with how far it has been tested, the
@@ -479,6 +523,9 @@ helix-toolbox desktop                    # the desktop, its look and who else se
 helix-toolbox plan sddm --effects        # what it would change, files side by side
 helix-toolbox --effects plan --fetch-sources dotfiles-nvim  # with the dotfiles source to compare
 helix-toolbox hardware                   # firmware, disks, temperatures, batteries, devices
+helix-toolbox services list --failed     # systemd units; show, start, stop, restart, enable, disable
+helix-toolbox startup off <file>         # what the desktop starts at login, for you
+helix-toolbox storage                    # where the space goes; storage clean <item> frees some
 helix-toolbox reliability --critical     # how far the boot, login and driver entries are tested
 helix-toolbox trust sddm                 # where an entry comes from and what checks it
 helix-toolbox doctor                     # health checks, read-only

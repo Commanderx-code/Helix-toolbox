@@ -52,6 +52,15 @@ The items:
     replaces a copy the user keeps outside any package tool, and the
     window's AppImage.
 
+## v1.17.0: services and space
+
+- [x] A service and startup manager: systemd's units of the machine and
+      the session and the XDG autostart applications, with what needs a
+      unit and what stopping it costs before each change
+- [x] A storage and cleanup center: the space, what can be cleaned with
+      what it frees, each cleanup a plan; snapshots, bootable kernels and
+      configuration backups never offered
+
 ## v1.16.0: knowing it worked
 
 - [x] Checks after a run for script entries: what their `detect` table

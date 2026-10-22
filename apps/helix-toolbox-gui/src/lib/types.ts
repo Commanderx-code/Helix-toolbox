@@ -266,6 +266,55 @@ export type SettingsView = {
   baselines: [string, string][];
 };
 
+// Services and startup
+
+export type UnitView = {
+  name: string;
+  description: string;
+  enablement: string | null;
+  active: string | null;
+  sub: string | null;
+  user: boolean;
+};
+
+export type AutostartView = {
+  file: string;
+  name: string;
+  comment: string;
+  exec: string;
+  enabled: boolean;
+  here: boolean;
+  system: boolean;
+  own: string | null;
+};
+
+export type ServicesView = {
+  systemd: boolean;
+  session: boolean;
+  units: UnitView[];
+  autostart: AutostartView[];
+};
+
+export type ServiceDetails = { needed_by: string[]; consequence: string | null };
+
+// Storage
+
+export type StorageItem = {
+  id: string;
+  title: string;
+  detail: string;
+  size: number | null;
+  frees: number | null;
+  packages: string[];
+  not_offered: string | null;
+};
+
+export type StorageView = {
+  filesystems: { path: string; free: number; total: number }[];
+  items: StorageItem[];
+  kept: { title: string; detail: string; size: number | null }[];
+};
+
 // Offline bundles
 
 export type BundledEntry = { name: string; offline: boolean; network: string | null; flatpak: string | null };

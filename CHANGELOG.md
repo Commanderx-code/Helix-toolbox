@@ -4,6 +4,24 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.17.0
+
+- **Services and startup.** **Services**, in the window and the
+  terminal interface, lists systemd's services, timers and sockets of the
+  machine and of your session, and the applications your desktop starts at
+  login, with a filter. A unit's details say what needs it; starting,
+  stopping, restarting, enabling and disabling are plans that ask first,
+  and for what the machine depends on (the login screen, the network, name
+  lookups, the firewall, SSH while you use it, systemd itself) they say
+  first what stops working. An application at login is turned off for you
+  only. `helix-toolbox services` and `helix-toolbox startup` do the same.
+- **Storage.** **Storage** shows how full the disks are and what can be
+  cleaned, each with what it frees: the package cache, unused packages,
+  unused Flatpak runtimes, logs older than four weeks, the trash, picture
+  previews and AUR build folders. Each cleanup shows its plan and asks.
+  Snapshots, the kernels the machine boots and configuration backups are
+  never offered. `helix-toolbox storage` does the same.
+
 ## v1.16.0
 
 - **A script that exits 0 is not enough.** After a run, a script entry is

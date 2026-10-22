@@ -20,9 +20,12 @@ import type {
   RecordView,
   ReliabilityView,
   RunEvent,
+  ServiceDetails,
+  ServicesView,
   SettingsView,
   SetupView,
   StatusView,
+  StorageView,
   TargetView,
   UpdatesView,
   WindowTheme,
@@ -82,6 +85,13 @@ export const saveBaseline = (name: string) => call<string>('save_baseline', { na
 export const reliability = () => call<ReliabilityView>('reliability');
 export const trust = (id: string) => call<string>('trust', { id });
 export const checkEntry = (id: string) => call<string>('check_entry', { id });
+
+export const services = () => call<ServicesView>('read_services');
+export const serviceDetails = (name: string, user: boolean) => call<ServiceDetails>('service_details', { name, user });
+export const prepareService = (name: string, user: boolean, verb: string) => call<Prepared>('prepare_service', { name, user, verb });
+export const prepareAutostart = (file: string, on: boolean) => call<Prepared>('prepare_autostart', { file, on });
+export const storage = () => call<StorageView>('read_storage');
+export const prepareClean = (id: string) => call<Prepared>('prepare_clean', { id });
 
 export const hardware = () => call<Hardware>('read_hardware');
 export const prepareFirmware = (index: number) => call<Prepared>('prepare_firmware', { index });

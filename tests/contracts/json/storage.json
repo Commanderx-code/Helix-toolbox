@@ -1,0 +1,33 @@
+{
+  "command": "string",
+  "data": {
+    "filesystems": [
+      {
+        "free": "number",
+        "path": "string",
+        "total": "number"
+      }
+    ],
+    "items": [
+      {
+        "detail": "string",
+        "frees": "number",
+        "id": "string",
+        "not_offered": "null",
+        "packages": [],
+        "size": "number",
+        "title": "string"
+      }
+    ],
+    "kept": [
+      {
+        "detail": "string",
+        "size": "null",
+        "title": "string"
+      }
+    ]
+  },
+  "helix_toolbox": "string",
+  "helixforge": "string",
+  "schema": "number"
+}

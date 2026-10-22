@@ -7,6 +7,7 @@ mod drift;
 mod inspect;
 mod json;
 mod logging;
+mod manage;
 mod notify;
 mod report;
 mod selfupdate;
@@ -222,6 +223,26 @@ enum Command {
     Desktop {
         #[command(subcommand)]
         command: Option<setup::DesktopCommand>,
+    },
+    /// The machine's and your own systemd services, timers and sockets:
+    /// list them, see what needs one, and start, stop, restart, enable or
+    /// disable one after confirmation, told first what stopping it costs.
+    Services {
+        #[command(subcommand)]
+        action: Option<manage::ServicesCommand>,
+    },
+    /// The applications the desktop starts at login (XDG autostart), and
+    /// turning one off or on again for you.
+    Startup {
+        #[command(subcommand)]
+        action: Option<manage::StartupCommand>,
+    },
+    /// Where the disk space goes and what can be cleaned, with what each
+    /// frees; each cleanup after confirmation. Snapshots, bootable kernels
+    /// and configuration backups are never cleaned.
+    Storage {
+        #[command(subcommand)]
+        action: Option<manage::StorageCommand>,
     },
     /// The hardware and firmware: fwupd's devices and the firmware updates it
     /// knows of, disks, temperatures, batteries, PCI and USB devices. It only
@@ -910,6 +931,9 @@ fn main() -> Result<()> {
         Command::Desktop { command } => {
             setup::run_desktop(command, &load(true)?, &platform, as_json)
         }
+        Command::Services { action } => manage::services(action, &load(false)?, &platform, as_json),
+        Command::Startup { action } => manage::startup(action, &load(false)?, &platform, as_json),
+        Command::Storage { action } => manage::storage(action, &load(false)?, &platform, as_json),
         Command::Hardware {
             smart,
             firmware,
@@ -1485,6 +1509,9 @@ fn print_plan_json(catalog: &Catalog, platform: &LinuxInfo, planned: &Plan) {
 
 /// Print a plan and what the checks before a run found; returns the findings.
 fn print_plan(catalog: &Catalog, platform: &LinuxInfo, planned: &Plan) -> Vec<preflight::Finding> {
+    for warning in &planned.warnings {
+        println!("Warning: {warning}");
+    }
     for note in &planned.notes {
         println!("{note}");
     }

@@ -24,7 +24,9 @@ use helix_toolbox_engine::{
     inventory::{Inventory, Status, which},
     notifications,
     overview::Overview,
-    plan, plan_removal, preflight, profiles, reliability, updates,
+    plan, plan_removal, preflight, profiles, reliability,
+    services::{self, Verb},
+    storage, updates,
     watch::{self, Watch},
 };
 use helix_toolbox_platform::LinuxInfo;
@@ -99,6 +101,7 @@ History, Backups, Doctor, Hardware, Desktop, Updates, Drift, Reliability, Settin
   Drift: b          compare with another         s   save this machine; Space / a plan what is missing
   Reliability: i    critical or untested only    v   where the entry comes from
   History, Reliability: w  report that it worked here, for a Hardware Tested record
+  Services: s start/stop  e enable/disable  R restart  i which  f filter   Storage: Enter cleans
 
 Running window
   Ctrl-C            stop; again, kill what is left  Enter / q   close when finished
@@ -128,7 +131,60 @@ enum Screen {
     Desktop,
     /// Offline bundles: made from the Install Plan, installed from a folder.
     Bundles,
+    /// systemd's units and the applications started at login.
+    Services,
+    /// Where the space goes, and what can be cleaned.
+    Storage,
     Settings,
+}
+
+/// Which units the Services screen lists.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ServiceView {
+    System,
+    Timers,
+    User,
+    Login,
+    Failed,
+}
+
+impl ServiceView {
+    fn next(self) -> Self {
+        match self {
+            ServiceView::System => ServiceView::Timers,
+            ServiceView::Timers => ServiceView::User,
+            ServiceView::User => ServiceView::Login,
+            ServiceView::Login => ServiceView::Failed,
+            ServiceView::Failed => ServiceView::System,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            ServiceView::System => "the machine's services",
+            ServiceView::Timers => "timers and sockets",
+            ServiceView::User => "your session's",
+            ServiceView::Login => "started at login",
+            ServiceView::Failed => "failed",
+        }
+    }
+}
+
+/// A line of the Services screen.
+#[derive(Clone, Debug)]
+enum ServiceRow {
+    Heading(String),
+    Unit(usize),
+    Autostart(usize),
+}
+
+/// A line of the Storage screen.
+#[derive(Clone, Debug)]
+enum StorageRow {
+    Heading(String),
+    Filesystem(String),
+    Item(usize),
+    Kept(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,6 +231,8 @@ enum Asked {
     MakeFolder,
     /// The bundle to install from.
     InstallFolder,
+    /// What the Services screen's names must have.
+    ServiceFilter,
 }
 
 /// A line of the Offline bundles screen.
@@ -546,6 +604,16 @@ pub struct App {
     /// The machine a hardware report names, in tests; read each time
     /// otherwise.
     machine: Option<hardware_report::Machine>,
+    /// The units and autostart entries, as last read.
+    services_found: Option<services::Services>,
+    service_rows: Vec<ServiceRow>,
+    service_view: ServiceView,
+    service_filter: String,
+    /// The storage, as last read, and its rows.
+    storage_found: Option<storage::Storage>,
+    storage_rows: Vec<StorageRow>,
+    /// A look at the storage running in the background, if any.
+    reading_storage: Option<mpsc::Receiver<storage::Storage>>,
 }
 
 /// A plan of the queue as it was, from when it was made, with what the
@@ -643,6 +711,13 @@ impl App {
             reports_dir: None,
             opener: |_| Err("there is no browser here".to_string()),
             machine: None,
+            services_found: None,
+            service_rows: Vec::new(),
+            service_view: ServiceView::System,
+            service_filter: String::new(),
+            storage_found: None,
+            storage_rows: Vec::new(),
+            reading_storage: None,
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -890,6 +965,8 @@ impl App {
             Screen::Hardware => self.hardware_rows.len(),
             Screen::Desktop => self.desktop_rows.len(),
             Screen::Bundles => BUNDLE_ROWS.len(),
+            Screen::Services => self.service_rows.len(),
+            Screen::Storage => self.storage_rows.len(),
             Screen::Doctor => self.diagnoses.len() + self.doctor_entries().len(),
             Screen::Settings => self.settings().len(),
         }
@@ -959,6 +1036,16 @@ impl App {
         if screen == Screen::Desktop {
             self.reload_desktop();
         }
+        if screen == Screen::Services {
+            self.reload_services();
+        }
+        if screen == Screen::Storage {
+            if self.storage_found.is_none() {
+                self.read_storage();
+            } else {
+                self.build_storage_rows();
+            }
+        }
         self.update_rows();
     }
 
@@ -997,6 +1084,18 @@ impl App {
                     return true;
                 }
                 Err(mpsc::TryRecvError::Disconnected) => self.examining = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(receiver) = &self.reading_storage {
+            match receiver.try_recv() {
+                Ok(found) => {
+                    self.storage_found = Some(found);
+                    self.reading_storage = None;
+                    self.build_storage_rows();
+                    return true;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.reading_storage = None,
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }
@@ -1077,6 +1176,8 @@ impl App {
             Screen::Hardware => Icon::Hardware,
             Screen::Desktop => Icon::Desktop,
             Screen::Bundles => Icon::Bundles,
+            Screen::Services => Icon::Services,
+            Screen::Storage => Icon::Storage,
             Screen::Favorites => Icon::Favorites,
             Screen::Doctor => Icon::Doctor,
             Screen::Settings => Icon::Settings,
@@ -1154,6 +1255,8 @@ impl App {
             Screen::Hardware => self.draw_hardware(frame, main),
             Screen::Desktop => self.draw_desktop(frame, main),
             Screen::Bundles => self.draw_bundles(frame, main),
+            Screen::Services => self.draw_services(frame, main),
+            Screen::Storage => self.draw_storage(frame, main),
             Screen::Doctor => self.draw_doctor(frame, main),
             Screen::Settings => self.draw_settings(frame, main),
         }
@@ -2545,6 +2648,50 @@ impl App {
                         list.push(Hint::new(&["Enter"], verb));
                     }
                 }
+                Screen::Services => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    match self.selected_service_row() {
+                        Some(ServiceRow::Unit(index)) => {
+                            list.push(Hint::new(&["Enter"], "Details"));
+                            if let Some(unit) = self.unit(index) {
+                                list.push(Hint::new(
+                                    &["s"],
+                                    if unit.running() { "Stop" } else { "Start" },
+                                ));
+                                if unit.switchable() {
+                                    list.push(Hint::new(
+                                        &["e"],
+                                        if unit.enabled() { "Disable" } else { "Enable" },
+                                    ));
+                                }
+                                if unit.running() {
+                                    list.push(Hint::new(&["R"], "Restart"));
+                                }
+                            }
+                        }
+                        Some(ServiceRow::Autostart(_)) => {
+                            list.push(Hint::new(&["Enter"], "On or off at login"))
+                        }
+                        _ => {}
+                    }
+                    list.push(Hint::new(&["i"], "Show"));
+                    list.push(Hint::new(&["f"], "Filter"));
+                    list.push(Hint::new(&["r"], "Read again"));
+                }
+                Screen::Storage => {
+                    list.push(Hint::new(&["↑↓"], "Navigate"));
+                    if let Some(StorageRow::Item(index)) = self.selected_storage_row()
+                        && self
+                            .storage_found
+                            .as_ref()
+                            .and_then(|found| found.items.get(index))
+                            .is_some_and(|item| item.not_offered.is_none())
+                    {
+                        list.push(Hint::new(&["Enter"], "Clean"));
+                    }
+                    list.push(Hint::new(&["d"], "Details"));
+                    list.push(Hint::new(&["r"], "Read again"));
+                }
                 Screen::Settings => list.push(Hint::new(&["Enter"], "Change")),
             },
         }
@@ -2771,6 +2918,12 @@ impl App {
                     }
                     if self.screen == Screen::History {
                         self.reload_history();
+                    }
+                    if self.screen == Screen::Services {
+                        self.reload_services();
+                    }
+                    if self.screen == Screen::Storage {
+                        self.read_storage();
                     }
                 }
                 return true;
@@ -3213,6 +3366,73 @@ impl App {
                     }
                 }
                 KeyCode::Char('r') => self.reload_backups(),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::Services => match key.code {
+                KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') | KeyCode::Right => {
+                    match self.selected_service_row() {
+                        Some(ServiceRow::Unit(index)) => self.describe_unit(index),
+                        Some(ServiceRow::Autostart(index)) => self.switch_autostart(index),
+                        _ => {}
+                    }
+                }
+                KeyCode::Char('s') => {
+                    if let Some(ServiceRow::Unit(index)) = self.selected_service_row()
+                        && let Some(unit) = self.unit(index)
+                    {
+                        let verb = if unit.running() {
+                            Verb::Stop
+                        } else {
+                            Verb::Start
+                        };
+                        self.change_unit(index, verb);
+                    }
+                }
+                KeyCode::Char('e') => {
+                    if let Some(ServiceRow::Unit(index)) = self.selected_service_row()
+                        && let Some(unit) = self.unit(index)
+                        && unit.switchable()
+                    {
+                        let verb = if unit.enabled() {
+                            Verb::Disable
+                        } else {
+                            Verb::Enable
+                        };
+                        self.change_unit(index, verb);
+                    }
+                }
+                KeyCode::Char('R') => {
+                    if let Some(ServiceRow::Unit(index)) = self.selected_service_row() {
+                        self.change_unit(index, Verb::Restart);
+                    }
+                }
+                KeyCode::Char('i') => {
+                    self.service_view = self.service_view.next();
+                    self.main_state.select(Some(0));
+                    self.build_service_rows();
+                }
+                KeyCode::Char('f') => {
+                    self.popup = Some(Popup::Ask(
+                        InputPopup::new(
+                            "Filter",
+                            "Only units and applications whose name or description has (blank for all):",
+                        )
+                        .with_value(self.service_filter.clone())
+                        .answering("Filter"),
+                        Asked::ServiceFilter,
+                    ));
+                }
+                KeyCode::Char('r') => self.reload_services(),
+                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
+                _ => {}
+            },
+            Screen::Storage => match key.code {
+                KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') | KeyCode::Right => {
+                    self.clean_selected()
+                }
+                KeyCode::Char('d') => self.describe_storage(),
+                KeyCode::Char('r') => self.read_storage(),
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
@@ -5544,6 +5764,12 @@ impl App {
                 self.bundle_source = text.trim().to_string();
                 return;
             }
+            Asked::ServiceFilter => {
+                self.service_filter = text.trim().to_string();
+                self.main_state.select(Some(0));
+                self.build_service_rows();
+                return;
+            }
         };
         self.popup = Some(Popup::Text(match said {
             Ok(text) => TextPopup::new(title, text, true),
@@ -5755,6 +5981,441 @@ impl App {
             ),
             url,
         ));
+    }
+
+    // ----- Services -----
+
+    /// Read the units and the autostart entries again; quick, so not in the
+    /// background. Tests keep what they put there.
+    fn reload_services(&mut self) {
+        if self.examine_here {
+            let desktop = std::env::var("XDG_CURRENT_DESKTOP").ok();
+            self.services_found = Some(services::gather(&doctor::Here, desktop.as_deref()));
+        }
+        self.build_service_rows();
+    }
+
+    fn unit(&self, index: usize) -> Option<&services::Unit> {
+        self.services_found.as_ref()?.units.get(index)
+    }
+
+    fn selected_service_row(&self) -> Option<ServiceRow> {
+        self.service_rows.get(self.main_state.selected()?).cloned()
+    }
+
+    /// The rows of the chosen view, those the filter lets through.
+    fn build_service_rows(&mut self) {
+        let mut rows = Vec::new();
+        if let Some(found) = &self.services_found {
+            let filter = self.service_filter.to_lowercase();
+            let wanted = |text: &str, more: &str| {
+                filter.is_empty()
+                    || text.to_lowercase().contains(&filter)
+                    || more.to_lowercase().contains(&filter)
+            };
+            if self.service_view == ServiceView::Login {
+                rows.push(ServiceRow::Heading(format!(
+                    "Started at login ({})",
+                    found.autostart.len()
+                )));
+                rows.extend(
+                    found
+                        .autostart
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, item)| wanted(&item.name, &item.file))
+                        .map(|(index, _)| ServiceRow::Autostart(index)),
+                );
+            } else {
+                let units: Vec<usize> = found
+                    .units
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, unit)| match self.service_view {
+                        ServiceView::System => !unit.user && unit.kind() == "service",
+                        ServiceView::Timers => unit.kind() != "service",
+                        ServiceView::User => unit.user && unit.kind() == "service",
+                        ServiceView::Failed => unit.failed(),
+                        ServiceView::Login => false,
+                    })
+                    .filter(|(_, unit)| wanted(&unit.name, &unit.description))
+                    .map(|(index, _)| index)
+                    .collect();
+                rows.push(ServiceRow::Heading(format!(
+                    "{} ({})",
+                    match self.service_view {
+                        ServiceView::System => "The machine's services",
+                        ServiceView::Timers => "Timers and sockets",
+                        ServiceView::User => "Your session's services",
+                        ServiceView::Failed => "Failed units",
+                        ServiceView::Login => "",
+                    },
+                    units.len()
+                )));
+                rows.extend(units.into_iter().map(ServiceRow::Unit));
+            }
+        }
+        self.service_rows = rows;
+        self.clamp_main();
+    }
+
+    fn describe_unit(&mut self, index: usize) {
+        let Some(unit) = self.unit(index).cloned() else {
+            return;
+        };
+        let needed = if self.examine_here {
+            services::needed_by(&doctor::Here, &unit.name, unit.user)
+        } else {
+            Vec::new()
+        };
+        let mut text = format!(
+            "{}\n\nEnabled: {}\nRunning: {}{}\n",
+            if unit.description.is_empty() {
+                "No description."
+            } else {
+                unit.description.as_str()
+            },
+            unit.enablement
+                .as_deref()
+                .unwrap_or("no unit file of its own"),
+            unit.active.as_deref().unwrap_or("not loaded"),
+            unit.sub
+                .as_deref()
+                .filter(|sub| Some(*sub) != unit.active.as_deref())
+                .map(|sub| format!(" ({sub})"))
+                .unwrap_or_default()
+        );
+        if !needed.is_empty() {
+            text.push_str(&format!("Needed by: {}\n", needed.join(", ")));
+        }
+        if let Some(cost) = services::consequence(
+            &unit.name,
+            unit.user,
+            std::env::var_os("SSH_CONNECTION").is_some(),
+        ) {
+            text.push_str(&format!("\nBefore stopping or disabling it: {cost}\n"));
+        }
+        if !unit.switchable() {
+            text.push_str(
+                "\nIt is not enabled or disabled itself: another unit or a request starts it.\n",
+            );
+        }
+        text.push_str(
+            "\ns starts or stops it, e enables or disables it, R restarts it; each asks first.",
+        );
+        self.popup = Some(Popup::Text(TextPopup::new(
+            format!("{}{}", if unit.user { "Your " } else { "" }, unit.name),
+            text,
+            true,
+        )));
+    }
+
+    /// Plan starting, stopping, restarting, enabling or disabling a unit.
+    fn change_unit(&mut self, index: usize, verb: Verb) {
+        let Some(unit) = self.unit(index).cloned() else {
+            return;
+        };
+        let needed = if self.examine_here {
+            services::needed_by(&doctor::Here, &unit.name, unit.user)
+        } else {
+            Vec::new()
+        };
+        match services::plan(
+            &unit.name,
+            unit.user,
+            verb,
+            &needed,
+            std::env::var_os("SSH_CONNECTION").is_some(),
+        ) {
+            Ok(planned) => self.confirm_plan(Ok(planned)),
+            Err(why) => {
+                self.popup = Some(Popup::Text(TextPopup::new("Cannot plan", why, true)));
+            }
+        }
+    }
+
+    /// Plan turning an autostart entry off, or on again.
+    fn switch_autostart(&mut self, index: usize) {
+        let Some(item) = self
+            .services_found
+            .as_ref()
+            .and_then(|found| found.autostart.get(index))
+            .cloned()
+        else {
+            return;
+        };
+        let dirs = services::AutostartDirs::here(&doctor::Here);
+        match services::plan_autostart(&item, !item.enabled, &dirs, &doctor::Here) {
+            Ok(planned) => self.confirm_plan(Ok(planned)),
+            Err(why) => {
+                self.popup = Some(Popup::Text(TextPopup::new("Cannot plan", why, true)));
+            }
+        }
+    }
+
+    fn draw_services(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Services",
+            "systemd's units and what starts at login; each change asks first and says what it costs.",
+        );
+        self.fill(frame, inner);
+        let focused = self.focus == Focus::Main;
+        let mut items: Vec<Line> = Vec::new();
+        let mut title = format!("Showing {}", self.service_view.label());
+        if !self.service_filter.is_empty() {
+            title.push_str(&format!(", with \"{}\"", self.service_filter));
+        }
+        match &self.services_found {
+            None => items.push(Line::styled(
+                "Press r to read this machine's services.",
+                Style::default().fg(self.theme.muted()),
+            )),
+            Some(found) if !found.systemd && self.service_view != ServiceView::Login => {
+                items.push(Line::styled(
+                    "systemd does not run this machine, so there are no units; i shows what starts at login.",
+                    Style::default().fg(self.theme.muted()),
+                ))
+            }
+            Some(found) => {
+                let width = inner.width.saturating_sub(8) as usize;
+                for row in &self.service_rows {
+                    items.push(match row {
+                        ServiceRow::Heading(text) => Line::styled(
+                            text.clone(),
+                            Style::default().fg(self.theme.group()).bold(),
+                        ),
+                        ServiceRow::Unit(index) => {
+                            let unit = &found.units[*index];
+                            let state = format!(
+                                "{:<9} {:<9}",
+                                unit.enablement.as_deref().unwrap_or("-"),
+                                unit.active.as_deref().unwrap_or("-")
+                            );
+                            let color = if unit.failed() {
+                                self.theme.failure()
+                            } else if unit.running() {
+                                self.theme.success()
+                            } else {
+                                self.theme.muted()
+                            };
+                            let name: String = unit.name.chars().take(40).collect();
+                            let room = width.saturating_sub(42 + state.len());
+                            Line::from(vec![
+                                Span::styled(format!("  {name:<40} "), Style::default().fg(self.theme.entry())),
+                                Span::styled(state, Style::default().fg(color)),
+                                Span::styled(
+                                    format!("  {}", unit.description.chars().take(room).collect::<String>()),
+                                    Style::default().fg(self.theme.muted()),
+                                ),
+                            ])
+                        }
+                        ServiceRow::Autostart(index) => {
+                            let item = &found.autostart[*index];
+                            let (word, color) = match (item.here, item.enabled) {
+                                (false, _) => ("not here", self.theme.muted()),
+                                (true, true) => ("on", self.theme.success()),
+                                (true, false) => ("off", self.theme.warning()),
+                            };
+                            Line::from(vec![
+                                Span::styled(format!("  {:<36} ", item.name), Style::default().fg(self.theme.entry())),
+                                Span::styled(format!("{word:<9}"), Style::default().fg(color)),
+                                Span::styled(
+                                    format!("  {}", item.exec.chars().take(width.saturating_sub(48)).collect::<String>()),
+                                    Style::default().fg(self.theme.muted()),
+                                ),
+                            ])
+                        }
+                    });
+                }
+            }
+        }
+        let list = List::new(items)
+            .block(self.card(&title))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused))
+            .scroll_padding(1);
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
+    }
+
+    // ----- Storage -----
+
+    /// Read the storage in the background: sizing caches takes a moment.
+    fn read_storage(&mut self) {
+        if !self.examine_here {
+            self.build_storage_rows();
+            return;
+        }
+        let manager = self.platform.manager;
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(storage::gather(&doctor::Here, manager));
+        });
+        self.reading_storage = Some(receiver);
+    }
+
+    fn build_storage_rows(&mut self) {
+        let mut rows = Vec::new();
+        if let Some(found) = &self.storage_found {
+            rows.push(StorageRow::Heading("Space".to_string()));
+            for filesystem in &found.filesystems {
+                rows.push(StorageRow::Filesystem(format!(
+                    "{}: {} free of {}",
+                    filesystem.path,
+                    storage::shown(filesystem.free),
+                    storage::shown(filesystem.total)
+                )));
+            }
+            rows.push(StorageRow::Heading("What can be cleaned".to_string()));
+            rows.extend((0..found.items.len()).map(StorageRow::Item));
+            if !found.kept.is_empty() {
+                rows.push(StorageRow::Heading("Kept, never cleaned here".to_string()));
+                rows.extend((0..found.kept.len()).map(StorageRow::Kept));
+            }
+        }
+        self.storage_rows = rows;
+        self.clamp_main();
+    }
+
+    fn selected_storage_row(&self) -> Option<StorageRow> {
+        self.storage_rows.get(self.main_state.selected()?).cloned()
+    }
+
+    fn describe_storage(&mut self) {
+        let Some(found) = &self.storage_found else {
+            return;
+        };
+        let (title, text) = match self.selected_storage_row() {
+            Some(StorageRow::Item(index)) => {
+                let item = &found.items[index];
+                let mut text = item.detail.clone();
+                if let Some(size) = item.size {
+                    text.push_str(&format!("\n\nIt takes {}.", storage::shown(size)));
+                }
+                match (item.frees, &item.not_offered) {
+                    (_, Some(why)) => text.push_str(&format!("\nNot offered: {why}.")),
+                    (Some(frees), None) => text.push_str(&format!(
+                        "\nCleaning it frees about {}. Enter shows the plan, then asks.",
+                        storage::shown(frees)
+                    )),
+                    (None, None) => text.push_str(
+                        "\nWhat cleaning it frees is known only when it runs. Enter shows the plan, then asks.",
+                    ),
+                }
+                if !item.packages.is_empty() {
+                    text.push_str(&format!("\n\nPackages: {}", item.packages.join(", ")));
+                }
+                (item.title.clone(), text)
+            }
+            Some(StorageRow::Kept(index)) => {
+                let kept = &found.kept[index];
+                (kept.title.clone(), kept.detail.clone())
+            }
+            _ => return,
+        };
+        self.popup = Some(Popup::Text(TextPopup::new(title, text, true)));
+    }
+
+    fn clean_selected(&mut self) {
+        let Some(StorageRow::Item(index)) = self.selected_storage_row() else {
+            if matches!(self.selected_storage_row(), Some(StorageRow::Kept(_))) {
+                self.describe_storage();
+            }
+            return;
+        };
+        let Some(item) = self
+            .storage_found
+            .as_ref()
+            .and_then(|found| found.items.get(index))
+            .cloned()
+        else {
+            return;
+        };
+        match storage::plan(&item, self.platform.manager, &doctor::Here) {
+            Ok(planned) => self.confirm_plan(Ok(planned)),
+            Err(why) => {
+                self.popup = Some(Popup::Text(TextPopup::new(item.title, why, true)));
+            }
+        }
+    }
+
+    fn draw_storage(&mut self, frame: &mut Frame, area: Rect) {
+        let inner = self.page(
+            frame,
+            area,
+            "Storage",
+            "Where the space goes and what can be cleaned; each cleanup asks first.",
+        );
+        self.fill(frame, inner);
+        let focused = self.focus == Focus::Main;
+        let mut items: Vec<Line> = Vec::new();
+        if self.storage_rows.is_empty() {
+            items.push(Line::styled(
+                if self.reading_storage.is_some() {
+                    "Reading the storage…"
+                } else {
+                    "Press r to read this machine's storage."
+                },
+                Style::default().fg(self.theme.muted()),
+            ));
+        }
+        if let Some(found) = &self.storage_found {
+            for row in &self.storage_rows {
+                items.push(match row {
+                    StorageRow::Heading(text) => {
+                        Line::styled(text.clone(), Style::default().fg(self.theme.group()).bold())
+                    }
+                    StorageRow::Filesystem(text) => {
+                        Line::styled(format!("  {text}"), Style::default().fg(self.theme.entry()))
+                    }
+                    StorageRow::Item(index) => {
+                        let item = &found.items[*index];
+                        let size = item.size.map(storage::shown).unwrap_or_else(|| "?".into());
+                        let (said, color) = match (&item.not_offered, item.frees) {
+                            (Some(why), _) => (why.clone(), self.theme.muted()),
+                            (None, Some(frees)) => (
+                                format!("frees {}", storage::shown(frees)),
+                                self.theme.success(),
+                            ),
+                            (None, None) => {
+                                ("frees what it finds".to_string(), self.theme.success())
+                            }
+                        };
+                        Line::from(vec![
+                            Span::styled(
+                                format!("  {:<26} ", item.title),
+                                Style::default().fg(self.theme.entry()),
+                            ),
+                            Span::styled(
+                                format!("{size:>9}  "),
+                                Style::default().fg(self.theme.muted()),
+                            ),
+                            Span::styled(said, Style::default().fg(color)),
+                        ])
+                    }
+                    StorageRow::Kept(index) => {
+                        let kept = &found.kept[*index];
+                        Line::from(vec![
+                            Span::styled(
+                                format!("  {:<26} ", kept.title),
+                                Style::default().fg(self.theme.entry()),
+                            ),
+                            Span::styled(
+                                kept.size.map(storage::shown).unwrap_or_default(),
+                                Style::default().fg(self.theme.muted()),
+                            ),
+                        ])
+                    }
+                });
+            }
+        }
+        let list = List::new(items)
+            .block(self.card("Storage"))
+            .highlight_style(self.highlight(focused))
+            .highlight_symbol(self.marker(focused))
+            .scroll_padding(1);
+        frame.render_stateful_widget(list, inner, &mut self.main_state);
     }
 
     // ----- Offline bundles -----
@@ -6529,6 +7190,16 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
     menu.push(MenuItem {
         label: "Backups".into(),
         screen: Screen::Backups,
+        section: "MORE TOOLS",
+    });
+    menu.push(MenuItem {
+        label: "Services".into(),
+        screen: Screen::Services,
+        section: "MORE TOOLS",
+    });
+    menu.push(MenuItem {
+        label: "Storage".into(),
+        screen: Screen::Storage,
         section: "MORE TOOLS",
     });
     menu.push(MenuItem {
@@ -7614,6 +8285,155 @@ mod tests {
         app.main_state.select(Some(0));
         press(&mut app, KeyCode::Char('c'));
         assert!(screen(&mut app, 140, 40).contains("nothing to check"));
+    }
+
+    fn stand_in_services() -> services::Services {
+        let unit = |name: &str, enablement: &str, active: &str, user: bool| services::Unit {
+            name: name.into(),
+            description: format!("About {name}"),
+            enablement: Some(enablement.into()),
+            active: Some(active.into()),
+            sub: Some(
+                if active == "active" {
+                    "running"
+                } else {
+                    "dead"
+                }
+                .into(),
+            ),
+            user,
+        };
+        services::Services {
+            systemd: true,
+            session: true,
+            units: vec![
+                unit("broken.service", "enabled", "failed", false),
+                unit("fstrim.timer", "disabled", "inactive", false),
+                unit("sddm.service", "enabled", "active", false),
+                unit("pipewire.service", "indirect", "active", true),
+            ],
+            autostart: vec![services::Autostart {
+                file: "discover.desktop".into(),
+                name: "Discover".into(),
+                exec: "discover --notifier".into(),
+                enabled: true,
+                here: true,
+                system: true,
+                ..Default::default()
+            }],
+        }
+    }
+
+    #[test]
+    fn the_services_screen_lists_units_and_asks_before_stopping_what_is_needed() {
+        let mut app = app();
+        app.services_found = Some(stand_in_services());
+        app.open_screen(Screen::Services);
+        app.focus = Focus::Main;
+        let shown = screen(&mut app, 140, 40);
+        assert!(shown.contains("The machine's services (2)"), "{shown}");
+        assert!(shown.contains("sddm.service") && !shown.contains("pipewire.service"));
+        let row = |app: &App, name: &str| {
+            app.service_rows
+                .iter()
+                .position(|row| matches!(row, ServiceRow::Unit(index) if app.unit(*index).unwrap().name == name))
+                .unwrap()
+        };
+        app.main_state.select(Some(row(&app, "sddm.service")));
+        assert!(screen(&mut app, 140, 40).contains("s Stop"));
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 140, 40).contains("login screen"));
+        press(&mut app, KeyCode::Esc);
+        // Disabling the login screen is high risk, and says why first.
+        press(&mut app, KeyCode::Char('e'));
+        assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+        let shown = screen(&mut app, 140, 40);
+        assert!(
+            shown.contains("Risk: high") && shown.contains("Warning: It runs the login screen"),
+            "{shown}"
+        );
+        assert!(shown.contains("sudo systemctl disable sddm.service"));
+        press(&mut app, KeyCode::Char('n'));
+        // The views: timers, your session's, at login, failed.
+        press(&mut app, KeyCode::Char('i'));
+        assert!(screen(&mut app, 140, 40).contains("fstrim.timer"));
+        press(&mut app, KeyCode::Char('i'));
+        assert!(screen(&mut app, 140, 40).contains("pipewire.service"));
+        press(&mut app, KeyCode::Char('i'));
+        assert!(screen(&mut app, 140, 40).contains("Discover"));
+        press(&mut app, KeyCode::Char('i'));
+        let shown = screen(&mut app, 140, 40);
+        assert!(shown.contains("broken.service") && !shown.contains("sddm.service"));
+        // The filter narrows any view.
+        press(&mut app, KeyCode::Char('i'));
+        press(&mut app, KeyCode::Char('f'));
+        answer(&mut app, "sddm");
+        let shown = screen(&mut app, 140, 40);
+        assert!(
+            shown.contains("The machine's services (1)") && shown.contains("with \"sddm\""),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn the_storage_screen_shows_what_each_cleanup_frees_and_what_stays() {
+        let mut app = app();
+        app.storage_found = Some(storage::Storage {
+            filesystems: vec![storage::Filesystem {
+                path: "/".into(),
+                free: 40_000_000_000,
+                total: 500_000_000_000,
+            }],
+            items: vec![
+                storage::Item {
+                    id: "package-cache".into(),
+                    title: "Package cache".into(),
+                    detail: "Downloaded packages.".into(),
+                    size: Some(2_000_000_000),
+                    frees: Some(1_500_000_000),
+                    ..Default::default()
+                },
+                storage::Item {
+                    id: "trash".into(),
+                    title: "The trash".into(),
+                    detail: "Deleted files.".into(),
+                    size: Some(0),
+                    not_offered: Some("the trash is empty".into()),
+                    ..Default::default()
+                },
+            ],
+            kept: vec![storage::Kept {
+                title: "Kernels".into(),
+                detail: "2 installed: never removed here.".into(),
+                size: None,
+            }],
+        });
+        app.open_screen(Screen::Storage);
+        app.focus = Focus::Main;
+        let shown = screen(&mut app, 140, 40);
+        for text in [
+            "40.0 GB free of 500 GB",
+            "frees 1.5 GB",
+            "the trash is empty",
+            "Kept, never cleaned here",
+            "Kernels",
+        ] {
+            assert!(shown.contains(text), "{text}: {shown}");
+        }
+        let row = |app: &App, wanted: usize| {
+            app.storage_rows
+                .iter()
+                .position(|row| matches!(row, StorageRow::Item(index) if *index == wanted))
+                .unwrap()
+        };
+        app.main_state.select(Some(row(&app, 1)));
+        press(&mut app, KeyCode::Enter);
+        assert!(screen(&mut app, 140, 40).contains("not offered"));
+        press(&mut app, KeyCode::Esc);
+        app.main_state.select(Some(row(&app, 0)));
+        assert!(screen(&mut app, 140, 40).contains("Enter Clean"));
+        press(&mut app, KeyCode::Char('d'));
+        assert!(screen(&mut app, 140, 40).contains("frees about 1.5 GB"));
     }
 
     #[test]

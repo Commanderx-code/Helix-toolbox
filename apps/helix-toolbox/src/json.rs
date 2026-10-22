@@ -240,6 +240,7 @@ pub fn plan(planned: &Plan, findings: &[preflight::Finding]) -> Value {
             }))
             .collect::<Vec<_>>(),
         "notes": planned.notes,
+        "warnings": planned.warnings,
         "blocked": planned.blocked,
         "requirements": planned.requirements,
         "privileged": planned.privileged,

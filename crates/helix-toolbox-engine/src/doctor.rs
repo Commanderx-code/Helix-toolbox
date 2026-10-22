@@ -145,6 +145,10 @@ pub trait System {
     fn is_dir(&self, path: &Path) -> bool {
         !self.list(path).is_empty()
     }
+    /// A file's size in bytes, links not followed.
+    fn size(&self, _path: &Path) -> Option<u64> {
+        None
+    }
     /// Names of running processes.
     fn processes(&self) -> Vec<String>;
 }
@@ -252,6 +256,13 @@ impl System for Here {
 
     fn is_dir(&self, path: &Path) -> bool {
         path.is_dir()
+    }
+
+    fn size(&self, path: &Path) -> Option<u64> {
+        std::fs::symlink_metadata(path)
+            .ok()
+            .filter(|metadata| metadata.is_file())
+            .map(|metadata| metadata.len())
     }
 
     fn processes(&self) -> Vec<String> {

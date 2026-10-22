@@ -92,7 +92,7 @@ fn lost(saved: &Value, now: &Value, at: &str, into: &mut Vec<String>) {
 fn json_shapes_only_gain_fields() {
     let home = tempfile::tempdir().unwrap();
     let directory = root().join("tests/contracts/json");
-    let commands: [(&str, &[&str]); 11] = [
+    let commands: [(&str, &[&str]); 13] = [
         ("system", &["system"]),
         ("list", &["list"]),
         ("search", &["search", "marker"]),
@@ -104,6 +104,8 @@ fn json_shapes_only_gain_fields() {
         ("reliability", &["reliability"]),
         ("verify", &["verify", "marker"]),
         ("report", &["report", "--no-checks"]),
+        ("storage", &["storage"]),
+        ("startup", &["startup"]),
     ];
     let mut problems = Vec::new();
     for (name, args) in commands {

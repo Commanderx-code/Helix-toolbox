@@ -20,6 +20,8 @@ pub enum Icon {
     Hardware,
     Desktop,
     Bundles,
+    Services,
+    Storage,
     Settings,
     Area,
     Group,
@@ -53,6 +55,8 @@ impl Icon {
                 Icon::Hardware => "\u{f2db}",       // microchip
                 Icon::Desktop => "\u{f108}",        // desktop
                 Icon::Bundles => "\u{f1c6}",        // file archive
+                Icon::Services => "\u{f085}",       // cogs
+                Icon::Storage => "\u{f1c0}",        // database
                 Icon::Settings => "\u{f013}",       // cog
                 Icon::Area => "\u{f07b}",           // folder
                 Icon::Group => "\u{f07b}",          // folder
