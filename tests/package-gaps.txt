@@ -25,3 +25,12 @@ ubuntu:24.04 broot
 ubuntu:24.04 du-dust
 ubuntu:24.04 fastfetch
 ubuntu:24.04 procs
+# Ubuntu has none of these yet; they come from their GitHub releases there.
+ubuntu:22.04 atuin
+ubuntu:22.04 glow
+ubuntu:22.04 lazygit
+ubuntu:22.04 starship
+ubuntu:24.04 atuin
+ubuntu:24.04 glow
+ubuntu:24.04 lazygit
+ubuntu:24.04 starship
