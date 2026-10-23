@@ -1,5 +1,5 @@
 name = "Fastfetch"
-description = "System information beside your distribution logo, quickly."
+description = "System information beside your distribution logo, quickly. Where the distribution has no package, its own release in ~/.local/bin."
 flags = "I"
 
 [package]
@@ -9,3 +9,19 @@ debian = "fastfetch"
 fedora = "fastfetch"
 suse = "fastfetch"
 removable = true
+
+[release]
+repository = "fastfetch-cli/fastfetch"
+tag = "2.70.0"
+version = "2.70.0"
+binary = "fastfetch"
+
+[release.x86_64]
+asset = "fastfetch-linux-amd64.tar.gz"
+sha256 = "945b941b2a85e8de88b4c89714ad18ee6a7a129bb3c544bb448e9e0e027c226a"
+path = "fastfetch-linux-amd64/usr/bin/fastfetch"
+
+[release.aarch64]
+asset = "fastfetch-linux-aarch64.tar.gz"
+sha256 = "fff4a127e4d76242e3bdac2a12430fc252fd6086d3eb30aee0382c3b0fece478"
+path = "fastfetch-linux-aarch64/usr/bin/fastfetch"

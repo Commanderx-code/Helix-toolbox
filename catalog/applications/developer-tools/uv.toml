@@ -1,0 +1,25 @@
+name = "uv"
+description = "Fast Python package and project manager. From the distribution where it has uv, else uv's own release in ~/.local/bin."
+flags = "I"
+
+[package]
+binary = "uv"
+arch = "uv"
+fedora = "uv"
+removable = true
+
+[release]
+repository = "astral-sh/uv"
+tag = "0.13.5"
+version = "0.13.5"
+binary = "uv"
+
+[release.x86_64]
+asset = "uv-x86_64-unknown-linux-musl.tar.gz"
+sha256 = "57ef9d9ccb01fb1bd998df995b0dd221b52f7d7841fbea93f2d4463bf61fb7a9"
+path = "uv-x86_64-unknown-linux-musl/uv"
+
+[release.aarch64]
+asset = "uv-aarch64-unknown-linux-musl.tar.gz"
+sha256 = "7906c79adb21c81abd559841ba76bb1d9af9d791acac7a041b2972e03ae16538"
+path = "uv-aarch64-unknown-linux-musl/uv"

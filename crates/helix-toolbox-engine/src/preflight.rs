@@ -6,7 +6,13 @@
 use crate::{Machine, PackageState, Plan, Probe, Step, missing_requirements, package_state};
 use helix_toolbox_core::{Entry, PackageManager, valid_package_name};
 use helix_toolbox_platform::LinuxInfo;
-use std::{path::Path, process::Command};
+use std::{
+    collections::HashMap,
+    path::Path,
+    process::Command,
+    sync::{Mutex, OnceLock},
+    time::{Duration, Instant},
+};
 
 /// How serious a finding is.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -256,7 +262,8 @@ fn space(
             match sources.first().and_then(|source| source.probe.as_ref()) {
                 Some(Probe::Package { name, .. }) => packages.push(name.clone()),
                 Some(Probe::Flatpak(_)) => flatpak = true,
-                None => {}
+                // A release goes into the home folder, not the root.
+                Some(Probe::Release { .. }) | None => {}
             }
         }
     }
@@ -335,6 +342,93 @@ pub fn repositories_in(text: &str) -> Vec<String> {
         .filter(|name| *name != "options")
         .map(String::from)
         .collect()
+}
+
+/// Whether this machine's repositories have a package, asked of the
+/// metadata already on the machine (no network, no root); None when the
+/// manager cannot say, as before its first refresh.
+pub fn repositories_have(manager: PackageManager, name: &str) -> Option<bool> {
+    if !valid_package_name(name) {
+        return Some(false);
+    }
+    // The menu plans again as it draws; the metadata changes far less often.
+    type Answers = HashMap<(PackageManager, String), (Instant, Option<bool>)>;
+    static ANSWERS: OnceLock<Mutex<Answers>> = OnceLock::new();
+    const KEPT: Duration = Duration::from_secs(300);
+    let answers = ANSWERS.get_or_init(Default::default);
+    let key = (manager, name.to_string());
+    if let Some((asked, answer)) = answers.lock().ok()?.get(&key)
+        && asked.elapsed() < KEPT
+    {
+        return *answer;
+    }
+    let answer = ask_repositories(manager, name);
+    if let Ok(mut answers) = answers.lock() {
+        answers.insert(key, (Instant::now(), answer));
+    }
+    answer
+}
+
+fn ask_repositories(manager: PackageManager, name: &str) -> Option<bool> {
+    let command: &[&str] = match manager {
+        PackageManager::Arch => &["pacman", "-Si", "--"],
+        PackageManager::Debian => {
+            // Before the first apt update every name is unknown.
+            let lists = std::fs::read_dir("/var/lib/apt/lists").ok()?;
+            let any = lists
+                .filter_map(Result::ok)
+                .any(|item| item.file_name().to_string_lossy().contains("_Packages"));
+            if !any {
+                return None;
+            }
+            &["apt-cache", "show", "--no-all-versions"]
+        }
+        PackageManager::Fedora => &["dnf", "-C", "-q", "info"],
+        PackageManager::Suse => &["zypper", "--non-interactive", "--no-refresh", "info"],
+        _ => return None,
+    };
+    let output = Command::new(command[0])
+        .args(&command[1..])
+        .arg(name)
+        .env("LC_ALL", "C")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    known_from(
+        manager,
+        name,
+        output.status.success(),
+        &String::from_utf8_lossy(&output.stdout),
+        &String::from_utf8_lossy(&output.stderr),
+    )
+}
+
+/// What a package manager's answer about one package says.
+pub fn known_from(
+    manager: PackageManager,
+    name: &str,
+    success: bool,
+    stdout: &str,
+    stderr: &str,
+) -> Option<bool> {
+    let both = format!("{stdout}\n{stderr}").to_ascii_lowercase();
+    match manager {
+        PackageManager::Arch if success => Some(true),
+        PackageManager::Arch => both
+            .contains(&format!("package '{name}' was not found"))
+            .then_some(false),
+        PackageManager::Debian if success && stdout.contains("Package:") => Some(true),
+        // A purely virtual package may still install through a provider.
+        PackageManager::Debian if both.contains("purely virtual") => None,
+        PackageManager::Debian => both.contains("no packages found").then_some(false),
+        PackageManager::Fedora if success && !stdout.trim().is_empty() => Some(true),
+        PackageManager::Fedora => both.contains("no matching packages").then_some(false),
+        PackageManager::Suse if both.contains(&format!("package '{name}' not found")) => {
+            Some(false)
+        }
+        PackageManager::Suse if success && both.contains("information for package") => Some(true),
+        _ => None,
+    }
 }
 
 /// The installed size of packages from the repository metadata, summed;
@@ -418,6 +512,64 @@ mod tests {
     use crate::plan_with;
     use helix_toolbox_core::{Action, Needs, PackageNames};
 
+    #[test]
+    fn the_package_managers_answers_say_what_the_repositories_have() {
+        use PackageManager::*;
+        let cases = [
+            (Arch, true, "Name : eza\n", "", Some(true)),
+            (
+                Arch,
+                false,
+                "",
+                "error: package 'eza' was not found\n",
+                Some(false),
+            ),
+            (Arch, false, "", "error: failed to init transaction\n", None),
+            (
+                Debian,
+                true,
+                "Package: eza\nVersion: 0.21\n",
+                "",
+                Some(true),
+            ),
+            (Debian, false, "", "E: No packages found\n", Some(false)),
+            (
+                Debian,
+                false,
+                "",
+                "N: Can't select versions from package 'eza' as it is purely virtual\n",
+                None,
+            ),
+            (Fedora, true, "Name : eza\n", "", Some(true)),
+            (
+                Fedora,
+                false,
+                "",
+                "Error: No matching Packages to list\n",
+                Some(false),
+            ),
+            (
+                Fedora,
+                false,
+                "",
+                "Error: Cache-only enabled but no cache\n",
+                None,
+            ),
+            (Suse, true, "Information for package eza:\n", "", Some(true)),
+            (Suse, true, "package 'eza' not found.\n", "", Some(false)),
+            (Alpine, true, "eza", "", None),
+        ];
+        for (manager, success, stdout, stderr, expected) in cases {
+            assert_eq!(
+                known_from(manager, "eza", success, stdout, stderr),
+                expected,
+                "{manager:?} {stdout}{stderr}"
+            );
+        }
+        // A name that could be a flag is never asked about.
+        assert_eq!(repositories_have(Arch, "--help"), Some(false));
+    }
+
     fn arch() -> LinuxInfo {
         LinuxInfo {
             id: "garuda".into(),
@@ -445,6 +597,7 @@ mod tests {
                 flatpak: None,
                 conflicts: conflicts.iter().map(|name| name.to_string()).collect(),
                 removable: true,
+                release: None,
             },
             detect: None,
             needs,
@@ -463,6 +616,7 @@ mod tests {
             machine: Machine {
                 holds: &|_| false,
                 on_path: &|_| false,
+                ..crate::Machine::blind()
             },
             present,
             free_bytes,

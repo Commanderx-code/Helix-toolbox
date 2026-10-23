@@ -15,7 +15,7 @@ name = "Ardour"
 description = "A digital audio workstation."
 flags = "I"                      # what it does; g in the interface explains the codes
 
-[package]                        # tried in order: the family's package, the AUR, Flathub
+[package]                        # tried in order: the family's package, the AUR, Flathub, a [release]
 binary = "ardour"                # optional: its command, for installs made another way
 debian = "ardour"                # also arch, fedora, suse, alpine, void, solus
 fedora = "ardour"
@@ -254,11 +254,75 @@ anyway, it is blocked before anything runs. Give it to entries whose
 programs are only built for one, such as Steam or DaVinci Resolve.
 
 A package entry lists every source it has on this machine, in order: the
-distribution's package, the AUR on Arch, then Flathub. The plan shows the
+distribution's package, the AUR on Arch, Flathub, then the tool's GitHub
+release. The plan shows the
 first with the others after it (`sudo pacman -S --needed meld  (else
 Flathub)`). When a source fails, or finishes without the package being
 installed, the run says so and tries the next one; a source whose tool is
 missing is skipped. A command stopped with `Ctrl-C` stops the run instead.
+
+Before a plan is made, the repository metadata already on the machine is
+asked whether it has the family's package (`pacman -Si`, `apt-cache show`,
+`dnf -C info`, `zypper --no-refresh info`; no network, no root). A package
+it does not have is left out, and the plan says which source it uses
+instead (`eza is not in this machine's repositories; using the GitHub
+release (v0.23.4)`); with nothing left, the entry is not run and the plan
+says why. Where the metadata cannot say, as before Debian's first `apt
+update`, the package is tried as before.
+
+### GitHub releases
+
+A `[release]` table installs a tool from its project's GitHub release, as
+the last source of a package entry or on its own:
+
+```toml
+[package]
+binary = "lazygit"
+arch = "lazygit"
+debian = "lazygit"
+removable = true
+
+[release]
+repository = "jesseduffield/lazygit"   # owner/name on GitHub
+tag = "v0.66.2"                         # as the download URLs carry it
+version = "0.66.2"                      # compared with what is installed
+binary = "lazygit"                      # installed as ~/.local/bin/lazygit
+
+[release.x86_64]
+asset = "lazygit_0.66.2_linux_x86_64.tar.gz"
+sha256 = "158efc9d…"                    # 64 lowercase hexadecimal digits
+path = "lazygit"                        # the program inside the archive
+
+[release.aarch64]
+asset = "lazygit_0.66.2_linux_arm64.tar.gz"
+sha256 = "79a3161e…"
+path = "lazygit"
+```
+
+On its own, `[release]` takes `removable = true` itself. An architecture
+without a table has no release source there. The file is a `.tar.gz`,
+`.tgz`, `.tar.xz` or `.zip`, or the program itself (then without `path`).
+Every value is checked when the catalog loads: the repository is
+`owner/name`, the tag and file names have no slashes or `..`, the path stays
+inside the archive and the sum is a SHA-256.
+
+A run downloads the file with `curl` into a private folder, checks it
+against the pinned SHA-256 before anything is unpacked, takes only `path`
+out of it (a plain file, never a link) and writes it to `~/.local/bin`
+through a new file renamed into place, without root. A record in
+`$XDG_STATE_HOME/helix-toolbox/releases/<entry>.toml` keeps what was
+installed: the program, its version and its own SHA-256. Helix Toolbox never
+replaces or removes a file there that it did not install, or that has
+changed since. The status shows `GitHub release 0.66.2`; a catalog with a
+newer version makes it an **Update**, installed over its own file; HELIX
+Drift reports a recorded program that changed or went away; `remove` deletes
+the program and its record.
+
+`scripts/release-pins.py ENTRY... [--write]` pins entries to their
+projects' latest releases: it downloads each architecture's file, computes
+its SHA-256, compares it with GitHub's digest for the file and the release's
+own checksums file, and prints or writes the new pins. It only reads the
+files; an archive's listing gives the program's path.
 
 After a run, Helix Toolbox checks each package step: an install passes when its
 package manager lists one of the entry's packages or its Flatpak is

@@ -372,6 +372,7 @@ mod tests {
         let nothing = crate::Machine {
             holds: &|_| false,
             on_path: &|_| false,
+            ..crate::Machine::blind()
         };
         let planned =
             crate::plan_with([entry], &platform, &|id| catalog.find(id), nothing).unwrap();

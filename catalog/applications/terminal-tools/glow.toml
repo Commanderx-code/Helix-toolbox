@@ -1,0 +1,27 @@
+name = "Glow"
+description = "Renders Markdown in the terminal. From the distribution where it has Glow, else Glow's own release in ~/.local/bin."
+flags = "I"
+
+[package]
+binary = "glow"
+arch = "glow"
+debian = "glow"
+fedora = "glow"
+suse = "glow"
+removable = true
+
+[release]
+repository = "charmbracelet/glow"
+tag = "v3.0.0"
+version = "3.0.0"
+binary = "glow"
+
+[release.x86_64]
+asset = "glow_3.0.0_Linux_x86_64.tar.gz"
+sha256 = "13e05e4b2acc18d2aee44291aefe6325b077ec321b631a0cfa780e8e3bc33f78"
+path = "glow_3.0.0_Linux_x86_64/glow"
+
+[release.aarch64]
+asset = "glow_3.0.0_Linux_arm64.tar.gz"
+sha256 = "810c39f4691feb75e675a5f5f54b9fa091354e7599d9cf9c9fc9b97e47a99759"
+path = "glow_3.0.0_Linux_arm64/glow"

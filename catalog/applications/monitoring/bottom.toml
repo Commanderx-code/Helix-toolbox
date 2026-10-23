@@ -1,5 +1,5 @@
 name = "bottom"
-description = "Graphical process and system monitor for the terminal (btm)."
+description = "Graphical process and system monitor for the terminal (btm). Where the distribution has no package, its own release in ~/.local/bin."
 flags = "I"
 
 [package]
@@ -8,3 +8,19 @@ arch = "bottom"
 debian = "btm"
 suse = "bottom"
 removable = true
+
+[release]
+repository = "ClementTsang/bottom"
+tag = "0.14.9"
+version = "0.14.9"
+binary = "btm"
+
+[release.x86_64]
+asset = "bottom_x86_64-unknown-linux-musl.tar.gz"
+sha256 = "b4bee5b193e7d3f6e090ac14f0ca15acec2e7fe4ef64988e0bfc492e16c28c9a"
+path = "btm"
+
+[release.aarch64]
+asset = "bottom_aarch64-unknown-linux-musl.tar.gz"
+sha256 = "7b6d532f6a6af356970f4e8d7d3a792590485aa4a53ebf038e10d20366125533"
+path = "btm"

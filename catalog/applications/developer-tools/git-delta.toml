@@ -1,5 +1,5 @@
 name = "delta"
-description = "Syntax-highlighted diffs for Git, side by side if you like."
+description = "Syntax-highlighted diffs for Git, side by side if you like. Where the distribution has no package, its own release in ~/.local/bin."
 flags = "I"
 
 [package]
@@ -9,3 +9,19 @@ debian = "git-delta"
 fedora = "git-delta"
 suse = "git-delta"
 removable = true
+
+[release]
+repository = "dandavison/delta"
+tag = "0.20.1"
+version = "0.20.1"
+binary = "delta"
+
+[release.x86_64]
+asset = "delta-0.20.1-x86_64-unknown-linux-musl.tar.gz"
+sha256 = "69dcb4043f55c29118f408c6efd30115e0a4e0a6709253343b8c8fa814ab4a31"
+path = "delta-0.20.1-x86_64-unknown-linux-musl/delta"
+
+[release.aarch64]
+asset = "delta-0.20.1-aarch64-unknown-linux-gnu.tar.gz"
+sha256 = "da7f4338f593572ff426ae153e0870e2fdc72729416eff551b40cdeb67940db8"
+path = "delta-0.20.1-aarch64-unknown-linux-gnu/delta"

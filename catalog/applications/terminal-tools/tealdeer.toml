@@ -1,5 +1,5 @@
 name = "tealdeer (tldr)"
-description = "Short, practical examples for command-line tools (tldr NAME)."
+description = "Short, practical examples for command-line tools (tldr NAME). Where the distribution has no package, its own release in ~/.local/bin."
 flags = "I"
 
 [package]
@@ -9,3 +9,17 @@ debian = "tealdeer"
 fedora = "tealdeer"
 suse = "tealdeer"
 removable = true
+
+[release]
+repository = "tealdeer-rs/tealdeer"
+tag = "v1.9.0"
+version = "1.9.0"
+binary = "tldr"
+
+[release.x86_64]
+asset = "tealdeer-linux-x86_64-musl"
+sha256 = "dc7263b550e90c0689ea2cb434e3144469805d5dddecbb1f7fc534e1185b7408"
+
+[release.aarch64]
+asset = "tealdeer-linux-aarch64-musl"
+sha256 = "a748f181c00933980cb850f4a24199c45900fc523787f6c524232a6bfc66b895"

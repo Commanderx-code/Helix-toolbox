@@ -107,6 +107,8 @@ pub struct Inventory {
     nix_places: Vec<(String, PathBuf)>,
     /// Which package owns a file, fixed for tests; None asks the manager.
     owners: Option<HashMap<PathBuf, String>>,
+    /// What Helix Toolbox installed from GitHub releases, by entry.
+    releases: HashMap<String, crate::release::Record>,
 }
 
 impl Inventory {
@@ -120,6 +122,10 @@ impl Inventory {
         let mut inventory = Inventory {
             manager,
             nix_places: nix_places(),
+            releases: crate::release::records()
+                .into_iter()
+                .map(|record| (record.entry.clone(), record))
+                .collect(),
             ..Inventory::default()
         };
         match manager {
@@ -199,7 +205,31 @@ impl Inventory {
             flatpak_updates,
             nix_places: Vec::new(),
             owners: Some(HashMap::new()),
+            releases: HashMap::new(),
         }
+    }
+
+    /// The same, with what Helix Toolbox installed from releases, for tests.
+    pub fn with_releases(mut self, records: Vec<crate::release::Record>) -> Self {
+        self.releases = records
+            .into_iter()
+            .map(|record| (record.entry.clone(), record))
+            .collect();
+        self
+    }
+
+    /// Every release Helix Toolbox recorded installing, by entry id.
+    pub fn release_records(&self) -> Vec<&crate::release::Record> {
+        let mut records: Vec<&crate::release::Record> = self.releases.values().collect();
+        records.sort_by(|a, b| a.entry.cmp(&b.entry));
+        records
+    }
+
+    /// The record of an entry's release, with its program still there.
+    fn release(&self, entry: &str) -> Option<&crate::release::Record> {
+        self.releases
+            .get(entry)
+            .filter(|record| record.path.symlink_metadata().is_ok())
     }
 
     /// The same, with which package owns each file fixed, for tests.
@@ -220,6 +250,7 @@ impl Inventory {
             }
             Probe::Package { .. } => probe.holds(),
             Probe::Flatpak(id) => self.flatpaks.contains_key(id),
+            Probe::Release { entry, .. } => self.release(entry).is_some(),
         }
     }
 
@@ -240,6 +271,9 @@ impl Inventory {
                 .get(id)
                 .filter(|version| !version.is_empty())
                 .cloned(),
+            Probe::Release { entry, .. } => {
+                self.release(entry).map(|record| record.version.clone())
+            }
         }
     }
 
@@ -256,13 +290,7 @@ impl Inventory {
         let mut plan = Plan::default();
         let mut system = Vec::new();
         for entry in entries {
-            let Some(helix_toolbox_core::Identity {
-                packages,
-                aur,
-                flatpak,
-                ..
-            }) = entry.identity()
-            else {
+            let Some(helix_toolbox_core::Identity { release, .. }) = entry.identity() else {
                 plan.notes.push(format!(
                     "{}: its installer decides what it installs; run it again to update",
                     entry.name
@@ -304,7 +332,7 @@ impl Inventory {
                     continue;
                 }
             }
-            let probes = crate::own_probes(packages, aur, flatpak, platform.manager);
+            let probes = crate::entry_probes(entry, platform.manager);
             let owned = || {
                 let binary = entry.identity()?.binary?;
                 let path = on_path(binary)?;
@@ -338,6 +366,19 @@ impl Inventory {
                     requires: vec![manager.executable().to_string(), "sudo".to_string()],
                     probe: Some(probe.clone()),
                 },
+                // The catalog's newer release, installed over its own file.
+                Probe::Release { .. } => {
+                    let Some(source) = release.and_then(|release| {
+                        crate::release::source(&entry.id, release, std::env::consts::ARCH)
+                    }) else {
+                        plan.notes.push(format!(
+                            "{}: its release has no file for this processor",
+                            entry.name
+                        ));
+                        continue;
+                    };
+                    source
+                }
                 Probe::Flatpak(id) => {
                     // The installation that has it: the system's, else the user's.
                     let system_wide = Path::new("/var/lib/flatpak/app").join(id).is_dir();
@@ -406,6 +447,7 @@ impl Inventory {
             packages,
             aur,
             flatpak,
+            release,
             ..
         } = entry.identity()?;
         let holds = |probe: &Probe| self.holds(probe);
@@ -413,6 +455,7 @@ impl Inventory {
         let machine = crate::Machine {
             holds: &holds,
             on_path: &found,
+            ..crate::Machine::blind()
         };
         match crate::package_state(entry, platform, machine)? {
             PackageState::Absent { replaces } => Some(Status::Absent { replaces }),
@@ -467,6 +510,29 @@ impl Inventory {
                             },
                         });
                     }
+                }
+                // Its GitHub release, older than the catalog's when there is
+                // a newer one to install over it.
+                if !flatpak.is_some_and(|id| self.flatpaks.contains_key(id))
+                    && let Some(record) = self.release(&entry.id)
+                {
+                    let source = "GitHub release".to_string();
+                    let version = Some(record.version.clone());
+                    return Some(
+                        match release.filter(|release| crate::release::outdated(record, release)) {
+                            Some(newer) => Status::Update {
+                                source,
+                                version,
+                                latest: Some(newer.version.clone()),
+                                shadowed,
+                            },
+                            None => Status::Installed {
+                                source,
+                                version,
+                                shadowed,
+                            },
+                        },
+                    );
                 }
                 let id = flatpak?;
                 let version = self
@@ -771,6 +837,7 @@ mod tests {
                 flatpak: flatpak.map(Into::into),
                 conflicts: conflicts.iter().map(|name| name.to_string()).collect(),
                 removable: true,
+                release: None,
             },
             detect: None,
             needs: Default::default(),
@@ -995,6 +1062,76 @@ mod tests {
             ..package("s", None, None, None, None, &[])
         };
         assert_eq!(inventory.status(&script, &arch, &nowhere), None);
+    }
+
+    #[test]
+    fn releases_show_their_version_and_update_from_the_catalog() {
+        let home = tempfile::tempdir().unwrap();
+        let program = home.path().join("tool");
+        std::fs::write(&program, b"tool").unwrap();
+        let record = |version: &str| crate::release::Record {
+            entry: "tool".into(),
+            path: program.clone(),
+            version: version.into(),
+            tag: format!("v{version}"),
+            repository: "example/tool".into(),
+            sha256: "ab".repeat(32),
+        };
+        let asset = |architecture: &str| helix_toolbox_core::ReleaseAsset {
+            architecture: architecture.into(),
+            file: format!("tool-{architecture}"),
+            sha256: "cd".repeat(32),
+            path: None,
+        };
+        let mut tool = package("tool", Some("tool"), Some("tool"), None, None, &[]);
+        if let Action::Package { release, .. } = &mut tool.action {
+            *release = Some(helix_toolbox_core::Release {
+                repository: "example/tool".into(),
+                tag: "v1.2.0".into(),
+                version: "1.2.0".into(),
+                binary: "tool".into(),
+                assets: vec![asset("x86_64"), asset("aarch64")],
+            });
+        }
+        let arch = platform(PackageManager::Arch);
+        let found = |_: &str| Some(program.clone());
+        let parts = || {
+            Inventory::from_parts(
+                Some(PackageManager::Arch),
+                Some(HashMap::new()),
+                HashMap::new(),
+                HashMap::new(),
+                HashSet::new(),
+            )
+        };
+        let older = parts().with_releases(vec![record("1.1.0")]);
+        let status = older.status(&tool, &arch, &found).unwrap();
+        assert_eq!(status.label(), "Update");
+        assert_eq!(status.detail(), "GitHub release 1.1.0 → 1.2.0");
+        let planned = older.plan_update([&tool], &arch, &found);
+        assert!(
+            planned.steps[0]
+                .display()
+                .starts_with("helix-toolbox release install tool example/tool v1.2.0 1.2.0 tool"),
+            "{}",
+            planned.steps[0].display()
+        );
+        assert!(!planned.privileged);
+
+        let current = parts().with_releases(vec![record("1.2.0")]);
+        let status = current.status(&tool, &arch, &found).unwrap();
+        assert_eq!(status.label(), "Installed");
+        assert_eq!(status.detail(), "GitHub release 1.2.0");
+
+        // A record whose program is gone is not an install.
+        std::fs::remove_file(&program).unwrap();
+        let nowhere = |_: &str| None;
+        assert_eq!(
+            current.status(&tool, &arch, &nowhere),
+            Some(Status::Absent {
+                replaces: Vec::new()
+            })
+        );
     }
 
     #[test]

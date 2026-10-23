@@ -3,4 +3,4 @@ description = "Modern terminal tools for files, search, Git and monitoring, as o
 flags = "I"
 
 [profile]
-entries = ["bat", "eza", "fd", "ripgrep", "fzf", "zoxide", "tmux", "btop", "jq", "tealdeer", "git-delta", "gh"]
+entries = ["bat", "eza", "fd", "ripgrep", "fzf", "zoxide", "tmux", "btop", "jq", "tealdeer", "git-delta", "gh", "lazygit", "yazi", "atuin", "starship"]

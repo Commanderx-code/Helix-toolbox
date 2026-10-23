@@ -619,6 +619,7 @@ fn package_entry(id: String, name: &str, packages: PackageNames, flatpak: Option
             flatpak,
             conflicts: Vec::new(),
             removable: false,
+            release: None,
         },
         detect: None,
         needs: Default::default(),
@@ -696,6 +697,7 @@ pub fn read_here(
     let machine = Machine {
         holds: &holds,
         on_path: &helix_toolbox_platform::binary_exists,
+        ..crate::Machine::blind()
     };
     Ok(translate(
         migration,
@@ -717,6 +719,7 @@ pub fn plan_here(
     let machine = Machine {
         holds: &holds,
         on_path: &helix_toolbox_platform::binary_exists,
+        ..crate::Machine::blind()
     };
     plan(translation, entries, platform, machine)
 }
@@ -919,6 +922,7 @@ mod tests {
         let machine = Machine {
             holds: &holds,
             on_path: &on_path,
+            ..crate::Machine::blind()
         };
         let available: HashSet<String> = ["htop".to_string()].into();
         let translated = translate(migration, &refs, &fedora(), machine, Some(&available));
@@ -992,6 +996,7 @@ mod tests {
         let machine = Machine {
             holds: &holds,
             on_path: &on_path,
+            ..crate::Machine::blind()
         };
         let mut with_flatpak = entries.clone();
         let mut setup = package(FLATPAK_ENTRY, Some("flatpak"), Some("flatpak"), None);

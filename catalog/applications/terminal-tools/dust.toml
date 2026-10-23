@@ -1,5 +1,5 @@
 name = "dust"
-description = "A more intuitive du: which folders take the most space, at a glance."
+description = "A more intuitive du: which folders take the most space, at a glance. Where the distribution has no package, its own release in ~/.local/bin."
 flags = "I"
 
 [package]
@@ -9,3 +9,19 @@ debian = "du-dust"
 fedora = "du-dust"
 suse = "dust"
 removable = true
+
+[release]
+repository = "bootandy/dust"
+tag = "v1.2.6"
+version = "1.2.6"
+binary = "dust"
+
+[release.x86_64]
+asset = "dust-v1.2.6-x86_64-unknown-linux-musl.tar.gz"
+sha256 = "cbf2cb5c9d6227e46fc4b29c03dc43b8632020dfc5cf269d263d6e29c399e044"
+path = "dust-v1.2.6-x86_64-unknown-linux-musl/dust"
+
+[release.aarch64]
+asset = "dust-v1.2.6-aarch64-unknown-linux-musl.tar.gz"
+sha256 = "a51cf42a4654864837cc116eaca914271d7a09a9c2a60de90ecc2187b8d855a7"
+path = "dust-v1.2.6-aarch64-unknown-linux-musl/dust"

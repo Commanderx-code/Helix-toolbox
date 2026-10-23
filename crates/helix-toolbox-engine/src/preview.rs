@@ -175,6 +175,25 @@ fn step_changes(
             let Some(first) = sources.first() else {
                 return changes;
             };
+            // A release changes one file in the home folder, and no package.
+            if let Some(crate::Probe::Release { binary, .. }) = &first.probe {
+                let place = format!("~/.local/bin/{binary}");
+                changes.push(change(
+                    Certainty::Known,
+                    Area::File,
+                    if *removal {
+                        format!(
+                            "removes {place}, which Helix Toolbox installed from its GitHub release"
+                        )
+                    } else {
+                        format!(
+                            "installs {place} from {}, checked against its pinned SHA-256 first",
+                            first.label
+                        )
+                    },
+                ));
+                return changes;
+            }
             let names: Vec<String> = package_names(first);
             if *removal {
                 changes.push(change(
@@ -193,11 +212,14 @@ fn step_changes(
                     changes.extend(simulate(platform.manager, &names, false, look.system));
                 }
                 for other in &sources[1..] {
-                    changes.push(change(
-                        Certainty::Expected,
-                        Area::Package,
-                        format!("if that fails or leaves it missing, from {}", other.label),
-                    ));
+                    let what = match &other.probe {
+                        Some(crate::Probe::Release { binary, .. }) => format!(
+                            "if that fails or leaves it missing, ~/.local/bin/{binary} from {}",
+                            other.label
+                        ),
+                        _ => format!("if that fails or leaves it missing, from {}", other.label),
+                    };
+                    changes.push(change(Certainty::Expected, Area::Package, what));
                 }
                 if let Some(entry) = entry
                     && let Some(identity) = entry.identity()
@@ -1226,6 +1248,7 @@ mod tests {
             crate::Machine {
                 holds: &|_| false,
                 on_path: &|_| false,
+                ..crate::Machine::blind()
             },
         )
         .unwrap();
@@ -1275,6 +1298,7 @@ mod tests {
             crate::Machine {
                 holds: &|_| false,
                 on_path: &|_| false,
+                ..crate::Machine::blind()
             },
         )
         .unwrap();

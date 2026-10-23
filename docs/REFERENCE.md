@@ -89,9 +89,11 @@ off for terminals without a Nerd Font. Both choices are remembered in
 
 Package entries show how they stand on this machine, beside their flags:
 **Installed** with where from and the version (`pacman 15.2.0-1`, `apt`,
-`dnf`, `AUR`, `Flatpak 7.5`), **Update** when the repository metadata already
-on the machine has a newer version (`pacman 15.2.0-1 → 15.3.0-1`; nothing is
-downloaded to find out), **Managed** when the command comes from Nix (`Home
+`dnf`, `AUR`, `Flatpak 7.5`, `GitHub release 0.66.2`), **Update** when the
+repository metadata already on the machine has a newer version (`pacman
+15.2.0-1 → 15.3.0-1`; nothing is downloaded to find out), or the catalog
+pins a newer release than the one installed (`GitHub release 0.65.0 →
+0.66.2`), **Managed** when the command comes from Nix (`Home
 Manager 1.4.7`, `Nix`, `NixOS`), or **Not installed**. When a package is
 installed but a Nix copy of its command comes first on the PATH, the status
 says so (`; Home Manager's 0.12.5 runs first`). The check runs in the
@@ -252,7 +254,10 @@ with no recorded run here still counts as set up when what it sets is in
 place: the files it writes are all there, or its installer's own renderer
 (`configure.py`, which only prints) finds the boot or login-screen settings
 it would write already in the file, as after a run from before Helix Toolbox
-1.1 recorded runs, or a change made by hand. Each difference shows what it
+1.1 recorded runs, or a change made by hand. A program Helix Toolbox
+installed from a GitHub release is **Missing** when it is gone and
+**Changed** when it is another file than the one installed, with whichever
+baseline or profile. Each difference shows what it
 was and what it is now. `Enter`
 explains a difference; `Space` adds the entry that puts it back to the
 Install Plan and `a` adds all of them, to be reviewed and confirmed there;

@@ -10,9 +10,9 @@
 
 use helix_toolbox_core::{
     ARCHITECTURES, Action, Check, Claim, Detect, Effects, Entry, FileEffect, GPU_VENDORS, Group,
-    Item, NativeAction, Needs, NixAction, PackageNames, Precondition, Tab, Verify,
-    valid_binary_name, valid_flatpak_id, valid_id, valid_package_name, valid_script_segment,
-    valid_unit_name,
+    Item, NativeAction, Needs, NixAction, PackageNames, Precondition, Release, ReleaseAsset, Tab,
+    Verify, valid_binary_name, valid_flatpak_id, valid_id, valid_package_name,
+    valid_script_segment, valid_unit_name,
 };
 use helix_toolbox_platform::binary_exists;
 use include_dir::{Dir, include_dir};
@@ -226,6 +226,9 @@ struct EntryFile {
     writes: Vec<String>,
     #[serde(default)]
     package: Option<PackageFile>,
+    /// A GitHub release, alone or as a package entry's last source.
+    #[serde(default)]
+    release: Option<ReleaseFile>,
     #[serde(default)]
     script: Option<ScriptFile>,
     #[serde(default)]
@@ -386,6 +389,33 @@ struct PackageFile {
     flatpak: Option<String>,
     #[serde(default)]
     removable: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReleaseFile {
+    /// `owner/name` on GitHub.
+    repository: String,
+    tag: String,
+    version: String,
+    /// Installed as `~/.local/bin/<binary>`.
+    binary: String,
+    #[serde(default)]
+    removable: bool,
+    #[serde(default)]
+    x86_64: Option<ReleaseAssetFile>,
+    #[serde(default)]
+    aarch64: Option<ReleaseAssetFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReleaseAssetFile {
+    asset: String,
+    sha256: String,
+    /// The program inside the archive; none for a file that is the program.
+    #[serde(default)]
+    path: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -887,6 +917,36 @@ fn needs_of(entry: &EntryFile, path: &Path) -> Result<Needs, CatalogError> {
     })
 }
 
+/// The entry's `[release]` table, checked: every value reaches a URL or a
+/// command line, so nothing is taken that could leave its place.
+fn release_of(file: &ReleaseFile, path: &Path) -> Result<Release, CatalogError> {
+    let assets = [("x86_64", &file.x86_64), ("aarch64", &file.aarch64)]
+        .into_iter()
+        .filter_map(|(architecture, asset)| {
+            asset.as_ref().map(|asset| ReleaseAsset {
+                architecture: architecture.to_string(),
+                file: asset.asset.clone(),
+                sha256: asset.sha256.clone(),
+                path: asset.path.clone(),
+            })
+        })
+        .collect();
+    let release = Release {
+        repository: file.repository.clone(),
+        tag: file.tag.clone(),
+        version: file.version.clone(),
+        binary: file.binary.clone(),
+        assets,
+    };
+    if !release.is_valid() {
+        return Err(CatalogError::Invalid(format!(
+            "{} has an invalid release section",
+            path.display()
+        )));
+    }
+    Ok(release)
+}
+
 /// The entry's `detect` table, checked; a package entry has its own.
 fn detect_of(entry: &EntryFile, path: &Path) -> Result<Option<Detect>, CatalogError> {
     let Some(detect) = &entry.detect else {
@@ -937,7 +997,8 @@ fn action_of(
     installers: &Path,
     validate: bool,
 ) -> Result<Option<Action>, CatalogError> {
-    let kinds = usize::from(entry.package.is_some())
+    // A release stands alone, or is a package entry's last source.
+    let kinds = usize::from(entry.package.is_some() || entry.release.is_some())
         + usize::from(entry.script.is_some())
         + usize::from(entry.command.is_some())
         + usize::from(entry.nix.is_some())
@@ -945,9 +1006,32 @@ fn action_of(
         + usize::from(entry.profile.is_some());
     if kinds != 1 {
         return Err(CatalogError::Invalid(format!(
-            "{} must have exactly one of [package], [script], [command], [nix], [native] or [profile]",
+            "{} must have exactly one of [package], [script], [command], [nix], [native] or [profile] ([release] goes alone or with [package])",
             path.display()
         )));
+    }
+    let release = match &entry.release {
+        Some(file) => Some(release_of(file, path)?),
+        None => None,
+    };
+    if entry.package.is_none()
+        && let Some(release) = release
+    {
+        if entry.detect.is_some() {
+            return Err(CatalogError::Invalid(format!(
+                "{}: a release entry says what it installs itself; it takes no [detect]",
+                path.display()
+            )));
+        }
+        return Ok(Some(Action::Package {
+            binary: Some(release.binary.clone()),
+            packages: PackageNames::default(),
+            aur: None,
+            flatpak: None,
+            conflicts: Vec::new(),
+            removable: entry.release.as_ref().is_some_and(|file| file.removable),
+            release: Some(release),
+        }));
     }
     if let Some(package) = &entry.package {
         let packages = PackageNames {
@@ -984,12 +1068,17 @@ fn action_of(
             )));
         }
         return Ok(Some(Action::Package {
-            binary: package.binary.clone(),
+            binary: package
+                .binary
+                .clone()
+                .or_else(|| release.as_ref().map(|release| release.binary.clone())),
             packages,
             aur: package.aur.clone(),
             flatpak: package.flatpak.clone(),
             conflicts: package.conflicts.clone(),
-            removable: package.removable,
+            removable: package.removable
+                || entry.release.as_ref().is_some_and(|file| file.removable),
+            release,
         }));
     }
     if let Some(script) = &entry.script {
@@ -1386,6 +1475,109 @@ mod tests {
         // Every built-in entry that says what it installs loads.
         let builtin = Catalog::builtin(false).unwrap();
         assert!(builtin.find("steam").unwrap().identity().is_some());
+    }
+
+    const SUM: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    fn release_table(extra: &str) -> String {
+        format!(
+            "[release]\nrepository = \"example/tool\"\ntag = \"v1.2.0\"\nversion = \"1.2.0\"\nbinary = \"tool\"\n{extra}\
+             [release.x86_64]\nasset = \"tool-x86_64.tar.gz\"\nsha256 = \"{SUM}\"\npath = \"tool-1.2.0/tool\"\n\
+             [release.aarch64]\nasset = \"tool-aarch64\"\nsha256 = \"{SUM}\"\n"
+        )
+    }
+
+    #[test]
+    fn releases_stand_alone_or_after_the_packages() {
+        let directory = sample();
+        write(
+            directory.path(),
+            "catalog/apps/tool.toml",
+            &format!(
+                "name = \"Tool\"\nflags = \"I\"\n\n{}",
+                release_table("removable = true\n")
+            ),
+        );
+        write(
+            directory.path(),
+            "catalog/apps/both.toml",
+            &format!(
+                "name = \"Both\"\nflags = \"I\"\n\n[package]\narch = \"tool\"\nremovable = true\n\n{}",
+                release_table("")
+            ),
+        );
+        let catalog = Catalog::from_directory(directory.path(), false).unwrap();
+        let Action::Package {
+            binary,
+            packages,
+            removable,
+            release: Some(release),
+            ..
+        } = &catalog.find("tool").unwrap().action
+        else {
+            panic!("a release alone is a package entry with a release");
+        };
+        assert_eq!(binary.as_deref(), Some("tool"));
+        assert!(packages.is_empty() && *removable);
+        assert_eq!(release.repository, "example/tool");
+        assert_eq!(release.assets.len(), 2);
+        assert_eq!(
+            release.asset_for("x86_64").unwrap().path.as_deref(),
+            Some("tool-1.2.0/tool")
+        );
+        assert_eq!(release.asset_for("aarch64").unwrap().path, None);
+        let both = catalog.find("both").unwrap();
+        let identity = both.identity().unwrap();
+        assert_eq!(identity.packages.arch.as_deref(), Some("tool"));
+        // The package's command, else the release's.
+        assert_eq!(identity.binary, Some("tool"));
+        assert!(identity.release.is_some());
+    }
+
+    #[test]
+    fn broken_releases_are_errors() {
+        for (name, text) in [
+            ("tag.toml", release_table("").replace("v1.2.0", "v1/../x")),
+            (
+                "repository.toml",
+                release_table("").replace("example/tool", "example"),
+            ),
+            ("sum.toml", release_table("").replacen(SUM, "short", 1)),
+            (
+                "member.toml",
+                release_table("").replace("tool-1.2.0/tool", "../tool"),
+            ),
+            (
+                "binary.toml",
+                release_table("").replace("binary = \"tool\"", "binary = \"-rf\""),
+            ),
+            (
+                "unknown.toml",
+                release_table("mirror = \"https://example.com\"\n"),
+            ),
+            (
+                "script.toml",
+                format!("[script]\npath = \"x.sh\"\n\n{}", release_table("")),
+            ),
+            (
+                "detect.toml",
+                format!("{}\n[detect]\nbinary = \"tool\"\n", release_table("")),
+            ),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            write(directory.path(), "catalog/tabs.toml", "tabs = [\"t\"]\n");
+            write(directory.path(), "catalog/t/tab.toml", "name = \"T\"\n");
+            write(directory.path(), "catalog/t/x.sh", "#!/bin/sh\n");
+            write(
+                directory.path(),
+                &format!("catalog/t/{name}"),
+                &format!("name = \"Broken\"\n{text}"),
+            );
+            assert!(
+                Catalog::from_directory(directory.path(), false).is_err(),
+                "{name} was accepted"
+            );
+        }
     }
 
     #[test]

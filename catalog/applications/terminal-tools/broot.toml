@@ -1,5 +1,5 @@
 name = "broot"
-description = "Navigate folder trees, find files and see what fills a disk."
+description = "Navigate folder trees, find files and see what fills a disk. Where the distribution has no package, its own release in ~/.local/bin."
 flags = "I"
 
 [package]
@@ -8,3 +8,19 @@ arch = "broot"
 debian = "broot"
 suse = "broot"
 removable = true
+
+[release]
+repository = "Canop/broot"
+tag = "v1.61.0"
+version = "1.61.0"
+binary = "broot"
+
+[release.x86_64]
+asset = "broot_1.61.0.zip"
+sha256 = "6cafe8e993fb8e5684eb25549703a4fb9dec61ac6a8f1947cbed6566cb4e58e5"
+path = "x86_64-unknown-linux-musl/broot"
+
+[release.aarch64]
+asset = "broot_1.61.0.zip"
+sha256 = "6cafe8e993fb8e5684eb25549703a4fb9dec61ac6a8f1947cbed6566cb4e58e5"
+path = "aarch64-unknown-linux-musl/broot"

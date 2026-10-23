@@ -179,6 +179,7 @@ mod tests {
                 flatpak: None,
                 conflicts: Vec::new(),
                 removable: true,
+                release: None,
             },
             detect: None,
             needs: Default::default(),
@@ -189,6 +190,7 @@ mod tests {
     const NOTHING_HELD: Machine<'static> = Machine {
         holds: &|_| false,
         on_path: &|_| false,
+        ..crate::Machine::blind()
     };
 
     fn prepared(entries: &[Entry], choices: Choices, space: Option<u64>) -> Prepared {

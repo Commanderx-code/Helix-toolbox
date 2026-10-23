@@ -191,6 +191,28 @@ pub fn inspect(
             );
         }
     }
+    if let Some(release) = entry.identity().and_then(|identity| identity.release) {
+        for asset in &release.assets {
+            inspection.downloads.push(fact(
+                Standing::Checked,
+                "Download",
+                format!(
+                    "{} ({}): checked against the SHA-256 the catalog pins ({}) before it is unpacked",
+                    release.url_from(crate::release::GITHUB, asset),
+                    asset.architecture,
+                    asset.sha256
+                ),
+            ));
+        }
+        inspection.integrity.push(fact(
+            Standing::Checked,
+            "GitHub release",
+            format!(
+                "{} {} installs as ~/.local/bin/{} without root, and only over a file Helix Toolbox installed itself",
+                release.repository, release.tag, release.binary
+            ),
+        ));
+    }
     if let Some(identity) = entry.identity() {
         inspection.integrity.extend(integrity(
             identity.packages.for_manager_any(platform.manager),

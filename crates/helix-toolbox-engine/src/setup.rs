@@ -278,6 +278,7 @@ pub fn suggestions(ids: &[String], catalog: &Catalog, platform: &LinuxInfo) -> V
     let nothing = Machine {
         holds: &|_| false,
         on_path: &|_| false,
+        ..crate::Machine::blind()
     };
     ids.iter()
         .map(|id| match catalog.find(id) {

@@ -60,21 +60,24 @@ https://github.com/ChrisTitusTech/neovim
 - **Distrobox**: Run other Linux distributions in containers that share your home folder and desktop.
 - **Git**: Distributed version control.
 - **GitHub CLI**: Pull requests, issues, releases and Actions from the terminal (gh).
+- **Lazydocker**: Terminal interface for Docker and Docker Compose: containers, images, logs and stats. From Arch's repositories, else Lazydocker's own release in ~/.local/bin.
+- **Lazygit**: Terminal interface for Git: staging, commits, branches and rebases. From the distribution where it has Lazygit, else Lazygit's own release in ~/.local/bin.
 - **Neovim**: Extensible terminal-based text editor.
 - **Podman Desktop**: Manage containers, images, pods and Kubernetes from a desktop app.
 - **Ripgrep**: Fast recursive text search (rg).
-- **delta**: Syntax-highlighted diffs for Git, side by side if you like.
+- **delta**: Syntax-highlighted diffs for Git, side by side if you like. Where the distribution has no package, its own release in ~/.local/bin.
 - **fzf**: Command-line fuzzy finder.
+- **uv**: Fast Python package and project manager. From the distribution where it has uv, else uv's own release in ~/.local/bin.
 
 ### Monitoring
 
-- **Fastfetch**: System information beside your distribution logo, quickly.
+- **Fastfetch**: System information beside your distribution logo, quickly. Where the distribution has no package, its own release in ~/.local/bin.
 - **Mission Center**: Monitor CPU, memory, disk, network and GPU usage, like a task manager.
-- **bottom**: Graphical process and system monitor for the terminal (btm).
+- **bottom**: Graphical process and system monitor for the terminal (btm). Where the distribution has no package, its own release in ~/.local/bin.
 - **btop**: Resource monitor with a terminal interface.
 - **htop**: Interactive process viewer.
 - **nvtop**: GPU usage and processes for NVIDIA, AMD and Intel graphics.
-- **procs**: A modern ps, with colors, a tree view and search.
+- **procs**: A modern ps, with colors, a tree view and search. Where the distribution has no package, its own release in ~/.local/bin.
 
 ### Terminal Tools
 
@@ -82,16 +85,20 @@ https://github.com/ChrisTitusTech/neovim
 - **NetWatch Network Dashboard**: Install pinned NetWatch through Nix on Linux x86_64. Ordinary monitoring is unprivileged; capture permissions remain a separate choice.
 - **TFM Visual File Manager**: Install the pinned TFM beta through Nix on Linux x86_64, with preview and Wayland clipboard helpers. Use Ghostty for image previews.
 - **Cassette Spotify Player**: Install pinned Cassette and librespot through Nix on Linux x86_64. Requires Spotify Premium, your own Client ID and interactive browser login.
+- **Atuin**: Shell history in a searchable database, with optional sync between machines. From the distribution where it has Atuin, else Atuin's own release in ~/.local/bin.
+- **Glow**: Renders Markdown in the terminal. From the distribution where it has Glow, else Glow's own release in ~/.local/bin.
+- **Starship**: Fast, customizable prompt for any shell. From the distribution where it has Starship, else Starship's own release in ~/.local/bin. Its configuration is a separate entry.
+- **Yazi**: Fast terminal file manager with image previews. From the distribution where it has Yazi, else Yazi's own release in ~/.local/bin.
 - **bat**: cat with syntax highlighting, line numbers and Git changes. Debian and Ubuntu name its command batcat.
-- **broot**: Navigate folder trees, find files and see what fills a disk.
+- **broot**: Navigate folder trees, find files and see what fills a disk. Where the distribution has no package, its own release in ~/.local/bin.
 - **duf**: Disk usage and free space of every mounted file system, as a readable table.
-- **dust**: A more intuitive du: which folders take the most space, at a glance.
-- **eza**: A modern ls, with colors, icons, Git status and a tree view.
+- **dust**: A more intuitive du: which folders take the most space, at a glance. Where the distribution has no package, its own release in ~/.local/bin.
+- **eza**: A modern ls, with colors, icons, Git status and a tree view. Where the distribution has no package, its own release in ~/.local/bin.
 - **fd**: A simple, fast alternative to find. Debian and Ubuntu name its command fdfind.
 - **hyperfine**: Benchmark commands, with warmup runs and statistics.
 - **jq**: Slice, filter and reshape JSON on the command line.
 - **ncdu**: Disk usage analyzer with a terminal interface.
-- **tealdeer (tldr)**: Short, practical examples for command-line tools (tldr NAME).
+- **tealdeer (tldr)**: Short, practical examples for command-line tools (tldr NAME). Where the distribution has no package, its own release in ~/.local/bin.
 - **tmux**: Terminal multiplexer: split panes, windows and sessions that survive a disconnect.
 - **trash-cli**: Move files to the desktop trash from the terminal, list and restore them.
 - **zoxide**: A smarter cd that remembers the folders you use most (z NAME).

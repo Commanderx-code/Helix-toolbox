@@ -65,10 +65,23 @@ trustworthy as the Helix Toolbox copy inside it; prefer your own.
   visible. Scripts ask for `sudo` themselves through the shared helpers.
   Nothing stays elevated between runs.
 - **Fallback sources.** A package entry may be installed from a later
-  source (the AUR, then Flathub) when an earlier one fails. Every source is
+  source (the AUR, Flathub, then the tool's GitHub release) when an earlier
+  one fails. Every source is
   in the plan before the confirmation, built from the same validated names,
   and each one's own `sudo` prompt is visible; a wrong password lets the next
   source ask again, and `Ctrl-C` stops the run rather than moving on.
+- **GitHub releases.** A release source downloads one file the catalog pins
+  by its SHA-256, over HTTPS only (curl's `--proto =https`, redirects
+  included), into a private folder. A file that does not match is deleted
+  before anything is unpacked. Only the program's path is taken out of the
+  archive, and only as a plain file; it goes to `~/.local/bin` as the user,
+  never with `sudo`, through a new file renamed into place. A record of its
+  SHA-256 means a file Helix Toolbox did not install, or one changed since,
+  is never replaced or removed, and HELIX Drift reports the change.
+  `scripts/release-pins.py` makes the pins and compares each file with
+  GitHub's digest and the project's own checksums; a release's file is
+  otherwise as trustworthy as the project's release process, as any
+  download is.
 - **Review.** Every plan shows its steps, its risk level and whether it asks
   for a password. The interface asks `[Y]`; the command line asks for the
   word `RUN` unless `--yes` is given deliberately.

@@ -129,12 +129,27 @@ pub fn info(found: &Entry, status: Option<&Status>) -> Value {
             flatpak,
             conflicts,
             removable,
+            release,
         } => {
             let packages: serde_json::Map<String, Value> = packages
                 .all()
                 .into_iter()
                 .filter_map(|(family, name)| Some((family.to_string(), json!(name?))))
                 .collect();
+            let release = release.as_ref().map(|release| {
+                json!({
+                    "repository": release.repository,
+                    "tag": release.tag,
+                    "version": release.version,
+                    "binary": release.binary,
+                    "assets": release.assets.iter().map(|asset| json!({
+                        "architecture": asset.architecture,
+                        "file": asset.file,
+                        "sha256": asset.sha256,
+                        "path": asset.path,
+                    })).collect::<Vec<_>>(),
+                })
+            });
             json!({
                 "binary": binary,
                 "packages": packages,
@@ -142,6 +157,7 @@ pub fn info(found: &Entry, status: Option<&Status>) -> Value {
                 "flatpak": flatpak,
                 "conflicts": conflicts,
                 "removable": removable,
+                "release": release,
             })
         }
         Action::Script { file, interactive } => json!({

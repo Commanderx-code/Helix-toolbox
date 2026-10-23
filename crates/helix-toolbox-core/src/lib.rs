@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// The package manager families that package entries can name.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PackageManager {
     Arch,
@@ -149,6 +149,9 @@ pub enum Action {
         conflicts: Vec<String>,
         /// Whether the entry offers removal as well.
         removable: bool,
+        /// The tool's own GitHub release, tried after every package source,
+        /// or alone when the entry names no package.
+        release: Option<Release>,
     },
     /// Run a script from its own directory. Interactive scripts need a
     /// terminal for their prompts; the others could run unattended.
@@ -194,6 +197,179 @@ impl NativeAction {
     }
 }
 
+/// A tool installed from its project's GitHub release: one pinned file per
+/// architecture, checked against its SHA-256 before anything is unpacked,
+/// and put in `~/.local/bin` without root.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Release {
+    /// `owner/name` on GitHub.
+    pub repository: String,
+    /// The release's tag, as its download URLs carry it (`v0.55.1`).
+    pub tag: String,
+    /// The version it installs, compared with what is installed.
+    pub version: String,
+    /// The command it installs, as `~/.local/bin/<binary>`.
+    pub binary: String,
+    /// The file to download for each architecture there is one for.
+    pub assets: Vec<ReleaseAsset>,
+}
+
+/// One architecture's file of a release.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReleaseAsset {
+    /// `x86_64` or `aarch64`.
+    pub architecture: String,
+    /// The file's name in the release.
+    pub file: String,
+    /// Its SHA-256, 64 lowercase hexadecimal digits.
+    pub sha256: String,
+    /// The program inside the archive; None for a file that is the program.
+    pub path: Option<String>,
+}
+
+/// How a release file is packed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Archive {
+    TarGz,
+    TarXz,
+    Zip,
+    /// The file is the program itself.
+    Bare,
+}
+
+impl Archive {
+    /// From the file's name.
+    pub fn of(file: &str) -> Self {
+        if file.ends_with(".tar.gz") || file.ends_with(".tgz") {
+            Archive::TarGz
+        } else if file.ends_with(".tar.xz") {
+            Archive::TarXz
+        } else if file.ends_with(".zip") {
+            Archive::Zip
+        } else {
+            Archive::Bare
+        }
+    }
+
+    /// The program that unpacks it, if any.
+    pub const fn tool(self) -> Option<&'static str> {
+        match self {
+            Archive::TarGz | Archive::TarXz => Some("tar"),
+            Archive::Zip => Some("unzip"),
+            Archive::Bare => None,
+        }
+    }
+}
+
+impl Release {
+    /// The file for this architecture; None where the project builds none.
+    pub fn asset_for(&self, architecture: &str) -> Option<&ReleaseAsset> {
+        self.assets
+            .iter()
+            .find(|asset| asset.architecture == architecture)
+    }
+
+    /// Where a file of the release is downloaded from, below `base`
+    /// (`https://github.com`).
+    pub fn url_from(&self, base: &str, asset: &ReleaseAsset) -> String {
+        format!(
+            "{base}/{}/releases/download/{}/{}",
+            self.repository, self.tag, asset.file
+        )
+    }
+
+    /// Whether every value is safe to put on a command line and in a URL,
+    /// and the files and paths it names stay where they belong.
+    pub fn is_valid(&self) -> bool {
+        valid_repository(&self.repository)
+            && valid_release_name(&self.tag)
+            && valid_release_name(&self.version)
+            && valid_binary_name(&self.binary)
+            && !self.assets.is_empty()
+            && self.assets.iter().enumerate().all(|(index, asset)| {
+                ARCHITECTURES.contains(&asset.architecture.as_str())
+                    && !self.assets[..index]
+                        .iter()
+                        .any(|other| other.architecture == asset.architecture)
+                    && valid_release_name(&asset.file)
+                    && valid_sha256(&asset.sha256)
+                    && match (Archive::of(&asset.file), &asset.path) {
+                        (Archive::Bare, None) => true,
+                        (Archive::Bare, Some(_)) | (_, None) => false,
+                        (_, Some(path)) => valid_member_path(path),
+                    }
+            })
+    }
+}
+
+/// A GitHub repository, `owner/name`.
+pub fn valid_repository(repository: &str) -> bool {
+    let Some((owner, name)) = repository.split_once('/') else {
+        return false;
+    };
+    let part = |text: &str| {
+        !text.is_empty()
+            && text.len() <= 100
+            && !text.starts_with(['-', '.'])
+            && text
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+    };
+    part(owner) && part(name)
+}
+
+/// A tag, version or file name of a release: no slashes, no `..`, nothing a
+/// shell or URL would read specially.
+pub fn valid_release_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 128
+        && !name.starts_with(['-', '.'])
+        && !name.contains("..")
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"+._-".contains(&b))
+}
+
+/// A SHA-256 as 64 lowercase hexadecimal digits.
+pub fn valid_sha256(sum: &str) -> bool {
+    sum.len() == 64
+        && sum
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// A file inside an archive: relative, with no empty, `.` or `..` parts.
+pub fn valid_member_path(path: &str) -> bool {
+    path.len() <= 255 && path.split('/').all(valid_release_name)
+}
+
+/// Order two versions by their numbers, part by part (`0.9.10` after
+/// `0.9.2`); text after a part's number breaks ties.
+pub fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
+    let parts = |text: &str| -> Vec<(u64, String)> {
+        text.trim_start_matches(['v', 'V'])
+            .split(['.', '-', '+', '_'])
+            .map(|part| {
+                let digits = part.bytes().take_while(u8::is_ascii_digit).count();
+                (
+                    part[..digits].parse().unwrap_or(0),
+                    part[digits..].to_string(),
+                )
+            })
+            .collect()
+    };
+    let (a, b) = (parts(a), parts(b));
+    for index in 0..a.len().max(b.len()) {
+        let left = a.get(index).cloned().unwrap_or_default();
+        let right = b.get(index).cloned().unwrap_or_default();
+        let order = left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1));
+        if order.is_ne() {
+            return order;
+        }
+    }
+    std::cmp::Ordering::Equal
+}
+
 /// How much an entry can affect the system, derived from its flags.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -235,7 +411,17 @@ impl Risk {
 
 /// Whether an entry needs elevated privileges, from its flags and kind.
 pub fn privileged(flags: &str, action: &Action) -> bool {
-    matches!(action, Action::Package { .. })
+    // A release alone installs into the user's own folder.
+    let packaged = match action {
+        Action::Package {
+            packages,
+            aur,
+            flatpak,
+            ..
+        } => !packages.is_empty() || aur.is_some() || flatpak.is_some(),
+        _ => false,
+    };
+    packaged
         || flags
             .split_whitespace()
             .any(|flag| matches!(flag, "I" | "SS" | "D" | "K" | "SI") || flag.starts_with('P'))
@@ -490,6 +676,8 @@ pub struct Identity<'a> {
     pub aur: Option<&'a str>,
     pub flatpak: Option<&'a str>,
     pub conflicts: &'a [String],
+    /// The tool's GitHub release, for a package entry that has one.
+    pub release: Option<&'a Release>,
 }
 
 impl Entry {
@@ -503,6 +691,7 @@ impl Entry {
                     aur,
                     flatpak,
                     conflicts,
+                    release,
                     ..
                 },
                 _,
@@ -512,6 +701,7 @@ impl Entry {
                 aur: aur.as_deref(),
                 flatpak: flatpak.as_deref(),
                 conflicts,
+                release: release.as_ref(),
             }),
             (_, Some(detect)) => Some(Identity {
                 binary: detect.binary.as_deref(),
@@ -519,6 +709,7 @@ impl Entry {
                 aur: detect.aur.as_deref(),
                 flatpak: detect.flatpak.as_deref(),
                 conflicts: &[],
+                release: None,
             }),
             (_, None) => None,
         }
@@ -692,6 +883,97 @@ mod tests {
         for bad in ["", "..", "_x", "A", "a.b"] {
             assert!(!valid_script_segment(bad));
         }
+    }
+
+    fn sample_release() -> Release {
+        Release {
+            repository: "jesseduffield/lazygit".into(),
+            tag: "v0.55.1".into(),
+            version: "0.55.1".into(),
+            binary: "lazygit".into(),
+            assets: vec![ReleaseAsset {
+                architecture: "x86_64".into(),
+                file: "lazygit_0.55.1_linux_x86_64.tar.gz".into(),
+                sha256: "a".repeat(64),
+                path: Some("lazygit".into()),
+            }],
+        }
+    }
+
+    #[test]
+    fn releases_take_only_values_that_stay_in_place() {
+        let good = sample_release();
+        assert!(good.is_valid());
+        assert_eq!(
+            good.url_from("https://github.com", &good.assets[0]),
+            "https://github.com/jesseduffield/lazygit/releases/download/v0.55.1/lazygit_0.55.1_linux_x86_64.tar.gz"
+        );
+        assert_eq!(good.asset_for("x86_64"), Some(&good.assets[0]));
+        assert!(good.asset_for("aarch64").is_none());
+        let broken: [fn(&mut Release); 12] = [
+            |release| release.repository = "lazygit".into(),
+            |release| release.repository = "a/b/c".into(),
+            |release| release.repository = "../lazygit".into(),
+            |release| release.tag = "v1/../../x".into(),
+            |release| release.tag = "-v1".into(),
+            |release| release.binary = "../bin".into(),
+            |release| release.assets[0].sha256 = "A".repeat(64),
+            |release| release.assets[0].sha256 = "a".repeat(63),
+            |release| release.assets[0].path = Some("../lazygit".into()),
+            |release| release.assets[0].path = Some("/bin/lazygit".into()),
+            // An archive needs its program's path; a bare file has none.
+            |release| release.assets[0].path = None,
+            |release| release.assets[0].architecture = "riscv64".into(),
+        ];
+        for (index, breaking) in broken.iter().enumerate() {
+            let mut release = sample_release();
+            breaking(&mut release);
+            assert!(!release.is_valid(), "case {index} was accepted");
+        }
+        let mut bare = sample_release();
+        bare.assets[0].file = "lazygit-linux-amd64".into();
+        bare.assets[0].path = None;
+        assert!(bare.is_valid());
+        assert_eq!(Archive::of(&bare.assets[0].file), Archive::Bare);
+        bare.assets[0].path = Some("lazygit".into());
+        assert!(!bare.is_valid());
+        let mut twice = sample_release();
+        twice.assets.push(twice.assets[0].clone());
+        assert!(!twice.is_valid());
+        assert!(valid_member_path("yazi-x86_64-unknown-linux-musl/yazi"));
+        assert!(!valid_member_path("a//b"));
+        assert!(!valid_member_path("./a"));
+        assert_eq!(Archive::of("a.tar.xz").tool(), Some("tar"));
+        assert_eq!(Archive::of("a.zip").tool(), Some("unzip"));
+    }
+
+    #[test]
+    fn versions_order_by_their_numbers() {
+        use std::cmp::Ordering::*;
+        assert_eq!(compare_versions("0.9.10", "0.9.2"), Greater);
+        assert_eq!(compare_versions("v1.2.0", "1.2.0"), Equal);
+        assert_eq!(compare_versions("1.2", "1.2.1"), Less);
+        assert_eq!(compare_versions("25.5.31", "26.1.0"), Less);
+        assert_eq!(compare_versions("0.55.1", "0.55.1"), Equal);
+    }
+
+    #[test]
+    fn a_release_alone_needs_no_root() {
+        let alone = Action::Package {
+            binary: Some("lazygit".into()),
+            packages: PackageNames::default(),
+            aur: None,
+            flatpak: None,
+            conflicts: Vec::new(),
+            removable: true,
+            release: Some(sample_release()),
+        };
+        assert!(!privileged("", &alone));
+        let mut packaged = alone.clone();
+        if let Action::Package { packages, .. } = &mut packaged {
+            packages.arch = Some("lazygit".into());
+        }
+        assert!(privileged("", &packaged));
     }
 
     #[test]

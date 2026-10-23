@@ -27,7 +27,7 @@ use helix_toolbox_core::{Action, Entry, Item, NativeAction, printable};
 use helix_toolbox_engine::{
     InheritedRunner, Machine, PackageState, Plan, backups, doctor, execute, history,
     inventory::{Inventory, Status, which},
-    package_state, plan, plan_removal, preflight, profiles, run_native, updates,
+    package_state, plan, plan_removal, preflight, profiles, release, run_native, updates,
 };
 use helix_toolbox_platform::LinuxInfo;
 use std::{
@@ -410,6 +410,31 @@ enum Command {
     /// Run a native operation; the engine calls this from a run.
     #[command(hide = true)]
     Native { action: String },
+    /// Install or remove a tool from its GitHub release; the engine calls
+    /// this from a run, with the catalog's pinned values.
+    #[command(hide = true)]
+    Release {
+        #[command(subcommand)]
+        action: ReleaseCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ReleaseCommand {
+    /// Download the file, check its SHA-256, and put its program in ~/.local/bin.
+    Install {
+        entry: String,
+        repository: String,
+        tag: String,
+        version: String,
+        binary: String,
+        asset: String,
+        sha256: String,
+        /// The program inside the archive; none for a file that is the program.
+        path: Option<String>,
+    },
+    /// Remove the program Helix Toolbox installed, and its record.
+    Remove { entry: String, binary: String },
 }
 
 #[derive(Subcommand)]
@@ -522,6 +547,7 @@ fn main() -> Result<()> {
         Command::Tui(_)
         | Command::Docgen { .. }
         | Command::Native { .. }
+        | Command::Release { .. }
         | Command::Completions { .. }
         | Command::Manpages { .. }
         | Command::FetchRelease { .. }
@@ -625,6 +651,7 @@ fn main() -> Result<()> {
                     flatpak,
                     conflicts,
                     removable,
+                    release,
                 } => {
                     let state = match package_state(entry, &platform, Machine::real()) {
                         Some(PackageState::Installed(found)) => format!("installed: {found}"),
@@ -650,6 +677,20 @@ fn main() -> Result<()> {
                     }
                     if let Some(flatpak) = flatpak {
                         println!("  Flathub, for other families: {flatpak}");
+                    }
+                    if let Some(release) = release {
+                        let architectures: Vec<&str> = release
+                            .assets
+                            .iter()
+                            .map(|asset| asset.architecture.as_str())
+                            .collect();
+                        println!(
+                            "  GitHub release, last: {} {} as ~/.local/bin/{} ({}), checked against its pinned SHA-256",
+                            release.repository,
+                            release.tag,
+                            release.binary,
+                            architectures.join(", ")
+                        );
                     }
                     if !conflicts.is_empty() {
                         println!("  Replaces: {}", conflicts.join(", "));
@@ -1263,6 +1304,40 @@ fn main() -> Result<()> {
             let catalog = load(false)?;
             std::fs::write(&file, docgen::walkthrough(&catalog.tabs))
                 .with_context(|| format!("cannot write {}", file.display()))?;
+            Ok(())
+        }
+        Command::Release { action } => {
+            let places = release::Places::here().context("no HOME to install the release into")?;
+            match action {
+                ReleaseCommand::Install {
+                    entry,
+                    repository,
+                    tag,
+                    version,
+                    binary,
+                    asset,
+                    sha256,
+                    path,
+                } => {
+                    let asset = helix_toolbox_core::ReleaseAsset {
+                        architecture: std::env::consts::ARCH.to_string(),
+                        file: asset,
+                        sha256,
+                        path,
+                    };
+                    let found = helix_toolbox_core::Release {
+                        repository,
+                        tag,
+                        version,
+                        binary,
+                        assets: vec![asset.clone()],
+                    };
+                    release::install(&entry, &found, &asset, &places)?;
+                }
+                ReleaseCommand::Remove { entry, binary } => {
+                    release::remove(&entry, &binary, &places)?;
+                }
+            }
             Ok(())
         }
         Command::Native { action } => {

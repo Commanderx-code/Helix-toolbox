@@ -27,7 +27,7 @@ use helix_toolbox_engine::{
     migration::{self, Standing, Translation},
     notifications,
     overview::Overview,
-    performance, plan, plan_removal, preflight, profiles, recovery, reliability,
+    performance, plan_removal, plan_with, preflight, profiles, recovery, reliability,
     repositories::{self as repos, Change, Details, Summary},
     restic::{self, Restic},
     services::{self, Verb},
@@ -8813,6 +8813,7 @@ impl App {
         Machine {
             holds: &|_: &Probe| false,
             on_path: &|tool: &str| tool == "flatpak",
+            ..Machine::blind()
         }
     }
 
@@ -12135,6 +12136,23 @@ fn typed_path(text: &str) -> Result<PathBuf, String> {
         ));
     }
     Ok(path)
+}
+
+/// Plan entries on this machine. The tests' fixture packages are in no
+/// repository, so there the repositories are not asked.
+fn plan<'a>(
+    entries: impl IntoIterator<Item = &'a Entry>,
+    platform: &LinuxInfo,
+    lookup: &dyn Fn(&str) -> Option<&'a Entry>,
+) -> Result<Plan, EngineError> {
+    #[cfg(not(test))]
+    let machine = Machine::real();
+    #[cfg(test)]
+    let machine = Machine {
+        known: &|_, _| None,
+        ..Machine::real()
+    };
+    plan_with(entries, platform, lookup, machine)
 }
 
 fn removable(entry: &Entry) -> bool {

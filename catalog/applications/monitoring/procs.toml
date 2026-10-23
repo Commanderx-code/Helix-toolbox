@@ -1,5 +1,5 @@
 name = "procs"
-description = "A modern ps, with colors, a tree view and search."
+description = "A modern ps, with colors, a tree view and search. Where the distribution has no package, its own release in ~/.local/bin."
 flags = "I"
 
 [package]
@@ -9,3 +9,19 @@ debian = "procs"
 fedora = "procs"
 suse = "procs"
 removable = true
+
+[release]
+repository = "dalance/procs"
+tag = "v0.14.12"
+version = "0.14.12"
+binary = "procs"
+
+[release.x86_64]
+asset = "procs-v0.14.12-x86_64-linux.zip"
+sha256 = "81964faf9d5cd0e9f399d5d0954fb6fe4d4d9f7d3cbec4507633df5a45b11713"
+path = "procs"
+
+[release.aarch64]
+asset = "procs-v0.14.12-aarch64-linux.zip"
+sha256 = "74b4f82acc6fe553cbd5af20ba0baac420b42bef9bb0cbb38fef14b8317d9f91"
+path = "procs"

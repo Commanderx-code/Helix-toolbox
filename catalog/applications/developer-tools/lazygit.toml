@@ -1,0 +1,26 @@
+name = "Lazygit"
+description = "Terminal interface for Git: staging, commits, branches and rebases. From the distribution where it has Lazygit, else Lazygit's own release in ~/.local/bin."
+flags = "I"
+
+[package]
+binary = "lazygit"
+arch = "lazygit"
+debian = "lazygit"
+suse = "lazygit"
+removable = true
+
+[release]
+repository = "jesseduffield/lazygit"
+tag = "v0.66.2"
+version = "0.66.2"
+binary = "lazygit"
+
+[release.x86_64]
+asset = "lazygit_0.66.2_linux_x86_64.tar.gz"
+sha256 = "158efc9ddfa1241fab5fb3526bb442c8dc6c4b1904d73213b9e4e93e03c52034"
+path = "lazygit"
+
+[release.aarch64]
+asset = "lazygit_0.66.2_linux_arm64.tar.gz"
+sha256 = "79a3161eeb642f0473e23db6341f7baabd4a5933e921a9c1167c5d5c765c41a4"
+path = "lazygit"

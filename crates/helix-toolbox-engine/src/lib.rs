@@ -36,6 +36,7 @@ pub mod preview;
 pub mod profiles;
 pub mod pty;
 pub mod recovery;
+pub mod release;
 pub mod reliability;
 pub mod repositories;
 pub mod restic;
@@ -230,7 +231,16 @@ impl Source {
             &self
                 .commands
                 .iter()
-                .map(|command| command.join(" "))
+                .map(|command| match command.split_first() {
+                    // A step that starts Helix Toolbox again, by its name.
+                    Some((first, rest)) if first == release::SELF => {
+                        std::iter::once(release::SELF_SHOWN)
+                            .chain(rest.iter().map(String::as_str))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    }
+                    _ => command.join(" "),
+                })
                 .collect::<Vec<_>>()
                 .join(" && "),
         )
@@ -247,6 +257,9 @@ pub enum Probe {
     },
     /// The Flatpak application is installed, for the system or the user.
     Flatpak(String),
+    /// Helix Toolbox installed the entry's GitHub release, as
+    /// `~/.local/bin/<binary>`, and its record says so.
+    Release { entry: String, binary: String },
 }
 
 impl Probe {
@@ -288,6 +301,10 @@ impl Probe {
                 quote(&format!("/var/lib/flatpak/app/{id}")),
                 quote(&format!(".local/share/flatpak/app/{id}"))
             ),
+            Probe::Release { binary, .. } => format!(
+                "[ -e \"$HOME\"/{} ]",
+                quote(&format!(".local/bin/{binary}"))
+            ),
         }
     }
 
@@ -312,6 +329,7 @@ impl Probe {
                     .is_ok_and(|status| status.success())
             }
             Probe::Flatpak(id) => flatpak_installed_in(&flatpak_roots(), id),
+            Probe::Release { entry, .. } => release::installed(entry).is_some(),
         }
     }
 
@@ -324,6 +342,7 @@ impl Probe {
             } => format!("dpkg ({name})"),
             Probe::Package { manager, name } => format!("{} ({name})", manager.executable()),
             Probe::Flatpak(id) => format!("Flatpak ({id})"),
+            Probe::Release { binary, .. } => format!("Helix Toolbox's release record ({binary})"),
         }
     }
 
@@ -337,6 +356,9 @@ impl Probe {
                 format!("{} lists {name}", manager.executable())
             }
             Probe::Flatpak(id) => format!("{id} is installed from Flathub"),
+            Probe::Release { binary, .. } => {
+                format!("~/.local/bin/{binary} is installed from its GitHub release")
+            }
         }
     }
 }
@@ -500,6 +522,12 @@ pub struct Machine<'a> {
     pub holds: &'a dyn Fn(&Probe) -> bool,
     /// Whether a command is on the PATH.
     pub on_path: &'a dyn Fn(&str) -> bool,
+    /// Whether this machine's repositories have a package, from the
+    /// metadata already here; None when they cannot say, and the package
+    /// is tried anyway.
+    pub known: &'a dyn Fn(PackageManager, &str) -> Option<bool>,
+    /// The processor architecture, for a release's file.
+    pub architecture: &'a str,
 }
 
 impl Machine<'static> {
@@ -508,6 +536,20 @@ impl Machine<'static> {
         Machine {
             holds: &|probe: &Probe| probe.holds(),
             on_path: &binary_exists,
+            known: &preflight::repositories_have,
+            architecture: std::env::consts::ARCH,
+        }
+    }
+
+    /// A machine that answers nothing: no package is installed, no command
+    /// is on the PATH, any package may be in the repositories. Tests fill
+    /// in what they need over it.
+    pub const fn blind() -> Self {
+        Machine {
+            holds: &|_| false,
+            on_path: &|_| false,
+            known: &|_, _| None,
+            architecture: std::env::consts::ARCH,
         }
     }
 }
@@ -548,6 +590,21 @@ pub(crate) fn own_probes(
     probes
 }
 
+/// The probes for everything an entry installs: its own packages, then its
+/// GitHub release.
+pub(crate) fn entry_probes(entry: &Entry, manager: Option<PackageManager>) -> Vec<Probe> {
+    let Some(identity) = entry.identity() else {
+        return Vec::new();
+    };
+    let mut probes = own_probes(identity.packages, identity.aur, identity.flatpak, manager);
+    probes.extend(
+        identity
+            .release
+            .map(|found| release::probe(&entry.id, found)),
+    );
+    probes
+}
+
 /// How a package entry stands: its own packages first, then the packages it
 /// conflicts with, and its command only when neither is installed. None for
 /// an entry that is not a package.
@@ -557,13 +614,9 @@ pub fn package_state(
     machine: Machine,
 ) -> Option<PackageState> {
     let helix_toolbox_core::Identity {
-        binary,
-        packages,
-        aur,
-        flatpak,
-        conflicts,
+        binary, conflicts, ..
     } = entry.identity()?;
-    let probes = own_probes(packages, aur, flatpak, platform.manager);
+    let probes = entry_probes(entry, platform.manager);
     if let Some(found) = probes.iter().find(|probe| (machine.holds)(probe)) {
         return Some(PackageState::Installed(found.describe()));
     }
@@ -641,6 +694,7 @@ fn add_entry<'a>(
             packages,
             aur,
             flatpak,
+            release,
             ..
         } => {
             if let Some(PackageState::Installed(found) | PackageState::OnPath(found)) =
@@ -650,13 +704,31 @@ fn add_entry<'a>(
                     .push(format!("{}: already installed ({found})", entry.name));
                 return Ok(());
             }
-            let sources = install_sources(
+            let (sources, skipped) = install_sources(
                 entry,
                 platform,
                 packages,
                 aur.as_deref(),
                 flatpak.as_deref(),
+                release.as_ref(),
+                machine,
             )?;
+            if sources.is_empty() {
+                into.blocked.push(format!(
+                    "{}: {}, and it has no other way to install here",
+                    entry.name,
+                    skipped.join("; ")
+                ));
+                return Ok(());
+            }
+            if !skipped.is_empty() {
+                into.notes.push(format!(
+                    "{}: {}; using {}",
+                    entry.name,
+                    skipped.join("; "),
+                    sources[0].label
+                ));
+            }
             Step::Package {
                 id: entry.id.clone(),
                 name: entry.name.clone(),
@@ -859,14 +931,19 @@ pub fn aur_helper(exists: &dyn Fn(&str) -> bool) -> Option<&'static str> {
 }
 
 /// The sources that can install a package entry on this machine, in the
-/// order they are tried: the family's package, on Arch the AUR, then Flathub.
+/// order they are tried: the family's package, on Arch the AUR, Flathub,
+/// then the tool's GitHub release. A package this machine's repositories
+/// do not have is left out; the second list says which, for the plan.
+#[allow(clippy::too_many_arguments)]
 fn install_sources(
     entry: &Entry,
     platform: &LinuxInfo,
     packages: &helix_toolbox_core::PackageNames,
     aur: Option<&str>,
     flatpak: Option<&str>,
-) -> Result<Vec<Source>, EngineError> {
+    release: Option<&helix_toolbox_core::Release>,
+    machine: Machine,
+) -> Result<(Vec<Source>, Vec<String>), EngineError> {
     let check = |name: &str| {
         if valid_package_name(name) {
             Ok(())
@@ -875,15 +952,20 @@ fn install_sources(
         }
     };
     let mut sources = Vec::new();
+    let mut skipped = Vec::new();
     if let Some(manager) = platform.manager {
         if let Some(package) = packages.for_manager(manager) {
             check(package)?;
-            sources.push(Source {
-                label: manager.executable().to_string(),
-                commands: vec![words(manager.install_command(), &[package])],
-                requires: vec![manager.executable().to_string(), "sudo".to_string()],
-                probe: Probe::package(manager, package),
-            });
+            if (machine.known)(manager, package) == Some(false) {
+                skipped.push(format!("{package} is not in this machine's repositories"));
+            } else {
+                sources.push(Source {
+                    label: manager.executable().to_string(),
+                    commands: vec![words(manager.install_command(), &[package])],
+                    requires: vec![manager.executable().to_string(), "sudo".to_string()],
+                    probe: Probe::package(manager, package),
+                });
+            }
         }
         if manager == PackageManager::Arch
             && let Some(package) = aur
@@ -923,13 +1005,20 @@ fn install_sources(
             probe: Some(Probe::Flatpak(id.to_string())),
         });
     }
-    if sources.is_empty() {
-        return Err(match platform.manager {
-            Some(_) => EngineError::UnsupportedEntry(entry.id.clone()),
-            None => EngineError::UnsupportedPlatform,
+    if let Some(found) = release {
+        if !found.is_valid() {
+            return Err(EngineError::Invalid(entry.id.clone()));
+        }
+        // Wherever the project builds for this processor, whatever the family.
+        sources.extend(release::source(&entry.id, found, machine.architecture));
+    }
+    if sources.is_empty() && skipped.is_empty() {
+        return Err(match (platform.manager, release) {
+            (_, Some(_)) | (Some(_), None) => EngineError::UnsupportedEntry(entry.id.clone()),
+            (None, None) => EngineError::UnsupportedPlatform,
         });
     }
-    Ok(sources)
+    Ok((sources, skipped))
 }
 
 /// Plan removing package entries. An entry is removed the way it is found
@@ -954,9 +1043,8 @@ pub fn plan_removal_with<'a>(
         let Action::Package {
             binary,
             packages,
-            aur,
-            flatpak,
             removable,
+            release,
             ..
         } = &entry.action
         else {
@@ -965,13 +1053,9 @@ pub fn plan_removal_with<'a>(
         if !removable {
             return Err(EngineError::NotRemovable(entry.id.clone()));
         }
-        let probes = own_probes(
-            packages,
-            aur.as_deref(),
-            flatpak.as_deref(),
-            platform.manager,
-        );
+        let probes = entry_probes(entry, platform.manager);
         let found = probes.into_iter().find(|probe| (machine.holds)(probe));
+        let privileged = !matches!(found, Some(Probe::Release { .. }));
         let on_path = binary
             .as_deref()
             .is_some_and(|binary| (machine.on_path)(binary));
@@ -993,6 +1077,10 @@ pub fn plan_removal_with<'a>(
                     probe: Some(Probe::Package { manager, name }),
                 }
             }
+            Some(Probe::Release { .. }) => match release {
+                Some(found) if found.is_valid() => release::removal_source(&entry.id, found),
+                _ => return Err(EngineError::Invalid(entry.id.clone())),
+            },
             // Solus cannot be asked; there the command stands in for its package.
             None if on_path
                 && platform.manager == Some(PackageManager::Solus)
@@ -1026,7 +1114,7 @@ pub fn plan_removal_with<'a>(
                 continue;
             }
         };
-        result.privileged = true;
+        result.privileged |= privileged;
         result.risk = result.risk.max(Risk::Medium);
         result.requirements.extend(source.requires.iter().cloned());
         result.steps.push(Step::Package {
@@ -1096,13 +1184,16 @@ pub fn shell_program_with(
     let mut text = format!(
         "{SYSTEM_PATH}{LIB_VARIABLE}={}\n{OLD_LIB_VARIABLE}=\"${LIB_VARIABLE}\"\n\
          export {LIB_VARIABLE} {OLD_LIB_VARIABLE}\nhf_steps={}\nhf_last=0\n\
-         hf_status() {{ [ -z \"$hf_steps\" ] || printf '%s %s %s\\n' \"$1\" \"$2\" \"$3\" >> \"$hf_steps\"; }}\n",
+         hf_status() {{ [ -z \"$hf_steps\" ] || printf '%s %s %s\\n' \"$1\" \"$2\" \"$3\" >> \"$hf_steps\"; }}\n\
+         {}() {{ {} \"$@\"; }}\n",
         quote(&lib_dir.to_string_lossy()),
         quote(
             &status
                 .map(|path| path.to_string_lossy().into_owned())
                 .unwrap_or_default()
-        )
+        ),
+        release::SELF,
+        quote(&this.to_string_lossy())
     );
     for (index, step) in plan.steps.iter().enumerate() {
         let body = match step {
@@ -1374,7 +1465,7 @@ pub fn verify(plan: &Plan) -> Vec<Check> {
     let manager = plan.steps.iter().find_map(|step| match step {
         Step::Update { targets, .. } => targets.iter().find_map(|target| match &target.probe {
             Probe::Package { manager, .. } => Some(*manager),
-            Probe::Flatpak(_) => None,
+            Probe::Flatpak(_) | Probe::Release { .. } => None,
         }),
         _ => None,
     });
@@ -1950,6 +2041,25 @@ mod tests {
     use super::*;
     use helix_toolbox_core::PackageNames;
 
+    /// `plan` with this machine's packages and commands, but without asking
+    /// its repositories, so the sample packages here are always tried.
+    fn plan<'a>(
+        entries: impl IntoIterator<Item = &'a Entry>,
+        platform: &LinuxInfo,
+        lookup: &dyn Fn(&str) -> Option<&'a Entry>,
+    ) -> Result<Plan, EngineError> {
+        plan_with(
+            entries,
+            platform,
+            lookup,
+            Machine {
+                holds: &|probe: &Probe| probe.holds(),
+                on_path: &binary_exists,
+                ..Machine::blind()
+            },
+        )
+    }
+
     fn platform(manager: Option<PackageManager>) -> LinuxInfo {
         LinuxInfo {
             id: "test".into(),
@@ -1989,12 +2099,221 @@ mod tests {
                 flatpak: None,
                 conflicts: Vec::new(),
                 removable: true,
+                release: None,
             },
         )
     }
 
     fn none<'a>(_: &str) -> Option<&'a Entry> {
         None
+    }
+
+    fn sample_release() -> helix_toolbox_core::Release {
+        let asset = |architecture: &str| helix_toolbox_core::ReleaseAsset {
+            architecture: architecture.into(),
+            file: format!("tool-{architecture}.tar.gz"),
+            sha256: "ab".repeat(32),
+            path: Some("tool".into()),
+        };
+        helix_toolbox_core::Release {
+            repository: "example/tool".into(),
+            tag: "v1.2.0".into(),
+            version: "1.2.0".into(),
+            binary: "tool".into(),
+            assets: vec![asset("x86_64"), asset("aarch64")],
+        }
+    }
+
+    /// A package entry for Arch and Flathub, with its release last.
+    fn released_entry(flags: &str, arch: Option<&str>, flatpak: Option<&str>) -> Entry {
+        entry(
+            "tool",
+            flags,
+            Action::Package {
+                binary: Some("tool".into()),
+                packages: PackageNames {
+                    arch: arch.map(String::from),
+                    ..Default::default()
+                },
+                aur: None,
+                flatpak: flatpak.map(String::from),
+                conflicts: Vec::new(),
+                removable: true,
+                release: Some(sample_release()),
+            },
+        )
+    }
+
+    #[test]
+    fn a_release_is_tried_after_every_package_source() {
+        let tool = released_entry("I", Some("tool"), Some("org.example.Tool"));
+        let planned = plan_with(
+            [&tool],
+            &platform(Some(PackageManager::Arch)),
+            &none,
+            Machine::blind(),
+        )
+        .unwrap();
+        let Step::Package { sources, .. } = &planned.steps[0] else {
+            panic!("a package step");
+        };
+        let labels: Vec<&str> = sources.iter().map(|source| source.label.as_str()).collect();
+        assert_eq!(labels, ["pacman", "Flathub", "the GitHub release (v1.2.0)"]);
+        assert_eq!(
+            planned.steps[0].display(),
+            "sudo pacman -S --needed tool  (else Flathub, then the GitHub release (v1.2.0))"
+        );
+        let shown = &planned.steps[0].fallbacks()[1];
+        assert!(
+            shown.starts_with(
+                "if that fails, the GitHub release (v1.2.0): helix-toolbox release install tool example/tool v1.2.0 1.2.0 tool tool-"
+            ),
+            "{shown}"
+        );
+
+        // On its own it needs no root and no package manager, on any family.
+        let alone = entry(
+            "tool",
+            "",
+            Action::Package {
+                binary: Some("tool".into()),
+                packages: PackageNames::default(),
+                aur: None,
+                flatpak: None,
+                conflicts: Vec::new(),
+                removable: true,
+                release: Some(sample_release()),
+            },
+        );
+        let planned = plan_with([&alone], &platform(None), &none, Machine::blind()).unwrap();
+        assert_eq!(planned.steps.len(), 1);
+        assert!(!planned.privileged);
+        assert_eq!(planned.requirements, ["curl", "tar"]);
+
+        // Where the project builds nothing for this processor, there is no way.
+        let elsewhere = Machine {
+            architecture: "riscv64",
+            ..Machine::blind()
+        };
+        assert!(matches!(
+            plan_with([&alone], &platform(None), &none, elsewhere),
+            Err(EngineError::UnsupportedEntry(_))
+        ));
+    }
+
+    #[test]
+    fn a_package_the_repositories_lack_falls_through_or_blocks() {
+        let missing = Machine {
+            known: &|_, name| Some(name != "tool"),
+            ..Machine::blind()
+        };
+        let tool = released_entry("I", Some("tool"), None);
+        let planned = plan_with(
+            [&tool],
+            &platform(Some(PackageManager::Arch)),
+            &none,
+            missing,
+        )
+        .unwrap();
+        let Step::Package { sources, .. } = &planned.steps[0] else {
+            panic!("a package step");
+        };
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].label, "the GitHub release (v1.2.0)");
+        assert_eq!(
+            planned.notes,
+            ["TOOL: tool is not in this machine's repositories; using the GitHub release (v1.2.0)"]
+        );
+
+        // With nothing else to install it from, the plan says so.
+        let sample = package_entry();
+        let planned = plan_with(
+            [&sample],
+            &platform(Some(PackageManager::Arch)),
+            &none,
+            Machine {
+                known: &|_, _| Some(false),
+                ..Machine::blind()
+            },
+        )
+        .unwrap();
+        assert!(planned.steps.is_empty());
+        assert_eq!(
+            planned.blocked,
+            [
+                "SAMPLE: sample is not in this machine's repositories, and it has no other way to install here"
+            ]
+        );
+
+        // Repositories that cannot say keep the package.
+        let unsure = plan_with(
+            [&sample],
+            &platform(Some(PackageManager::Arch)),
+            &none,
+            Machine::blind(),
+        )
+        .unwrap();
+        assert_eq!(unsure.steps[0].display(), "sudo pacman -S --needed sample");
+    }
+
+    #[test]
+    fn an_installed_release_is_seen_and_removed_through_helix_toolbox() {
+        let tool = released_entry("I", Some("tool"), None);
+        let released = Machine {
+            holds: &|probe| matches!(probe, Probe::Release { .. }),
+            ..Machine::blind()
+        };
+        let arch = platform(Some(PackageManager::Arch));
+        assert_eq!(
+            package_state(&tool, &arch, released),
+            Some(PackageState::Installed(
+                "~/.local/bin/tool is installed from its GitHub release".into()
+            ))
+        );
+        let planned = plan_with([&tool], &arch, &none, released).unwrap();
+        assert!(planned.steps.is_empty());
+        let removal = plan_removal_with([&tool], &arch, released).unwrap();
+        assert_eq!(
+            removal.steps[0].display(),
+            "helix-toolbox release remove tool tool"
+        );
+        assert!(!removal.privileged, "it removes a file of the user's own");
+    }
+
+    #[test]
+    fn release_steps_start_helix_toolbox_again() {
+        let home = tempfile::tempdir().unwrap();
+        // Stands in for Helix Toolbox: puts the program where the release would.
+        let this = home.path().join("helix toolbox");
+        std::fs::write(
+            &this,
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$HOME/args\"\nmkdir -p \"$HOME/.local/bin\"\n: > \"$HOME/.local/bin/tool\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&this, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        let mut tool = released_entry("", None, None);
+        if let Action::Package { packages, .. } = &mut tool.action {
+            *packages = PackageNames::default();
+        }
+        let planned = plan_with([&tool], &platform(None), &none, Machine::blind()).unwrap();
+        let program = shell_program(&planned, Path::new("/lib"), &this);
+        assert!(program.contains(&format!(
+            "hf_toolbox() {{ {} \"$@\"; }}",
+            quote(&this.to_string_lossy())
+        )));
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(&program)
+            .env("HOME", home.path())
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let args = std::fs::read_to_string(home.path().join("args")).unwrap();
+        assert!(
+            args.starts_with("release install tool example/tool v1.2.0 1.2.0 tool tool-"),
+            "{args}"
+        );
     }
 
     #[test]
@@ -2030,6 +2349,7 @@ mod tests {
             flatpak: Some("org.example.Sample".into()),
             conflicts: Vec::new(),
             removable: false,
+            release: None,
         };
         let suse = plan([&entry], &platform(Some(PackageManager::Suse)), &none).unwrap();
         assert_eq!(
@@ -2083,6 +2403,7 @@ mod tests {
                     flatpak: Some(format!("org.example.{name}")),
                     conflicts: conflicts.iter().map(|name| name.to_string()).collect(),
                     removable: true,
+                    release: None,
                 },
             )
         };
@@ -2092,6 +2413,7 @@ mod tests {
         let plain = Machine {
             holds: &|probe| probe == &Probe::package(PackageManager::Arch, "wine").unwrap(),
             on_path: &|binary| binary == "wine",
+            ..crate::Machine::blind()
         };
         assert_eq!(
             package_state(&staging, &arch, plain),
@@ -2132,6 +2454,7 @@ mod tests {
         let staged = Machine {
             holds: &|probe| probe == &Probe::package(PackageManager::Arch, "wine-staging").unwrap(),
             on_path: &|binary| binary == "wine",
+            ..crate::Machine::blind()
         };
         assert_eq!(
             package_state(&wine, &arch, staged),
@@ -2143,6 +2466,7 @@ mod tests {
         let elsewhere = Machine {
             holds: &|_| false,
             on_path: &|binary| binary == "wine",
+            ..crate::Machine::blind()
         };
         assert_eq!(
             package_state(&wine, &arch, elsewhere),
@@ -2163,6 +2487,7 @@ mod tests {
         let flatpak = Machine {
             holds: &|probe| matches!(probe, Probe::Flatpak(_)),
             on_path: &|_| false,
+            ..crate::Machine::blind()
         };
         assert_eq!(
             package_state(&staging, &platform(Some(PackageManager::Fedora)), flatpak),
@@ -2193,11 +2518,13 @@ mod tests {
             flatpak: None,
             conflicts: Vec::new(),
             removable: true,
+            release: None,
         };
         // Every package listed, and sh on the PATH.
         let listed = Machine {
             holds: &|_| true,
             on_path: &|binary| binary == "sh",
+            ..crate::Machine::blind()
         };
         let remove = |entry: &Entry, manager, machine| {
             plan_removal_with([entry], &platform(Some(manager)), machine).unwrap()
@@ -2213,6 +2540,7 @@ mod tests {
         let unlisted = Machine {
             holds: &|_| false,
             on_path: &|binary| binary == "sh",
+            ..crate::Machine::blind()
         };
         let other = remove(&present, PackageManager::Arch, unlisted);
         assert!(other.steps.is_empty());
@@ -2222,6 +2550,7 @@ mod tests {
         let nothing = Machine {
             holds: &|_| false,
             on_path: &|_| false,
+            ..crate::Machine::blind()
         };
         let absent = remove(&package_entry(), PackageManager::Arch, nothing);
         assert!(absent.steps.is_empty());
@@ -2234,6 +2563,7 @@ mod tests {
         let only_flatpak = Machine {
             holds: &|probe| matches!(probe, Probe::Flatpak(_)),
             on_path: &|_| false,
+            ..crate::Machine::blind()
         };
         let removed = remove(&flatpak, PackageManager::Arch, only_flatpak);
         assert_eq!(
@@ -2286,6 +2616,7 @@ mod tests {
                 flatpak: None,
                 conflicts: Vec::new(),
                 removable: true,
+                release: None,
             },
         );
         let report = entry(
@@ -2407,6 +2738,7 @@ mod tests {
                 flatpak: Some("org.example.App".into()),
                 conflicts: Vec::new(),
                 removable: true,
+                release: None,
             },
         );
         let mut setup = entry(
@@ -2440,6 +2772,7 @@ mod tests {
         let nothing = Machine {
             holds: &|_| false,
             on_path: &|_| false,
+            ..crate::Machine::blind()
         };
         let planned = plan_with(
             all,

@@ -614,10 +614,51 @@ pub fn compare(baseline: &Baseline, sources: &Sources) -> Report {
             }),
         }
     }
+    releases(sources, &mut report, &|_| true);
     report.differences.sort_by_key(|difference| difference.kind);
     report.unknown.sort();
     report.unknown.dedup();
     report
+}
+
+/// The programs Helix Toolbox put in `~/.local/bin` from GitHub releases
+/// that are no longer the files it installed: changed, or gone. `named`
+/// picks the entries compared.
+fn releases(sources: &Sources, report: &mut Report, named: &dyn Fn(&str) -> bool) {
+    for record in sources.inventory.release_records() {
+        if !named(&record.entry) {
+            continue;
+        }
+        let entry = sources
+            .catalog
+            .find(&record.entry)
+            .map(|entry| entry.id.clone());
+        let from = format!(
+            "installed from {}'s release {}",
+            printable(&record.repository),
+            printable(&record.tag)
+        );
+        let subject = tilde(sources.home, &record.path.to_string_lossy());
+        match crate::release::condition(record) {
+            crate::release::Condition::Intact => report.matched += 1,
+            crate::release::Condition::Missing => report.differences.push(Difference {
+                kind: Kind::FileMissing,
+                subject,
+                was: Some(FileKind::File.label().to_string()),
+                now: None,
+                entry,
+                note: format!("{from}; gone"),
+            }),
+            crate::release::Condition::Changed => report.differences.push(Difference {
+                kind: Kind::FileChanged,
+                subject,
+                was: Some(FileKind::File.label().to_string()),
+                now: Some(FileKind::File.label().to_string()),
+                entry: None,
+                note: format!("{from}; it is another file now"),
+            }),
+        }
+    }
 }
 
 /// Compare the machine with a profile: whether each entry it names is
@@ -700,6 +741,9 @@ pub fn compare_profile(name: &str, ids: &[String], sources: &Sources) -> Report 
             });
         }
     }
+    releases(sources, &mut report, &|id| {
+        seen.iter().any(|known| known == id)
+    });
     report.differences.sort_by_key(|difference| difference.kind);
     report.unknown.sort();
     report.unknown.dedup();
@@ -1094,6 +1138,7 @@ pub fn available(
     let nothing = crate::Machine {
         holds: &|_| false,
         on_path: &|_| false,
+        ..crate::Machine::blind()
     };
     ids.iter().cloned().partition(|id| {
         catalog.find(id).is_some_and(|entry| {
@@ -1413,6 +1458,68 @@ mod tests {
                     && difference.entry.as_deref() == Some("dotfiles-ghostty"))
         );
         assert_eq!(report.unknown, ["nope"]);
+    }
+
+    #[test]
+    fn release_programs_that_changed_or_went_are_drift() {
+        let catalog = Catalog::builtin(false).unwrap();
+        let platform = arch();
+        let home = tempfile::tempdir().unwrap();
+        let bin = home.path().join(".local/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let sum = |bytes: &[u8]| hex(&Sha256::digest(bytes));
+        let record = |entry: &str, sha256: String| crate::release::Record {
+            entry: entry.into(),
+            path: bin.join(entry),
+            version: "1.0.0".into(),
+            tag: "v1.0.0".into(),
+            repository: format!("example/{entry}"),
+            sha256,
+        };
+        std::fs::write(bin.join("kept"), b"kept").unwrap();
+        std::fs::write(bin.join("edited"), b"edited by hand").unwrap();
+        let inventory = inventory(&[]).with_releases(vec![
+            record("kept", sum(b"kept")),
+            record("edited", sum(b"as installed")),
+            record("gone", sum(b"gone")),
+        ]);
+        let fake = Fake {
+            home: home.path().to_path_buf(),
+            passwd: String::new(),
+            files: HashMap::new(),
+        };
+        let none = BTreeMap::new;
+        let report = compare(
+            &Baseline::default(),
+            &sources(&catalog, &platform, &inventory, &fake, &[], &none),
+        );
+        let found: Vec<(Kind, &str, &str)> = report
+            .differences
+            .iter()
+            .map(|difference| {
+                (
+                    difference.kind,
+                    difference.subject.as_str(),
+                    difference.note.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            found,
+            [
+                (
+                    Kind::FileMissing,
+                    "~/.local/bin/gone",
+                    "installed from example/gone's release v1.0.0; gone"
+                ),
+                (
+                    Kind::FileChanged,
+                    "~/.local/bin/edited",
+                    "installed from example/edited's release v1.0.0; it is another file now"
+                ),
+            ]
+        );
+        assert_eq!(report.matched, 1);
     }
 
     #[test]

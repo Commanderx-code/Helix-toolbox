@@ -1290,6 +1290,7 @@ esac
     for manager in [
         "pacman",
         "apt-get",
+        "apt-cache",
         "dnf",
         "zypper",
         "apk",
@@ -1513,6 +1514,172 @@ fn a_failed_step_stops_the_run_or_is_stepped_over_with_keep_going() {
     assert!(err.contains("1 of 2 steps done"), "{err}");
     assert!(home.path().join("marker.txt").exists());
     assert!(history_of(home.path()).contains("1 of 2 steps done"));
+}
+
+/// A catalog of two release entries and a stand-in curl that serves their
+/// releases from a folder, so nothing reaches the network. "Released" names
+/// no package its stand-in managers have, so its release is the source that
+/// works; "Tampered" pins a SHA-256 its file does not have.
+fn release_fixture(home: &Path) -> (PathBuf, String) {
+    let served = home.join("served/example/sample/releases/download/v1.0.0");
+    fs::create_dir_all(served.join("sample-1.0.0")).unwrap();
+    fs::write(
+        served.join("sample-1.0.0/sample"),
+        "#!/bin/sh\necho sample 1.0.0\n",
+    )
+    .unwrap();
+    let archive = served.join("sample-1.0.0.tar.gz");
+    assert!(
+        Command::new("tar")
+            .arg("-czf")
+            .arg(&archive)
+            .arg("-C")
+            .arg(&served)
+            .arg("sample-1.0.0")
+            .status()
+            .unwrap()
+            .success()
+    );
+    let output = Command::new("sha256sum").arg(&archive).output().unwrap();
+    let sum = String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+    let catalog = home.join("catalog");
+    fs::create_dir_all(catalog.join("catalog/tools")).unwrap();
+    fs::write(catalog.join("catalog/tabs.toml"), "tabs = [\"tools\"]\n").unwrap();
+    fs::write(catalog.join("catalog/tools/tab.toml"), "name = \"Tools\"\n").unwrap();
+    let entry = |name: &str, sum: &str| {
+        format!(
+            "name = \"{name}\"\nflags = \"I\"\n\n[package]\nbinary = \"sample\"\n\
+             arch = \"helix-toolbox-no-such-package\"\ndebian = \"helix-toolbox-no-such-package\"\n\
+             fedora = \"helix-toolbox-no-such-package\"\nsuse = \"helix-toolbox-no-such-package\"\n\
+             removable = true\n\n[release]\nrepository = \"example/sample\"\ntag = \"v1.0.0\"\n\
+             version = \"1.0.0\"\nbinary = \"sample\"\n\n\
+             [release.x86_64]\nasset = \"sample-1.0.0.tar.gz\"\nsha256 = \"{sum}\"\npath = \"sample-1.0.0/sample\"\n\n\
+             [release.aarch64]\nasset = \"sample-1.0.0.tar.gz\"\nsha256 = \"{sum}\"\npath = \"sample-1.0.0/sample\"\n"
+        )
+    };
+    fs::write(
+        catalog.join("catalog/tools/released.toml"),
+        entry("Released", &sum),
+    )
+    .unwrap();
+    fs::write(
+        catalog.join("catalog/tools/tampered.toml"),
+        entry("Tampered", &"0".repeat(64)),
+    )
+    .unwrap();
+    let bin = home.join("bin");
+    let path = stand_in_tools(&bin);
+    // curl: the URL's path under the served folder, written where -o says.
+    let curl = bin.join("curl");
+    fs::write(
+        &curl,
+        format!(
+            "#!/bin/sh\nout=\nwhile [ $# -gt 1 ]; do [ \"$1\" = --output ] && out=$2; shift; done\n\
+             case $1 in https://github.com/*) ;; *) exit 22 ;; esac\n\
+             cp {}/\"${{1#https://github.com/}}\" \"$out\"\n",
+            home.join("served").display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&curl, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    (catalog, path)
+}
+
+#[test]
+fn a_release_installs_checked_into_the_home_folder_and_is_removed() {
+    let home = tempfile::tempdir().unwrap();
+    let (catalog, path) = release_fixture(home.path());
+    let toolbox = |args: &[&str]| {
+        let output = Command::new(PROGRAM)
+            .arg("--catalog-dir")
+            .arg(&catalog)
+            .args(args)
+            .env("PATH", &path)
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path().join("config"))
+            .env("XDG_DATA_HOME", home.path().join("data"))
+            .env("XDG_STATE_HOME", home.path().join("state"))
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        (
+            output.status.success(),
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
+    };
+    let (ok, out, _) = toolbox(&["plan", "released"]);
+    assert!(ok, "{out}");
+    assert!(out.contains("(else the GitHub release (v1.0.0))"), "{out}");
+
+    let (ok, out, err) = toolbox(&["run", "released", "--yes"]);
+    assert!(ok, "{out}\n{err}");
+    assert!(
+        out.contains("Helix Toolbox: trying the GitHub release (v1.0.0)"),
+        "{out}"
+    );
+    assert!(
+        out.contains("Checked sample-1.0.0.tar.gz against the SHA-256 the catalog pins"),
+        "{out}"
+    );
+    assert!(
+        out.contains(
+            "Verified: Released: ~/.local/bin/sample is installed from its GitHub release"
+        ),
+        "{out}"
+    );
+    let program = home.path().join(".local/bin/sample");
+    assert_eq!(
+        fs::read_to_string(&program).unwrap(),
+        "#!/bin/sh\necho sample 1.0.0\n"
+    );
+    let record = home
+        .path()
+        .join("state/helix-toolbox/releases/released.toml");
+    assert!(
+        fs::read_to_string(&record)
+            .unwrap()
+            .contains("version = \"1.0.0\"")
+    );
+    let (_, out, _) = toolbox(&["status", "released"]);
+    assert!(
+        out.contains("Installed") && out.contains("GitHub release 1.0.0"),
+        "{out}"
+    );
+
+    // Another entry with the same command finds the file is not its own.
+    let (ok, out, err) = toolbox(&["run", "tampered", "--yes"]);
+    assert!(!ok, "{out}");
+    assert!(
+        err.contains("is already there and Helix Toolbox did not install it"),
+        "{out}\n{err}"
+    );
+    assert_eq!(
+        fs::read_to_string(&program).unwrap(),
+        "#!/bin/sh\necho sample 1.0.0\n"
+    );
+
+    let (ok, out, err) = toolbox(&["remove", "released", "--yes"]);
+    assert!(ok, "{out}\n{err}");
+    assert!(
+        out.contains("helix-toolbox release remove released sample"),
+        "{out}"
+    );
+    assert!(!program.exists());
+    assert!(!record.exists());
+
+    // A file that does not match its pin is deleted before it is unpacked.
+    let (ok, out, err) = toolbox(&["run", "tampered", "--yes"]);
+    assert!(!ok, "{out}\n{err}");
+    assert!(
+        format!("{out}{err}").contains("does not match the SHA-256 the catalog pins"),
+        "{out}\n{err}"
+    );
+    assert!(!program.exists());
 }
 
 #[test]

@@ -1,0 +1,25 @@
+name = "Yazi"
+description = "Fast terminal file manager with image previews. From the distribution where it has Yazi, else Yazi's own release in ~/.local/bin."
+flags = "I"
+
+[package]
+binary = "yazi"
+arch = "yazi"
+suse = "yazi"
+removable = true
+
+[release]
+repository = "sxyazi/yazi"
+tag = "v26.9.1"
+version = "26.9.1"
+binary = "yazi"
+
+[release.x86_64]
+asset = "yazi-x86_64-unknown-linux-musl.zip"
+sha256 = "9b9c39decccf8cb0ff53a7d637d38f8a79d93bbd0099f4ea9c619ef6bb392f5d"
+path = "yazi-x86_64-unknown-linux-musl/yazi"
+
+[release.aarch64]
+asset = "yazi-aarch64-unknown-linux-musl.zip"
+sha256 = "dd569daecaae914185f295634109295ccd25c1b42b02eb89a74f651970024f2e"
+path = "yazi-aarch64-unknown-linux-musl/yazi"

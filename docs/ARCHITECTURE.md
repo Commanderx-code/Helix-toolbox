@@ -58,7 +58,7 @@ An entry's `Action` is one of:
 
 | Action | Becomes |
 | :--- | :--- |
-| `Package` | its sources in order: `sudo <manager> install <package>`, the AUR helper on Arch, Flathub; or a note when it is already installed |
+| `Package` | its sources in order: `sudo <manager> install <package>`, the AUR helper on Arch, Flathub, then `helix-toolbox release install …` for its GitHub release (re-invoked like a native step, without root; `release.rs`); a package this machine's repositories lack is left out; or a note when it is already installed |
 | `Script` | `cd <its directory> && <interpreter> <script>`; interactive by default |
 | `Command` | `sh -e -c '<line>'` |
 | `Nix` | `nix profile install <installable>` or `home-manager switch --flake <flake>` |
