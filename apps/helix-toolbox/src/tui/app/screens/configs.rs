@@ -4,10 +4,7 @@ use super::super::*;
 
 impl App {
     /// Where a configuration is: in the tests' folders, else this machine's.
-    pub(in crate::tui::app) fn locate_config(
-        &self,
-        kind: configs::Kind,
-    ) -> Result<configs::Located, String> {
+    fn locate_config(&self, kind: configs::Kind) -> Result<configs::Located, String> {
         match &self.config_places {
             Some((home, config)) => configs::locate(
                 kind,
@@ -26,18 +23,18 @@ impl App {
 
     /// The private folder for copies: the tests' own, else beside the
     /// history; never a shared one.
-    pub(in crate::tui::app) fn copies_folder(&self) -> Option<PathBuf> {
+    fn copies_folder(&self) -> Option<PathBuf> {
         self.config_folder.clone().or_else(configs::private_folder)
     }
 
-    pub(in crate::tui::app) fn no_copies_folder(&mut self) {
+    fn no_copies_folder(&mut self) {
         self.cannot_config(
             "There is no state folder for Helix Toolbox's private copies; nothing is saved.".into(),
         );
     }
 
     /// Ghostty's own check on this machine; none in tests.
-    pub(in crate::tui::app) fn config_check(&self) -> fn(&Path) -> Option<(bool, String)> {
+    fn config_check(&self) -> fn(&Path) -> Option<(bool, String)> {
         if self.examine_here {
             configs::ghostty_here
         } else {
@@ -81,12 +78,12 @@ impl App {
         self.build_config_rows();
     }
 
-    pub(in crate::tui::app) fn config_part(&self, kind: configs::Kind) -> Option<&ConfigPart> {
+    fn config_part(&self, kind: configs::Kind) -> Option<&ConfigPart> {
         self.config_parts.iter().find(|part| part.kind == kind)
     }
 
     /// The configuration ready to change: where it is and its text.
-    pub(in crate::tui::app) fn config_ready(
+    fn config_ready(
         &self,
         kind: configs::Kind,
     ) -> Result<(configs::Located, configs::Loaded), String> {
@@ -96,12 +93,12 @@ impl App {
         Ok((located, loaded))
     }
 
-    pub(in crate::tui::app) fn selected_config_row(&self) -> Option<ConfigRow> {
+    fn selected_config_row(&self) -> Option<ConfigRow> {
         self.config_rows.get(self.main_state.selected()?).cloned()
     }
 
     /// The configuration the selected row belongs to.
-    pub(in crate::tui::app) fn selected_config_kind(&self) -> Option<configs::Kind> {
+    fn selected_config_kind(&self) -> Option<configs::Kind> {
         let at = self.main_state.selected()?;
         self.config_rows[..=at.min(self.config_rows.len().saturating_sub(1))]
             .iter()
@@ -176,11 +173,11 @@ impl App {
         list.push(Hint::new(&["r"], "Read again"));
     }
 
-    pub(in crate::tui::app) fn cannot_config(&mut self, why: String) {
+    fn cannot_config(&mut self, why: String) {
         self.popup = Some(Popup::Text(TextPopup::new("Cannot change it", why, true)));
     }
 
-    pub(in crate::tui::app) fn ask_config_field(&mut self, kind: configs::Kind, index: usize) {
+    fn ask_config_field(&mut self, kind: configs::Kind, index: usize) {
         let Some(field) = kind.fields().get(index) else {
             return;
         };
@@ -225,12 +222,7 @@ impl App {
     }
 
     /// Keep text as the draft, or none when it is the file as it is.
-    pub(in crate::tui::app) fn set_draft(
-        &mut self,
-        kind: configs::Kind,
-        loaded: &configs::Loaded,
-        after: String,
-    ) {
+    fn set_draft(&mut self, kind: configs::Kind, loaded: &configs::Loaded, after: String) {
         if let Some(part) = self.config_parts.iter_mut().find(|part| part.kind == kind) {
             part.draft = (after != loaded.content).then_some(after);
             part.draft_checked = None;
@@ -239,7 +231,7 @@ impl App {
     }
 
     /// Check the draft, or the file when there is none, as the window's Check.
-    pub(in crate::tui::app) fn check_config(&mut self, kind: configs::Kind) {
+    fn check_config(&mut self, kind: configs::Kind) {
         let (_, loaded) = match self.config_ready(kind) {
             Ok(ready) => ready,
             Err(why) => return self.cannot_config(why),
@@ -263,7 +255,7 @@ impl App {
     }
 
     /// Review saving the draft.
-    pub(in crate::tui::app) fn save_draft(&mut self, kind: configs::Kind) {
+    fn save_draft(&mut self, kind: configs::Kind) {
         let (located, loaded) = match self.config_ready(kind) {
             Ok(ready) => ready,
             Err(why) => return self.cannot_config(why),
@@ -276,7 +268,7 @@ impl App {
     }
 
     /// Go back to the file as it was read.
-    pub(in crate::tui::app) fn discard_draft(&mut self, kind: configs::Kind) {
+    fn discard_draft(&mut self, kind: configs::Kind) {
         if let Some(part) = self.config_parts.iter_mut().find(|part| part.kind == kind) {
             part.draft = None;
             part.draft_checked = None;
@@ -285,12 +277,7 @@ impl App {
     }
 
     /// Check new text and review the plan that saves it.
-    pub(in crate::tui::app) fn save_config(
-        &mut self,
-        located: &configs::Located,
-        loaded: &configs::Loaded,
-        after: &str,
-    ) {
+    fn save_config(&mut self, located: &configs::Located, loaded: &configs::Loaded, after: &str) {
         let Some(folder) = self.copies_folder() else {
             return self.no_copies_folder();
         };
@@ -314,7 +301,7 @@ impl App {
 
     /// A private copy of the file for the user's editor, opened when the
     /// key has been handled.
-    pub(in crate::tui::app) fn start_edit(&mut self, kind: configs::Kind) {
+    fn start_edit(&mut self, kind: configs::Kind) {
         let (located, loaded) = match self.config_ready(kind) {
             Ok(ready) => ready,
             Err(why) => return self.cannot_config(why),
@@ -369,7 +356,7 @@ impl App {
     }
 
     /// Put a backup back, after review: the file there now is kept too.
-    pub(in crate::tui::app) fn restore_config(&mut self, kind: configs::Kind, index: usize) {
+    fn restore_config(&mut self, kind: configs::Kind, index: usize) {
         let Some(backup) = self
             .config_part(kind)
             .and_then(|part| part.history.get(index))
@@ -380,7 +367,7 @@ impl App {
         self.confirm_plan(Ok(backups::plan_restore(&backup)));
     }
 
-    pub(in crate::tui::app) fn describe_config(&mut self) {
+    fn describe_config(&mut self) {
         let Some(kind) = self.selected_config_kind() else {
             return;
         };
@@ -426,7 +413,7 @@ impl App {
         )));
     }
 
-    pub(in crate::tui::app) fn build_config_rows(&mut self) {
+    fn build_config_rows(&mut self) {
         let mut rows = Vec::new();
         for part in &self.config_parts {
             let kind = part.kind;

@@ -59,12 +59,16 @@ end of its output. `docs/TESTING.md` explains the test layers.
 
 ### Issue tracker
 
-Issues are tracked in this repository's GitHub Issues, through `gh`. See `docs/agents/issue-tracker.md`.
+Issues are tracked in this repository's GitHub Issues, through `gh`. See
+`docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-The five default triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+The five default triage labels: `needs-triage`, `needs-info`,
+`ready-for-agent`, `ready-for-human` and `wontfix`. See
+`docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-Single-context: `GLOSSARY.md` and `docs/adr/` at the repository root, created when first needed. See `docs/agents/domain.md`.
+Single-context: `GLOSSARY.md` and `docs/adr/` at the repository root,
+created when first needed. See `docs/agents/domain.md`.

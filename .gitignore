@@ -9,5 +9,5 @@ __pycache__/
 *.pyc
 # The Distributions record a release build carries; never committed.
 /catalog/validation-results.json
-# A local Graphify knowledge graph of the repository; never committed.
+# A local knowledge graph of the repository; never committed.
 /graphify-out/

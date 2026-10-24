@@ -15,7 +15,7 @@ impl App {
         self.desktop_rows.get(self.main_state.selected()?)
     }
 
-    pub(in crate::tui::app) fn looks_directory(&self) -> Option<std::path::PathBuf> {
+    fn looks_directory(&self) -> Option<std::path::PathBuf> {
         self.looks_dir
             .clone()
             .or_else(helix_toolbox_engine::desktop::dir)

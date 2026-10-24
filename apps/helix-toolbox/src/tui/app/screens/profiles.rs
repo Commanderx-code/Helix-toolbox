@@ -42,14 +42,14 @@ impl App {
             .is_some_and(|index| self.catalog.tabs[index].id == "profiles")
     }
 
-    pub(in crate::tui::app) fn profiles_directory(&self) -> Option<PathBuf> {
+    fn profiles_directory(&self) -> Option<PathBuf> {
         self.profiles_dir.clone().or_else(profiles::dir)
     }
 
     /// Read the user's profiles into the catalog again. The Profiles area
     /// stays in the group it was in, wherever that group moved, or goes
     /// back to the top when the group is gone.
-    pub(in crate::tui::app) fn refresh_profiles(&mut self, directory: &Path) {
+    fn refresh_profiles(&mut self, directory: &Path) {
         let group_id = |catalog: &Catalog, index: usize, group: usize| match catalog.tabs[index]
             .items
             .get(group)
@@ -84,10 +84,7 @@ impl App {
 
     /// One of the user's profiles by its catalog id: its file and what it
     /// holds.
-    pub(in crate::tui::app) fn read_own_profile(
-        &self,
-        id: &str,
-    ) -> Result<(PathBuf, profiles::Profile), String> {
+    fn read_own_profile(&self, id: &str) -> Result<(PathBuf, profiles::Profile), String> {
         let directory = self
             .profiles_directory()
             .ok_or("cannot find the configuration folder")?;

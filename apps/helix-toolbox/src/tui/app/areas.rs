@@ -3,7 +3,7 @@
 use super::*;
 
 impl App {
-    pub(super) fn draw_area(&mut self, frame: &mut Frame, area: Rect) {
+    pub(in crate::tui::app) fn draw_area(&mut self, frame: &mut Frame, area: Rect) {
         let Some(index) = self.current_area() else {
             return;
         };
@@ -31,7 +31,7 @@ impl App {
         self.draw_list(frame, parts[1]);
     }
 
-    pub(super) fn draw_search(&self, frame: &mut Frame, area: Rect) {
+    fn draw_search(&self, frame: &mut Frame, area: Rect) {
         let searching = self.focus == Focus::Search;
         let prefix = self.icon_gap(Icon::Search);
         let mut spans = vec![Span::styled(
@@ -78,7 +78,7 @@ impl App {
         frame.render_widget(Paragraph::new(Line::from(spans)).block(block), area);
     }
 
-    pub(super) fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
         let focused = self.focus == Focus::Main;
         let title = match (self.searching(), self.screen) {
             (true, _) => "Results",
@@ -230,7 +230,7 @@ impl App {
         bordered_list(frame, list, area, &mut self.main_state, &self.hits);
     }
 
-    pub(super) fn draw_plan(&mut self, frame: &mut Frame, area: Rect) {
+    pub(in crate::tui::app) fn draw_plan(&mut self, frame: &mut Frame, area: Rect) {
         let inner = self.page(
             frame,
             area,
@@ -389,7 +389,7 @@ impl App {
     }
 
     /// Pin the selected entry, or unpin it, and remember it.
-    pub(super) fn toggle_favorite(&mut self) {
+    pub(in crate::tui::app) fn toggle_favorite(&mut self) {
         let Some(entry) = self.selected_entry().cloned() else {
             return;
         };
@@ -410,11 +410,11 @@ impl App {
     }
 
     /// The entries run recently, newest first, from the history.
-    pub(super) fn reload_recent(&mut self) {
+    pub(in crate::tui::app) fn reload_recent(&mut self) {
         self.take_recent(history::read(50).unwrap_or_default());
     }
 
-    pub(super) fn take_recent(&mut self, records: Vec<history::Record>) {
+    pub(in crate::tui::app) fn take_recent(&mut self, records: Vec<history::Record>) {
         let mut recent: Vec<String> = Vec::new();
         for record in records {
             for id in record.entries {
@@ -430,7 +430,7 @@ impl App {
         self.recent = recent;
     }
 
-    pub(super) fn filter_hint(&self) -> &'static str {
+    pub(in crate::tui::app) fn filter_hint(&self) -> &'static str {
         match self.filter {
             Filter::All => "Show: all",
             Filter::Installed => "Show: installed",
@@ -438,7 +438,7 @@ impl App {
         }
     }
 
-    pub(super) fn draw_favorites(&mut self, frame: &mut Frame, area: Rect) {
+    pub(in crate::tui::app) fn draw_favorites(&mut self, frame: &mut Frame, area: Rect) {
         let content = self.page(
             frame,
             area,
@@ -463,7 +463,7 @@ impl App {
         self.draw_list(frame, content);
     }
 
-    pub(super) fn toggle_queue(&mut self) {
+    pub(in crate::tui::app) fn toggle_queue(&mut self) {
         let Some(entry) = self.selected_entry().cloned() else {
             return;
         };
@@ -471,7 +471,7 @@ impl App {
     }
 
     /// Add an entry to the Install Plan, or take it out.
-    pub(super) fn toggle_queued(&mut self, entry: Entry) {
+    pub(in crate::tui::app) fn toggle_queued(&mut self, entry: Entry) {
         if !entry.multi_select {
             self.popup = Some(Popup::Text(TextPopup::new(
                 entry.name.clone(),
@@ -489,7 +489,7 @@ impl App {
 
     /// Move the selected Install Plan entry earlier (-1) or later (1), as
     /// the window's arrows do; the selection follows it.
-    pub(super) fn move_queued(&mut self, by: isize) {
+    pub(in crate::tui::app) fn move_queued(&mut self, by: isize) {
         let Some(selected) = self.main_state.selected() else {
             return;
         };
@@ -505,7 +505,7 @@ impl App {
 
     /// Queue the selected profile's entries one by one, those not queued
     /// yet, to change the plan before it runs; then show the Install Plan.
-    pub(super) fn queue_profile_entries(&mut self) {
+    pub(in crate::tui::app) fn queue_profile_entries(&mut self) {
         let Some(entry) = self.selected_entry().cloned() else {
             return;
         };
@@ -532,7 +532,7 @@ impl App {
         self.popup = Some(Popup::Text(TextPopup::new(entry.name.clone(), text, true)));
     }
 
-    pub(super) fn preview(&mut self) {
+    pub(in crate::tui::app) fn preview(&mut self) {
         let Some(entry) = self.selected_entry() else {
             return;
         };
@@ -559,7 +559,7 @@ impl App {
         )));
     }
 
-    pub(super) fn describe(&mut self) {
+    pub(in crate::tui::app) fn describe(&mut self) {
         let Some(entry) = self.selected_entry() else {
             return;
         };
@@ -624,7 +624,7 @@ impl App {
     }
 
     /// Every screen, action and entry, with what each does.
-    pub(super) fn palette_choices(&self) -> (Vec<Choice>, Vec<Act>) {
+    pub(in crate::tui::app) fn palette_choices(&self) -> (Vec<Choice>, Vec<Act>) {
         let mut choices = Vec::new();
         let mut acts = Vec::new();
         let mut add = |label: String, detail: &str, keywords: &str, listed: bool, act: Act| {
@@ -769,14 +769,14 @@ impl App {
         (choices, acts)
     }
 
-    pub(super) fn open_palette(&mut self) {
+    pub(in crate::tui::app) fn open_palette(&mut self) {
         let (choices, acts) = self.palette_choices();
         self.palette_acts = acts;
         self.popup = Some(Popup::Palette(Palette::new(choices)));
     }
 
     /// Do what a palette choice says; false quits.
-    pub(super) fn act(&mut self, act: Act) -> bool {
+    pub(in crate::tui::app) fn act(&mut self, act: Act) -> bool {
         match act {
             Act::Open(screen) => {
                 self.open_screen(screen);
@@ -893,7 +893,7 @@ impl App {
 
     /// Select a health check by id (or the first whose id starts with it)
     /// and show its details.
-    pub(super) fn show_check(&mut self, wanted: &str) {
+    pub(in crate::tui::app) fn show_check(&mut self, wanted: &str) {
         let found = self
             .diagnoses
             .iter()
@@ -910,7 +910,7 @@ impl App {
     }
 
     /// The change preview of a plan.
-    pub(super) fn show_effects(&mut self, planned: &Plan, from_confirmation: bool) {
+    pub(in crate::tui::app) fn show_effects(&mut self, planned: &Plan, from_confirmation: bool) {
         let scripts = self.catalog.root().join("scripts");
         let render =
             |arguments: &[String]| helix_toolbox_engine::preview::render_with(&scripts, arguments);
@@ -943,7 +943,11 @@ impl App {
 
     /// Download the pinned sources a plan reads, which changes nothing
     /// else, then show its changes again.
-    pub(super) fn download_sources(&mut self, planned: &Plan, from_confirmation: bool) {
+    pub(in crate::tui::app) fn download_sources(
+        &mut self,
+        planned: &Plan,
+        from_confirmation: bool,
+    ) {
         let scripts = self.catalog.root().join("scripts");
         for name in helix_toolbox_engine::preview::sources_for(planned) {
             if let Err(why) = helix_toolbox_engine::preview::fetch_source(&scripts, name) {
@@ -960,7 +964,7 @@ impl App {
 
     /// Check the selected entry now, read-only: what it installs and its
     /// checks of files, settings and services.
-    pub(super) fn check_selected(&mut self) {
+    pub(in crate::tui::app) fn check_selected(&mut self) {
         let Some(entry) = self.selected_entry().cloned() else {
             return;
         };

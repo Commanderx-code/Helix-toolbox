@@ -3,8 +3,10 @@
 //!
 //! [`App`] holds the state; this file has its startup, the shared state
 //! helpers and the confirm-and-run path. The frame is in `layout`, keys and
-//! the mouse in `input`, the catalog areas and the Install Plan in `areas`,
-//! and each other screen adds its methods from a file in `screens`.
+//! the mouse in `input`, the catalog areas, search, Favorites, the Install
+//! Plan and the command palette in `areas`, and each other screen, the
+//! profiles, the reports and the setup wizard add their methods from a file
+//! in `screens`.
 
 use super::{
     banner,

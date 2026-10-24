@@ -3,19 +3,19 @@
 use super::*;
 
 impl App {
-    pub(super) fn glyph(&self, icon: Icon) -> &'static str {
+    pub(in crate::tui::app) fn glyph(&self, icon: Icon) -> &'static str {
         icon.glyph(self.icons)
     }
 
     /// An icon and the space after it, or nothing when icons are off.
-    pub(super) fn icon_gap(&self, icon: Icon) -> String {
+    pub(in crate::tui::app) fn icon_gap(&self, icon: Icon) -> String {
         match self.glyph(icon) {
             "" => String::new(),
             glyph => format!("{glyph}  "),
         }
     }
 
-    pub(super) fn menu_icon(&self, screen: Screen) -> Icon {
+    fn menu_icon(&self, screen: Screen) -> Icon {
         match screen {
             Screen::Dashboard => Icon::Dashboard,
             Screen::Plan => Icon::Plan,
@@ -44,7 +44,7 @@ impl App {
     }
 
     /// The style of the selected row of a list that has the focus.
-    pub(super) fn highlight(&self, focused: bool) -> Style {
+    pub(in crate::tui::app) fn highlight(&self, focused: bool) -> Style {
         if focused {
             self.theme.selection()
         } else {
@@ -53,7 +53,7 @@ impl App {
     }
 
     /// What marks the selected row of a list.
-    pub(super) fn marker(&self, focused: bool) -> &'static str {
+    pub(in crate::tui::app) fn marker(&self, focused: bool) -> &'static str {
         match (focused, self.icons) {
             (false, _) => "  ",
             (true, true) => "▌ ",
@@ -168,7 +168,7 @@ impl App {
         self.draw_footer(frame, rows[2]);
     }
 
-    pub(super) fn draw_header(&self, frame: &mut Frame, area: Rect) {
+    fn draw_header(&self, frame: &mut Frame, area: Rect) {
         let (status, color) = match &self.popup {
             Some(Popup::Running(running)) if !running.is_finished() => {
                 ("● RUNNING", self.theme.title())
@@ -251,12 +251,7 @@ impl App {
 
     /// READY or RUNNING at the right of the header, with the version before
     /// it when `room` columns beside the name hold both.
-    pub(super) fn header_status(
-        &self,
-        status: &'static str,
-        color: Color,
-        room: usize,
-    ) -> Line<'static> {
+    fn header_status(&self, status: &'static str, color: Color, room: usize) -> Line<'static> {
         const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"), "   ");
         let mut spans = Vec::new();
         if VERSION.chars().count() + status.chars().count() + 2 <= room {
@@ -271,7 +266,7 @@ impl App {
 
     /// A rounded card whose fill stays inside its border, as in the design;
     /// returns the space inside.
-    pub(super) fn framed(&self, frame: &mut Frame, area: Rect, border: Color, fill: Style) -> Rect {
+    fn framed(&self, frame: &mut Frame, area: Rect, border: Color, fill: Style) -> Rect {
         let block = Block::bordered()
             .border_set(border::ROUNDED)
             .border_style(Style::default().fg(border));
@@ -282,7 +277,7 @@ impl App {
     }
 
     /// A horizontal divider.
-    pub(super) fn rule(&self, frame: &mut Frame, x: u16, y: u16, width: u16) {
+    pub(in crate::tui::app) fn rule(&self, frame: &mut Frame, x: u16, y: u16, width: u16) {
         frame.render_widget(
             Paragraph::new("─".repeat(width as usize))
                 .style(Style::default().fg(self.theme.line())),
@@ -290,7 +285,7 @@ impl App {
         );
     }
 
-    pub(super) fn draw_sidebar(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw_sidebar(&mut self, frame: &mut Frame, area: Rect) {
         let focused = self.focus == Focus::Sidebar;
         let edge = Block::default()
             .borders(ratatui::widgets::Borders::RIGHT)
@@ -364,7 +359,7 @@ impl App {
 
     /// A menu item's icon and label, with its count at the right of
     /// `width` when it has one, as the window's sidebar shows.
-    pub(super) fn menu_label(&self, item: &MenuItem, current: bool, width: u16) -> Line<'static> {
+    fn menu_label(&self, item: &MenuItem, current: bool, width: u16) -> Line<'static> {
         let icon = self.icon_gap(self.menu_icon(item.screen));
         let text_style = if current {
             Style::default().fg(self.theme.on_selected()).bold()
@@ -402,7 +397,7 @@ impl App {
     }
 
     /// One menu item as a line, marked when it is the current screen.
-    pub(super) fn menu_row(
+    fn menu_row(
         &self,
         frame: &mut Frame,
         row: Rect,
@@ -428,7 +423,7 @@ impl App {
     /// The menu as one line per item: with a rule and space between the
     /// sections when they fit, without them when not, and scrolled to keep
     /// the current screen in view when even that is too tall.
-    pub(super) fn draw_sidebar_rows(
+    fn draw_sidebar_rows(
         &self,
         frame: &mut Frame,
         inner: Rect,
@@ -500,7 +495,13 @@ impl App {
     }
 
     /// A screen's title and subtitle; returns the space below them.
-    pub(super) fn page(&self, frame: &mut Frame, area: Rect, title: &str, subtitle: &str) -> Rect {
+    pub(in crate::tui::app) fn page(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        title: &str,
+        subtitle: &str,
+    ) -> Rect {
         let inner = Rect::new(
             area.x + 2,
             area.y + 1,
@@ -529,7 +530,7 @@ impl App {
     }
 
     /// A list's items, their heights noted for the mouse.
-    pub(super) fn measure<'a, T: Into<ListItem<'a>>>(
+    pub(in crate::tui::app) fn measure<'a, T: Into<ListItem<'a>>>(
         &self,
         items: impl IntoIterator<Item = T>,
     ) -> Vec<ListItem<'a>> {
@@ -540,7 +541,7 @@ impl App {
         items
     }
 
-    pub(super) fn card(&self, title: &str) -> Block<'static> {
+    pub(in crate::tui::app) fn card(&self, title: &str) -> Block<'static> {
         Block::bordered()
             .border_set(border::ROUNDED)
             .border_style(Style::default().fg(self.theme.line()))
@@ -551,12 +552,12 @@ impl App {
 
     /// Fill a card's inside, so the fill never reaches past its rounded
     /// border; draw the card's widget over it afterward.
-    pub(super) fn fill(&self, frame: &mut Frame, area: Rect) {
+    pub(in crate::tui::app) fn fill(&self, frame: &mut Frame, area: Rect) {
         let inside = Block::bordered().inner(area);
         frame.render_widget(Block::default().style(self.theme.card()), inside);
     }
 
-    pub(super) fn draw_dashboard(&mut self, frame: &mut Frame, area: Rect) {
+    fn draw_dashboard(&mut self, frame: &mut Frame, area: Rect) {
         let content = self.page(
             frame,
             area,
@@ -716,7 +717,7 @@ impl App {
 
     /// The dashboard's counts, as the window's tiles: installed, updates
     /// waiting, queued and pinned. Four tiles in three rows, else one line.
-    pub(super) fn draw_counts(&self, frame: &mut Frame, area: Rect) {
+    fn draw_counts(&self, frame: &mut Frame, area: Rect) {
         if area.height == 0 {
             return;
         }
@@ -764,7 +765,7 @@ impl App {
 
     /// A quick action as a card: icon, title, detail and a chevron.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn action_card(
+    fn action_card(
         &self,
         frame: &mut Frame,
         area: Rect,
@@ -851,7 +852,7 @@ impl App {
         );
     }
 
-    pub(super) fn draw_footer(&self, frame: &mut Frame, area: Rect) {
+    fn draw_footer(&self, frame: &mut Frame, area: Rect) {
         self.rule(frame, area.x, area.y, area.width);
         // How the check of package entries stands, on the rule, as the
         // window's footer says it.
@@ -912,7 +913,7 @@ impl App {
 
     /// Where each of the hints drawn from `x` on is, for a click: each key
     /// of a hint where its name is, its description sending the first.
-    pub(super) fn hint_hits(&self, hints: &[&Hint], mut x: u16, row: Rect) {
+    fn hint_hits(&self, hints: &[&Hint], mut x: u16, row: Rect) {
         let mut hits = self.hits.borrow_mut();
         let width = |text: &str| Span::raw(text).width() as u16;
         for (index, hint) in hints.iter().enumerate() {
@@ -940,7 +941,7 @@ impl App {
         }
     }
 
-    pub(super) fn hints(&self) -> (&'static str, Vec<Hint>) {
+    pub(in crate::tui::app) fn hints(&self) -> (&'static str, Vec<Hint>) {
         match &self.popup {
             Some(Popup::Text(popup)) => return popup.hints(),
             Some(Popup::HardwareReport(popup, _)) => {
@@ -1320,7 +1321,7 @@ impl App {
     }
 
     /// The color of a status word.
-    pub(super) fn status_color(&self, status: &Status) -> Color {
+    pub(in crate::tui::app) fn status_color(&self, status: &Status) -> Color {
         match status {
             Status::Installed { .. } | Status::Elsewhere { .. } => self.theme.success(),
             Status::Update { .. } => self.theme.warning(),

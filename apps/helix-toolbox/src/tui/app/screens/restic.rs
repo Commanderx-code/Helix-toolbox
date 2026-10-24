@@ -42,11 +42,7 @@ impl App {
     }
 
     /// List a folder of a snapshot: in the background, or at once in tests.
-    pub(in crate::tui::app) fn browse_restic(
-        &mut self,
-        snapshot: restic::Snapshot,
-        folder: String,
-    ) {
+    fn browse_restic(&mut self, snapshot: restic::Snapshot, folder: String) {
         let Some(config) = self.restic_config().cloned() else {
             return;
         };
@@ -97,7 +93,7 @@ impl App {
         self.build_restic_rows();
     }
 
-    pub(in crate::tui::app) fn restic_snapshots(&self) -> &[restic::Snapshot] {
+    fn restic_snapshots(&self) -> &[restic::Snapshot] {
         self.restic_reading
             .as_ref()
             .and_then(|reading| reading.snapshots.as_ref().ok())
@@ -105,7 +101,7 @@ impl App {
             .unwrap_or_default()
     }
 
-    pub(in crate::tui::app) fn selected_restic_row(&self) -> Option<&ResticRow> {
+    fn selected_restic_row(&self) -> Option<&ResticRow> {
         self.restic_rows.get(self.main_state.selected()?)
     }
 
@@ -158,7 +154,7 @@ impl App {
     }
 
     /// The snapshot and path the selected row would restore.
-    pub(in crate::tui::app) fn restic_restore_target(&self) -> Option<(String, Option<String>)> {
+    fn restic_restore_target(&self) -> Option<(String, Option<String>)> {
         match self.selected_restic_row()? {
             ResticRow::Snapshot(index) => {
                 Some((self.restic_snapshots().get(*index)?.id.clone(), None))
@@ -188,7 +184,7 @@ impl App {
     }
 
     /// Whether this restic restores without overwriting; says why not when not.
-    pub(in crate::tui::app) fn restic_restores(&mut self) -> bool {
+    fn restic_restores(&mut self) -> bool {
         if self
             .restic_reading
             .as_ref()
@@ -324,7 +320,7 @@ impl App {
         }
     }
 
-    pub(in crate::tui::app) fn confirm_restic(&mut self, planned: Result<Plan, String>) {
+    fn confirm_restic(&mut self, planned: Result<Plan, String>) {
         match planned {
             Ok(planned) => self.confirm_plan(Ok(planned)),
             Err(why) => {
@@ -333,7 +329,7 @@ impl App {
         }
     }
 
-    pub(in crate::tui::app) fn no_restic(&mut self) {
+    fn no_restic(&mut self) {
         self.popup = Some(Popup::Text(TextPopup::new(
             "No repository",
             "Name the repository and its password under [restic] in settings.toml (helix-toolbox restic says how), or with restic's RESTIC_REPOSITORY.",

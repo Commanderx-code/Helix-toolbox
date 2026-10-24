@@ -37,7 +37,7 @@ impl App {
     }
 
     /// This boot beside the chosen earlier one.
-    pub(in crate::tui::app) fn performance_comparison(&self) -> Option<performance::Comparison> {
+    fn performance_comparison(&self) -> Option<performance::Comparison> {
         let (found, _) = self.performance_found.as_ref()?;
         if self.performance_against == 0 {
             return found.previous.clone();
@@ -244,7 +244,7 @@ impl App {
             .cloned()
     }
 
-    pub(in crate::tui::app) fn selected_hint(&self) -> Option<performance::Hint> {
+    fn selected_hint(&self) -> Option<performance::Hint> {
         let Some(PerformanceRow::Hint(index)) = self.selected_performance_row() else {
             return None;
         };
@@ -288,7 +288,7 @@ impl App {
     }
 
     /// Show a unit in the Services screen, filtered to it.
-    pub(in crate::tui::app) fn show_unit(&mut self, name: &str) {
+    fn show_unit(&mut self, name: &str) {
         self.service_filter = name.to_string();
         self.service_view = ServiceView::System;
         self.open_screen(Screen::Services);

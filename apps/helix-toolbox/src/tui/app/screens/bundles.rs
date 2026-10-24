@@ -8,7 +8,7 @@ impl App {
     }
 
     /// A row's label and value; headings have no value.
-    pub(in crate::tui::app) fn bundle_row(&self, row: BundleRow) -> (String, String) {
+    fn bundle_row(&self, row: BundleRow) -> (String, String) {
         let yes_no = |on: bool| if on { "yes" } else { "no" }.to_string();
         match row {
             BundleRow::MakeHeading => ("Make a bundle".to_string(), String::new()),
@@ -46,7 +46,7 @@ impl App {
     }
 
     /// What a row is for.
-    pub(in crate::tui::app) fn bundle_help(&self, row: BundleRow) -> String {
+    fn bundle_help(&self, row: BundleRow) -> String {
         match row {
             BundleRow::MakeHeading => format!(
                 "The Install Plan's entries and the packages they need for {}, downloaded with Helix Toolbox into a folder. Nothing is installed here.",
@@ -139,7 +139,7 @@ impl App {
     }
 
     /// Show what is being done; it is done on the next tick.
-    pub(in crate::tui::app) fn start_bundle_task(&mut self, task: BundleTask, notice: &str) {
+    fn start_bundle_task(&mut self, task: BundleTask, notice: &str) {
         self.popup = Some(Popup::Text(TextPopup::new("Offline bundles", notice, true)));
         self.bundle_due = Some(task);
     }
@@ -214,7 +214,7 @@ impl App {
 
     /// Plan making a bundle of the Install Plan, which the command line does
     /// in the running window.
-    pub(in crate::tui::app) fn make_bundle(&mut self) {
+    fn make_bundle(&mut self) {
         let ids: Vec<String> = self.queue.iter().map(|entry| entry.id.clone()).collect();
         let planned = typed_path(&self.bundle_folder).and_then(|directory| {
             if std::fs::read_dir(&directory).is_ok_and(|mut listing| listing.next().is_some()) {

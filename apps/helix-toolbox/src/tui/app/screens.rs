@@ -1,4 +1,5 @@
-//! One file per screen: each adds that screen's methods to [`App`](super::App).
+//! One file per screen, and one each for the profiles, the reports and the
+//! setup wizard: each adds its methods to [`App`](super::App).
 
 mod backups;
 mod bundles;

@@ -218,14 +218,14 @@ impl App {
     }
 
     /// What the scheduled check watches; none where it cannot run.
-    pub(in crate::tui::app) fn watching(&self) -> Option<Watch> {
+    fn watching(&self) -> Option<Watch> {
         let places = self.notices.as_ref()?;
         self.settings_path.as_ref()?;
         Some(watch::read(places, self.settings_path.as_deref()))
     }
 
     /// The saved baselines' file names, for the Drift choice.
-    pub(in crate::tui::app) fn baseline_slugs(&self) -> Vec<String> {
+    fn baseline_slugs(&self) -> Vec<String> {
         self.drift_dir()
             .map(|directory| {
                 drift::load_all(&directory)
@@ -238,7 +238,7 @@ impl App {
     }
 
     /// Change what the scheduled check watches, and its timer with it.
-    pub(in crate::tui::app) fn change_watch(&mut self, how: impl FnOnce(&mut Watch)) {
+    fn change_watch(&mut self, how: impl FnOnce(&mut Watch)) {
         let (Some(places), Some(path)) = (self.notices.clone(), self.settings_path.clone()) else {
             return;
         };

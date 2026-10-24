@@ -49,6 +49,7 @@ id() { printf '1000\\n'; }
                     path.chmod(0o755)
                 env = dict(os.environ, HOME=str(home), SHELL='/bin/bash', CANDIDATE=candidate,
                            XDG_CONFIG_HOME=str(home / '.config'), XDG_DATA_HOME=str(home / '.local/share'),
+                           XDG_STATE_HOME=str(home / '.local/state'), TMPDIR=str(root),
                            PATH=str(bin_directory) + ':' + os.environ['PATH'])
                 env.pop('ZDOTDIR', None)
                 result = subprocess.run(['sh', '-e', './nala-setup.sh'], cwd=directory, input='APPLY\n',

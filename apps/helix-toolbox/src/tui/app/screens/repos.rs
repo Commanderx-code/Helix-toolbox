@@ -5,7 +5,7 @@ use super::super::*;
 impl App {
     /// Where repositories are looked for: the tests' places, else those the
     /// settings name; none in a test that sets none.
-    pub(in crate::tui::app) fn places_here(&self) -> Option<repos::Places> {
+    fn places_here(&self) -> Option<repos::Places> {
         if let Some(places) = &self.repo_places {
             return Some(places.clone());
         }
@@ -14,7 +14,7 @@ impl App {
         Some(repos::places(settings, &home))
     }
 
-    pub(in crate::tui::app) fn workspaces_path(&self) -> Option<PathBuf> {
+    fn workspaces_path(&self) -> Option<PathBuf> {
         self.workspaces_file.clone().or_else(|| {
             self.settings_path
                 .as_ref()
@@ -22,7 +22,7 @@ impl App {
         })
     }
 
-    pub(in crate::tui::app) fn kept_workspaces(&self) -> Workspaces {
+    fn kept_workspaces(&self) -> Workspaces {
         self.workspaces_path()
             .and_then(|path| workspaces::load(&path).ok())
             .unwrap_or_default()
@@ -116,7 +116,7 @@ impl App {
     }
 
     /// Back from a repository to the list; false when the list is shown.
-    pub(in crate::tui::app) fn close_repo(&mut self) -> bool {
+    fn close_repo(&mut self) -> bool {
         if self.repo_open.take().is_none() {
             return false;
         }
@@ -125,7 +125,7 @@ impl App {
         true
     }
 
-    pub(in crate::tui::app) fn selected_repo_row(&self) -> Option<RepoRow> {
+    fn selected_repo_row(&self) -> Option<RepoRow> {
         self.repo_rows.get(self.main_state.selected()?).cloned()
     }
 
@@ -183,7 +183,7 @@ impl App {
 
     /// Enter: open a repository; in one, a file's diff, a branch to switch
     /// to, a stash to apply or a task to run.
-    pub(in crate::tui::app) fn repo_enter(&mut self) {
+    fn repo_enter(&mut self) {
         let Some(row) = self.selected_repo_row() else {
             return;
         };
@@ -266,7 +266,7 @@ impl App {
     }
 
     /// Space: stage the file's changes, or unstage it when all are staged.
-    pub(in crate::tui::app) fn stage_selected(&mut self) {
+    fn stage_selected(&mut self) {
         let (Some(RepoRow::File(index)), Some((found, _))) =
             (self.selected_repo_row(), &self.repo_open)
         else {
@@ -286,7 +286,7 @@ impl App {
 
     /// P: push to the upstream, or publish the branch to origin (or the
     /// only remote) when it has none.
-    pub(in crate::tui::app) fn push_repo(&mut self) {
+    fn push_repo(&mut self) {
         let Some((found, _)) = &self.repo_open else {
             return;
         };
@@ -306,7 +306,7 @@ impl App {
         self.plan_repo_change(change);
     }
 
-    pub(in crate::tui::app) fn toggle_repo_favorite(&mut self) {
+    fn toggle_repo_favorite(&mut self) {
         let path = match (&self.repo_open, self.selected_repo_row(), &self.repos_found) {
             (Some((found, _)), ..) => found.summary.path.clone(),
             (None, Some(RepoRow::Repository(index)), Some((_, summaries))) => {
@@ -381,7 +381,7 @@ impl App {
     }
 
     /// x: remove the selected task, when it is one of the user's.
-    pub(in crate::tui::app) fn remove_repo_task(&mut self) {
+    fn remove_repo_task(&mut self) {
         let (Some(RepoRow::Task(index)), Some((found, tasks))) =
             (self.selected_repo_row(), &self.repo_open)
         else {

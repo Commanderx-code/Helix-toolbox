@@ -13,7 +13,7 @@ impl App {
 
     /// The restic repository for the recovery checks, with its newest
     /// snapshot when the Restic screen read them already.
-    pub(in crate::tui::app) fn restic_repository(&self) -> Option<recovery::Repository> {
+    fn restic_repository(&self) -> Option<recovery::Repository> {
         let reading = self.restic_reading.as_ref();
         match reading.map(|reading| &reading.found) {
             Some(restic::Found::Ready(config)) => Some(recovery::Repository {

@@ -43,13 +43,13 @@ impl App {
         }
     }
 
-    pub(super) fn press(&mut self, code: KeyCode) -> bool {
+    pub(in crate::tui::app) fn press(&mut self, code: KeyCode) -> bool {
         self.handle_key(&KeyEvent::new(code, KeyModifiers::NONE))
     }
 
     /// Give the main list the focus, as the keys would: Enter from the
     /// sidebar or the search line.
-    pub(super) fn focus_main(&mut self) -> bool {
+    fn focus_main(&mut self) -> bool {
         match self.focus {
             Focus::Main => true,
             Focus::Sidebar | Focus::Search => self.press(KeyCode::Enter),
@@ -58,7 +58,7 @@ impl App {
 
     /// A click on a row selects it, by the arrow keys; a click on the row
     /// already selected in the focused list is Enter.
-    pub(super) fn click_row(&mut self, index: usize) -> bool {
+    fn click_row(&mut self, index: usize) -> bool {
         if self.focus != Focus::Main {
             return self.focus_main() && self.select_by_keys(index);
         }
@@ -69,7 +69,7 @@ impl App {
         self.select_by_keys(index)
     }
 
-    pub(super) fn select_by_keys(&mut self, index: usize) -> bool {
+    fn select_by_keys(&mut self, index: usize) -> bool {
         for _ in 0..self.main_len() {
             let before = self.main_state.selected().unwrap_or(0);
             if before == index {
@@ -92,7 +92,7 @@ impl App {
 
     /// The wheel scrolls what is under it: a popup's text or list, the
     /// output of a run, or the main list's selection.
-    pub(super) fn wheel(&mut self, down: bool, event: &MouseEvent) -> bool {
+    pub(in crate::tui::app) fn wheel(&mut self, down: bool, event: &MouseEvent) -> bool {
         let code = if down { KeyCode::Down } else { KeyCode::Up };
         match &mut self.popup {
             // Keys go to the command running, so the wheel scrolls its output instead.
@@ -417,7 +417,7 @@ impl App {
         true
     }
 
-    pub(super) fn first_area(&self) -> usize {
+    pub(in crate::tui::app) fn first_area(&self) -> usize {
         self.menu
             .iter()
             .find_map(|item| match item.screen {
@@ -427,7 +427,7 @@ impl App {
             .unwrap_or(0)
     }
 
-    pub(super) fn handle_sidebar_key(&mut self, key: &KeyEvent) {
+    fn handle_sidebar_key(&mut self, key: &KeyEvent) {
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => self.next_menu(1),
             KeyCode::Char('k') | KeyCode::Up => self.next_menu(-1),
@@ -436,7 +436,7 @@ impl App {
         }
     }
 
-    pub(super) fn next_menu(&mut self, step: isize) {
+    fn next_menu(&mut self, step: isize) {
         let count = self.menu.len() as isize;
         let current = self.menu_state.selected().unwrap_or(0) as isize;
         let next = ((current + step).rem_euclid(count)) as usize;
@@ -444,7 +444,7 @@ impl App {
         self.open_screen(screen);
     }
 
-    pub(super) fn handle_main_key(&mut self, key: &KeyEvent) {
+    pub(in crate::tui::app) fn handle_main_key(&mut self, key: &KeyEvent) {
         // The Install Plan's order: K or Shift-Up earlier, J or Shift-Down later.
         if self.screen == Screen::Plan {
             let shifted = key.modifiers.contains(KeyModifiers::SHIFT);
@@ -1085,7 +1085,7 @@ impl App {
         }
     }
 
-    pub(super) fn handle_search_key(&mut self, key: &KeyEvent) {
+    fn handle_search_key(&mut self, key: &KeyEvent) {
         match key.code {
             KeyCode::Enter => {
                 self.focus = Focus::Main;
@@ -1139,7 +1139,7 @@ impl App {
         }
     }
 
-    pub(super) fn move_selection(&mut self, step: isize) {
+    fn move_selection(&mut self, step: isize) {
         let count = self.main_len();
         if count == 0 {
             return;
@@ -1149,7 +1149,7 @@ impl App {
             .select(Some((current + step).clamp(0, count as isize - 1) as usize));
     }
 
-    pub(super) fn enter(&mut self) {
+    fn enter(&mut self) {
         match self.selected_row().cloned() {
             Some(Row::Up) => self.back(),
             Some(Row::Group { index, .. }) => {
@@ -1165,7 +1165,7 @@ impl App {
         }
     }
 
-    pub(super) fn back(&mut self) {
+    pub(in crate::tui::app) fn back(&mut self) {
         if self.searching() {
             self.search.clear();
             self.cursor = 0;

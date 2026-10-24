@@ -18,14 +18,14 @@ impl App {
         self.build_home_rows();
     }
 
-    pub(in crate::tui::app) fn selected_generation(&self) -> Option<&home_manager::Generation> {
+    fn selected_generation(&self) -> Option<&home_manager::Generation> {
         let HomeRow::Generation(index) = self.home_rows.get(self.main_state.selected()?)? else {
             return None;
         };
         self.home_status.as_ref()?.generations.get(*index)
     }
 
-    pub(in crate::tui::app) fn selected_link(&self) -> Option<&home_manager::Link> {
+    fn selected_link(&self) -> Option<&home_manager::Link> {
         let HomeRow::Link(index) = self.home_rows.get(self.main_state.selected()?)? else {
             return None;
         };
@@ -33,7 +33,7 @@ impl App {
     }
 
     /// The configuration to build, or a popup saying why there is none.
-    pub(in crate::tui::app) fn home_config(&mut self) -> Option<home_manager::Config> {
+    fn home_config(&mut self) -> Option<home_manager::Config> {
         let why = match self.home_status.as_ref() {
             None => "Home Manager has not been read yet; r reads it.".to_string(),
             Some(status) if !status.installed => "home-manager is not installed here.".to_string(),
@@ -51,7 +51,7 @@ impl App {
         None
     }
 
-    pub(in crate::tui::app) fn confirm_home(&mut self, planned: Result<Plan, String>) {
+    fn confirm_home(&mut self, planned: Result<Plan, String>) {
         match planned {
             Ok(planned) => self.confirm_plan(Ok(planned)),
             Err(why) => {
@@ -83,7 +83,7 @@ impl App {
 
     /// Enter on an earlier generation plans going back to it; on anything
     /// else it tells of it.
-    pub(in crate::tui::app) fn home_enter(&mut self) {
+    fn home_enter(&mut self) {
         match self.selected_generation().cloned() {
             Some(generation) if !generation.current => {
                 let planned = home_manager::plan_activate(&doctor::Here, &generation);
@@ -94,7 +94,7 @@ impl App {
     }
 
     /// Pull the configuration's repository, fast-forward only.
-    pub(in crate::tui::app) fn pull_home(&mut self) {
+    fn pull_home(&mut self) {
         if self.home_config().is_none() {
             return;
         }
@@ -118,7 +118,7 @@ impl App {
         self.confirm_home(planned);
     }
 
-    pub(in crate::tui::app) fn describe_home(&mut self) {
+    fn describe_home(&mut self) {
         let (title, text) = if let Some(generation) = self.selected_generation() {
             (
                 format!("Generation {}", generation.id),
