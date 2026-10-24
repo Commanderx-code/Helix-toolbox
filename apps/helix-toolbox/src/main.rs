@@ -527,7 +527,8 @@ fn main() -> Result<()> {
             )
         };
     }
-    let platform = LinuxInfo::detect().context("Helix Toolbox needs Linux with /etc/os-release")?;
+    let platform =
+        LinuxInfo::detect().context("Helix Toolbox needs Linux with an os-release file")?;
     let source = cli.catalog_dir;
     let as_json = cli.json;
     JSON.store(as_json, std::sync::atomic::Ordering::Relaxed);

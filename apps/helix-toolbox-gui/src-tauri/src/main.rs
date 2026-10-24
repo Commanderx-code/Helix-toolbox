@@ -2896,7 +2896,7 @@ fn main() {
     let platform = match LinuxInfo::detect() {
         Ok(platform) => platform,
         Err(error) => {
-            eprintln!("Helix Toolbox needs Linux with /etc/os-release: {error}");
+            eprintln!("Helix Toolbox needs Linux with an os-release file: {error}");
             std::process::exit(1);
         }
     };

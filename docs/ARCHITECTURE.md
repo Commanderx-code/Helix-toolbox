@@ -41,7 +41,7 @@ and a graphical interface will take the same events.
 ```text
 helix-toolbox-core      Tab, Group, Entry, Action, Precondition, Risk; name validation
 helix-toolbox-catalog   reads catalog/ and scripts/ (embedded or from a directory), applies preconditions
-helix-toolbox-platform  /etc/os-release, package manager family, PATH lookups
+helix-toolbox-platform  /etc/os-release (or /usr/lib/os-release), package manager family, PATH lookups
 helix-toolbox-engine    plan() -> Plan of Steps; shell_program(); confirmation; session (one run, through a Runner: pty, inherited, mock) and its execution events; history
 helix-toolbox           clap command line, ratatui interface, tracing setup
 helix-toolbox-gui       the window: Tauri 2 on the same crates, a workspace of its own under apps/helix-toolbox-gui
@@ -72,7 +72,7 @@ An entry's `Action` is one of:
 | `Command` | `sh -e -c '<line>'` |
 | `Nix` | `nix profile install <installable>` or `home-manager switch --flake <flake>` |
 | `Native` | `helix-toolbox native <action>`: Helix Toolbox re-invoked, the operation implemented in Rust |
-| `Profile` | the actions of the entries it names, in order |
+| `Profile` | the actions of the entries it names, in order; an entry already in the plan (from another profile, or queued itself) is planned once, where it first comes |
 
 `plan()` turns entries into a `Plan`: ordered `Step`s, notes for entries that
 need nothing done, the executables the steps require, whether any step is

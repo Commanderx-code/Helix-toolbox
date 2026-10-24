@@ -314,10 +314,12 @@ pub fn read_in(directory: &Path, limit: usize) -> std::io::Result<Vec<Record>> {
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let text = fs::read_to_string(path)?;
-    let mut records: Vec<Record> = text
-        .lines()
-        .filter_map(|line| serde_json::from_str(line).ok())
+    // Read as bytes, so a line torn inside a character by a crash during an
+    // append is skipped like any other line that does not parse.
+    let bytes = fs::read(path)?;
+    let mut records: Vec<Record> = bytes
+        .split(|&byte| byte == b'\n')
+        .filter_map(|line| serde_json::from_slice(line).ok())
         .collect();
     // A run recorded late, after its Helix Toolbox died, carries its start time.
     records.sort_by_key(|record| record.unix_timestamp);
@@ -512,5 +514,37 @@ mod tests {
         fs::rename(&pending.path, pending.path.with_extension("claimed-1")).unwrap();
         assert_eq!(reconcile_in(directory.path()), 0);
         assert!(read_in(directory.path(), 5).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_line_torn_inside_a_character_is_skipped_and_the_rest_read() {
+        let directory = tempfile::tempdir().unwrap();
+        record_in(
+            directory.path(),
+            &[("one".into(), "One".into())],
+            true,
+            "exit 0",
+            None,
+        )
+        .unwrap();
+        // A record cut short inside a multi-byte character ("É" is C3 89),
+        // as a crash in the middle of an append leaves it.
+        let mut file = fs::OpenOptions::new()
+            .append(true)
+            .open(directory.path().join("history.jsonl"))
+            .unwrap();
+        file.write_all(b"{\"unix_timestamp\":1,\"entries\":[\"x\"],\"names\":[\"\xC3\n")
+            .unwrap();
+        drop(file);
+        record_in(
+            directory.path(),
+            &[("two".into(), "Two".into())],
+            true,
+            "exit 0",
+            None,
+        )
+        .unwrap();
+        let records = read_in(directory.path(), 10).expect("history stays readable");
+        assert_eq!(records.len(), 2);
     }
 }

@@ -59,12 +59,26 @@ pub fn run_choices(path: &Path) -> RunChoices {
 }
 
 /// Change some settings in `settings.toml`, leaving every other setting in
-/// it as it is: each interface writes only its own.
+/// it as it is: each interface writes only its own. A file that does not
+/// parse is copied to `settings.toml.unreadable` beside it first, so the
+/// user's other settings can still be found there, and is then replaced by
+/// one with only the change; a file that cannot be read at all is left as
+/// it is and the error returned.
 pub fn update(path: &Path, change: impl FnOnce(&mut toml::Table)) -> std::io::Result<()> {
-    let mut table = fs::read_to_string(path)
-        .ok()
-        .and_then(|text| text.parse::<toml::Table>().ok())
-        .unwrap_or_default();
+    let mut table = match fs::read(path) {
+        Ok(bytes) => match std::str::from_utf8(&bytes)
+            .ok()
+            .and_then(|text| text.parse::<toml::Table>().ok())
+        {
+            Some(table) => table,
+            None => {
+                fs::write(path.with_extension("toml.unreadable"), &bytes)?;
+                toml::Table::new()
+            }
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => toml::Table::new(),
+        Err(error) => return Err(error),
+    };
     change(&mut table);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -335,6 +349,20 @@ mod tests {
                 keep_going: true,
                 snapshots: true,
             }
+        );
+    }
+
+    #[test]
+    fn saving_over_a_settings_file_that_does_not_parse_keeps_a_copy_of_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.toml");
+        let damaged = "theme = \"neon\"\nicons = false\nkeep_going = \n";
+        fs::write(&path, damaged).unwrap();
+        save_window_theme(&path, WindowTheme::Dark).unwrap();
+        assert_eq!(window_theme(&path), WindowTheme::Dark);
+        assert_eq!(
+            fs::read_to_string(directory.path().join("settings.toml.unreadable")).unwrap(),
+            damaged
         );
     }
 }
