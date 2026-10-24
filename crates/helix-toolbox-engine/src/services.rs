@@ -6,7 +6,7 @@
 //! name lookups, the firewall, systemd's own) says what stops working
 //! before it is stopped or disabled.
 
-use crate::{Plan, Step, doctor::System, quote};
+use crate::{Plan, Step, doctor::System, host::Host, quote};
 use helix_toolbox_core::{Risk, printable, valid_unit_name};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -96,8 +96,22 @@ pub struct Services {
     pub autostart: Vec<Autostart>,
 }
 
-/// Read the machine's and the session's units and the autostart entries.
-pub fn gather(system: &dyn System, desktop: Option<&str>) -> Services {
+/// Read the machine's and the session's units and the autostart entries
+/// in `dirs`, as they show on `desktop`.
+pub fn gather(system: &dyn System, dirs: &AutostartDirs, desktop: Option<&str>) -> Services {
+    Services {
+        autostart: autostart_in(system, dirs, desktop),
+        ..gather_units(system)
+    }
+}
+
+/// `gather` on a host, with its session's desktop and autostart folders.
+pub fn gather_on(host: &Host) -> Services {
+    gather(host, &AutostartDirs::of(host), host.desktop().as_deref())
+}
+
+/// The units, without the autostart entries.
+fn gather_units(system: &dyn System) -> Services {
     let systemd = system.exists(Path::new("/run/systemd/system"));
     let mut units = Vec::new();
     let mut session = false;
@@ -111,7 +125,7 @@ pub fn gather(system: &dyn System, desktop: Option<&str>) -> Services {
         systemd,
         session,
         units,
-        autostart: autostart(system, desktop),
+        autostart: Vec::new(),
     }
 }
 
@@ -256,9 +270,13 @@ pub struct AutostartDirs {
 }
 
 impl AutostartDirs {
-    pub fn here(system: &dyn System) -> Self {
-        let home = system.user().2;
-        let variable = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
+    /// A host's folders, from its home and environment.
+    pub fn of(host: &Host) -> Self {
+        Self::found(host.home(), &|name| host.variable(name))
+    }
+
+    fn found(home: &Path, environment: &dyn Fn(&str) -> Option<String>) -> Self {
+        let variable = |name: &str| environment(name).filter(|value| !value.is_empty());
         let config_dirs = variable("XDG_CONFIG_DIRS").unwrap_or_else(|| "/etc/xdg".to_string());
         let config = variable("XDG_CONFIG_HOME")
             .map(PathBuf::from)
@@ -323,10 +341,6 @@ pub fn valid_autostart_file(file: &str) -> bool {
 }
 
 /// The autostart entries, the user's file over the system's of the same name.
-pub fn autostart(system: &dyn System, desktop: Option<&str>) -> Vec<Autostart> {
-    autostart_in(system, &AutostartDirs::here(system), desktop)
-}
-
 pub fn autostart_in(
     system: &dyn System,
     dirs: &AutostartDirs,
@@ -498,6 +512,13 @@ pub fn needed_by(system: &dyn System, name: &str, user: bool) -> Vec<String> {
             .collect()
     })
     .unwrap_or_default()
+}
+
+/// `plan` on a host: the units that need this one, as its systemd says,
+/// and whether the user is here over SSH.
+pub fn plan_on(host: &Host, name: &str, user: bool, verb: Verb) -> Result<Plan, String> {
+    let needed = needed_by(host, name, user);
+    plan(name, user, verb, &needed, host.ssh())
 }
 
 /// A plan that starts, stops, restarts, enables or disables one unit, with
@@ -780,7 +801,7 @@ mod tests {
 
     #[test]
     fn units_come_from_their_files_and_what_runs() {
-        let found = gather(&machine(), Some("KDE"));
+        let found = gather(&machine(), &dirs(), Some("KDE"));
         assert!(found.systemd && found.session);
         let names: Vec<&str> = found.units.iter().map(|unit| unit.name.as_str()).collect();
         assert_eq!(
@@ -815,7 +836,7 @@ mod tests {
                 .iter()
                 .any(|unit| unit.user && unit.name == "pipewire.service")
         );
-        let none = gather(&Fake::default(), None);
+        let none = gather(&Fake::default(), &dirs(), None);
         assert!(!none.systemd && none.units.is_empty());
     }
 

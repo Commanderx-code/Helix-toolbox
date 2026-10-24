@@ -7,7 +7,8 @@ use anyhow::{Context, Result, bail};
 use clap::Subcommand;
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_engine::{
-    backups, doctor, drift, history,
+    doctor,
+    host::Host,
     performance::{self, Boot, Comparison, shown, shown_change},
     recovery, storage,
 };
@@ -29,10 +30,6 @@ pub enum PerformanceCommand {
         /// The later boot; this one when left out.
         after: Option<String>,
     },
-}
-
-fn state() -> Option<std::path::PathBuf> {
-    history::state_dir()
 }
 
 fn boot_line(boot: &Boot) -> String {
@@ -97,8 +94,8 @@ fn print_comparison(compared: &Comparison, against: &str) {
 }
 
 pub fn performance(command: Option<PerformanceCommand>, as_json: bool) -> Result<()> {
-    let history = history::read(1000).unwrap_or_default();
-    let found = performance::gather(&doctor::Here, state().as_deref(), &history);
+    let host = Host::here();
+    let found = performance::gather_on(&host);
     match command.unwrap_or(PerformanceCommand::Show) {
         PerformanceCommand::Show => {
             if as_json {
@@ -236,9 +233,7 @@ pub fn performance(command: Option<PerformanceCommand>, as_json: bool) -> Result
             Ok(())
         }
         PerformanceCommand::Boots => {
-            let boots = state()
-                .map(|state| performance::load(&performance::boots_path(&state)))
-                .unwrap_or_default();
+            let boots = performance::boots_on(&host);
             if as_json {
                 crate::json::print("boots", json!({ "boots": boots }));
                 return Ok(());
@@ -262,9 +257,7 @@ pub fn performance(command: Option<PerformanceCommand>, as_json: bool) -> Result
             Ok(())
         }
         PerformanceCommand::Compare { before, after } => {
-            let boots = state()
-                .map(|state| performance::load(&performance::boots_path(&state)))
-                .unwrap_or_default();
+            let boots = performance::boots_on(&host);
             let pick = |wanted: &str| {
                 performance::find(&boots, wanted).with_context(|| {
                     format!("no recorded boot {wanted}; see helix-toolbox performance boots")
@@ -287,7 +280,7 @@ pub fn performance(command: Option<PerformanceCommand>, as_json: bool) -> Result
             } else {
                 (later, earlier)
             };
-            let compared = performance::compare(earlier, later, &history);
+            let compared = performance::compare(earlier, later, &host.history(1000));
             if as_json {
                 crate::json::print(
                     "comparison",
@@ -310,8 +303,9 @@ pub fn recovery(
     platform: &LinuxInfo,
     as_json: bool,
 ) -> Result<()> {
+    let host = Host::here();
     if check_snapshots {
-        let Some(tool) = recovery::snapshot_tool(&doctor::Here) else {
+        let Some(tool) = host.snapshots() else {
             bail!(
                 "neither Snapper (with a root configuration) nor Timeshift is set up, so there are no snapshots to look at"
             );
@@ -325,23 +319,10 @@ pub fn recovery(
             "CHECK",
         );
     }
-    let found_backups = backups::discover(&backups::Roots::here());
-    let baselines = drift::dir()
-        .map(|directory| drift::load_all(&directory).0)
-        .unwrap_or_default();
-    let found = recovery::examine(
-        &doctor::Here,
-        &recovery::Known {
-            manager: platform.manager,
-            backups: &found_backups,
-            baselines: &baselines,
-            now: history::now(),
-            restic: helix_toolbox_engine::restic::repository_here(),
-        },
-    );
+    let found = recovery::examine_on(&host, platform.manager);
     if as_json {
         let mut value = crate::json::doctor(&found);
-        value["snapshots"] = json!(recovery::snapshot_tool(&doctor::Here).map(|tool| tool.label()));
+        value["snapshots"] = json!(host.snapshots().map(|tool| tool.label()));
         crate::json::print("recovery", value);
         return Ok(());
     }

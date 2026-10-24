@@ -8,6 +8,7 @@
 use crate::{
     doctor::System,
     history,
+    host::Host,
     inventory::{Inventory, Status},
 };
 use helix_toolbox_catalog::Catalog;
@@ -260,21 +261,48 @@ pub enum BaselineError {
     Write(PathBuf, String),
 }
 
+/// Where a command is on the PATH, if it is.
+pub type OnPath<'a> = Box<dyn Fn(&str) -> Option<PathBuf> + 'a>;
+
 /// Everything a capture or a comparison reads; tests supply their own.
 pub struct Sources<'a> {
     pub catalog: &'a Catalog,
     pub platform: &'a LinuxInfo,
     pub inventory: &'a Inventory,
-    pub on_path: &'a dyn Fn(&str) -> Option<PathBuf>,
+    pub on_path: OnPath<'a>,
     pub system: &'a dyn System,
     pub home: &'a Path,
     /// The runs recorded here, newest first.
-    pub history: &'a [history::Record],
+    pub history: Vec<history::Record>,
     /// The machine's settings, as a capture records them.
-    pub settings: &'a dyn Fn() -> BTreeMap<String, String>,
+    pub settings: Box<dyn Fn() -> BTreeMap<String, String> + 'a>,
     /// The installers' renderers (`configure.py`), which only print: how an
     /// entry that ran before its runs were recorded is seen to be in place.
-    pub render: &'a dyn Fn(&[String]) -> Result<String, String>,
+    pub render: crate::preview::Render<'a>,
+}
+
+impl<'a> Sources<'a> {
+    /// What a capture or a comparison reads from a host, with the
+    /// inventory already gathered there and the catalog's renderers.
+    pub fn of(
+        host: &'a Host,
+        catalog: &'a Catalog,
+        platform: &'a LinuxInfo,
+        inventory: &'a Inventory,
+    ) -> Self {
+        let scripts = catalog.root().join("scripts");
+        Sources {
+            catalog,
+            platform,
+            inventory,
+            on_path: Box::new(|tool| host.which(tool)),
+            system: host,
+            home: host.home(),
+            history: host.history(1000),
+            settings: Box::new(|| settings_here(host, host.desktop().as_deref())),
+            render: Box::new(move |arguments| host.render(&scripts, arguments)),
+        }
+    }
 }
 
 /// `$XDG_CONFIG_HOME/helix-toolbox/baselines`, or under `~/.config`.
@@ -299,7 +327,7 @@ pub fn capture(name: &str, taken: u64, sources: &Sources, extra: &[String]) -> B
         }
         if let Some(status) = sources
             .inventory
-            .status(entry, sources.platform, sources.on_path)
+            .status(entry, sources.platform, &sources.on_path)
             && let Some((source, version)) = installed(&status)
         {
             baseline.entries.push(Recorded {
@@ -389,7 +417,8 @@ fn applied_here(sources: &Sources) -> Vec<Applied> {
 /// The files it writes are all there, or the installer's own renderer finds
 /// its settings in place. `None` when nothing tells.
 fn set_up_here(entry: &Entry, sources: &Sources) -> Option<bool> {
-    if let Some(rendered) = crate::preview::rendered_in_place(entry, sources.system, sources.render)
+    if let Some(rendered) =
+        crate::preview::rendered_in_place(entry, sources.system, &sources.render)
     {
         return Some(rendered);
     }
@@ -434,7 +463,7 @@ pub fn compare(baseline: &Baseline, sources: &Sources) -> Report {
         let was = shown(recorded.source.as_deref(), recorded.version.as_deref());
         let status = sources
             .inventory
-            .status(entry, sources.platform, sources.on_path);
+            .status(entry, sources.platform, &sources.on_path);
         match status.as_ref().and_then(installed) {
             None => report.differences.push(Difference {
                 kind: Kind::Missing,
@@ -476,7 +505,7 @@ pub fn compare(baseline: &Baseline, sources: &Sources) -> Report {
         }
         if let Some(status) = sources
             .inventory
-            .status(entry, sources.platform, sources.on_path)
+            .status(entry, sources.platform, &sources.on_path)
             && let Some((source, version)) = installed(&status)
         {
             let now = shown(Some(&source), version.as_deref());
@@ -688,7 +717,7 @@ pub fn compare_profile(name: &str, ids: &[String], sources: &Sources) -> Report 
         if entry.identity().is_some() {
             let status = sources
                 .inventory
-                .status(entry, sources.platform, sources.on_path);
+                .status(entry, sources.platform, &sources.on_path);
             if status.as_ref().and_then(installed).is_some() {
                 report.matched += 1;
             } else {
@@ -760,8 +789,9 @@ fn not_run_note(there: &str, evidence: Option<bool>) -> String {
     }
 }
 
-/// The settings a baseline records, read from this machine.
-pub fn settings_here(system: &dyn System) -> BTreeMap<String, String> {
+/// The settings a baseline records, read from a machine whose session
+/// says it runs `desktop`.
+pub fn settings_here(system: &dyn System, desktop: Option<&str>) -> BTreeMap<String, String> {
     let mut settings = BTreeMap::new();
     let (uid, _, _) = system.user();
     if let Some(passwd) = system.read(Path::new("/etc/passwd")) {
@@ -803,10 +833,8 @@ pub fn settings_here(system: &dyn System) -> BTreeMap<String, String> {
             settings.insert("flatpak-remotes".to_string(), remotes.join(", "));
         }
     }
-    if let Ok(desktop) = std::env::var("XDG_CURRENT_DESKTOP")
-        && !desktop.is_empty()
-    {
-        settings.insert("desktop".to_string(), desktop);
+    if let Some(desktop) = desktop.filter(|desktop| !desktop.is_empty()) {
+        settings.insert("desktop".to_string(), desktop.to_string());
     }
     settings
 }
@@ -1254,12 +1282,12 @@ mod tests {
             catalog,
             platform,
             inventory,
-            on_path: &|_| None,
+            on_path: Box::new(|_| None),
             system: fake,
             home: &fake.home,
-            history,
-            settings,
-            render: &|_| Err("no renderer in these tests".to_string()),
+            history: history.to_vec(),
+            settings: Box::new(settings),
+            render: Box::new(|_| Err("no renderer in these tests".to_string())),
         }
     }
 
@@ -1283,7 +1311,7 @@ mod tests {
             record(&["pacman-config", "neovim"], false, 45),
             record(&["git"], true, 40),
         ];
-        let old_settings = || settings_here(&old);
+        let old_settings = || settings_here(&old, None);
         let extra = [old_home.path().join("notes.txt").display().to_string()];
         let baseline = capture(
             "Old laptop",
@@ -1329,7 +1357,7 @@ mod tests {
             files: HashMap::new(),
         };
         let has = inventory(&[("git", "2.48.0-1"), ("neovim", "0.11.0-1")]);
-        let new_settings = || settings_here(&new);
+        let new_settings = || settings_here(&new, None);
         let report = compare(
             &baseline,
             &sources(&catalog, &platform, &has, &new, &[], &new_settings),
@@ -1626,7 +1654,7 @@ mod tests {
         let ids = ["grub-dracula".to_string(), "printer-driverless".to_string()];
         let report_with = |render: &dyn Fn(&[String]) -> Result<String, String>| {
             let sources = Sources {
-                render,
+                render: Box::new(render),
                 ..sources(&catalog, &platform, &empty, &fake, &[], &none)
             };
             compare_profile("Mine", &ids, &sources)

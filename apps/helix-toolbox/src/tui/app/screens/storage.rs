@@ -5,16 +5,8 @@ use super::super::*;
 impl App {
     /// Read the storage in the background: sizing caches takes a moment.
     pub(in crate::tui::app) fn read_storage(&mut self) {
-        if !self.examine_here {
-            self.build_storage_rows();
-            return;
-        }
         let manager = self.platform.manager;
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = sender.send(storage::gather(&doctor::Here, manager));
-        });
-        self.reading_storage = Some(receiver);
+        self.reading_storage = Some(self.read_host(move |host| storage::gather_on(&host, manager)));
     }
 
     pub(in crate::tui::app) fn build_storage_rows(&mut self) {
@@ -93,7 +85,7 @@ impl App {
         else {
             return;
         };
-        match storage::plan(&item, self.platform.manager, &doctor::Here) {
+        match storage::plan(&item, self.platform.manager, &self.host) {
             Ok(planned) => self.confirm_plan(Ok(planned)),
             Err(why) => {
                 self.popup = Some(Popup::Text(TextPopup::new(item.title, why, true)));

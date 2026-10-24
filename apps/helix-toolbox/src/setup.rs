@@ -8,7 +8,7 @@ use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Entry, printable};
 use helix_toolbox_engine::{
     desktop::{self, Desktop},
-    doctor,
+    host::Host,
     setup::{self, Survey},
 };
 use helix_toolbox_platform::LinuxInfo;
@@ -16,18 +16,12 @@ use std::path::Path;
 
 /// This machine's desktop.
 pub fn desktop_here() -> Desktop {
-    desktop::detect(&doctor::Here, &|name| std::env::var(name).ok())
+    desktop::detect_on(&Host::here())
 }
 
 /// What the wizard learns about this machine.
 pub fn survey_here(platform: &LinuxInfo, desktop: &Desktop) -> Survey {
-    setup::survey(
-        platform,
-        desktop,
-        helix_toolbox_engine::preflight::gpus(),
-        setup::laptop_here(),
-        &helix_toolbox_platform::binary_exists,
-    )
+    setup::survey_on(&Host::here(), platform, desktop)
 }
 
 /// The survey as lines of text.

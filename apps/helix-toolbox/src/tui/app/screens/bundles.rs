@@ -157,7 +157,7 @@ impl App {
                             &self.catalog,
                             &self.platform,
                             self.bundle_complete,
-                            &doctor::Here,
+                            &self.host,
                             &scratch,
                         );
                         let _ = std::fs::remove_dir_all(&scratch);
@@ -198,7 +198,7 @@ impl App {
                         &manifest,
                         &[],
                         &self.platform,
-                        &doctor::Here,
+                        &self.host,
                         self.bundle_trust,
                     )
                     .map_err(|error| error.to_string())

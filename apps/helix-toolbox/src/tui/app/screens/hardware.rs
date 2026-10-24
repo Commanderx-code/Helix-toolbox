@@ -5,14 +5,8 @@ use super::super::*;
 impl App {
     /// Read the hardware in the background; fwupd can take a moment.
     pub(in crate::tui::app) fn read_hardware(&mut self) {
-        if !self.examine_here {
-            return;
-        }
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = sender.send(helix_toolbox_engine::hardware::gather(&doctor::Here));
-        });
-        self.reading_hardware = Some(receiver);
+        self.reading_hardware =
+            Some(self.read_host(|host| helix_toolbox_engine::hardware::gather(&host)));
     }
 
     pub(in crate::tui::app) fn selected_hardware(&self) -> Option<&HardwareRow> {

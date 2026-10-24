@@ -7,14 +7,9 @@ impl App {
     /// seconds.
     pub(in crate::tui::app) fn make_report(&mut self) {
         let platform = self.platform.clone();
-        let checks = self.examine_here;
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = sender.send(crate::report::markdown(&crate::report::gather(
-                &platform, checks,
-            )));
-        });
-        self.reporting = Some(receiver);
+        self.reporting = Some(self.read_host(move |host| {
+            crate::report::markdown(&crate::report::gather(&host, &platform, true))
+        }));
         self.popup = Some(Popup::Text(TextPopup::new(
             "Bug report",
             "Gathering the report; the health checks take a few seconds…",
@@ -33,7 +28,7 @@ impl App {
         let kept = match saved {
             Some(Ok(path)) => {
                 let shown = path.display().to_string();
-                let home = std::env::var("HOME").unwrap_or_default();
+                let home = self.host.home().to_string_lossy().into_owned();
                 let shown = match shown.strip_prefix(&home) {
                     Some(rest) if home.len() > 1 => format!("~{rest}"),
                     _ => shown,
@@ -61,15 +56,7 @@ impl App {
         record: &history::Record,
         only: Option<&str>,
     ) {
-        let machine = match (&self.machine, self.examine_here) {
-            (Some(machine), _) => machine.clone(),
-            (None, true) => hardware_report::machine(
-                &doctor::Here,
-                &self.platform,
-                &crate::setup::desktop_here(),
-            ),
-            (None, false) => hardware_report::Machine::default(),
-        };
+        let machine = hardware_report::machine(&self.host, &self.platform, &self.desktop_here());
         let report = match hardware_report::prepare(record, only, machine, crate::VERSION, "") {
             Ok(report) => report,
             Err(why) => {

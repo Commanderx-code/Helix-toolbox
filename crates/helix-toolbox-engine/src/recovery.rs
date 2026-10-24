@@ -11,20 +11,40 @@ use crate::{
     backups::{Backup, Snapshots},
     doctor::{Diagnosis, Health, System},
     drift::Baseline,
+    host::Host,
 };
 use helix_toolbox_core::{PackageManager, Risk, printable};
 use std::path::Path;
 
 /// What the checks are given besides the machine.
-pub struct Known<'a> {
+pub struct Known {
     pub manager: Option<PackageManager>,
-    pub backups: &'a [Backup],
+    pub backups: Vec<Backup>,
     /// The saved Drift baselines, newest first.
-    pub baselines: &'a [(String, Baseline)],
+    pub baselines: Vec<(String, Baseline)>,
     /// Now, in seconds since 1970.
     pub now: u64,
     /// The restic repository Helix Toolbox backs up to, when one is set up.
     pub restic: Option<Repository>,
+}
+
+impl Known {
+    /// What a host has: its configuration backups, saved baselines, clock
+    /// and restic repository, by name only.
+    pub fn of(host: &Host, manager: Option<PackageManager>) -> Self {
+        Known {
+            manager,
+            backups: host.backups(),
+            baselines: host.saved_baselines(),
+            now: host.now(),
+            restic: host.restic(),
+        }
+    }
+}
+
+/// Run every check on a host.
+pub fn examine_on(host: &Host, manager: Option<PackageManager>) -> Vec<Diagnosis> {
+    examine(host, &Known::of(host, manager))
 }
 
 /// A restic repository of the user's own files, and its newest snapshot
@@ -114,7 +134,7 @@ pub fn examine(system: &dyn System, known: &Known) -> Vec<Diagnosis> {
     if let Some(kernels) = second_kernel(system, known.manager) {
         found.push(kernels);
     }
-    found.push(configuration_backups(known.backups));
+    found.push(configuration_backups(&known.backups));
     found.push(own_files(system, known.restic.as_ref()));
     found.push(machine_record(known));
     found
@@ -637,11 +657,11 @@ mod tests {
             "snapper --jsonout -c root list --disable-used-space".into(),
             r#"{"root":[{"number":0,"date":""},{"number":41,"date":"2026-10-01 10:00:00"},{"number":42,"date":"2026-10-14 09:30:00"}]}"#.into(),
         );
-        let baselines = [baseline("Laptop", NOW - 10 * DAY)];
+        let baselines = vec![baseline("Laptop", NOW - 10 * DAY)];
         let known = Known {
             manager: Some(PackageManager::Arch),
-            backups: &[],
-            baselines: &baselines,
+            backups: Vec::new(),
+            baselines,
             now: NOW,
             restic: None,
         };
@@ -690,11 +710,11 @@ mod tests {
         fake.file("/proc/mounts", "/dev/sda2 / btrfs rw 0 0\n");
         fake.file("/usr/lib/modules/6.17.1-arch1-1/pkgbase", "linux\n");
         fake.file("/boot/vmlinuz-linux", "");
-        let baselines = [baseline("Old", NOW - 200 * DAY)];
+        let baselines = vec![baseline("Old", NOW - 200 * DAY)];
         let known = Known {
             manager: Some(PackageManager::Arch),
-            backups: &[],
-            baselines: &baselines,
+            backups: Vec::new(),
+            baselines,
             now: NOW,
             restic: None,
         };
@@ -730,8 +750,8 @@ mod tests {
         fake.file("/proc/mounts", "/dev/vda1 / ext4 rw 0 0\n");
         let known = Known {
             manager: Some(PackageManager::Fedora),
-            backups: &[],
-            baselines: &[],
+            backups: Vec::new(),
+            baselines: Vec::new(),
             now: NOW,
             restic: None,
         };
@@ -795,8 +815,8 @@ mod tests {
         fake.file("/proc/mounts", "/dev/sda2 / ext4 rw 0 0\n");
         let known = Known {
             manager: Some(PackageManager::Arch),
-            backups: &[],
-            baselines: &[],
+            backups: Vec::new(),
+            baselines: Vec::new(),
             now: NOW,
             restic: Some(Repository {
                 name: "/mnt/backup/restic".into(),

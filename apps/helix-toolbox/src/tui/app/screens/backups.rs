@@ -70,7 +70,7 @@ impl App {
             );
             return;
         }
-        let home = std::env::var("HOME").unwrap_or_default();
+        let home = self.host.home().to_string_lossy().into_owned();
         let shown = |path: &std::path::Path| {
             let text = helix_toolbox_core::printable(&path.display().to_string());
             match text.strip_prefix(&home) {
@@ -113,7 +113,7 @@ impl App {
     }
 
     pub(in crate::tui::app) fn reload_backups(&mut self) {
-        self.backups = backups::discover(&backups::Roots::here());
+        self.backups = self.host.backups();
         self.clamp_main();
     }
 

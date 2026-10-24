@@ -4,12 +4,9 @@ use super::super::*;
 
 impl App {
     /// Read the units and the autostart entries again; quick, so not in the
-    /// background. Tests keep what they put there.
+    /// background.
     pub(in crate::tui::app) fn reload_services(&mut self) {
-        if self.examine_here {
-            let desktop = std::env::var("XDG_CURRENT_DESKTOP").ok();
-            self.services_found = Some(services::gather(&doctor::Here, desktop.as_deref()));
-        }
+        self.services_found = Some(services::gather_on(&self.host));
         self.build_service_rows();
     }
 
@@ -81,11 +78,7 @@ impl App {
         let Some(unit) = self.unit(index).cloned() else {
             return;
         };
-        let needed = if self.examine_here {
-            services::needed_by(&doctor::Here, &unit.name, unit.user)
-        } else {
-            Vec::new()
-        };
+        let needed = services::needed_by(&self.host, &unit.name, unit.user);
         let shown = rows::unit(&unit);
         let mut text = format!(
             "{}\n\nEnabled: {}\nRunning: {}\n",
@@ -100,11 +93,7 @@ impl App {
         if !needed.is_empty() {
             text.push_str(&format!("Needed by: {}\n", needed.join(", ")));
         }
-        if let Some(cost) = services::consequence(
-            &unit.name,
-            unit.user,
-            std::env::var_os("SSH_CONNECTION").is_some(),
-        ) {
+        if let Some(cost) = services::consequence(&unit.name, unit.user, self.host.ssh()) {
             text.push_str(&format!("\nBefore stopping or disabling it: {cost}\n"));
         }
         if let Some(note) = shown.note {
@@ -125,18 +114,7 @@ impl App {
         let Some(unit) = self.unit(index).cloned() else {
             return;
         };
-        let needed = if self.examine_here {
-            services::needed_by(&doctor::Here, &unit.name, unit.user)
-        } else {
-            Vec::new()
-        };
-        match services::plan(
-            &unit.name,
-            unit.user,
-            verb,
-            &needed,
-            std::env::var_os("SSH_CONNECTION").is_some(),
-        ) {
+        match services::plan_on(&self.host, &unit.name, unit.user, verb) {
             Ok(planned) => self.confirm_plan(Ok(planned)),
             Err(why) => {
                 self.popup = Some(Popup::Text(TextPopup::new("Cannot plan", why, true)));
@@ -183,8 +161,8 @@ impl App {
         else {
             return;
         };
-        let dirs = services::AutostartDirs::here(&doctor::Here);
-        match services::plan_autostart(&item, !item.enabled, &dirs, &doctor::Here) {
+        let dirs = services::AutostartDirs::of(&self.host);
+        match services::plan_autostart(&item, !item.enabled, &dirs, &self.host) {
             Ok(planned) => self.confirm_plan(Ok(planned)),
             Err(why) => {
                 self.popup = Some(Popup::Text(TextPopup::new("Cannot plan", why, true)));

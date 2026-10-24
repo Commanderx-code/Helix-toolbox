@@ -12,6 +12,7 @@ use helix_toolbox_engine::{
     Plan, PtyRunner, RunSession, backups, bundle, configs, confirmation, desktop, doctor, drift,
     execution::Options,
     hardware, hardware_report, history, home_manager,
+    host::Host,
     inventory::{Inventory, which},
     migration::{self, Standing},
     notifications,
@@ -45,6 +46,8 @@ struct Gui {
     /// Written only when a profile is saved, which adds it to Profiles.
     catalog: RwLock<Catalog>,
     platform: LinuxInfo,
+    /// This machine, as the screens read it.
+    host: Host,
     /// The command-line program, which native steps run again.
     this: PathBuf,
     /// Where `settings.toml` is, when there is a home.
@@ -201,7 +204,7 @@ fn areas(gui: State<Gui>) -> Vec<AreaView> {
 async fn statuses(app: AppHandle) -> Result<HashMap<String, StatusView>, String> {
     blocking(app, |gui| {
         let catalog = gui.catalog.read().unwrap();
-        let inventory = Inventory::gather(&doctor::Here, &gui.platform);
+        let inventory = Inventory::gather(&gui.host, &gui.platform);
         let statuses = catalog
             .entries()
             .into_iter()
@@ -295,22 +298,11 @@ fn waiting(gui: &Gui) -> Result<Plan, String> {
 
 /// What a plan is expected to change on this machine; it only reads.
 fn preview_changes(gui: &Gui, catalog: &Catalog, planned: &Plan) -> ChangesView {
-    let scripts = catalog.root().join("scripts");
-    let render = |arguments: &[String]| preview::render_with(&scripts, arguments);
-    let pinned = |name: &str| preview::pinned_source(&scripts, name);
-    let steps = preview::preview(
-        planned,
-        &|id| catalog.find(id),
-        &gui.platform,
-        &preview::Look {
-            system: &doctor::Here,
-            render: &render,
-            pinned: &pinned,
-        },
-    );
+    let look = preview::Look::of(&gui.host, &catalog.root().join("scripts"));
+    let steps = preview::preview(planned, &|id| catalog.find(id), &gui.platform, &look);
     let download = preview::sources_for(planned)
         .into_iter()
-        .any(|name| matches!(pinned(name), preview::Pinned::Missing { .. }));
+        .any(|name| matches!((look.pinned)(name), preview::Pinned::Missing { .. }));
     views::changes(&steps, download)
 }
 
@@ -703,7 +695,7 @@ async fn hardware_report(
             (None, None) => None,
         }
         .ok_or("That run is not in this machine's history.")?;
-        let machine = hardware_report::machine(&doctor::Here, &gui.platform, &desktop_here());
+        let machine = hardware_report::machine(&gui.host, &gui.platform, &desktop_here(gui));
         let report = hardware_report::prepare(
             record,
             entry.as_deref(),
@@ -788,7 +780,7 @@ fn outside(value: &str, appdir: &str) -> Outside {
 #[tauri::command]
 async fn doctor(app: AppHandle) -> Result<Vec<DiagnosisView>, String> {
     blocking(app, |gui| {
-        let found = doctor::examine(&doctor::Here, gui.platform.manager);
+        let found = doctor::examine_on(&gui.host, gui.platform.manager);
         let views = found.iter().map(views::diagnosis).collect();
         *gui.diagnoses.lock().unwrap() = found;
         views
@@ -849,7 +841,7 @@ struct UpdatesView {
 #[tauri::command]
 async fn updates(app: AppHandle, online: bool) -> Result<UpdatesView, String> {
     blocking(app, move |gui| {
-        let channels = updates::overview(&doctor::Here, &gui.platform, &places(gui), online);
+        let channels = updates::overview(&gui.host, &gui.platform, &places(gui), online);
         let views = channels.iter().map(views::channel).collect();
         *gui.channels.lock().unwrap() = channels;
         UpdatesView {
@@ -938,7 +930,7 @@ struct SnapshotsView {
 #[tauri::command]
 async fn list_backups(app: AppHandle) -> Result<BackupsView, String> {
     blocking(app, |gui| {
-        let found = backups::discover(&backups::Roots::here());
+        let found = gui.host.backups();
         let views = found
             .iter()
             .enumerate()
@@ -1018,48 +1010,6 @@ fn drift_targets(gui: State<Gui>) -> Vec<TargetView> {
     targets
 }
 
-/// What a comparison reads from this machine, beyond the inventory.
-struct Here {
-    home: PathBuf,
-    records: Vec<history::Record>,
-    settings: std::collections::BTreeMap<String, String>,
-    scripts: PathBuf,
-}
-
-impl Here {
-    fn gather(catalog: &Catalog) -> Self {
-        Here {
-            home: std::env::var_os("HOME")
-                .map(PathBuf::from)
-                .unwrap_or_default(),
-            records: history::read(1000).unwrap_or_default(),
-            settings: drift::settings_here(&doctor::Here),
-            scripts: catalog.root().join("scripts"),
-        }
-    }
-
-    fn sources<'a>(
-        &'a self,
-        gui: &'a Gui,
-        catalog: &'a Catalog,
-        inventory: &'a Inventory,
-        settings: &'a dyn Fn() -> std::collections::BTreeMap<String, String>,
-        render: &'a dyn Fn(&[String]) -> Result<String, String>,
-    ) -> drift::Sources<'a> {
-        drift::Sources {
-            catalog,
-            platform: &gui.platform,
-            inventory,
-            on_path: &which,
-            system: &doctor::Here,
-            home: &self.home,
-            history: &self.records,
-            settings,
-            render,
-        }
-    }
-}
-
 #[derive(Serialize)]
 struct DriftView {
     report: drift::Report,
@@ -1078,12 +1028,7 @@ async fn drift_check(app: AppHandle, key: String) -> Result<DriftView, String> {
             .as_ref()
             .ok_or("Helix Toolbox is still checking what is installed; try again in a moment.")?;
         let catalog = gui.catalog.read().unwrap();
-        let here = Here::gather(&catalog);
-        let settings = || here.settings.clone();
-        let render = |arguments: &[String]| {
-            helix_toolbox_engine::preview::render_with(&here.scripts, arguments)
-        };
-        let sources = here.sources(gui, &catalog, inventory, &settings, &render);
+        let sources = drift::Sources::of(&gui.host, &catalog, &gui.platform, inventory);
         let report = match key.split_once(':') {
             Some(("baseline", slug)) => {
                 let directory = drift::dir().ok_or("cannot find the configuration folder")?;
@@ -1124,13 +1069,8 @@ async fn save_baseline(app: AppHandle, name: String) -> Result<String, String> {
             .as_ref()
             .ok_or("Helix Toolbox is still checking what is installed; try again in a moment.")?;
         let catalog = gui.catalog.read().unwrap();
-        let here = Here::gather(&catalog);
-        let settings = || here.settings.clone();
-        let render = |arguments: &[String]| {
-            helix_toolbox_engine::preview::render_with(&here.scripts, arguments)
-        };
-        let sources = here.sources(gui, &catalog, inventory, &settings, &render);
-        let baseline = drift::capture(&name, history::now(), &sources, &[]);
+        let sources = drift::Sources::of(&gui.host, &catalog, &gui.platform, inventory);
+        let baseline = drift::capture(&name, gui.host.now(), &sources, &[]);
         let directory = drift::dir().ok_or("cannot find the configuration folder")?;
         let path = drift::save(&directory, &baseline).map_err(|error| error.to_string())?;
         Ok(format!(
@@ -1172,7 +1112,7 @@ async fn reliability(app: AppHandle) -> Result<ReliabilityView, String> {
     blocking(app, |gui| {
         let catalog = gui.catalog.read().unwrap();
         let evidence = Evidence::load(catalog.root());
-        let records = history::read(1000).unwrap_or_default();
+        let records = gui.host.history(1000);
         let rows = reliability::rows(&catalog, &evidence, &records)
             .into_iter()
             .map(|(entry, assessment)| ReliabilityRow {
@@ -1214,9 +1154,9 @@ async fn trust(app: AppHandle, id: String) -> Result<String, String> {
             catalog.root(),
             &gui.platform,
             &build,
-            &doctor::Here,
+            &gui.host,
             &Evidence::load(catalog.root()),
-            &history::read(1000).unwrap_or_default(),
+            &gui.host.history(1000),
         );
         Ok(trust::text(&found))
     })
@@ -1232,15 +1172,15 @@ async fn check_entry(app: AppHandle, id: String) -> Result<String, String> {
         let entry = catalog
             .find(&id)
             .ok_or_else(|| format!("There is no entry {id} in the catalog."))?;
-        let records = history::read(1000).unwrap_or_default();
-        let rebooted = verification::rebooted_since(&doctor::Here, &records, &entry.id);
+        let records = gui.host.history(1000);
+        let rebooted = verification::rebooted_since(&gui.host, &records, &entry.id);
         let checks = verification::check_entry(
             entry,
             &gui.platform,
             rebooted,
             &helix_toolbox_engine::Probe::holds,
             &helix_toolbox_platform::binary_exists,
-            &doctor::Here,
+            &gui.host,
         );
         if checks.is_empty() {
             return Ok(format!(
@@ -1267,11 +1207,7 @@ async fn check_entry(app: AppHandle, id: String) -> Result<String, String> {
 /// The machine's and the session's units and what starts at login.
 #[tauri::command]
 async fn read_services(app: AppHandle) -> Result<ServicesView, String> {
-    blocking(app, |_| {
-        let desktop = std::env::var("XDG_CURRENT_DESKTOP").ok();
-        views::services(&services::gather(&doctor::Here, desktop.as_deref()))
-    })
-    .await
+    blocking(app, |gui| views::services(&services::gather_on(&gui.host))).await
 }
 
 #[derive(Serialize)]
@@ -1288,13 +1224,9 @@ async fn service_details(
     name: String,
     user: bool,
 ) -> Result<ServiceDetailsView, String> {
-    blocking(app, move |_| ServiceDetailsView {
-        needed_by: services::needed_by(&doctor::Here, &name, user),
-        consequence: services::consequence(
-            &name,
-            user,
-            std::env::var_os("SSH_CONNECTION").is_some(),
-        ),
+    blocking(app, move |gui| ServiceDetailsView {
+        needed_by: services::needed_by(&gui.host, &name, user),
+        consequence: services::consequence(&name, user, gui.host.ssh()),
     })
     .await
 }
@@ -1314,14 +1246,7 @@ async fn prepare_service(
                 format!("{} is not something a unit can do.", printable(&verb)),
             );
         };
-        let needed = services::needed_by(&doctor::Here, &name, user);
-        match services::plan(
-            &name,
-            user,
-            verb,
-            &needed,
-            std::env::var_os("SSH_CONNECTION").is_some(),
-        ) {
+        match services::plan_on(&gui.host, &name, user, verb) {
             Ok(planned) => {
                 let catalog = gui.catalog.read().unwrap();
                 prepare_plan(gui, &catalog, planned)
@@ -1336,16 +1261,15 @@ async fn prepare_service(
 #[tauri::command]
 async fn prepare_autostart(app: AppHandle, file: String, on: bool) -> Result<PreparedView, String> {
     blocking(app, move |gui| {
-        let dirs = services::AutostartDirs::here(&doctor::Here);
-        let desktop = std::env::var("XDG_CURRENT_DESKTOP").ok();
-        let found = services::autostart_in(&doctor::Here, &dirs, desktop.as_deref());
+        let dirs = services::AutostartDirs::of(&gui.host);
+        let found = services::autostart_in(&gui.host, &dirs, gui.host.desktop().as_deref());
         let Some(item) = found.iter().find(|item| item.file == file) else {
             return cannot(
                 gui,
                 format!("There is no autostart file {}.", printable(&file)),
             );
         };
-        match services::plan_autostart(item, on, &dirs, &doctor::Here) {
+        match services::plan_autostart(item, on, &dirs, &gui.host) {
             Ok(planned) => {
                 let catalog = gui.catalog.read().unwrap();
                 prepare_plan(gui, &catalog, planned)
@@ -1362,7 +1286,7 @@ async fn prepare_autostart(app: AppHandle, file: String, on: bool) -> Result<Pre
 #[tauri::command]
 async fn read_storage(app: AppHandle) -> Result<StorageView, String> {
     blocking(app, |gui| {
-        views::storage(&storage::gather(&doctor::Here, gui.platform.manager))
+        views::storage(&storage::gather_on(&gui.host, gui.platform.manager))
     })
     .await
 }
@@ -1371,14 +1295,14 @@ async fn read_storage(app: AppHandle) -> Result<StorageView, String> {
 #[tauri::command]
 async fn prepare_clean(app: AppHandle, id: String) -> Result<PreparedView, String> {
     blocking(app, move |gui| {
-        let found = storage::gather(&doctor::Here, gui.platform.manager);
+        let found = storage::gather_on(&gui.host, gui.platform.manager);
         let Some(item) = found.items.iter().find(|item| item.id == id) else {
             return cannot(
                 gui,
                 format!("{} is not something Helix Toolbox cleans.", printable(&id)),
             );
         };
-        match storage::plan(item, gui.platform.manager, &doctor::Here) {
+        match storage::plan(item, gui.platform.manager, &gui.host) {
             Ok(planned) => {
                 let catalog = gui.catalog.read().unwrap();
                 prepare_plan(gui, &catalog, planned)
@@ -1395,14 +1319,9 @@ async fn prepare_clean(app: AppHandle, id: String) -> Result<PreparedView, Strin
 /// recorded on the way.
 #[tauri::command]
 async fn read_performance(app: AppHandle) -> Result<PerformanceView, String> {
-    blocking(app, |_| {
-        let state = history::state_dir();
-        let history = history::read(1000).unwrap_or_default();
-        let found = performance::gather(&doctor::Here, state.as_deref(), &history);
-        let boots = state
-            .map(|state| performance::load(&performance::boots_path(&state)))
-            .unwrap_or_default();
-        views::performance(&found, &boots)
+    blocking(app, |gui| {
+        let found = performance::gather_on(&gui.host);
+        views::performance(&found, &performance::boots_on(&gui.host))
     })
     .await
 }
@@ -1414,17 +1333,16 @@ async fn compare_boots(
     before: String,
     after: String,
 ) -> Result<ComparisonView, String> {
-    blocking(app, move |_| {
-        let boots = history::state_dir()
-            .map(|state| performance::load(&performance::boots_path(&state)))
-            .unwrap_or_default();
+    blocking(app, move |gui| {
+        let boots = performance::boots_on(&gui.host);
         let find = |id: &str| boots.iter().find(|boot| boot.id == id);
         let (Some(before), Some(after)) = (find(&before), find(&after)) else {
             return Err("That boot is no longer recorded.".to_string());
         };
-        let history = history::read(1000).unwrap_or_default();
         Ok(views::comparison(&performance::compare(
-            before, after, &history,
+            before,
+            after,
+            &gui.host.history(1000),
         )))
     })
     .await?
@@ -1442,23 +1360,10 @@ struct RecoveryView {
 #[tauri::command]
 async fn read_recovery(app: AppHandle) -> Result<RecoveryView, String> {
     blocking(app, |gui| {
-        let found_backups = backups::discover(&backups::Roots::here());
-        let baselines = drift::dir()
-            .map(|directory| drift::load_all(&directory).0)
-            .unwrap_or_default();
-        let found = recovery::examine(
-            &doctor::Here,
-            &recovery::Known {
-                manager: gui.platform.manager,
-                backups: &found_backups,
-                baselines: &baselines,
-                now: history::now(),
-                restic: restic::repository_here(),
-            },
-        );
+        let found = recovery::examine_on(&gui.host, gui.platform.manager);
         RecoveryView {
             checks: found.iter().map(views::diagnosis).collect(),
-            snapshots: recovery::snapshot_tool(&doctor::Here).map(|tool| tool.label()),
+            snapshots: gui.host.snapshots().map(|tool| tool.label()),
         }
     })
     .await
@@ -1469,7 +1374,7 @@ async fn read_recovery(app: AppHandle) -> Result<RecoveryView, String> {
 #[tauri::command]
 async fn prepare_snapshot_check(app: AppHandle) -> Result<PreparedView, String> {
     blocking(app, |gui| {
-        let Some(tool) = recovery::snapshot_tool(&doctor::Here) else {
+        let Some(tool) = gui.host.snapshots() else {
             return cannot(
                 gui,
                 "Neither Snapper (with a root configuration) nor Timeshift is set up.".into(),
@@ -1498,16 +1403,11 @@ struct MigrationExportView {
 async fn read_migration_export(app: AppHandle) -> Result<MigrationExportView, String> {
     blocking(app, |gui| {
         let catalog = gui.catalog.read().unwrap();
-        let found = migration::gather(
-            &doctor::Here,
-            &catalog.entries(),
-            &gui.platform,
-            history::now(),
-        );
+        let found = migration::gather(&gui.host, &catalog.entries(), &gui.platform, gui.host.now());
         MigrationExportView {
             file_name: migration::file_name(&found),
             migration: found,
-            packages_known: migration::chosen(&doctor::Here, gui.platform.manager).is_some(),
+            packages_known: migration::chosen(&gui.host, gui.platform.manager).is_some(),
         }
     })
     .await
@@ -1522,7 +1422,7 @@ async fn export_migration(app: AppHandle, path: Option<String>) -> Result<Option
     blocking(app, move |gui| {
         let found = {
             let catalog = gui.catalog.read().unwrap();
-            migration::gather(&doctor::Here, &catalog.entries(), &gui.platform, history::now())
+            migration::gather(&gui.host, &catalog.entries(), &gui.platform, gui.host.now())
         };
         let Some(path) = path.map(PathBuf::from).or_else(|| {
             choose_toml(
@@ -1577,9 +1477,8 @@ async fn open_migration(
             return Ok(None);
         };
         let catalog = gui.catalog.read().unwrap();
-        let translation =
-            migration::read_here(&doctor::Here, &path, &catalog.entries(), &gui.platform)
-                .map_err(|error| error.to_string())?;
+        let translation = migration::read_here(&gui.host, &path, &catalog.entries(), &gui.platform)
+            .map_err(|error| error.to_string())?;
         Ok(Some(TranslationView {
             path: path.display().to_string(),
             install: translation.count(Standing::Install),
@@ -1599,13 +1498,12 @@ async fn prepare_migration(app: AppHandle, path: String) -> Result<PreparedView,
     blocking(app, move |gui| {
         let catalog = gui.catalog.read().unwrap();
         let entries = catalog.entries();
-        let planned =
-            migration::read_here(&doctor::Here, Path::new(&path), &entries, &gui.platform)
-                .map_err(|error| error.to_string())
-                .and_then(|translation| {
-                    migration::plan_here(&doctor::Here, &translation, &entries, &gui.platform)
-                        .map_err(|error| error.to_string())
-                });
+        let planned = migration::read_here(&gui.host, Path::new(&path), &entries, &gui.platform)
+            .map_err(|error| error.to_string())
+            .and_then(|translation| {
+                migration::plan_here(&gui.host, &translation, &entries, &gui.platform)
+                    .map_err(|error| error.to_string())
+            });
         match planned {
             Ok(planned) => prepare_plan(gui, &catalog, planned),
             Err(why) => cannot(gui, why),
@@ -1794,10 +1692,10 @@ async fn prepare_restic(
 /// Record a file's SHA-256 as a baseline, as `helix-toolbox restic baseline`.
 #[tauri::command]
 async fn record_baseline(app: AppHandle, path: String) -> Result<restic::Baseline, String> {
-    blocking(app, move |_| {
+    blocking(app, move |gui| {
         let home = restic_home()?;
-        let state = history::state_dir().ok_or("cannot find the state folder")?;
-        restic::record(&state, &home, &typed_path(&home, &path), history::now())
+        let state = gui.host.state().ok_or("cannot find the state folder")?;
+        restic::record(state, &home, &typed_path(&home, &path), gui.host.now())
     })
     .await?
 }
@@ -2343,8 +2241,8 @@ struct HomeManagerView {
 /// Home Manager: its configuration, generations, repository and links.
 #[tauri::command]
 async fn read_home_manager(app: AppHandle) -> Result<HomeManagerView, String> {
-    blocking(app, |_| {
-        let status = home_manager::status(&doctor::Here, &repositories::Here);
+    blocking(app, |gui| {
+        let status = home_manager::status(&gui.host, &repositories::Here);
         HomeManagerView {
             reference: status
                 .config
@@ -2367,7 +2265,7 @@ async fn prepare_home_manager(
 ) -> Result<PreparedView, String> {
     blocking(app, move |gui| {
         let planned = (|| -> Result<Plan, String> {
-            let status = home_manager::status(&doctor::Here, &repositories::Here);
+            let status = home_manager::status(&gui.host, &repositories::Here);
             if !status.installed {
                 return Err("home-manager is not installed here.".into());
             }
@@ -2387,7 +2285,7 @@ async fn prepare_home_manager(
                         &status.generations,
                         &wanted.to_string(),
                     )?;
-                    home_manager::plan_activate(&doctor::Here, &found)
+                    home_manager::plan_activate(&gui.host, &found)
                 }
                 "pull" => {
                     let repository = status
@@ -2419,7 +2317,7 @@ async fn prepare_home_manager(
 #[tauri::command]
 async fn read_hardware(app: AppHandle) -> Result<HardwareView, String> {
     blocking(app, |gui| {
-        let found = hardware::gather(&doctor::Here);
+        let found = hardware::gather(&gui.host);
         let view = views::hardware(&found);
         *gui.hardware.lock().unwrap() = Some(found);
         view
@@ -2486,8 +2384,8 @@ struct LookView {
     other: bool,
 }
 
-fn desktop_here() -> desktop::Desktop {
-    desktop::detect(&doctor::Here, &|name| std::env::var(name).ok())
+fn desktop_here(gui: &Gui) -> desktop::Desktop {
+    desktop::detect_on(&gui.host)
 }
 
 // ----- The setup wizard -----
@@ -2519,13 +2417,7 @@ struct PickView {
 
 /// What the wizard learns about this machine, as the command line does.
 fn survey_here(gui: &Gui) -> setup::Survey {
-    setup::survey(
-        &gui.platform,
-        &desktop_here(),
-        helix_toolbox_engine::preflight::gpus(),
-        setup::laptop_here(),
-        &helix_toolbox_platform::binary_exists,
-    )
+    setup::survey_on(&gui.host, &gui.platform, &desktop_here(gui))
 }
 
 /// Open the wizard: the machine and the workstations (`catalog/setup.toml`).
@@ -2616,7 +2508,7 @@ fn setup_done(gui: State<Gui>) -> Result<(), String> {
 async fn read_desktop(app: AppHandle) -> Result<DesktopView, String> {
     blocking(app, |gui| {
         let catalog = gui.catalog.read().unwrap();
-        let found = desktop_here();
+        let found = desktop_here(gui);
         let looks = desktop::dir()
             .map(|directory| desktop::load_all(&directory).0)
             .unwrap_or_default()
@@ -2647,8 +2539,8 @@ async fn read_desktop(app: AppHandle) -> Result<DesktopView, String> {
 
 /// Save the desktop's appearance as a look; what to tell the user.
 #[tauri::command]
-fn save_look(name: String) -> Result<String, String> {
-    let found = desktop_here();
+fn save_look(gui: State<Gui>, name: String) -> Result<String, String> {
+    let found = desktop_here(&gui);
     let look = desktop::capture(&name, &found)
         .ok_or("no desktop whose appearance Helix Toolbox can read is running here")?;
     let directory = desktop::dir().ok_or("cannot find the configuration folder")?;
@@ -2675,7 +2567,7 @@ async fn prepare_look(app: AppHandle, slug: String) -> Result<PreparedView, Stri
         else {
             return cannot(gui, "That look is no longer saved.".into());
         };
-        match desktop::plan_apply(&look, &desktop_here()) {
+        match desktop::plan_apply(&look, &desktop_here(gui)) {
             Ok(planned) => {
                 let catalog = gui.catalog.read().unwrap();
                 prepare_plan(gui, &catalog, planned)
@@ -2719,14 +2611,7 @@ async fn bundle_contents(
         let catalog = gui.catalog.read().unwrap();
         let scratch = bundle::scratch()
             .map_err(|error| format!("cannot create a scratch folder: {error}"))?;
-        let found = bundle::contents(
-            &ids,
-            &catalog,
-            &gui.platform,
-            complete,
-            &doctor::Here,
-            &scratch,
-        );
+        let found = bundle::contents(&ids, &catalog, &gui.platform, complete, &gui.host, &scratch);
         let _ = std::fs::remove_dir_all(&scratch);
         found
             .map(|found| views::bundle_contents(&found, complete))
@@ -2798,15 +2683,8 @@ async fn prepare_bundle_install(
             let directory = folder(&directory)?;
             let manifest =
                 bundle::verify(&directory, &gui.platform).map_err(|error| error.to_string())?;
-            bundle::plan_install(
-                &directory,
-                &manifest,
-                &[],
-                &gui.platform,
-                &doctor::Here,
-                trust,
-            )
-            .map_err(|error| error.to_string())
+            bundle::plan_install(&directory, &manifest, &[], &gui.platform, &gui.host, trust)
+                .map_err(|error| error.to_string())
         })();
         match planned {
             Ok(planned) => prepare_plan(gui, &catalog, planned),
@@ -3038,6 +2916,7 @@ fn main() {
     let gui = Gui {
         catalog: RwLock::new(catalog),
         platform,
+        host: Host::here(),
         this,
         settings,
         favorites: Mutex::new(pinned),

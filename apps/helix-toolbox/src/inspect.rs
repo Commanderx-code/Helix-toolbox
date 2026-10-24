@@ -5,7 +5,8 @@ use anyhow::{Context, Result};
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::Entry;
 use helix_toolbox_engine::{
-    Probe, doctor, history,
+    Probe,
+    host::Host,
     reliability::{Assessment, Evidence, Level},
     trust::{self, Build, Fact, Inspection},
     updates::Install,
@@ -57,18 +58,19 @@ pub fn verify(
     ids: &[String],
     as_json: bool,
 ) -> Result<()> {
-    let records = history::read(1000).unwrap_or_default();
+    let host = Host::here();
+    let records = host.history(1000);
     let mut found = Vec::new();
     for id in ids {
         let entry = crate::find(catalog, id)?;
-        let rebooted = verification::rebooted_since(&doctor::Here, &records, &entry.id);
+        let rebooted = verification::rebooted_since(&host, &records, &entry.id);
         let checks = verification::check_entry(
             entry,
             platform,
             rebooted,
             &Probe::holds,
             &helix_toolbox_platform::binary_exists,
-            &doctor::Here,
+            &host,
         );
         found.push((entry, checks));
     }
@@ -115,7 +117,7 @@ pub fn verify(
 
 pub fn reliability(catalog: &Catalog, ids: &[String], critical: bool, as_json: bool) -> Result<()> {
     let evidence = Evidence::load(catalog.root());
-    let records = history::read(1000).unwrap_or_default();
+    let records = Host::here().history(1000);
     let mut rows = rows(catalog, &evidence, &records);
     if !ids.is_empty() {
         for id in ids {
@@ -187,14 +189,15 @@ pub fn assessment_json(assessment: &Assessment) -> Value {
 
 /// Inspect one entry on this machine.
 pub fn inspection(catalog: &Catalog, platform: &LinuxInfo, entry: &Entry) -> Inspection {
+    let host = Host::here();
     trust::inspect(
         entry,
         catalog.root(),
         platform,
         &build(),
-        &doctor::Here,
+        &host,
         &Evidence::load(catalog.root()),
-        &history::read(1000).unwrap_or_default(),
+        &host.history(1000),
     )
 }
 

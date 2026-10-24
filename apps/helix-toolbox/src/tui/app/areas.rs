@@ -411,7 +411,7 @@ impl App {
 
     /// The entries run recently, newest first, from the history.
     pub(in crate::tui::app) fn reload_recent(&mut self) {
-        self.take_recent(history::read(50).unwrap_or_default());
+        self.take_recent(self.host.history(50));
     }
 
     pub(in crate::tui::app) fn take_recent(&mut self, records: Vec<history::Record>) {
@@ -911,14 +911,10 @@ impl App {
 
     /// The change preview of a plan.
     pub(in crate::tui::app) fn show_effects(&mut self, planned: &Plan, from_confirmation: bool) {
-        let scripts = self.catalog.root().join("scripts");
-        let render =
-            |arguments: &[String]| helix_toolbox_engine::preview::render_with(&scripts, arguments);
-        let look = helix_toolbox_engine::preview::Look {
-            system: &doctor::Here,
-            render: &render,
-            pinned: &|name| helix_toolbox_engine::preview::pinned_source(&scripts, name),
-        };
+        let look = helix_toolbox_engine::preview::Look::of(
+            &self.host,
+            &self.catalog.root().join("scripts"),
+        );
         let steps = helix_toolbox_engine::preview::preview(
             planned,
             &|id| self.catalog.find(id),
@@ -929,7 +925,7 @@ impl App {
             .into_iter()
             .any(|name| {
                 matches!(
-                    helix_toolbox_engine::preview::pinned_source(&scripts, name),
+                    (look.pinned)(name),
                     helix_toolbox_engine::preview::Pinned::Missing { .. }
                 )
             });
@@ -969,7 +965,7 @@ impl App {
             return;
         };
         let rebooted = helix_toolbox_engine::verification::rebooted_since(
-            &doctor::Here,
+            &self.host,
             &self.run_history(),
             &entry.id,
         );
@@ -978,8 +974,8 @@ impl App {
             &self.platform,
             rebooted,
             &helix_toolbox_engine::Probe::holds,
-            &helix_toolbox_platform::binary_exists,
-            &doctor::Here,
+            &|tool| self.host.which(tool).is_some(),
+            &self.host,
         );
         let text = if checks.is_empty() {
             format!(

@@ -6,15 +6,7 @@ impl App {
     /// Read Home Manager in the background: its generations, its
     /// configuration's repository and the files it links.
     pub(in crate::tui::app) fn read_home(&mut self) {
-        if !self.examine_here {
-            self.build_home_rows();
-            return;
-        }
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = sender.send(home_manager::status(&doctor::Here, &repos::Here));
-        });
-        self.reading_home = Some(receiver);
+        self.reading_home = Some(self.read_host(|host| home_manager::status(&host, &repos::Here)));
         self.build_home_rows();
     }
 
@@ -86,7 +78,7 @@ impl App {
     fn home_enter(&mut self) {
         match self.selected_generation().cloned() {
             Some(generation) if !generation.current => {
-                let planned = home_manager::plan_activate(&doctor::Here, &generation);
+                let planned = home_manager::plan_activate(&self.host, &generation);
                 self.confirm_home(planned);
             }
             _ => self.describe_home(),
@@ -110,7 +102,9 @@ impl App {
             )));
             return;
         };
-        if !self.examine_here {
+        // Git is asked through its own seam, which a made-up host does not
+        // stand in for.
+        if !self.host.is_here() {
             return;
         }
         let planned = repos::details(&repos::Here, &repository.path)

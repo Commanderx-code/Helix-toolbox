@@ -4,7 +4,7 @@
 //! the kernels the machine can boot and Helix Toolbox's configuration
 //! backups are shown and never offered: what can undo a mistake stays.
 
-use crate::{Plan, Step, doctor::System, quote};
+use crate::{Plan, Step, doctor::System, host::Host, quote};
 use helix_toolbox_core::{PackageManager, Risk, printable, valid_package_name};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -122,8 +122,17 @@ fn run(system: &dyn System, command: &[&str]) -> Option<String> {
         .map(|(_, text)| text)
 }
 
-/// Read the machine: its file systems, what can be cleaned, what is kept.
-pub fn gather(system: &dyn System, manager: Option<PackageManager>) -> Storage {
+/// Read a host: its file systems, what can be cleaned, what is kept.
+pub fn gather_on(host: &Host, manager: Option<PackageManager>) -> Storage {
+    gather(host, manager, &host.backup_roots())
+}
+
+/// Read the machine, with its configuration backups looked for in `roots`.
+pub fn gather(
+    system: &dyn System,
+    manager: Option<PackageManager>,
+    roots: &crate::backups::Roots,
+) -> Storage {
     let home = system.user().2;
     let mut storage = Storage::default();
     if let Some((free, total)) = system.space(Path::new("/")) {
@@ -209,7 +218,7 @@ pub fn gather(system: &dyn System, manager: Option<PackageManager>) -> Storage {
             ..Item::default()
         });
     }
-    storage.kept = kept(system, &home);
+    storage.kept = kept(system, roots);
     storage
 }
 
@@ -399,7 +408,7 @@ fn flatpak_unused(system: &dyn System) -> Item {
     item
 }
 
-fn kept(system: &dyn System, home: &Path) -> Vec<Kept> {
+fn kept(system: &dyn System, roots: &crate::backups::Roots) -> Vec<Kept> {
     let mut kept = Vec::new();
     let modules = ["/usr/lib/modules", "/lib/modules"]
         .iter()
@@ -438,7 +447,7 @@ fn kept(system: &dyn System, home: &Path) -> Vec<Kept> {
             size: None,
         });
     }
-    let backups = crate::backups::discover(&crate::backups::Roots::here());
+    let backups = crate::backups::discover(roots);
     if !backups.is_empty() {
         kept.push(Kept {
             title: "Configuration backups".into(),
@@ -452,7 +461,6 @@ fn kept(system: &dyn System, home: &Path) -> Vec<Kept> {
                 .sum(),
         });
     }
-    let _ = home;
     kept
 }
 
@@ -641,6 +649,16 @@ fn to_owned(commands: Vec<Vec<&str>>) -> Vec<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Nowhere to look for configuration backups.
+    fn no_backups() -> crate::backups::Roots {
+        crate::backups::Roots {
+            user: Vec::new(),
+            home: None,
+            system: Vec::new(),
+            beside: Vec::new(),
+        }
+    }
     use std::collections::HashMap;
 
     #[derive(Default)]
@@ -763,7 +781,7 @@ mod tests {
     #[test]
     fn what_can_be_cleaned_and_what_it_frees() {
         let machine = arch();
-        let found = gather(&machine, Some(PackageManager::Arch));
+        let found = gather(&machine, Some(PackageManager::Arch), &no_backups());
         assert_eq!(found.filesystems[0].path, "/");
         let item = |id: &str| found.items.iter().find(|item| item.id == id).unwrap();
         assert_eq!(item("package-cache").size, Some(6_000_000));
@@ -790,7 +808,7 @@ mod tests {
     #[test]
     fn each_cleanup_is_a_plan_of_its_own_and_kernels_never_go() {
         let machine = arch();
-        let found = gather(&machine, Some(PackageManager::Arch));
+        let found = gather(&machine, Some(PackageManager::Arch), &no_backups());
         let item = |id: &str| {
             found
                 .items
@@ -832,7 +850,7 @@ mod tests {
             "rm -rf -- /home/me/.cache/paru/clone"
         );
         let empty = Fake::default();
-        let none = gather(&empty, Some(PackageManager::Arch));
+        let none = gather(&empty, Some(PackageManager::Arch), &no_backups());
         let trash = none.items.iter().find(|item| item.id == "trash").unwrap();
         assert!(
             plan(trash, None, &empty).is_err(),
@@ -851,7 +869,7 @@ mod tests {
             "dpkg-query -W -f=${Installed-Size}\n libold1".into(),
             "300\n".into(),
         );
-        let found = gather(&debian, Some(PackageManager::Debian));
+        let found = gather(&debian, Some(PackageManager::Debian), &no_backups());
         let unused = found
             .items
             .iter()
@@ -866,7 +884,7 @@ mod tests {
             "zypper --non-interactive --quiet packages --unneeded".into(),
             "S | Repository | Name | Version | Arch\n--+------------+------+---------+------\ni | repo-oss   | libx | 1.0     | x86_64\n".into(),
         );
-        let found = gather(&suse, Some(PackageManager::Suse));
+        let found = gather(&suse, Some(PackageManager::Suse), &no_backups());
         let unused = found
             .items
             .iter()

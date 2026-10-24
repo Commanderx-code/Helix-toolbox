@@ -202,7 +202,24 @@ the Install Plan into a profile, expanding profiles so none nests.
 `doctor::examine()` runs the health checks through a `System` (reading
 files, listing folders, links, a few read-only commands, a name lookup with a
 time limit, free space, owners, running processes); `Here` is this machine
-and `Fake` a made-up one for tests. Each check returns a `Diagnosis`: an id,
+and `Fake` a made-up one for tests.
+
+The engine's `host::Host` is what "this machine" means to every feature:
+a `System` together with the user's home, configuration and state
+folders, the environment (`SSH_CONNECTION`, `XDG_CURRENT_DESKTOP`) and the
+clock. `Host::here()` is the machine Helix Toolbox runs on;
+`Host::made_up()` wraps a `doctor::Fake`, with no environment, a clock
+that stands still and only the folders a test gives it. Features keep
+taking plain parts, which their own tests fill in, and build those parts
+from a host in an `of` or `_on` form: `drift::Sources::of`,
+`preview::Look::of`, `recovery::examine_on`, `performance::gather_on`,
+`services::plan_on`, `storage::gather_on`, `desktop::detect_on`. The
+command line makes a `Host::here()` where it needs one, and the terminal
+interface and the window each hold one, so the three read the machine the
+same way and none builds those parts by hand. The terminal interface reads
+through its host in the background (`read_host`); on a made-up host the
+read runs at once and its answer is taken between frames, so its screen
+tests go through the same reads as on a real machine. Each check returns a `Diagnosis`: an id,
 `Health` (good, notice, problem), a summary, the evidence, advice, and either
 a `Repair` (commands of quoted words, run as a one-step plan with its own
 confirmation) or a catalog entry that addresses it. The interface runs the

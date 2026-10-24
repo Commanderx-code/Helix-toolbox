@@ -6,12 +6,22 @@ directories, with `HOME`, `XDG_STATE_HOME` and `TMPDIR` pointed there. Real
 package installs happen only in the Distributions workflow's containers.
 `scripts/verify.sh` runs every local layer below; check its exit status.
 
+What a test's machine says comes from a made-up host
+(`host::Host::made_up`), never from this one: a `doctor::Fake` with the
+files, folders, commands and tools the test gives it, a home of its own,
+no environment, and a clock that stands still. It runs no renderer and
+finds no restic repository, and its configuration and state folders are
+the temporary ones a test names. Only `Host::here()` reads the real home,
+`/sys` or the environment: no test makes one in its own process, and the
+tests that run the built program point `HOME` and the XDG folders at
+temporary ones.
+
 ## Layers
 
 | Layer | Where | What it covers |
 | :--- | :--- | :--- |
 | Unit tests | each crate's `src/` | catalog validation, plans, the shell program, history, the inventory and the migration hub reading each package family from a made-up machine (`doctor::Fake`), the pseudo-terminal session, the unpacked-copy lock and sweep; the run session through the mock runner (concluded once, recorded once, processes left running recorded, the checks for after the reboot kept even without a marker, the queue's remainder and what to read again, a stop, missing requirements); the confirmation, and the command line printing it word for word (`src/confirm.rs`); the execution events in a pseudo-terminal with a consumer that does not read until the end, 12 MB of output, a stopped run whose child ignores the hangup, a dropped handle, a failed step and what it skips, a resize and a hidden password prompt |
-| Screen tests | `apps/helix-toolbox/src/tui/` | the interface drawn into a test backend: keys, screens, popups, the small-terminal warning |
+| Screen tests | `apps/helix-toolbox/src/tui/` | the interface drawn into a test backend: keys, screens, popups, the small-terminal warning; each test's interface runs on a made-up host (`Host::made_up`, below), whose files and commands are the test's, and opens its screens through the same reads as on a real machine |
 | Engine end to end | `apps/helix-toolbox/tests/end_to_end.rs` | fixture plans run through the run session every interface uses, with the mock runner and a real shell, and a confirmed queue whose profile's unfinished entries stay queued |
 | What 1.x promises | `apps/helix-toolbox/tests/contracts.rs` | what [STABILITY.md](STABILITY.md) promises, against the built program: every `--json` command's shape compared with the one saved in `tests/contracts/json` (fields may be added, never removed or given another kind), and the settings, favorites, history, profile, baseline and look files as 1.0, 1.1 and 1.4 wrote them (`tests/contracts/files`) read back, with settings a release does not know kept. A new command's shape is saved with `HELIX_TOOLBOX_BLESS_CONTRACTS=1 cargo test --test contracts`; a saved one is never rewritten |
 | Program in a terminal | `apps/helix-toolbox/tests/terminal.rs` | the built `helix-toolbox` driven through a pseudo-terminal, below |

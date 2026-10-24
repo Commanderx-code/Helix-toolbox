@@ -28,6 +28,7 @@ use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, Item, NativeAction, printable};
 use helix_toolbox_engine::{
     Machine, PackageState, Plan, backups, doctor, history,
+    host::Host,
     inventory::{Inventory, Status, which},
     package_state, plan, plan_removal, profiles, release, run_native, updates,
 };
@@ -993,10 +994,7 @@ fn main() -> Result<()> {
         Command::Backups if as_json => {
             json::print(
                 "backups",
-                json::backups(
-                    backups::Snapshots::here(),
-                    &backups::discover(&backups::Roots::here()),
-                ),
+                json::backups(backups::Snapshots::here(), &Host::here().backups()),
             );
             Ok(())
         }
@@ -1011,7 +1009,7 @@ fn main() -> Result<()> {
                     "Snapshots: neither Snapper (with a root configuration) nor Timeshift is set up, so none are taken.\n"
                 ),
             }
-            let found = backups::discover(&backups::Roots::here());
+            let found = Host::here().backups();
             if found.is_empty() {
                 println!("No backups found.");
             }
@@ -1033,7 +1031,8 @@ fn main() -> Result<()> {
         } => {
             let catalog = load(false)?;
             // Only a backup Helix Toolbox finds can be restored, never any path.
-            let found = backups::discover(&backups::Roots::here())
+            let found = Host::here()
+                .backups()
                 .into_iter()
                 .find(|known| known.backup == backup)
                 .with_context(|| {
@@ -1272,7 +1271,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::Report { no_checks, .. } => {
-            let found = report::gather(&platform, !no_checks);
+            let found = report::gather(&Host::here(), &platform, !no_checks);
             if as_json {
                 json::print("report", found);
             } else {
@@ -1548,17 +1547,11 @@ fn effects(
     platform: &LinuxInfo,
     planned: &Plan,
 ) -> Vec<helix_toolbox_engine::preview::StepPreview> {
-    let scripts = catalog.root().join("scripts");
-    let render =
-        |arguments: &[String]| helix_toolbox_engine::preview::render_with(&scripts, arguments);
+    let host = Host::here();
     helix_toolbox_engine::preview::preview(
         planned,
         &|id| catalog.find(id),
         platform,
-        &helix_toolbox_engine::preview::Look {
-            system: &doctor::Here,
-            render: &render,
-            pinned: &|name| helix_toolbox_engine::preview::pinned_source(&scripts, name),
-        },
+        &helix_toolbox_engine::preview::Look::of(&host, &catalog.root().join("scripts")),
     )
 }

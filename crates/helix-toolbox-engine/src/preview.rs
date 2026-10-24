@@ -97,14 +97,31 @@ pub enum Tag {
     Added,
 }
 
+/// Runs one of the installers' renderers with these arguments: the new
+/// contents of a file, or why not.
+pub type Render<'a> = Box<dyn Fn(&[String]) -> Result<String, String> + 'a>;
+
 /// What the preview asks the machine; tests answer instead.
 pub struct Look<'a> {
     pub system: &'a dyn System,
     /// Run one of the installers' `configure.py` renderers, which only
     /// print: the new contents of a file, or why not.
-    pub render: &'a dyn Fn(&[String]) -> Result<String, String>,
+    pub render: Render<'a>,
     /// Where a pinned source `fetch_source` downloads is on this machine.
-    pub pinned: &'a dyn Fn(&str) -> Pinned,
+    pub pinned: Box<dyn Fn(&str) -> Pinned + 'a>,
+}
+
+impl<'a> Look<'a> {
+    /// What the preview asks a host, with the renderers and pinned sources
+    /// of the scripts folder `scripts`.
+    pub fn of(host: &'a crate::host::Host, scripts: &Path) -> Self {
+        let (rendering, pinning) = (scripts.to_path_buf(), scripts.to_path_buf());
+        Look {
+            system: host,
+            render: Box::new(move |arguments| host.render(&rendering, arguments)),
+            pinned: Box::new(move |name| host.pinned(&pinning, name)),
+        }
+    }
 }
 
 /// A pinned source, as found on this machine.
@@ -848,7 +865,7 @@ pub fn pinned_source(scripts: &Path, name: &str) -> Pinned {
     }
 }
 
-fn pinned_in(scripts: &Path, sources: &Path, name: &str) -> Pinned {
+pub(crate) fn pinned_in(scripts: &Path, sources: &Path, name: &str) -> Pinned {
     let Some((_, repository, revision)) = crate::trust::pins(scripts)
         .into_iter()
         .find(|(pinned, _, _)| pinned == name)
@@ -1238,8 +1255,8 @@ mod tests {
         };
         let look = Look {
             system: &fake,
-            render: &render,
-            pinned: &|_| Pinned::Unusable("none".into()),
+            render: Box::new(render),
+            pinned: Box::new(|_| Pinned::Unusable("none".into())),
         };
         let planned = crate::plan_with(
             [entry],
@@ -1288,8 +1305,8 @@ mod tests {
         let render = |_: &[String]| Err("none".to_string());
         let look = Look {
             system: &fake,
-            render: &render,
-            pinned: &|_| Pinned::Unusable("none".into()),
+            render: Box::new(render),
+            pinned: Box::new(|_| Pinned::Unusable("none".into())),
         };
         let planned = crate::plan_with(
             [catalog.find("neovim").unwrap()],
@@ -1337,8 +1354,8 @@ mod tests {
         let render = |_: &[String]| Err("none".to_string());
         let look = Look {
             system: &fake,
-            render: &render,
-            pinned: &|_| Pinned::Unusable("none".into()),
+            render: Box::new(render),
+            pinned: Box::new(|_| Pinned::Unusable("none".into())),
         };
         let found = preview(
             &crate::backups::plan_restore(&backup),
@@ -1395,11 +1412,11 @@ mod tests {
         };
         let look = Look {
             system: &fake,
-            render: &render,
-            pinned: &|name| {
+            render: Box::new(render),
+            pinned: Box::new(|name| {
                 assert_eq!(name, "dotfiles");
                 Pinned::Here(PathBuf::from("/sources/dotfiles"))
-            },
+            }),
         };
         let planned = dotfiles_plan(&catalog, "dotfiles-nvim");
         let found = preview(&planned, &|id| catalog.find(id), &arch(), &look);
@@ -1455,11 +1472,11 @@ mod tests {
         let render = |_: &[String]| -> Result<String, String> { panic!("nothing to render") };
         let look = Look {
             system: &fake,
-            render: &render,
-            pinned: &|_| Pinned::Missing {
+            render: Box::new(render),
+            pinned: Box::new(|_| Pinned::Missing {
                 repository: "Commanderx-code/dotfiles".into(),
                 revision: "42eea7a576fcdc1fefe8ff70d73bf417f5fdc89c".into(),
-            },
+            }),
         };
         let planned = dotfiles_plan(&catalog, "dotfiles-starship");
         let found = preview(&planned, &|id| catalog.find(id), &arch(), &look);
@@ -1480,8 +1497,8 @@ mod tests {
         };
         let look = Look {
             system: &fake,
-            render: &refused,
-            pinned: &|_| Pinned::Here(PathBuf::from("/sources/dotfiles")),
+            render: Box::new(refused),
+            pinned: Box::new(|_| Pinned::Here(PathBuf::from("/sources/dotfiles"))),
         };
         let found = preview(&planned, &|id| catalog.find(id), &arch(), &look);
         assert!(found[0].changes[0].text.ends_with(

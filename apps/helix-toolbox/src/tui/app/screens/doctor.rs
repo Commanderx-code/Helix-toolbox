@@ -5,15 +5,8 @@ use super::super::*;
 impl App {
     /// Run the health checks in the background.
     pub(in crate::tui::app) fn examine(&mut self) {
-        if !self.examine_here {
-            return;
-        }
         let manager = self.platform.manager;
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = sender.send(doctor::examine(&doctor::Here, manager));
-        });
-        self.examining = Some(receiver);
+        self.examining = Some(self.read_host(move |host| doctor::examine_on(&host, manager)));
     }
 
     /// The Helix Doctor area's entries, shown below the checks.

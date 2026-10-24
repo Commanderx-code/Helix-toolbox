@@ -485,6 +485,11 @@ pub struct DisplayManager {
     pub theme: Option<String>,
 }
 
+/// `detect` on a host, from its environment.
+pub fn detect_on(host: &crate::host::Host) -> Desktop {
+    detect(host, &|name| host.variable(name))
+}
+
 /// Read the desktop. `environment` answers for `XDG_*` variables.
 pub fn detect(system: &dyn System, environment: &dyn Fn(&str) -> Option<String>) -> Desktop {
     let processes = system.processes();
