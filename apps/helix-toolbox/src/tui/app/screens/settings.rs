@@ -77,7 +77,7 @@ impl App {
             ),
             (
                 "Back up with restic on a timer".to_string(),
-                self.restic_timer_label(),
+                self.screens.restic.timer_label(&self.host),
             ),
             ("Setup wizard".to_string(), "Enter opens it".to_string()),
             (
@@ -205,7 +205,7 @@ impl App {
                     Some(restic::Every::Day) => Some(restic::Every::Week),
                     Some(restic::Every::Week) => None,
                 };
-                self.set_restic_timer(next);
+                self.with_screens(|screens, cx| screens.restic.set_timer(cx, next));
             }
             10 => self.open_wizard(false),
             11 => self.make_report(),
@@ -226,7 +226,8 @@ impl App {
 
     /// The saved baselines' file names, for the Drift choice.
     fn baseline_slugs(&self) -> Vec<String> {
-        self.drift_dir()
+        self.host
+            .baselines()
             .map(|directory| {
                 drift::load_all(&directory)
                     .0

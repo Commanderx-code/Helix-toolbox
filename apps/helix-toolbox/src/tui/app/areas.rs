@@ -472,19 +472,7 @@ impl App {
 
     /// Add an entry to the Install Plan, or take it out.
     pub(in crate::tui::app) fn toggle_queued(&mut self, entry: Entry) {
-        if !entry.multi_select {
-            self.popup = Some(Popup::Text(TextPopup::new(
-                entry.name.clone(),
-                "This entry runs on its own and cannot be queued with others. Press Enter to run it.",
-                true,
-            )));
-            return;
-        }
-        if let Some(position) = self.queue.iter().position(|other| other.id == entry.id) {
-            self.queue.remove(position);
-        } else {
-            self.queue.push(entry);
-        }
+        screens::toggle_queued(&mut self.queue, &mut self.popup, entry);
     }
 
     /// Move the selected Install Plan entry earlier (-1) or later (1), as
@@ -793,20 +781,12 @@ impl App {
             Act::UpdatesOnline => {
                 self.open_screen(Screen::Updates);
                 self.focus = Focus::Main;
-                self.gather_updates(true);
+                self.with_screens(|screens, cx| screens.updates.gather(cx, true));
             }
             Act::Doctor(wanted) => {
                 self.open_screen(Screen::Doctor);
                 self.focus = Focus::Main;
-                if let Some(wanted) = wanted {
-                    if self.diagnoses.is_empty() || self.examining.is_some() {
-                        self.doctor_wanted = Some(wanted);
-                    } else {
-                        self.show_check(wanted);
-                    }
-                } else if !self.diagnoses.is_empty() {
-                    self.examine();
-                }
+                self.with_screens(|screens, cx| screens.doctor.want(cx, wanted));
             }
             Act::SaveBaseline => {
                 self.open_screen(Screen::Drift);
@@ -891,22 +871,48 @@ impl App {
         true
     }
 
-    /// Select a health check by id (or the first whose id starts with it)
-    /// and show its details.
-    pub(in crate::tui::app) fn show_check(&mut self, wanted: &str) {
-        let found = self
-            .diagnoses
-            .iter()
-            .position(|diagnosis| diagnosis.id == wanted)
-            .or_else(|| {
-                self.diagnoses
-                    .iter()
-                    .position(|diagnosis| diagnosis.id.starts_with(wanted))
-            });
-        if let Some(index) = found {
-            self.main_state.select(Some(index));
-            self.describe_diagnosis();
-        }
+    /// This build's testing record, read on first use.
+    pub(in crate::tui::app) fn evidence(&self) -> reliability::Evidence {
+        screens::evidence(&self.evidence, &self.catalog)
+    }
+
+    pub(in crate::tui::app) fn run_history(&self) -> Vec<history::Record> {
+        self.host.history(1000)
+    }
+
+    /// The trust inspector for an entry.
+    pub(in crate::tui::app) fn inspect(&mut self, id: &str) {
+        let Some(entry) = self.catalog.find(id).cloned() else {
+            return;
+        };
+        let evidence = self.evidence();
+        let records = self.run_history();
+        // How this copy was installed is the running program's, which is on
+        // this machine only.
+        let build = if self.host.is_here() {
+            crate::inspect::build()
+        } else {
+            helix_toolbox_engine::trust::Build {
+                version: crate::VERSION.to_string(),
+                release: false,
+                commit: None,
+                install: helix_toolbox_engine::updates::Install::Other,
+            }
+        };
+        let found = helix_toolbox_engine::trust::inspect(
+            &entry,
+            self.catalog.root(),
+            &self.platform,
+            &build,
+            &self.host,
+            &evidence,
+            &records,
+        );
+        self.popup = Some(Popup::Text(TextPopup::new(
+            format!("Trust: {}", entry.name),
+            crate::inspect::text(&found),
+            true,
+        )));
     }
 
     /// The change preview of a plan.

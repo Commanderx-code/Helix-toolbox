@@ -202,7 +202,9 @@ impl App {
                 match popup.handle_key(key) {
                     Answer::Typing => {}
                     Answer::Canceled => self.popup = None,
-                    Answer::Given(name) => self.save_look_as(&name),
+                    Answer::Given(name) => {
+                        self.with_screens(|screens, cx| screens.desktop.save_look_as(cx, &name))
+                    }
                 }
                 return true;
             }
@@ -214,22 +216,15 @@ impl App {
                     Answer::Typing => {}
                     Answer::Canceled => {
                         self.popup = None;
-                        self.firmware_pending = None;
+                        self.with_screens(|screens, cx| {
+                            screens.hardware.confirm_firmware(cx, None)
+                        });
                     }
                     Answer::Given(word) => {
                         self.popup = None;
-                        match self.firmware_pending.take() {
-                            Some(planned) if word.trim() == "FIRMWARE" => {
-                                self.confirm_plan(Ok(planned))
-                            }
-                            _ => {
-                                self.popup = Some(Popup::Text(TextPopup::new(
-                                    "Not confirmed",
-                                    "The firmware update needs the word FIRMWARE, in capitals. Nothing was changed.",
-                                    true,
-                                )))
-                            }
-                        }
+                        self.with_screens(|screens, cx| {
+                            screens.hardware.confirm_firmware(cx, Some(&word))
+                        });
                     }
                 }
                 return true;
@@ -241,7 +236,9 @@ impl App {
                 match popup.handle_key(key) {
                     Answer::Typing => {}
                     Answer::Canceled => self.popup = None,
-                    Answer::Given(name) => self.save_baseline(&name),
+                    Answer::Given(name) => {
+                        self.with_screens(|screens, cx| screens.drift.save_baseline(cx, &name))
+                    }
                 }
                 return true;
             }
@@ -586,466 +583,6 @@ impl App {
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
-            Screen::History => match key.code {
-                KeyCode::Enter => self.show_log(),
-                KeyCode::Char('w') => {
-                    if let Some(record) = self
-                        .main_state
-                        .selected()
-                        .and_then(|index| self.records.get(index))
-                        .cloned()
-                    {
-                        self.report_worked(&record, None);
-                    }
-                }
-                KeyCode::Char('r') => self.reload_history(),
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
-            },
-            Screen::Doctor => match key.code {
-                KeyCode::Enter => match self.selected_diagnosis() {
-                    Some(_) => self.describe_diagnosis(),
-                    None => {
-                        let index = self
-                            .main_state
-                            .selected()
-                            .unwrap_or(0)
-                            .saturating_sub(self.diagnoses.len());
-                        if let Some(entry) = self.doctor_entries().get(index).cloned() {
-                            self.confirm(vec![entry]);
-                        }
-                    }
-                },
-                KeyCode::Char('f') => self.repair_selected(),
-                KeyCode::Char('r') => self.examine(),
-                KeyCode::Char('d') | KeyCode::Char('D') => match self.selected_diagnosis() {
-                    Some(_) => self.describe_diagnosis(),
-                    None => self.describe(),
-                },
-                // A report row is an entry like any other.
-                KeyCode::Char('p') | KeyCode::Char('P') => self.preview(),
-                KeyCode::Char('v') => {
-                    if let Some(id) = self.selected_entry().map(|entry| entry.id.clone()) {
-                        self.inspect(&id);
-                    }
-                }
-                KeyCode::Char(' ') => self.toggle_queue(),
-                KeyCode::Char('*') => self.toggle_favorite(),
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
-            },
-            Screen::Updates => match (key.code, self.selected_update_row()) {
-                (KeyCode::Enter | KeyCode::Char('u'), UpdateRow::Entry(entry)) => {
-                    self.update(vec![*entry])
-                }
-                (KeyCode::Char('d') | KeyCode::Char('D'), UpdateRow::Entry(_)) => self.describe(),
-                (KeyCode::Enter, UpdateRow::Every) => {
-                    let waiting = self.entries_with_updates().into_iter().cloned().collect();
-                    self.update(waiting);
-                }
-                (code, _) => match code {
-                    KeyCode::Enter | KeyCode::Char('d') => self.describe_channel(),
-                    KeyCode::Char('u') => match self.selected_channel().cloned() {
-                        Some(channel) if channel.commands.is_empty() => {
-                            self.popup = Some(Popup::Text(TextPopup::new(
-                                "Nothing to run",
-                                format!("{}: {}", channel.name, channel.note),
-                                true,
-                            )));
-                        }
-                        Some(channel) => self.confirm_plan(Ok(updates::plan(&[&channel]))),
-                        None => {}
-                    },
-                    KeyCode::Char('U') => self.update_every_channel(),
-                    KeyCode::Char('r') => self.gather_updates(true),
-                    KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                    _ => {}
-                },
-            },
-            Screen::Desktop => match key.code {
-                KeyCode::Enter | KeyCode::Char('d') => match self.selected_desktop_row().cloned() {
-                    Some(DesktopRow::Info { text, details }) => {
-                        self.popup = Some(Popup::Text(TextPopup::new(text, details, true)));
-                    }
-                    Some(DesktopRow::Entry { id, .. }) => {
-                        if let Some(entry) = self.catalog.find(&id).cloned() {
-                            self.confirm(vec![entry]);
-                        }
-                    }
-                    Some(DesktopRow::Look { slug, .. }) => self.apply_look(&slug),
-                    _ => {}
-                },
-                KeyCode::Char(' ') => {
-                    if let Some(DesktopRow::Entry { id, .. }) = self.selected_desktop_row().cloned()
-                        && let Some(entry) = self.catalog.find(&id).cloned()
-                    {
-                        self.toggle_queued(entry);
-                        self.reload_desktop();
-                    }
-                }
-                KeyCode::Char('s') => {
-                    self.popup = Some(Popup::LookName(InputPopup::new(
-                        "Save this look",
-                        "A name for the desktop's look (it is saved in ~/.config/helix-toolbox/looks):",
-                    )));
-                }
-                KeyCode::Char('r') => self.reload_desktop(),
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
-            },
-            Screen::Hardware => match key.code {
-                KeyCode::Enter | KeyCode::Char('d') => {
-                    if let Some(HardwareRow::Item { text, details, .. }) = self.selected_hardware()
-                    {
-                        self.popup = Some(Popup::Text(TextPopup::new(
-                            text.clone(),
-                            details.clone(),
-                            true,
-                        )));
-                    }
-                }
-                KeyCode::Char('f') => {
-                    if let Some(HardwareRow::Item {
-                        act: Some(HardwareAct::Firmware(index)),
-                        ..
-                    }) = self.selected_hardware()
-                        && let Some(update) = self
-                            .hardware
-                            .as_ref()
-                            .and_then(|found| found.firmware.updates.get(*index))
-                        && let Some(planned) = helix_toolbox_engine::hardware::plan_firmware(update)
-                    {
-                        let prompt = format!(
-                            "Updating firmware can leave {} unusable if it is interrupted. Keep the machine on mains power. Type FIRMWARE to see the plan:",
-                            update.device
-                        );
-                        self.firmware_pending = Some(planned);
-                        self.popup = Some(Popup::FirmwareWord(InputPopup::new(
-                            "Firmware update",
-                            prompt,
-                        )));
-                    }
-                }
-                KeyCode::Char('s') => {
-                    if let Some(HardwareRow::Item {
-                        act: Some(HardwareAct::Smart(disk)),
-                        ..
-                    }) = self.selected_hardware()
-                        && let Some(planned) = helix_toolbox_engine::hardware::plan_smart(disk)
-                    {
-                        self.confirm_plan(Ok(planned));
-                    }
-                }
-                KeyCode::Char('r') => self.read_hardware(),
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
-            },
-            Screen::Reliability => match key.code {
-                KeyCode::Enter | KeyCode::Char('d') => self.describe_reliability(),
-                KeyCode::Char('v') => {
-                    if let Some((id, _, _)) = self
-                        .main_state
-                        .selected()
-                        .and_then(|index| self.reliability_rows.get(index))
-                    {
-                        let id = id.clone();
-                        self.inspect(&id);
-                    }
-                }
-                KeyCode::Char('i') => {
-                    self.coverage = self.coverage.next();
-                    self.main_state.select(Some(0));
-                    self.reload_reliability();
-                }
-                KeyCode::Char('w') => {
-                    if let Some((id, name, _)) = self
-                        .main_state
-                        .selected()
-                        .and_then(|index| self.reliability_rows.get(index))
-                        .cloned()
-                    {
-                        match hardware_report::last_success(&self.run_history(), &id).cloned() {
-                            Some(record) => self.report_worked(&record, Some(&id)),
-                            None => {
-                                self.popup = Some(Popup::Text(TextPopup::new(
-                                    "Not run here",
-                                    format!(
-                                        "A hardware report comes from a run that worked on this machine, and {name} has no successful run in this machine's history."
-                                    ),
-                                    true,
-                                )))
-                            }
-                        }
-                    }
-                }
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
-            },
-            Screen::Drift => match key.code {
-                KeyCode::Enter | KeyCode::Char('d') => self.describe_difference(),
-                KeyCode::Char(' ') => {
-                    if let Some(difference) = self.selected_difference()
-                        && restorable(difference.kind)
-                        && let Some(entry) = difference
-                            .entry
-                            .as_deref()
-                            .and_then(|id| self.catalog.find(id))
-                            .cloned()
-                    {
-                        self.toggle_queued(entry);
-                    }
-                }
-                KeyCode::Char('a') => self.queue_missing(),
-                KeyCode::Char('R') => self.run_missing(),
-                KeyCode::Char('b') => self.next_drift_target(1),
-                KeyCode::Char('B') => self.next_drift_target(-1),
-                KeyCode::Char('s') => {
-                    self.popup = Some(Popup::BaselineName(InputPopup::new(
-                        "Save this machine as a baseline",
-                        "A name for the baseline (it is saved in ~/.config/helix-toolbox/baselines):",
-                    )));
-                }
-                KeyCode::Char('r') => {
-                    self.reload_drift();
-                    self.refresh_statuses();
-                }
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
-            },
-            Screen::Backups => match key.code {
-                KeyCode::Enter => {
-                    if let Some(backup) = self.selected_backup().cloned() {
-                        self.confirm_plan(Ok(backups::plan_restore(&backup)));
-                    }
-                }
-                KeyCode::Char('d') => self.describe_backup(),
-                KeyCode::Char('e') => {
-                    if let Some(backup) = self.selected_backup().cloned() {
-                        self.show_effects(&backups::plan_restore(&backup), false);
-                    }
-                }
-                KeyCode::Char('r') => self.reload_backups(),
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
-            },
-            Screen::Services => match key.code {
-                KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') | KeyCode::Right => {
-                    match self.selected_service_row() {
-                        Some(ServiceRow::Unit(index)) => self.describe_unit(index),
-                        Some(ServiceRow::Autostart(index)) => self.switch_autostart(index),
-                        _ => {}
-                    }
-                }
-                KeyCode::Char('d') | KeyCode::Char('D') => match self.selected_service_row() {
-                    Some(ServiceRow::Unit(index)) => self.describe_unit(index),
-                    Some(ServiceRow::Autostart(index)) => self.describe_autostart(index),
-                    _ => {}
-                },
-                KeyCode::Char('s') => {
-                    if let Some(ServiceRow::Unit(index)) = self.selected_service_row()
-                        && let Some(unit) = self.unit(index)
-                    {
-                        let verb = if unit.running() {
-                            Verb::Stop
-                        } else {
-                            Verb::Start
-                        };
-                        self.change_unit(index, verb);
-                    }
-                }
-                KeyCode::Char('e') => {
-                    if let Some(ServiceRow::Unit(index)) = self.selected_service_row()
-                        && let Some(unit) = self.unit(index)
-                        && unit.switchable()
-                    {
-                        let verb = if unit.enabled() {
-                            Verb::Disable
-                        } else {
-                            Verb::Enable
-                        };
-                        self.change_unit(index, verb);
-                    }
-                }
-                KeyCode::Char('R') => {
-                    if let Some(ServiceRow::Unit(index)) = self.selected_service_row() {
-                        self.change_unit(index, Verb::Restart);
-                    }
-                }
-                KeyCode::Char('i') => {
-                    self.service_view = self.service_view.next();
-                    self.main_state.select(Some(0));
-                    self.build_service_rows();
-                }
-                KeyCode::Char('f') => {
-                    self.popup = Some(Popup::Ask(
-                        InputPopup::new(
-                            "Filter",
-                            "Only units and applications whose name or description has (blank for all):",
-                        )
-                        .with_value(self.service_filter.clone())
-                        .answering("Filter"),
-                        Asked::ServiceFilter,
-                    ));
-                }
-                KeyCode::Char('r') => self.reload_services(),
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
-            },
-            Screen::Storage => match key.code {
-                KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') | KeyCode::Right => {
-                    self.clean_selected()
-                }
-                KeyCode::Char('d') => self.describe_storage(),
-                KeyCode::Char('r') => self.read_storage(),
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
-            },
-            Screen::Performance => match key.code {
-                KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') | KeyCode::Right => {
-                    self.act_on_performance()
-                }
-                KeyCode::Char('d') => self.describe_performance(),
-                KeyCode::Char('b') => {
-                    let earlier = self.earlier_boots().len();
-                    if earlier > 1 {
-                        self.performance_against = (self.performance_against + 1) % earlier;
-                        self.build_performance_rows();
-                    }
-                }
-                KeyCode::Char('r') => self.read_performance(),
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
-            },
-            Screen::Recovery => match key.code {
-                KeyCode::Enter | KeyCode::Char('d') | KeyCode::Char('l') | KeyCode::Right => {
-                    if let Some(check) = self.selected_readiness().cloned() {
-                        self.show_diagnosis(&check);
-                    }
-                }
-                KeyCode::Char('f') => {
-                    if let Some(entry) = self
-                        .selected_readiness()
-                        .and_then(|check| check.entry.as_deref())
-                        .and_then(|id| self.catalog.find(id))
-                        .cloned()
-                    {
-                        self.confirm(vec![entry]);
-                    }
-                }
-                KeyCode::Char('c') => match self.snapshots_here() {
-                    Some(tool) => self.confirm_plan(Ok(recovery::plan_check(tool))),
-                    None => {
-                        self.popup = Some(Popup::Text(TextPopup::new(
-                            "No snapshots",
-                            "Neither Snapper (with a root configuration) nor Timeshift is set up, so there are no snapshots to check.",
-                            true,
-                        )))
-                    }
-                },
-                KeyCode::Char('r') => self.reload_recovery(),
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
-            },
-            Screen::Migration => match key.code {
-                KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
-                    match self.selected_migration_item() {
-                        Some(item) if item.standing == Standing::Install => self.apply_migration(),
-                        Some(_) => self.describe_migration(),
-                        None => {}
-                    }
-                }
-                KeyCode::Char('d') => self.describe_migration(),
-                KeyCode::Char('e') => {
-                    let name = self
-                        .migration_here
-                        .as_ref()
-                        .map(migration::file_name)
-                        .unwrap_or_else(|| "helix-toolbox-migration.toml".to_string());
-                    self.popup = Some(Popup::Ask(
-                        InputPopup::new(
-                            "Export this machine",
-                            "The file to write its entries, Flatpaks and packages to, to take to the other machine:",
-                        )
-                        .with_value(format!("~/{name}"))
-                        .path()
-                        .answering("Export"),
-                        Asked::ExportMigration,
-                    ));
-                }
-                KeyCode::Char('o') => {
-                    let mut ask = InputPopup::new(
-                        "Open a migration",
-                        "The migration file made on the other machine, such as ~/helix-toolbox-migration.toml:",
-                    )
-                    .path()
-                    .answering("Open");
-                    if let Some((path, _)) = &self.migration_opened {
-                        ask = ask.with_value(path.display().to_string());
-                    }
-                    self.popup = Some(Popup::Ask(ask, Asked::OpenMigration));
-                }
-                KeyCode::Char('a') => self.apply_migration(),
-                KeyCode::Char('r') => self.reload_migration(),
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
-            },
-            Screen::Restic => match key.code {
-                KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.open_restic_row(),
-                KeyCode::Char('R') => self.ask_restore(),
-                KeyCode::Char('F') => self.ask_restore_from(),
-                KeyCode::Char('i') => {
-                    self.restic_ignore_case = !self.restic_ignore_case;
-                    match self
-                        .restic_search
-                        .as_ref()
-                        .map(|(pattern, _)| pattern.clone())
-                    {
-                        Some(pattern) => self.search_restic(pattern),
-                        None => self.build_restic_rows(),
-                    }
-                }
-                KeyCode::Char('d') => self.describe_restic(),
-                KeyCode::Char('b') => self.plan_restic(restic::plan_backup),
-                KeyCode::Char('c') => self.plan_restic(restic::plan_check),
-                KeyCode::Char('s') if self.restic_config().is_some() => {
-                    let mut ask = InputPopup::new(
-                        "A file's history",
-                        "A file name or path to look for in every snapshot, with * wildcards, such as notes.txt:",
-                    )
-                    .answering("Look");
-                    if let Some((pattern, _)) = &self.restic_search {
-                        ask = ask.with_value(pattern.clone());
-                    }
-                    self.popup = Some(Popup::Ask(ask, Asked::ResticHistory));
-                }
-                KeyCode::Char('n') => {
-                    self.popup = Some(Popup::Ask(
-                        InputPopup::new(
-                            "Record a baseline",
-                            "A file of your home folder whose SHA-256 to record, to test restores of it against:",
-                        )
-                        .path()
-                        .answering("Record"),
-                        Asked::ResticBaseline,
-                    ));
-                }
-                KeyCode::Char('v') => self.ask_test(),
-                KeyCode::Char('w') => self.toggle_restic_timer(restic::Every::Day),
-                KeyCode::Char('W') => self.toggle_restic_timer(restic::Every::Week),
-                KeyCode::Char('r') => self.read_restic(),
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
-            },
-            Screen::Repositories => self.repo_key(key.code),
-            Screen::Configs => self.config_key(key.code),
-            Screen::HomeManager => self.home_key(key.code),
-            Screen::Bundles => match key.code {
-                KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') | KeyCode::Right => {
-                    self.bundle_enter()
-                }
-                KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-                _ => {}
-            },
             Screen::Settings => match key.code {
                 KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') | KeyCode::Right => {
                     self.change_setting()
@@ -1053,6 +590,9 @@ impl App {
                 KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
                 _ => {}
             },
+            _ => {
+                self.with_tool(|tool, cx| tool.key(cx, key.code));
+            }
         }
     }
 

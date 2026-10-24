@@ -1,11 +1,83 @@
 //! The Restic screen.
 
 use super::super::*;
+use super::{Ask, Cx, Read, ToolScreen, View};
+use std::sync::Arc;
 
-impl App {
+/// Restic backups of your own files, and recovery tests.
+pub(in crate::tui::app) struct Restic {
+    /// The repository as last read.
+    pub(in crate::tui::app) reading: Option<ResticReading>,
+    loading: Read<ResticReading>,
+    /// The snapshot folder shown.
+    browse: Option<ResticBrowse>,
+    browsing: Read<ResticBrowse>,
+    /// The last search for a file's history.
+    search: Option<ResticSearch>,
+    /// Whether that search ignores upper and lower case.
+    pub(in crate::tui::app) ignore_case: bool,
+    searching: Read<ResticSearch>,
+    pub(in crate::tui::app) rows: Vec<ResticRow>,
+    /// What runs restic: restic itself, or a test's stand-in.
+    pub(in crate::tui::app) runner: Arc<dyn restic::Restic + Send + Sync>,
+}
+
+impl Default for Restic {
+    fn default() -> Self {
+        Self {
+            reading: None,
+            loading: Read::default(),
+            browse: None,
+            browsing: Read::default(),
+            search: None,
+            ignore_case: false,
+            searching: Read::default(),
+            rows: Vec::new(),
+            runner: Arc::new(restic::Here),
+        }
+    }
+}
+
+/// A line of the Restic screen.
+#[derive(Clone, Debug)]
+pub(in crate::tui::app) enum ResticRow {
+    Heading(String),
+    Text(String),
+    Snapshot(usize),
+    /// The browsed folder's parent.
+    Up,
+    Node(usize),
+    /// A version of a file the search found: the file, then the version.
+    Version(usize, usize),
+    Baseline(usize),
+}
+
+/// The repository as last read, and what restic said of it.
+#[derive(Clone, Debug)]
+pub(in crate::tui::app) struct ResticReading {
+    pub(in crate::tui::app) found: restic::Found,
+    pub(in crate::tui::app) snapshots: Result<Vec<restic::Snapshot>, String>,
+    /// Whether this restic restores without overwriting (0.17 and later).
+    pub(in crate::tui::app) restores: bool,
+    pub(in crate::tui::app) timer: Option<restic::Every>,
+    pub(in crate::tui::app) baselines: Vec<restic::Baseline>,
+}
+
+/// A folder of a snapshot, and what it holds.
+#[derive(Clone, Debug)]
+struct ResticBrowse {
+    snapshot: restic::Snapshot,
+    folder: String,
+    nodes: Result<Vec<restic::Node>, String>,
+}
+
+/// A search for a file's history, and what it found.
+type ResticSearch = (String, Result<Vec<restic::History>, String>);
+
+impl Restic {
     /// The repository, when one is set up and usable.
-    pub(in crate::tui::app) fn restic_config(&self) -> Option<&restic::Config> {
-        match &self.restic_reading.as_ref()?.found {
+    fn config(&self) -> Option<&restic::Config> {
+        match &self.reading.as_ref()?.found {
             restic::Found::Ready(config) => Some(config),
             _ => None,
         }
@@ -14,20 +86,19 @@ impl App {
     /// Read the repository and its snapshots in the background. Its
     /// settings and timer are this machine's own, which a made-up host does
     /// not stand in for: tests set what was read themselves.
-    pub(in crate::tui::app) fn read_restic(&mut self) {
-        if !self.host.is_here() {
-            self.build_restic_rows();
+    fn read(&mut self, cx: &mut Cx) {
+        if !cx.host.is_here() {
+            self.build_rows(cx);
             return;
         }
-        let runner = self.restic.clone();
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
+        let runner = self.runner.clone();
+        self.loading.start(cx.host, move |_| {
             let found = restic::here();
             let snapshots = match &found {
                 restic::Found::Ready(config) => restic::snapshots(runner.as_ref(), config),
                 _ => Ok(Vec::new()),
             };
-            let _ = sender.send(ResticReading {
+            ResticReading {
                 restores: matches!(found, restic::Found::Ready(_))
                     && restic::restores_safely(runner.as_ref()),
                 found,
@@ -36,82 +107,80 @@ impl App {
                 baselines: history::state_dir()
                     .map(|state| restic::baselines(&state))
                     .unwrap_or_default(),
-            });
+            }
         });
-        self.reading_restic = Some(receiver);
-        self.build_restic_rows();
+        self.build_rows(cx);
     }
 
     /// List a folder of a snapshot, in the background.
-    fn browse_restic(&mut self, snapshot: restic::Snapshot, folder: String) {
-        let Some(config) = self.restic_config().cloned() else {
+    fn browse(&mut self, cx: &mut Cx, snapshot: restic::Snapshot, folder: String) {
+        let Some(config) = self.config().cloned() else {
             return;
         };
-        let runner = self.restic.clone();
-        let work = move || {
+        let runner = self.runner.clone();
+        self.browsing.start(cx.host, move |_| {
             let nodes = restic::files(runner.as_ref(), &config, &snapshot.id, &folder);
             ResticBrowse {
                 snapshot,
                 folder,
                 nodes,
             }
-        };
-        self.browsing_restic = Some(self.read_host(move |_| work()));
-        self.build_restic_rows();
+        });
+        self.build_rows(cx);
     }
 
     /// Look for a file's history across the snapshots.
-    pub(in crate::tui::app) fn search_restic(&mut self, pattern: String) {
-        let Some(config) = self.restic_config().cloned() else {
+    pub(in crate::tui::app) fn search(&mut self, cx: &mut Cx, pattern: String) {
+        let Some(config) = self.config().cloned() else {
             return;
         };
-        let ignore_case = self.restic_ignore_case;
-        let runner = self.restic.clone();
-        self.searching_restic = Some(self.read_host(move |host| {
+        let ignore_case = self.ignore_case;
+        let runner = self.runner.clone();
+        self.searching.start(cx.host, move |host| {
             let found =
                 restic::history(runner.as_ref(), &config, host.home(), &pattern, ignore_case);
             (pattern, found)
-        }));
-        self.build_restic_rows();
+        });
+        self.build_rows(cx);
     }
 
-    fn restic_snapshots(&self) -> &[restic::Snapshot] {
-        self.restic_reading
+    fn snapshots(&self) -> &[restic::Snapshot] {
+        self.reading
             .as_ref()
             .and_then(|reading| reading.snapshots.as_ref().ok())
             .map(Vec::as_slice)
             .unwrap_or_default()
     }
 
-    fn selected_restic_row(&self) -> Option<&ResticRow> {
-        self.restic_rows.get(self.main_state.selected()?)
+    fn selected(&self, at: Option<usize>) -> Option<&ResticRow> {
+        self.rows.get(at?)
     }
 
     /// Enter: browse a snapshot or folder, go up, restore a file, test a
     /// baseline.
-    pub(in crate::tui::app) fn open_restic_row(&mut self) {
-        match self.selected_restic_row().cloned() {
+    fn open_row(&mut self, cx: &mut Cx) {
+        match self.selected(cx.at()).cloned() {
             Some(ResticRow::Snapshot(index)) => {
-                let snapshot = self.restic_snapshots()[index].clone();
+                let snapshot = self.snapshots()[index].clone();
                 let folder = snapshot
                     .paths
                     .first()
                     .cloned()
                     .unwrap_or_else(|| "/".into());
-                self.browse_restic(snapshot, folder);
+                self.browse(cx, snapshot, folder);
             }
             Some(ResticRow::Up) => {
-                if let Some(browse) = &self.restic_browse {
+                if let Some(browse) = &self.browse {
                     let parent = Path::new(&browse.folder)
                         .parent()
                         .map(|parent| parent.display().to_string())
                         .unwrap_or_else(|| "/".into());
                     let snapshot = browse.snapshot.clone();
-                    self.browse_restic(snapshot, parent);
+                    self.browse(cx, snapshot, parent);
                 }
             }
             Some(ResticRow::Node(index)) => {
-                let Some(browse) = &self.restic_browse else {
+                let Some(browse) = &self.browse else {
                     return;
                 };
                 let Some(node) = browse
@@ -124,30 +193,28 @@ impl App {
                 };
                 if node.is_dir() {
                     let (snapshot, folder) = (browse.snapshot.clone(), node.path.clone());
-                    self.browse_restic(snapshot, folder);
+                    self.browse(cx, snapshot, folder);
                 } else {
-                    self.ask_restore();
+                    self.ask_restore(cx);
                 }
             }
-            Some(ResticRow::Version(..)) => self.ask_restore(),
-            Some(ResticRow::Baseline(_)) => self.ask_test(),
+            Some(ResticRow::Version(..)) => self.ask_restore(cx),
+            Some(ResticRow::Baseline(_)) => self.ask_test(cx),
             _ => {}
         }
     }
 
     /// The snapshot and path the selected row would restore.
-    fn restic_restore_target(&self) -> Option<(String, Option<String>)> {
-        match self.selected_restic_row()? {
-            ResticRow::Snapshot(index) => {
-                Some((self.restic_snapshots().get(*index)?.id.clone(), None))
-            }
+    fn restore_target(&self, at: Option<usize>) -> Option<(String, Option<String>)> {
+        match self.selected(at)? {
+            ResticRow::Snapshot(index) => Some((self.snapshots().get(*index)?.id.clone(), None)),
             ResticRow::Node(index) => {
-                let browse = self.restic_browse.as_ref()?;
+                let browse = self.browse.as_ref()?;
                 let node = browse.nodes.as_ref().ok()?.get(*index)?;
                 Some((browse.snapshot.id.clone(), Some(node.path.clone())))
             }
             ResticRow::Version(file, version) => {
-                let found = self.restic_search.as_ref()?.1.as_ref().ok()?.get(*file)?;
+                let found = self.search.as_ref()?.1.as_ref().ok()?.get(*file)?;
                 Some((
                     found.versions.get(*version)?.snapshot.clone(),
                     Some(found.path.clone()),
@@ -158,23 +225,23 @@ impl App {
     }
 
     /// Restore what the selected row names, or, on another row, what is typed.
-    pub(in crate::tui::app) fn ask_restore(&mut self) {
-        match self.restic_restore_target() {
-            Some((snapshot, include)) => self.ask_restore_into(snapshot, include),
-            None => self.ask_restore_from(),
+    fn ask_restore(&self, cx: &mut Cx) {
+        match self.restore_target(cx.at()) {
+            Some((snapshot, include)) => self.ask_restore_into(cx, snapshot, include),
+            None => self.ask_restore_from(cx),
         }
     }
 
     /// Whether this restic restores without overwriting; says why not when not.
-    fn restic_restores(&mut self) -> bool {
+    fn restores(&self, cx: &mut Cx) -> bool {
         if self
-            .restic_reading
+            .reading
             .as_ref()
             .is_some_and(|reading| reading.restores)
         {
             return true;
         }
-        self.popup = Some(Popup::Text(TextPopup::new(
+        *cx.popup = Some(Popup::Text(TextPopup::new(
             "Cannot restore here",
             "This restic cannot restore without overwriting and check what it wrote; restic 0.17 or later can.",
             true,
@@ -184,11 +251,11 @@ impl App {
 
     /// A restore typed in full: the snapshot (latest unless another is
     /// named) and, after it, only this path.
-    pub(in crate::tui::app) fn ask_restore_from(&mut self) {
-        if self.restic_config().is_none() || !self.restic_restores() {
+    fn ask_restore_from(&self, cx: &mut Cx) {
+        if self.config().is_none() || !self.restores(cx) {
             return;
         }
-        self.popup = Some(Popup::Ask(
+        *cx.popup = Some(Popup::Ask(
             InputPopup::new(
                 "Restore into a new folder",
                 "The snapshot (latest, or its ID), and after it, if only one path of it, that path, such as latest /home/me/Documents:",
@@ -200,18 +267,19 @@ impl App {
     }
 
     pub(in crate::tui::app) fn ask_restore_into(
-        &mut self,
+        &self,
+        cx: &mut Cx,
         snapshot: String,
         include: Option<String>,
     ) {
-        if !self.restic_restores() {
+        if !self.restores(cx) {
             return;
         }
         let what = include
             .as_deref()
             .map(helix_toolbox_core::printable)
             .unwrap_or_else(|| "the whole snapshot".to_string());
-        self.popup = Some(Popup::Ask(
+        *cx.popup = Some(Popup::Ask(
             InputPopup::new(
                 "Restore into a new folder",
                 format!(
@@ -226,34 +294,33 @@ impl App {
         ));
     }
 
-    pub(in crate::tui::app) fn restore_restic(
-        &mut self,
+    pub(in crate::tui::app) fn restore(
+        &self,
+        cx: &mut Cx,
         snapshot: &str,
         include: Option<&str>,
         text: &str,
     ) {
         let planned = (|| -> Result<Plan, String> {
-            let config = self
-                .restic_config()
-                .ok_or("No restic repository is set up.")?;
-            let target = restic::check_target(self.host.home(), &typed_path(text)?)?;
+            let config = self.config().ok_or("No restic repository is set up.")?;
+            let target = restic::check_target(cx.host.home(), &typed_path(text)?)?;
             restic::plan_restore(config, snapshot, &target, include)
         })();
-        self.confirm_restic(planned);
+        cx.confirm_or_say(planned);
     }
 
-    pub(in crate::tui::app) fn ask_test(&mut self) {
-        let Some(ResticRow::Baseline(index)) = self.selected_restic_row() else {
+    fn ask_test(&self, cx: &mut Cx) {
+        let Some(ResticRow::Baseline(index)) = self.selected(cx.at()) else {
             return;
         };
         let Some(baseline) = self
-            .restic_reading
+            .reading
             .as_ref()
             .and_then(|reading| reading.baselines.get(*index))
         else {
             return;
         };
-        self.popup = Some(Popup::Ask(
+        *cx.popup = Some(Popup::Ask(
             InputPopup::new(
                 "Test a restore",
                 format!(
@@ -267,12 +334,10 @@ impl App {
         ));
     }
 
-    pub(in crate::tui::app) fn test_restic(&mut self, baseline: &str, snapshot: &str) {
+    pub(in crate::tui::app) fn test(&self, cx: &mut Cx, baseline: &str, snapshot: &str) {
         let planned = (|| -> Result<Plan, String> {
-            let config = self
-                .restic_config()
-                .ok_or("No restic repository is set up.")?;
-            let reading = self.restic_reading.as_ref().ok_or("Nothing read yet.")?;
+            let config = self.config().ok_or("No restic repository is set up.")?;
+            let reading = self.reading.as_ref().ok_or("Nothing read yet.")?;
             let chosen = restic::find_baseline(&reading.baselines, baseline)
                 .ok_or("That baseline is not there.")?;
             restic::plan_test(
@@ -285,53 +350,32 @@ impl App {
                 },
             )
         })();
-        self.confirm_restic(planned);
+        cx.confirm_or_say(planned);
     }
 
     /// A backup or check of the repository, to review.
-    pub(in crate::tui::app) fn plan_restic(&mut self, make: fn(&restic::Config) -> Plan) {
-        match self.restic_config() {
-            Some(config) => {
-                let planned = make(config);
-                self.confirm_plan(Ok(planned));
-            }
-            None => self.no_restic(),
+    fn plan(&self, cx: &mut Cx, make: fn(&restic::Config) -> Plan) {
+        match self.config() {
+            Some(config) => cx.confirm(make(config)),
+            None => no_repository(cx),
         }
     }
 
-    fn confirm_restic(&mut self, planned: Result<Plan, String>) {
-        match planned {
-            Ok(planned) => self.confirm_plan(Ok(planned)),
-            Err(why) => {
-                self.popup = Some(Popup::Text(TextPopup::new("Cannot plan", why, true)));
-            }
-        }
-    }
-
-    fn no_restic(&mut self) {
-        self.popup = Some(Popup::Text(TextPopup::new(
-            "No repository",
-            "Name the repository and its password under [restic] in settings.toml (helix-toolbox restic says how), or with restic's RESTIC_REPOSITORY.",
-            true,
-        )));
-    }
-
-    pub(in crate::tui::app) fn record_baseline(&mut self, text: &str) -> Result<String, String> {
-        let state = self
+    pub(in crate::tui::app) fn record_baseline(
+        &mut self,
+        cx: &mut Cx,
+        text: &str,
+    ) -> Result<String, String> {
+        let state = cx
             .host
             .state()
             .ok_or("cannot find the state folder")?
             .to_path_buf();
-        let recorded = restic::record(
-            &state,
-            self.host.home(),
-            &typed_path(text)?,
-            self.host.now(),
-        )?;
-        if let Some(reading) = &mut self.restic_reading {
+        let recorded = restic::record(&state, cx.host.home(), &typed_path(text)?, cx.host.now())?;
+        if let Some(reading) = &mut self.reading {
             reading.baselines = restic::baselines(&state);
         }
-        self.build_restic_rows();
+        self.build_rows(cx);
         Ok(format!(
             "{}: SHA-256 {}.\n\nBack it up, then v on it restores it from a snapshot and compares.",
             recorded.path, recorded.sha256
@@ -339,24 +383,24 @@ impl App {
     }
 
     /// The timed backup on, every day or every week, or off when it is on.
-    pub(in crate::tui::app) fn toggle_restic_timer(&mut self, every: restic::Every) {
+    fn toggle_timer(&mut self, cx: &mut Cx, every: restic::Every) {
         // The timer is kept with the user's own units, which a made-up host
         // does not stand in for.
-        if !self.host.is_here() {
+        if !cx.host.is_here() {
             return;
         }
         let on = restic::units_here().and_then(|units| restic::timer(&units));
-        self.set_restic_timer(if on.is_some() { None } else { Some(every) });
+        self.set_timer(cx, if on.is_some() { None } else { Some(every) });
     }
 
     /// The timed backup's state, for Settings.
-    pub(in crate::tui::app) fn restic_timer_label(&self) -> String {
-        if !self.host.is_here() {
+    pub(in crate::tui::app) fn timer_label(&self, host: &Host) -> String {
+        if !host.is_here() {
             return "not available here".to_string();
         }
         match restic::units_here().and_then(|units| restic::timer(&units)) {
             Some(every) => format!("yes, {}", every.label()),
-            None if self.restic_config().is_some() || restic::repository_here().is_some() => {
+            None if self.config().is_some() || restic::repository_here().is_some() => {
                 "no".to_string()
             }
             None => "no (name a repository in Restic first)".to_string(),
@@ -364,16 +408,13 @@ impl App {
     }
 
     /// Turn the timed backup off, or on to run that often.
-    pub(in crate::tui::app) fn set_restic_timer(&mut self, every: Option<restic::Every>) {
-        let config = self
-            .restic_config()
-            .cloned()
-            .or_else(|| match restic::here() {
-                restic::Found::Ready(config) => Some(config),
-                _ => None,
-            });
+    pub(in crate::tui::app) fn set_timer(&mut self, cx: &mut Cx, every: Option<restic::Every>) {
+        let config = self.config().cloned().or_else(|| match restic::here() {
+            restic::Found::Ready(config) => Some(config),
+            _ => None,
+        });
         let Some(config) = config else {
-            self.no_restic();
+            no_repository(cx);
             return;
         };
         let said = (|| -> Result<String, String> {
@@ -395,20 +436,20 @@ impl App {
                 }
             ))
         })();
-        if let Some(reading) = &mut self.restic_reading {
+        if let Some(reading) = &mut self.reading {
             reading.timer = restic::units_here().and_then(|units| restic::timer(&units));
         }
-        self.build_restic_rows();
-        self.popup = Some(Popup::Text(match said {
+        self.build_rows(cx);
+        *cx.popup = Some(Popup::Text(match said {
             Ok(text) => TextPopup::new("Timed backup", text, true),
             Err(why) => TextPopup::new("The timer did not change", why, true),
         }));
     }
 
-    pub(in crate::tui::app) fn describe_restic(&mut self) {
-        let text = match self.selected_restic_row() {
+    fn describe(&self, cx: &mut Cx) {
+        let text = match self.selected(cx.at()) {
             Some(ResticRow::Snapshot(index)) => {
-                let Some(snapshot) = self.restic_snapshots().get(*index) else {
+                let Some(snapshot) = self.snapshots().get(*index) else {
                     return;
                 };
                 format!(
@@ -421,7 +462,7 @@ impl App {
             }
             Some(ResticRow::Baseline(index)) => {
                 let Some(baseline) = self
-                    .restic_reading
+                    .reading
                     .as_ref()
                     .and_then(|reading| reading.baselines.get(*index))
                 else {
@@ -436,15 +477,13 @@ impl App {
             }
             _ => return,
         };
-        self.popup = Some(Popup::Text(TextPopup::new("Restic", text, true)));
+        *cx.popup = Some(Popup::Text(TextPopup::new("Restic", text, true)));
     }
 
-    pub(in crate::tui::app) fn build_restic_rows(&mut self) {
+    fn build_rows(&mut self, cx: &mut Cx) {
         let mut rows = vec![ResticRow::Heading("The repository".into())];
-        match self.restic_reading.as_ref().map(|reading| &reading.found) {
-            None if self.reading_restic.is_some() => {
-                rows.push(ResticRow::Text("Asking restic…".into()))
-            }
+        match self.reading.as_ref().map(|reading| &reading.found) {
+            None if self.loading.busy() => rows.push(ResticRow::Text("Asking restic…".into())),
             None => rows.push(ResticRow::Text("Press r to read the repository.".into())),
             Some(restic::Found::Missing) => {
                 rows.push(ResticRow::Text("No restic repository is set up.".into()));
@@ -471,7 +510,7 @@ impl App {
                         .map(|path| path.display().to_string())
                         .collect::<Vec<_>>()
                         .join(", "),
-                    self.restic_reading
+                    self.reading
                         .as_ref()
                         .and_then(|reading| reading.timer)
                         .map(restic::Every::label)
@@ -488,7 +527,7 @@ impl App {
                 ));
             }
         }
-        if let Some(reading) = &self.restic_reading
+        if let Some(reading) = &self.reading
             && matches!(reading.found, restic::Found::Ready(_))
         {
             match &reading.snapshots {
@@ -504,9 +543,9 @@ impl App {
                 ))),
             }
         }
-        if self.browsing_restic.is_some() {
+        if self.browsing.busy() {
             rows.push(ResticRow::Heading("Listing the folder…".into()));
-        } else if let Some(browse) = &self.restic_browse {
+        } else if let Some(browse) = &self.browse {
             rows.push(ResticRow::Heading(format!(
                 "In {} at {}",
                 browse.snapshot.short_id,
@@ -521,13 +560,13 @@ impl App {
                 Err(why) => rows.push(ResticRow::Text(why.clone())),
             }
         }
-        if self.searching_restic.is_some() {
+        if self.searching.busy() {
             rows.push(ResticRow::Heading("Looking through the snapshots…".into()));
-        } else if let Some((pattern, found)) = &self.restic_search {
+        } else if let Some((pattern, found)) = &self.search {
             rows.push(ResticRow::Heading(format!(
                 "History of {}{}",
                 helix_toolbox_core::printable(pattern),
-                if self.restic_ignore_case {
+                if self.ignore_case {
                     ", ignoring upper and lower case (i)"
                 } else {
                     ""
@@ -555,7 +594,7 @@ impl App {
                 Err(why) => rows.push(ResticRow::Text(why.clone())),
             }
         }
-        if let Some(reading) = &self.restic_reading {
+        if let Some(reading) = &self.reading {
             rows.push(ResticRow::Heading(format!(
                 "Recovery tests ({} baselines)",
                 reading.baselines.len()
@@ -566,28 +605,148 @@ impl App {
             ));
             rows.extend((0..reading.baselines.len()).map(ResticRow::Baseline));
         }
-        self.restic_rows = rows;
-        self.clamp_main();
+        self.rows = rows;
+        cx.clamp();
+    }
+}
+
+/// Say that no repository is set up, and where to name one.
+fn no_repository(cx: &mut Cx) {
+    *cx.popup = Some(Popup::Text(TextPopup::new(
+        "No repository",
+        "Name the repository and its password under [restic] in settings.toml (helix-toolbox restic says how), or with restic's RESTIC_REPOSITORY.",
+        true,
+    )));
+}
+
+impl ToolScreen for Restic {
+    fn open(&mut self, cx: &mut Cx) {
+        if self.reading.is_none() {
+            self.read(cx);
+        } else {
+            self.build_rows(cx);
+        }
     }
 
-    pub(in crate::tui::app) fn draw_restic(&mut self, frame: &mut Frame, area: Rect) {
-        let inner = self.page(
+    fn len(&self, _view: &View) -> usize {
+        self.rows.len()
+    }
+
+    fn key(&mut self, cx: &mut Cx, code: KeyCode) {
+        match code {
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.open_row(cx),
+            KeyCode::Char('R') => self.ask_restore(cx),
+            KeyCode::Char('F') => self.ask_restore_from(cx),
+            KeyCode::Char('i') => {
+                self.ignore_case = !self.ignore_case;
+                match self.search.as_ref().map(|(pattern, _)| pattern.clone()) {
+                    Some(pattern) => self.search(cx, pattern),
+                    None => self.build_rows(cx),
+                }
+            }
+            KeyCode::Char('d') => self.describe(cx),
+            KeyCode::Char('b') => self.plan(cx, restic::plan_backup),
+            KeyCode::Char('c') => self.plan(cx, restic::plan_check),
+            KeyCode::Char('s') if self.config().is_some() => {
+                let mut ask = InputPopup::new(
+                    "A file's history",
+                    "A file name or path to look for in every snapshot, with * wildcards, such as notes.txt:",
+                )
+                .answering("Look");
+                if let Some((pattern, _)) = &self.search {
+                    ask = ask.with_value(pattern.clone());
+                }
+                *cx.popup = Some(Popup::Ask(ask, Asked::ResticHistory));
+            }
+            KeyCode::Char('n') => {
+                *cx.popup = Some(Popup::Ask(
+                    InputPopup::new(
+                        "Record a baseline",
+                        "A file of your home folder whose SHA-256 to record, to test restores of it against:",
+                    )
+                    .path()
+                    .answering("Record"),
+                    Asked::ResticBaseline,
+                ));
+            }
+            KeyCode::Char('v') => self.ask_test(cx),
+            KeyCode::Char('w') => self.toggle_timer(cx, restic::Every::Day),
+            KeyCode::Char('W') => self.toggle_timer(cx, restic::Every::Week),
+            KeyCode::Char('r') => self.read(cx),
+            KeyCode::Char('h') | KeyCode::Left => cx.ask(Ask::Sidebar),
+            _ => {}
+        }
+    }
+
+    fn hints(&self, _view: &View, at: Option<usize>, list: &mut Vec<Hint>) {
+        list.push(Hint::new(&["↑↓"], "Navigate"));
+        if self.config().is_some() {
+            match self.rows.get(at.unwrap_or(0)) {
+                Some(ResticRow::Snapshot(_)) => {
+                    list.push(Hint::new(&["Enter"], "Browse"));
+                    list.push(Hint::new(&["R"], "Restore"));
+                }
+                Some(ResticRow::Node(_) | ResticRow::Version(..)) => {
+                    list.push(Hint::new(&["R"], "Restore"));
+                }
+                Some(ResticRow::Baseline(_)) => list.push(Hint::new(&["v"], "Test")),
+                _ => list.push(Hint::new(&["F"], "Restore…")),
+            }
+            list.push(Hint::new(&["b"], "Back up"));
+            list.push(Hint::new(&["s"], "History"));
+            if self.search.is_some() {
+                list.push(Hint::new(
+                    &["i"],
+                    if self.ignore_case {
+                        "Match case"
+                    } else {
+                        "Ignore case"
+                    },
+                ));
+            }
+            list.push(Hint::new(&["n"], "Baseline"));
+        }
+        list.push(Hint::new(&["r"], "Read again"));
+    }
+
+    fn poll(&mut self, cx: &mut Cx) -> bool {
+        if let Some(found) = self.loading.take() {
+            self.reading = Some(found);
+        } else if let Some(found) = self.browsing.take() {
+            self.browse = Some(found);
+        } else if let Some(found) = self.searching.take() {
+            self.search = Some(found);
+        } else {
+            return false;
+        }
+        self.build_rows(cx);
+        true
+    }
+
+    fn after_run(&mut self, cx: &mut Cx, reading: Reading) {
+        if reading == Reading::Tools {
+            self.read(cx);
+        }
+    }
+
+    fn draw(&self, view: &View, frame: &mut Frame, area: Rect, state: &mut ListState) {
+        let inner = view.page(
             frame,
             area,
             "Restic",
             "Backups of your own files: snapshots, a file's history, restores into a new folder and recovery tests.",
         );
-        self.fill(frame, inner);
-        let focused = self.focus == Focus::Main;
-        let muted = Style::default().fg(self.theme.muted());
+        view.fill(frame, inner);
+        let focused = view.focused;
+        let muted = Style::default().fg(view.theme.muted());
         let printable = helix_toolbox_core::printable;
         let size = |bytes: Option<u64>| bytes.map(storage::shown).unwrap_or_default();
-        let snapshots = self.restic_snapshots();
+        let snapshots = self.snapshots();
         let mut items: Vec<Line> = Vec::new();
-        for row in &self.restic_rows {
+        for row in &self.rows {
             items.push(match row {
                 ResticRow::Heading(text) => {
-                    Line::styled(text.clone(), Style::default().fg(self.theme.group()).bold())
+                    Line::styled(text.clone(), Style::default().fg(view.theme.group()).bold())
                 }
                 ResticRow::Text(text) => Line::styled(format!("  {text}"), muted),
                 ResticRow::Snapshot(index) => {
@@ -595,7 +754,7 @@ impl App {
                     Line::from(vec![
                         Span::styled(
                             format!("  {}  {}  ", snapshot.short_id, snapshot.when()),
-                            Style::default().fg(self.theme.entry()),
+                            Style::default().fg(view.theme.entry()),
                         ),
                         Span::styled(
                             format!(
@@ -607,27 +766,26 @@ impl App {
                         ),
                     ])
                 }
-                ResticRow::Up => Line::styled("  ..", Style::default().fg(self.theme.entry())),
+                ResticRow::Up => Line::styled("  ..", Style::default().fg(view.theme.entry())),
                 ResticRow::Node(index) => {
-                    let node =
-                        &self.restic_browse.as_ref().unwrap().nodes.as_ref().unwrap()[*index];
+                    let node = &self.browse.as_ref().unwrap().nodes.as_ref().unwrap()[*index];
                     if node.is_dir() {
                         Line::styled(
                             format!("  {}/", printable(&node.name)),
-                            Style::default().fg(self.theme.group()),
+                            Style::default().fg(view.theme.group()),
                         )
                     } else {
                         Line::from(vec![
                             Span::styled(
                                 format!("  {:<40} ", printable(&node.name)),
-                                Style::default().fg(self.theme.entry()),
+                                Style::default().fg(view.theme.entry()),
                             ),
                             Span::styled(size(node.size), muted),
                         ])
                     }
                 }
                 ResticRow::Version(file, version) => {
-                    let found = &self.restic_search.as_ref().unwrap().1.as_ref().unwrap()[*file];
+                    let found = &self.search.as_ref().unwrap().1.as_ref().unwrap()[*file];
                     let version = &found.versions[*version];
                     Line::from(vec![
                         Span::styled(
@@ -640,7 +798,7 @@ impl App {
                                     .get(..16)
                                     .unwrap_or(&version.time)
                             ),
-                            Style::default().fg(self.theme.entry()),
+                            Style::default().fg(view.theme.entry()),
                         ),
                         Span::styled(
                             format!(
@@ -657,11 +815,11 @@ impl App {
                     ])
                 }
                 ResticRow::Baseline(index) => {
-                    let baseline = &self.restic_reading.as_ref().unwrap().baselines[*index];
+                    let baseline = &self.reading.as_ref().unwrap().baselines[*index];
                     Line::from(vec![
                         Span::styled(
                             format!("  {}  ", &baseline.sha256[..baseline.sha256.len().min(12)]),
-                            Style::default().fg(self.theme.entry()),
+                            Style::default().fg(view.theme.entry()),
                         ),
                         Span::styled(
                             format!(
@@ -675,11 +833,11 @@ impl App {
                 }
             });
         }
-        let list = List::new(self.measure(items))
-            .block(self.card("Restic"))
-            .highlight_style(self.highlight(focused))
-            .highlight_symbol(self.marker(focused))
+        let list = List::new(view.measure(items))
+            .block(view.card("Restic"))
+            .highlight_style(view.highlight(focused))
+            .highlight_symbol(view.marker(focused))
             .scroll_padding(1);
-        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
+        bordered_list(frame, list, inner, state, view.hits);
     }
 }

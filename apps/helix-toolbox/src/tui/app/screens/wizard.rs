@@ -14,7 +14,7 @@ impl App {
                 return;
             }
         };
-        let desktop = self.desktop_here();
+        let desktop = helix_toolbox_engine::desktop::detect_on(&self.host);
         let survey = helix_toolbox_engine::setup::survey_on(&self.host, &self.platform, &desktop);
         self.wizard_ids = setup
             .workstations
@@ -52,7 +52,7 @@ impl App {
         let Ok(setup) = helix_toolbox_engine::setup::load(self.catalog.root()) else {
             return Vec::new();
         };
-        let desktop = self.desktop_here();
+        let desktop = helix_toolbox_engine::desktop::detect_on(&self.host);
         let survey = helix_toolbox_engine::setup::survey_on(&self.host, &self.platform, &desktop);
         let Some(chosen) = self
             .wizard_ids

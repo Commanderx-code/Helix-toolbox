@@ -1,16 +1,96 @@
 //! The Backups screen.
 
 use super::super::*;
+use super::{Ask, Cx, ToolScreen, View};
 
-impl App {
-    pub(in crate::tui::app) fn draw_backups(&mut self, frame: &mut Frame, area: Rect) {
-        let inner = self.page(
+/// The backups Helix Toolbox's entries left, newest first, and the
+/// snapshots taken before system changes.
+#[derive(Default)]
+pub(in crate::tui::app) struct Backups {
+    pub(in crate::tui::app) list: Vec<backups::Backup>,
+}
+
+impl Backups {
+    fn reload(&mut self, cx: &mut Cx) {
+        self.list = cx.host.backups();
+        cx.clamp();
+    }
+
+    fn selected(&self, at: Option<usize>) -> Option<&backups::Backup> {
+        at.and_then(|index| self.list.get(index))
+    }
+
+    fn describe(&self, cx: &mut Cx) {
+        let Some(backup) = self.selected(cx.at()) else {
+            return;
+        };
+        let text = format!(
+            "Backup of: {}\nTaken: {}\nCopy: {}\nKind: {}, {}\n\nEnter restores it. The current {} is moved aside as its own backup first, so the restore can be undone the same way.",
+            helix_toolbox_core::printable(&backup.original.display().to_string()),
+            backup.taken.as_deref().unwrap_or("unknown"),
+            helix_toolbox_core::printable(&backup.backup.display().to_string()),
+            if backup.directory {
+                "a folder"
+            } else {
+                "a file"
+            },
+            if backup.system {
+                "a system file (restoring asks for your password)"
+            } else {
+                "your own file"
+            },
+            if backup.directory { "folder" } else { "file" },
+        );
+        *cx.popup = Some(Popup::Text(TextPopup::new("Backup", text, true)));
+    }
+}
+
+impl ToolScreen for Backups {
+    fn open(&mut self, cx: &mut Cx) {
+        self.reload(cx);
+    }
+
+    fn len(&self, _view: &View) -> usize {
+        self.list.len()
+    }
+
+    fn key(&mut self, cx: &mut Cx, code: KeyCode) {
+        match code {
+            KeyCode::Enter => {
+                if let Some(backup) = self.selected(cx.at()).cloned() {
+                    cx.confirm(backups::plan_restore(&backup));
+                }
+            }
+            KeyCode::Char('d') => self.describe(cx),
+            KeyCode::Char('e') => {
+                if let Some(backup) = self.selected(cx.at()).cloned() {
+                    cx.ask(Ask::Effects(backups::plan_restore(&backup)));
+                }
+            }
+            KeyCode::Char('r') => self.reload(cx),
+            KeyCode::Char('h') | KeyCode::Left => cx.ask(Ask::Sidebar),
+            _ => {}
+        }
+    }
+
+    fn hints(&self, _view: &View, _at: Option<usize>, list: &mut Vec<Hint>) {
+        list.push(Hint::new(&["↑↓"], "Navigate"));
+        if !self.list.is_empty() {
+            list.push(Hint::new(&["Enter"], "Restore"));
+            list.push(Hint::new(&["e"], "Side by side"));
+            list.push(Hint::new(&["d"], "Details"));
+        }
+        list.push(Hint::new(&["r"], "Reload"));
+    }
+
+    fn draw(&self, view: &View, frame: &mut Frame, area: Rect, state: &mut ListState) {
+        let inner = view.page(
             frame,
             area,
             "Backups",
             "Configuration backups Helix Toolbox's entries left, newest first.",
         );
-        let snapshots = match (self.snapshot_tool, self.snapshots) {
+        let snapshots = match (view.snapshot_tool, view.snapshots) {
             (Some(tool), true) => vec![
                 format!(
                     "{} is set up: a snapshot is taken before runs that change system files, the kernel or disks.",
@@ -42,7 +122,7 @@ impl App {
         let mut lines: Vec<Line> = snapshots.into_iter().map(Line::from).collect();
         lines.push(Line::styled(
             closing,
-            Style::default().fg(self.theme.muted()),
+            Style::default().fg(view.theme.muted()),
         ));
         let parts = Layout::vertical([
             Constraint::Length(rows as u16 + 2),
@@ -50,27 +130,27 @@ impl App {
             Constraint::Min(1),
         ])
         .split(inner);
-        self.fill(frame, parts[0]);
+        view.fill(frame, parts[0]);
         frame.render_widget(
             Paragraph::new(Text::from(lines))
-                .block(self.card("Snapshots"))
+                .block(view.card("Snapshots"))
                 .wrap(Wrap { trim: true }),
             parts[0],
         );
-        self.fill(frame, parts[2]);
-        if self.backups.is_empty() {
+        view.fill(frame, parts[2]);
+        if self.list.is_empty() {
             frame.render_widget(
                 Paragraph::new(
                     "No backups yet. Entries that change your configuration or system files keep the old copy here.",
                 )
-                .block(self.card("Backups"))
-                .style(Style::default().fg(self.theme.muted()))
+                .block(view.card("Backups"))
+                .style(Style::default().fg(view.theme.muted()))
                 .wrap(Wrap { trim: true }),
                 parts[2],
             );
             return;
         }
-        let home = self.host.home().to_string_lossy().into_owned();
+        let home = view.host.home().to_string_lossy().into_owned();
         let shown = |path: &std::path::Path| {
             let text = helix_toolbox_core::printable(&path.display().to_string());
             match text.strip_prefix(&home) {
@@ -78,93 +158,37 @@ impl App {
                 _ => text,
             }
         };
-        let focused = self.focus == Focus::Main;
+        let focused = view.focused;
         let items: Vec<Line> = self
-            .backups
+            .list
             .iter()
             .map(|backup| {
                 let (scope, color) = if backup.system {
-                    ("system", self.theme.warning())
+                    ("system", view.theme.warning())
                 } else {
-                    ("user  ", self.theme.success())
+                    ("user  ", view.theme.success())
                 };
                 Line::from(vec![
                     Span::styled(
                         format!("{:<21}", backup.taken.as_deref().unwrap_or("unknown time")),
-                        Style::default().fg(self.theme.muted()),
+                        Style::default().fg(view.theme.muted()),
                     ),
                     Span::styled(format!("{scope}  "), Style::default().fg(color)),
                     Span::styled(
                         shown(&backup.original),
-                        Style::default().fg(self.theme.entry()),
+                        Style::default().fg(view.theme.entry()),
                     ),
                     Span::styled(
                         if backup.directory { "/" } else { "" },
-                        Style::default().fg(self.theme.entry()),
+                        Style::default().fg(view.theme.entry()),
                     ),
                 ])
             })
             .collect();
-        let list = List::new(self.measure(items))
-            .block(self.card("Backups"))
-            .highlight_style(self.highlight(focused))
-            .highlight_symbol(self.marker(focused));
-        bordered_list(frame, list, parts[2], &mut self.main_state, &self.hits);
-    }
-
-    pub(in crate::tui::app) fn reload_backups(&mut self) {
-        self.backups = self.host.backups();
-        self.clamp_main();
-    }
-
-    pub(in crate::tui::app) fn selected_backup(&self) -> Option<&backups::Backup> {
-        self.main_state
-            .selected()
-            .and_then(|index| self.backups.get(index))
-    }
-
-    pub(in crate::tui::app) fn describe_backup(&mut self) {
-        let Some(backup) = self.selected_backup() else {
-            return;
-        };
-        let text = format!(
-            "Backup of: {}\nTaken: {}\nCopy: {}\nKind: {}, {}\n\nEnter restores it. The current {} is moved aside as its own backup first, so the restore can be undone the same way.",
-            helix_toolbox_core::printable(&backup.original.display().to_string()),
-            backup.taken.as_deref().unwrap_or("unknown"),
-            helix_toolbox_core::printable(&backup.backup.display().to_string()),
-            if backup.directory {
-                "a folder"
-            } else {
-                "a file"
-            },
-            if backup.system {
-                "a system file (restoring asks for your password)"
-            } else {
-                "your own file"
-            },
-            if backup.directory { "folder" } else { "file" },
-        );
-        self.popup = Some(Popup::Text(TextPopup::new("Backup", text, true)));
-    }
-
-    pub(in crate::tui::app) fn show_log(&mut self) {
-        let Some(record) = self
-            .main_state
-            .selected()
-            .and_then(|index| self.records.get(index))
-        else {
-            return;
-        };
-        let title = record.names.join(", ");
-        let text = match &record.log {
-            Some(path) => std::fs::read(path)
-                .map(|bytes| strip_escapes(&String::from_utf8_lossy(&bytes)))
-                .unwrap_or_else(|error| format!("The log cannot be read: {error}")),
-            None => format!(
-                "{}\n\nNo log was saved for this run. Press l in the running window after a run finishes to save one.",
-                record.result
-            ),
-        };
-        self.popup = Some(Popup::Text(TextPopup::new(title, text, false)));
+        let list = List::new(view.measure(items))
+            .block(view.card("Backups"))
+            .highlight_style(view.highlight(focused))
+            .highlight_symbol(view.marker(focused));
+        bordered_list(frame, list, parts[2], state, view.hits);
     }
 }

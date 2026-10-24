@@ -1,44 +1,76 @@
 //! The Updates screen.
 
 use super::super::*;
+use super::{Ask, Cx, Read, ToolScreen, View};
 
-impl App {
+/// Pending updates of each tool that keeps the machine, then the package
+/// entries with an update.
+#[derive(Default)]
+pub(in crate::tui::app) struct Updates {
+    /// The update channels, from the last look.
+    pub(in crate::tui::app) channels: Vec<updates::Channel>,
+    /// Whether that look asked the network.
+    online: bool,
+    /// A look at the update channels running in the background.
+    gathering: Read<(Vec<updates::Channel>, bool)>,
+}
+
+/// The selected line of the Updates screen.
+#[derive(Clone, Debug)]
+enum UpdateRow {
+    Nothing,
+    Channel,
+    /// A package entry with an update.
+    Entry(Box<Entry>),
+    /// The line that updates every entry with an update.
+    Every,
+}
+
+/// Package entries whose status says an update waits.
+fn entries_with_updates<'a>(
+    catalog: &'a Catalog,
+    statuses: &HashMap<String, Status>,
+) -> Vec<&'a Entry> {
+    catalog
+        .entries()
+        .into_iter()
+        .filter(|entry| matches!(statuses.get(&entry.id), Some(Status::Update { .. })))
+        .collect()
+}
+
+impl Updates {
     /// Look at the update channels in the background; `online` also asks the
     /// network, through read-only commands.
-    pub(in crate::tui::app) fn gather_updates(&mut self, online: bool) {
-        let platform = self.platform.clone();
+    pub(in crate::tui::app) fn gather(&mut self, cx: &Cx, online: bool) {
+        let platform = cx.platform.clone();
         // The running Helix Toolbox, with its own update, is on this machine
         // only.
-        let places = if self.host.is_here() {
+        let places = if cx.host.is_here() {
             crate::this_places()
         } else {
-            updates::Places::of(&self.host)
+            updates::Places::of(cx.host)
         };
-        self.gathering = Some(self.read_host(move |host| {
+        self.gathering.start(cx.host, move |host| {
             let channels = updates::overview(&host, &platform, &places, online);
             (channels, online)
-        }));
+        });
     }
 
-    /// Package entries whose status says an update waits.
-    pub(in crate::tui::app) fn entries_with_updates(&self) -> Vec<&Entry> {
-        self.catalog
-            .entries()
-            .into_iter()
-            .filter(|entry| matches!(self.statuses.get(&entry.id), Some(Status::Update { .. })))
-            .collect()
-    }
-
-    /// What the selected row of the Updates screen is: a channel, then the
-    /// entries with an update, then the row that updates them all.
-    pub(in crate::tui::app) fn selected_update_row(&self) -> UpdateRow {
-        let Some(index) = self.main_state.selected() else {
+    /// What row `at` is: a channel, then the entries with an update, then
+    /// the row that updates them all.
+    fn row(
+        &self,
+        catalog: &Catalog,
+        statuses: &HashMap<String, Status>,
+        at: Option<usize>,
+    ) -> UpdateRow {
+        let Some(index) = at else {
             return UpdateRow::Nothing;
         };
         if index < self.channels.len() {
             return UpdateRow::Channel;
         }
-        let waiting = self.entries_with_updates();
+        let waiting = entries_with_updates(catalog, statuses);
         match waiting.get(index - self.channels.len()) {
             Some(entry) => UpdateRow::Entry(Box::new((*entry).clone())),
             None if !waiting.is_empty() && index == self.channels.len() + waiting.len() => {
@@ -48,14 +80,12 @@ impl App {
         }
     }
 
-    pub(in crate::tui::app) fn selected_channel(&self) -> Option<&updates::Channel> {
-        self.main_state
-            .selected()
-            .and_then(|index| self.channels.get(index))
+    fn selected_channel(&self, at: Option<usize>) -> Option<&updates::Channel> {
+        at.and_then(|index| self.channels.get(index))
     }
 
-    pub(in crate::tui::app) fn describe_channel(&mut self) {
-        let Some(channel) = self.selected_channel() else {
+    fn describe_channel(&self, cx: &mut Cx) {
+        let Some(channel) = self.selected_channel(cx.at()) else {
             return;
         };
         let mut text = format!(
@@ -89,11 +119,11 @@ impl App {
         if let Some(caveat) = &channel.caveat {
             text.push_str(&format!("Note: {caveat}\n"));
         }
-        self.popup = Some(Popup::Text(TextPopup::new("Updates", text, true)));
+        *cx.popup = Some(Popup::Text(TextPopup::new("Updates", text, true)));
     }
 
     /// Update every channel with updates known to wait, one after another.
-    pub(in crate::tui::app) fn update_every_channel(&mut self) {
+    fn update_every_channel(&self, cx: &mut Cx) {
         let chosen: Vec<&updates::Channel> = self
             .channels
             .iter()
@@ -101,7 +131,7 @@ impl App {
             .filter(|channel| !channel.commands.is_empty())
             .collect();
         if chosen.is_empty() {
-            self.popup = Some(Popup::Text(TextPopup::new(
+            *cx.popup = Some(Popup::Text(TextPopup::new(
                 "Nothing to update",
                 "No channel is known to have updates waiting. r checks online; u updates the selected channel anyway, which is how Nix channels are updated, since they count nothing beforehand.",
                 true,
@@ -109,26 +139,117 @@ impl App {
             return;
         }
         let planned = updates::plan(&chosen);
-        self.confirm_plan(Ok(planned));
+        cx.confirm(planned);
+    }
+}
+
+impl ToolScreen for Updates {
+    fn open(&mut self, cx: &mut Cx) {
+        if self.channels.is_empty() {
+            self.gather(cx, false);
+        }
     }
 
-    pub(in crate::tui::app) fn draw_updates(&mut self, frame: &mut Frame, area: Rect) {
-        let inner = self.page(
+    fn len(&self, view: &View) -> usize {
+        let waiting = entries_with_updates(view.catalog, view.statuses).len();
+        self.channels.len() + if waiting > 0 { waiting + 1 } else { 0 }
+    }
+
+    fn key(&mut self, cx: &mut Cx, code: KeyCode) {
+        match (code, self.row(cx.catalog, cx.statuses, cx.at())) {
+            (KeyCode::Enter | KeyCode::Char('u'), UpdateRow::Entry(entry)) => {
+                cx.ask(Ask::Update(vec![*entry]))
+            }
+            (KeyCode::Char('d') | KeyCode::Char('D'), UpdateRow::Entry(_)) => cx.ask(Ask::Describe),
+            (KeyCode::Enter, UpdateRow::Every) => {
+                let waiting = entries_with_updates(cx.catalog, cx.statuses)
+                    .into_iter()
+                    .cloned()
+                    .collect();
+                cx.ask(Ask::Update(waiting));
+            }
+            (code, _) => match code {
+                KeyCode::Enter | KeyCode::Char('d') => self.describe_channel(cx),
+                KeyCode::Char('u') => match self.selected_channel(cx.at()).cloned() {
+                    Some(channel) if channel.commands.is_empty() => {
+                        *cx.popup = Some(Popup::Text(TextPopup::new(
+                            "Nothing to run",
+                            format!("{}: {}", channel.name, channel.note),
+                            true,
+                        )));
+                    }
+                    Some(channel) => cx.confirm(updates::plan(&[&channel])),
+                    None => {}
+                },
+                KeyCode::Char('U') => self.update_every_channel(cx),
+                KeyCode::Char('r') => self.gather(cx, true),
+                KeyCode::Char('h') | KeyCode::Left => cx.ask(Ask::Sidebar),
+                _ => {}
+            },
+        }
+    }
+
+    fn hints(&self, view: &View, at: Option<usize>, list: &mut Vec<Hint>) {
+        list.push(Hint::new(&["↑↓"], "Navigate"));
+        match self.row(view.catalog, view.statuses, at) {
+            UpdateRow::Channel => {
+                list.push(Hint::new(&["Enter"], "Details"));
+                list.push(Hint::new(&["u"], "Update"));
+                list.push(Hint::new(&["U"], "Update all"));
+            }
+            UpdateRow::Entry(_) => {
+                list.push(Hint::new(&["Enter", "u"], "Update it"));
+                list.push(Hint::new(&["d"], "Details"));
+            }
+            UpdateRow::Every => list.push(Hint::new(&["Enter"], "Update every entry")),
+            UpdateRow::Nothing => {}
+        }
+        list.push(Hint::new(&["r"], "Check online"));
+    }
+
+    fn poll(&mut self, cx: &mut Cx) -> bool {
+        let Some((channels, online)) = self.gathering.take() else {
+            return false;
+        };
+        self.channels = channels;
+        self.online = online;
+        if cx.screen == Screen::Updates {
+            cx.clamp();
+        }
+        true
+    }
+
+    fn after_run(&mut self, cx: &mut Cx, reading: Reading) {
+        if reading == Reading::Updates {
+            self.gather(cx, false);
+        }
+    }
+
+    /// The entries come after the channels.
+    fn entry<'a>(&self, view: &View<'a>, at: Option<usize>) -> Option<&'a Entry> {
+        let index = at?.checked_sub(self.channels.len())?;
+        entries_with_updates(view.catalog, view.statuses)
+            .into_iter()
+            .nth(index)
+    }
+
+    fn draw(&self, view: &View, frame: &mut Frame, area: Rect, state: &mut ListState) {
+        let inner = view.page(
             frame,
             area,
             "Updates",
             "What each tool has waiting; updating runs that tool, after confirmation.",
         );
-        let focused = self.focus == Focus::Main;
+        let focused = view.focused;
         let mut items: Vec<Line> = Vec::new();
         if self.channels.is_empty() {
             items.push(Line::styled(
-                if self.gathering.is_some() {
+                if self.gathering.busy() {
                     "Looking…"
                 } else {
                     "No package manager, Flatpak or Nix setup Helix Toolbox knows was found. r looks again, online."
                 },
-                Style::default().fg(self.theme.muted()),
+                Style::default().fg(view.theme.muted()),
             ));
         }
         let name_width = self
@@ -140,14 +261,14 @@ impl App {
             + 2;
         for channel in &self.channels {
             let color = match channel.count() {
-                Some(0) => self.theme.success(),
-                Some(_) => self.theme.warning(),
-                None => self.theme.muted(),
+                Some(0) => view.theme.success(),
+                Some(_) => view.theme.warning(),
+                None => view.theme.muted(),
             };
             items.push(Line::from(vec![
                 Span::styled(
                     format!("{:<name_width$}", channel.name),
-                    Style::default().fg(self.theme.entry()),
+                    Style::default().fg(view.theme.entry()),
                 ),
                 Span::styled(
                     format!("{:<14}", channel.summary()),
@@ -155,11 +276,11 @@ impl App {
                 ),
                 Span::styled(
                     channel.note.clone(),
-                    Style::default().fg(self.theme.muted()),
+                    Style::default().fg(view.theme.muted()),
                 ),
             ]));
         }
-        let waiting = self.entries_with_updates();
+        let waiting = entries_with_updates(view.catalog, view.statuses);
         if !waiting.is_empty() {
             let width = waiting
                 .iter()
@@ -169,36 +290,36 @@ impl App {
                 .max(name_width.saturating_sub(8))
                 + 2;
             for entry in &waiting {
-                let detail = self
+                let detail = view
                     .statuses
                     .get(&entry.id)
                     .map(|status| status.detail())
                     .unwrap_or_default();
                 items.push(Line::from(vec![
-                    Span::styled("Entry   ", Style::default().fg(self.theme.group())),
+                    Span::styled("Entry   ", Style::default().fg(view.theme.group())),
                     Span::styled(
                         format!("{:<width$}", entry.name),
-                        Style::default().fg(self.theme.entry()),
+                        Style::default().fg(view.theme.entry()),
                     ),
-                    Span::styled("Update  ", Style::default().fg(self.theme.warning()).bold()),
-                    Span::styled(detail, Style::default().fg(self.theme.muted())),
+                    Span::styled("Update  ", Style::default().fg(view.theme.warning()).bold()),
+                    Span::styled(detail, Style::default().fg(view.theme.muted())),
                 ]));
             }
             items.push(Line::styled(
                 format!("▶ Update every entry ({})", waiting.len()),
-                Style::default().fg(self.theme.focused()).bold(),
+                Style::default().fg(view.theme.focused()).bold(),
             ));
         }
-        let title = match (self.gathering.is_some(), self.channels_online) {
+        let title = match (self.gathering.busy(), self.online) {
             (true, _) if !self.channels.is_empty() => "Channels (looking again…)",
             (_, true) => "Channels · checked online",
             _ => "Channels",
         };
-        self.fill(frame, inner);
-        let list = List::new(self.measure(items))
-            .block(self.card(title))
-            .highlight_style(self.highlight(focused))
-            .highlight_symbol(self.marker(focused));
-        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
+        view.fill(frame, inner);
+        let list = List::new(view.measure(items))
+            .block(view.card(title))
+            .highlight_style(view.highlight(focused))
+            .highlight_symbol(view.marker(focused));
+        bordered_list(frame, list, inner, state, view.hits);
     }
 }

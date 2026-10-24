@@ -1,3 +1,8 @@
+use super::screens::{
+    BUNDLE_ROWS, BundleRow, ConfigRow, Coverage, DesktopRow, DriftTarget, HardwareAct, HardwareRow,
+    HomeRow, MigrationRow, PerformanceRow, RepoRow, ResticReading, ResticRow, ServiceRow,
+    StorageRow, task_shell,
+};
 use super::*;
 use ratatui::{Terminal, backend::TestBackend};
 
@@ -412,10 +417,10 @@ fn offline_bundles_are_made_from_the_install_plan_and_checked_before_installing(
     press(&mut app, KeyCode::Enter);
     let target = folder.path().join("bundle");
     answer(&mut app, &target.display().to_string());
-    assert_eq!(app.bundle_folder, target.display().to_string());
+    assert_eq!(app.screens.bundles.folder, target.display().to_string());
     app.main_state.select(row(BundleRow::Complete));
     press(&mut app, KeyCode::Enter);
-    assert!(app.bundle_complete);
+    assert!(app.screens.bundles.complete);
     app.main_state.select(row(BundleRow::Make));
     press(&mut app, KeyCode::Enter);
     assert!(matches!(app.popup, Some(Popup::Confirm(_))));
@@ -466,7 +471,7 @@ fn settings_make_a_bug_report_and_keep_a_copy() {
     press(&mut app, KeyCode::Enter);
     assert!(screen(&mut app, 120, 40).contains("Gathering the report"));
     let start = std::time::Instant::now();
-    while app.reporting.is_some() && start.elapsed() < std::time::Duration::from_secs(20) {
+    while app.reporting.busy() && start.elapsed() < std::time::Duration::from_secs(20) {
         app.needs_redraw();
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
@@ -549,7 +554,7 @@ fn the_dashboard_counts_what_is_installed_queued_and_pinned() {
 #[test]
 fn the_doctor_shows_evidence_and_repairs_with_their_own_confirmation() {
     let mut app = app();
-    app.diagnoses = vec![
+    app.screens.doctor.diagnoses = vec![
         doctor::Diagnosis {
             id: "network".into(),
             title: "Network".into(),
@@ -668,7 +673,7 @@ fn entries_show_how_they_stand() {
 #[test]
 fn backups_are_listed_described_and_restored_and_snapshots_go_first() {
     let mut app = app();
-    app.backups = vec![backups::Backup {
+    app.screens.backups.list = vec![backups::Backup {
         backup: "/home/me/.config/ghostty/config.commander-backup-20261001000000-1".into(),
         original: "/home/me/.config/ghostty/config".into(),
         taken: Some("2026-10-01 00:00:00".into()),
@@ -1036,7 +1041,7 @@ fn channel(id: &str, name: &str, pending: Option<Vec<updates::Pending>>) -> upda
 #[test]
 fn the_updates_screen_lists_channels_and_updates_through_them() {
     let mut app = app();
-    app.channels = vec![
+    app.screens.updates.channels = vec![
         channel(
             "pacman",
             "Arch packages",
@@ -1077,7 +1082,7 @@ fn the_updates_screen_lists_channels_and_updates_through_them() {
     let mut launcher = channel("helixforge", "Helix Toolbox", Some(Vec::new()));
     launcher.commands.clear();
     launcher.note = "1.0.4; it fetches the latest release each time it starts".into();
-    app.channels.push(launcher);
+    app.screens.updates.channels.push(launcher);
     app.main_state.select(Some(2));
     press(&mut app, KeyCode::Char('u'));
     let text = screen(&mut app, 120, 40);
@@ -1085,8 +1090,8 @@ fn the_updates_screen_lists_channels_and_updates_through_them() {
     assert!(text.contains("each time it starts"), "{text}");
     press(&mut app, KeyCode::Esc);
     app.popup = None;
-    app.channels.truncate(1);
-    app.channels[0].pending = Some(Vec::new());
+    app.screens.updates.channels.truncate(1);
+    app.screens.updates.channels[0].pending = Some(Vec::new());
     app.clamp_main();
     press(&mut app, KeyCode::Char('U'));
     assert!(screen(&mut app, 120, 40).contains("Nothing to update"));
@@ -1150,6 +1155,8 @@ fn a_run_that_worked_becomes_a_hardware_report_to_send() {
     app.open_screen(Screen::History);
     app.focus = Focus::Main;
     let successful = app
+        .screens
+        .history
         .records
         .iter()
         .position(|record| record.success)
@@ -1202,7 +1209,9 @@ fn a_run_that_worked_becomes_a_hardware_report_to_send() {
     app.open_screen(Screen::Reliability);
     app.focus = Focus::Main;
     let row = app
-        .reliability_rows
+        .screens
+        .reliability
+        .rows
         .iter()
         .position(|(id, _, _)| id == "meld")
         .unwrap();
@@ -1323,9 +1332,9 @@ fn the_services_screen_lists_units_and_asks_before_stopping_what_is_needed() {
     assert!(shown.contains("The machine's services (2)"), "{shown}");
     assert!(shown.contains("sddm.service") && !shown.contains("pipewire.service"));
     let row = |app: &App, name: &str| {
-        app.service_rows
+        app.screens.services.rows
                 .iter()
-                .position(|row| matches!(row, ServiceRow::Unit(index) if app.unit(*index).unwrap().name == name))
+                .position(|row| matches!(row, ServiceRow::Unit(index) if app.screens.services.unit(*index).unwrap().name == name))
                 .unwrap()
     };
     app.main_state.select(Some(row(&app, "sddm.service")));
@@ -1398,13 +1407,17 @@ fn the_storage_screen_shows_what_each_cleanup_frees_and_what_stays() {
         assert!(shown.contains(text), "{text}: {shown}");
     }
     let row = |app: &App, wanted: usize| {
-        app.storage_rows
+        app.screens
+            .storage
+            .rows
             .iter()
             .position(|row| matches!(row, StorageRow::Item(index) if *index == wanted))
             .unwrap()
     };
     let trash = app
-        .storage_found
+        .screens
+        .storage
+        .found
         .as_ref()
         .unwrap()
         .items
@@ -1504,7 +1517,9 @@ fn the_performance_screen_sets_this_boot_beside_an_earlier_one() {
     assert!(screen(&mut app, 140, 50).contains("+5.0 s"));
 
     let hint = app
-        .performance_rows
+        .screens
+        .performance
+        .rows
         .iter()
         .position(|row| matches!(row, PerformanceRow::Hint(_)))
         .unwrap();
@@ -1519,14 +1534,14 @@ fn the_performance_screen_sets_this_boot_beside_an_earlier_one() {
     press(&mut app, KeyCode::Char('n'));
     // A unit opens in Services, filtered to it.
     let unit = app
-            .performance_rows
+            .screens.performance.rows
             .iter()
             .position(|row| matches!(row, PerformanceRow::Unit(name, _) if name == "plocate-updatedb.service"))
             .unwrap();
     app.main_state.select(Some(unit));
     press(&mut app, KeyCode::Enter);
     assert_eq!(app.screen, Screen::Services);
-    assert_eq!(app.service_filter, "plocate-updatedb.service");
+    assert_eq!(app.screens.services.filter, "plocate-updatedb.service");
 }
 
 #[test]
@@ -1572,7 +1587,9 @@ fn the_recovery_screen_says_what_is_ready_and_offers_the_snapshot_check() {
     assert!(shown.contains("sudo snapper -c root list"), "{shown}");
     press(&mut app, KeyCode::Char('n'));
     let boot = app
-        .recovery_found
+        .screens
+        .recovery
+        .found
         .iter()
         .position(|check| check.id == "snapshot-boot")
         .unwrap();
@@ -1596,7 +1613,7 @@ fn fedora_migration(directory: &Path) -> PathBuf {
 /// tests.
 struct FakeRestic;
 
-impl Restic for FakeRestic {
+impl restic::Restic for FakeRestic {
     fn run(&self, args: &[String]) -> Result<String, String> {
         let line = args.join(" ");
         if line.contains(" ls ") {
@@ -1619,7 +1636,7 @@ impl Restic for FakeRestic {
 
 fn restic_app(baselines: Vec<restic::Baseline>) -> App {
     let mut app = app();
-    app.restic = std::sync::Arc::new(FakeRestic);
+    app.screens.restic.runner = std::sync::Arc::new(FakeRestic);
     let config = restic::Config {
         repository: "/run/media/me/Backup/restic".into(),
         origin: restic::Origin::Settings,
@@ -1627,7 +1644,7 @@ fn restic_app(baselines: Vec<restic::Baseline>) -> App {
         paths: vec!["/home/me".into()],
         excludes: Vec::new(),
     };
-    app.restic_reading = Some(ResticReading {
+    app.screens.restic.reading = Some(ResticReading {
         snapshots: restic::snapshots(&FakeRestic, &config),
         found: restic::Found::Ready(config),
         restores: true,
@@ -1640,7 +1657,7 @@ fn restic_app(baselines: Vec<restic::Baseline>) -> App {
 #[test]
 fn the_restic_screen_lists_snapshots_browses_them_and_finds_a_files_history() {
     let mut app = app();
-    app.restic_reading = Some(ResticReading {
+    app.screens.restic.reading = Some(ResticReading {
         found: restic::Found::Missing,
         snapshots: Ok(Vec::new()),
         restores: false,
@@ -1663,7 +1680,9 @@ fn the_restic_screen_lists_snapshots_browses_them_and_finds_a_files_history() {
         assert!(shown.contains(text), "{text}: {shown}");
     }
     let first = app
-        .restic_rows
+        .screens
+        .restic
+        .rows
         .iter()
         .position(|row| matches!(row, ResticRow::Snapshot(0)))
         .unwrap();
@@ -1711,7 +1730,9 @@ fn the_restic_screen_reviews_restores_backups_and_recovery_tests_before_they_run
     assert!(!matches!(app.popup, Some(Popup::Running(_))));
     // A restore asks for a new folder, which must not be there yet.
     let first = app
-        .restic_rows
+        .screens
+        .restic
+        .rows
         .iter()
         .position(|row| matches!(row, ResticRow::Snapshot(0)))
         .unwrap();
@@ -1731,7 +1752,9 @@ fn the_restic_screen_reviews_restores_backups_and_recovery_tests_before_they_run
     press(&mut app, KeyCode::Esc);
     // v on a baseline tests a restore of it, after review.
     let baseline = app
-        .restic_rows
+        .screens
+        .restic
+        .rows
         .iter()
         .position(|row| matches!(row, ResticRow::Baseline(0)))
         .unwrap();
@@ -1805,7 +1828,9 @@ fn the_configs_screen_shows_both_files_their_checks_fields_and_backups() {
     }
     // d tells where it is and what a save keeps.
     let field = app
-        .config_rows
+        .screens
+        .configs
+        .rows
         .iter()
         .position(|row| matches!(row, ConfigRow::Field(configs::Kind::Ghostty, 1)))
         .unwrap();
@@ -1826,7 +1851,9 @@ fn the_configs_screen_reviews_a_change_an_edit_and_a_backup_before_anything_is_s
     app.focus = Focus::Main;
     // Enter on a field asks for its value, then reviews the save.
     let field = app
-        .config_rows
+        .screens
+        .configs
+        .rows
         .iter()
         .position(|row| matches!(row, ConfigRow::Field(configs::Kind::Ghostty, 1)))
         .unwrap();
@@ -1867,7 +1894,9 @@ fn the_configs_screen_reviews_a_change_an_edit_and_a_backup_before_anything_is_s
     press(&mut app, KeyCode::Char('n'));
     // An edit of Fastfetch that does not check is refused.
     let fastfetch = app
-        .config_rows
+        .screens
+        .configs
+        .rows
         .iter()
         .position(|row| matches!(row, ConfigRow::Edit(configs::Kind::Fastfetch)))
         .unwrap();
@@ -1881,7 +1910,9 @@ fn the_configs_screen_reviews_a_change_an_edit_and_a_backup_before_anything_is_s
     press(&mut app, KeyCode::Esc);
     // A backup is put back after review.
     let backup = app
-        .config_rows
+        .screens
+        .configs
+        .rows
         .iter()
         .position(|row| matches!(row, ConfigRow::Backup(configs::Kind::Ghostty, 0)))
         .unwrap();
@@ -1900,7 +1931,7 @@ fn the_migration_screen_says_what_a_migration_means_here() {
     let mut machine = made_up();
     machine.tools.push("flatpak".into());
     let mut app = app_on(Host::made_up(machine));
-    app.migration_here = Some(migration::Migration {
+    app.screens.migration.here = Some(migration::Migration {
         version: migration::VERSION,
         from: "Garuda Linux".into(),
         entries: vec!["git".into()],
@@ -1948,11 +1979,11 @@ fn the_migration_screen_says_what_a_migration_means_here() {
     }
     // d tells of the selected one.
     let left = app
-            .migration_rows
+            .screens.migration.rows
             .iter()
             .position(|row| {
                 matches!(row, MigrationRow::Item(index)
-                    if app.migration_opened.as_ref().unwrap().1.items[*index].id == "python3-requests")
+                    if app.screens.migration.opened.as_ref().unwrap().1.items[*index].id == "python3-requests")
             })
             .unwrap();
     app.main_state.select(Some(left));
@@ -1975,7 +2006,7 @@ fn the_migration_screen_says_what_a_migration_means_here() {
     let shown = screen(&mut app, 140, 40);
     assert!(shown.contains("Cannot open the migration"), "{shown}");
     // The one opened before stays.
-    assert!(app.migration_opened.is_some());
+    assert!(app.screens.migration.opened.is_some());
 }
 
 #[test]
@@ -1993,7 +2024,7 @@ fn the_migration_screen_installs_what_it_can_after_review() {
     press(&mut app, KeyCode::Char('a'));
     assert!(screen(&mut app, 140, 40).contains("No migration open"));
     press(&mut app, KeyCode::Esc);
-    app.open_migration(path);
+    app.with_screens(|screens, cx| screens.migration.open_file(cx, path));
     settle(&mut app);
     press(&mut app, KeyCode::Char('a'));
     assert!(matches!(app.popup, Some(Popup::Confirm(_))));
@@ -2007,7 +2038,9 @@ fn the_migration_screen_installs_what_it_can_after_review() {
     assert!(!matches!(app.popup, Some(Popup::Running(_))));
     // Enter on a row to install plans the same.
     let install = app
-        .migration_rows
+        .screens
+        .migration
+        .rows
         .iter()
         .position(|row| matches!(row, MigrationRow::Item(0)))
         .unwrap();
@@ -2016,7 +2049,7 @@ fn the_migration_screen_installs_what_it_can_after_review() {
     assert!(matches!(app.popup, Some(Popup::Confirm(_))));
     press(&mut app, KeyCode::Char('n'));
     // e writes this machine's migration where it is told.
-    app.migration_here = Some(migration::Migration {
+    app.screens.migration.here = Some(migration::Migration {
         version: migration::VERSION,
         from: "Garuda Linux".into(),
         packages: vec!["htop".into()],
@@ -2063,18 +2096,18 @@ fn sample_repository(folder: &Path) -> PathBuf {
 
 fn repository_app(folder: &Path) -> App {
     let mut app = app();
-    app.repo_places = Some(repos::Places {
+    app.screens.repos.places = Some(repos::Places {
         roots: vec![folder.join("projects")],
         depth: 3,
         origin: "settings".into(),
     });
-    app.workspaces_file = Some(folder.join("workspaces.toml"));
+    app.screens.repos.workspaces_file = Some(folder.join("workspaces.toml"));
     app
 }
 
 fn select_repo_row(app: &mut App, wanted: impl Fn(&RepoRow) -> bool) {
     settle(app);
-    let index = app.repo_rows.iter().position(wanted).unwrap();
+    let index = app.screens.repos.rows.iter().position(wanted).unwrap();
     app.main_state.select(Some(index));
 }
 
@@ -2124,7 +2157,7 @@ fn the_repositories_screen_lists_them_and_opens_one() {
     assert!(kept.contains("favorite = true"), "{kept}");
     press(&mut app, KeyCode::Char('h'));
     settle(&mut app);
-    assert!(app.repo_open.is_none());
+    assert!(app.screens.repos.open.is_none());
     assert!(screen(&mut app, 160, 40).contains("★ sample"));
 }
 
@@ -2135,7 +2168,7 @@ fn changes_to_a_repository_are_reviewed_before_anything_runs() {
     let mut app = repository_app(folder.path());
     app.open_screen(Screen::Repositories);
     app.focus = Focus::Main;
-    app.open_repo(repo.clone());
+    app.with_screens(|screens, cx| screens.repos.open_repo(cx, repo.clone()));
     select_repo_row(&mut app, |row| matches!(row, RepoRow::File(0)));
     press(&mut app, KeyCode::Char(' '));
     assert!(matches!(app.popup, Some(Popup::Confirm(_))));
@@ -2496,15 +2529,15 @@ fn the_footer_says_how_the_check_stands_and_ctrl_r_checks_again() {
         "{text}"
     );
     let (_sender, receiver) = mpsc::channel();
-    app.checking = Some(receiver);
+    app.checking = Read::from(receiver);
     assert!(screen(&mut app, 120, 40).contains("Checking what is installed…"));
     // Ctrl-R checks the machine again, and the palette offers it too. On
     // this made-up one nothing is installed.
-    app.checking = None;
+    app.checking = Read::default();
     app.handle_key(&KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
-    assert!(app.checking.is_some() && app.popup.is_none());
+    assert!(app.checking.busy() && app.popup.is_none());
     settle(&mut app);
-    assert!(app.checking.is_none());
+    assert!(!app.checking.busy());
     assert!(app.statuses.len() > 1);
     assert!(
         app.statuses
@@ -2705,9 +2738,9 @@ fn ctrl_k_finds_screens_actions_and_entries() {
     type_text(&mut app, "dns");
     press(&mut app, KeyCode::Enter);
     assert_eq!(app.screen, Screen::Doctor);
-    assert_eq!(app.doctor_wanted, Some("dns"));
+    assert_eq!(app.screens.doctor.wanted, Some("dns"));
     // The check's details open once the checks have run.
-    app.diagnoses = vec![doctor::Diagnosis {
+    app.screens.doctor.diagnoses = vec![doctor::Diagnosis {
         id: "dns".into(),
         title: "Name resolution".into(),
         health: doctor::Health::Good,
@@ -2717,8 +2750,8 @@ fn ctrl_k_finds_screens_actions_and_entries() {
         repair: None,
         entry: None,
     }];
-    let wanted = app.doctor_wanted.take().unwrap();
-    app.show_check(wanted);
+    let wanted = app.screens.doctor.wanted.take().unwrap();
+    app.with_screens(|screens, cx| screens.doctor.show_check(cx, wanted));
     assert!(screen(&mut app, 120, 40).contains("github.com resolves"));
 
     // Escape closes the palette without doing anything; so does Ctrl-K.
@@ -2745,20 +2778,30 @@ fn reliability_lists_critical_entries_first_and_explains_each() {
     );
     assert!(text.contains("Stand-in Tested"), "{text}");
     // The first rows are critical: boot, login, drivers, whole systems.
-    assert!(app.reliability_rows[0].2.critical);
+    assert!(app.screens.reliability.rows[0].2.critical);
     assert!(text.contains("! "), "{text}");
     press(&mut app, KeyCode::Char('i'));
-    assert_eq!(app.coverage, Coverage::Critical);
-    assert!(app.reliability_rows.iter().all(|(_, _, row)| row.critical));
+    assert_eq!(app.screens.reliability.coverage, Coverage::Critical);
+    assert!(
+        app.screens
+            .reliability
+            .rows
+            .iter()
+            .all(|(_, _, row)| row.critical)
+    );
     press(&mut app, KeyCode::Char('i'));
     assert!(
-        app.reliability_rows
+        app.screens
+            .reliability
+            .rows
             .iter()
             .all(|(_, _, row)| row.level >= reliability::Level::StandInTested)
     );
     press(&mut app, KeyCode::Char('i'));
     let sddm = app
-        .reliability_rows
+        .screens
+        .reliability
+        .rows
         .iter()
         .position(|(id, _, _)| id == "sddm")
         .unwrap();
@@ -2791,7 +2834,7 @@ fn v_inspects_an_entry_and_the_confirmation_warns_of_untested_boot_changes() {
     // record (where the theme may be VM Tested) does not change the test.
     let mut evidence = reliability::Evidence::load(app.catalog.root());
     evidence.results = None;
-    app.evidence = Some(evidence);
+    app.evidence = OnceCell::from(evidence);
     let grub = app.catalog.find("grub-dracula").unwrap().clone();
     app.confirm(vec![grub]);
     assert!(matches!(app.popup, Some(Popup::Confirm(_))));
@@ -2839,7 +2882,7 @@ fn the_change_preview_opens_from_the_plan_the_confirmation_and_backups() {
     press(&mut app, KeyCode::Char('n'));
 
     // A backup's restore, side by side with the file there now.
-    app.backups = vec![backups::Backup {
+    app.screens.backups.list = vec![backups::Backup {
         backup: copy,
         original,
         taken: None,
@@ -2919,7 +2962,9 @@ fn hardware_lists_firmware_disks_and_batteries_and_asks_before_changing() {
     );
     assert!(text.contains("holds 65% of its design capacity"), "{text}");
     let update = app
-        .hardware_rows
+        .screens
+        .hardware
+        .rows
         .iter()
         .position(|row| {
             matches!(
@@ -2950,7 +2995,9 @@ fn hardware_lists_firmware_disks_and_batteries_and_asks_before_changing() {
     assert!(text.contains("sudo fwupdmgr update 9ea4da98"), "{text}");
     press(&mut app, KeyCode::Char('n'));
     let disk = app
-        .hardware_rows
+        .screens
+        .hardware
+        .rows
         .iter()
         .position(|row| {
             matches!(
@@ -3044,7 +3091,7 @@ fn plasma(scheme: &str) -> Host {
 fn the_desktop_screen_offers_its_entries_and_puts_a_saved_look_back() {
     let directory = tempfile::tempdir().unwrap();
     let mut app = app_on(plasma("BreezeDark"));
-    app.looks_dir = Some(directory.path().to_path_buf());
+    app.screens.desktop.looks_dir = Some(directory.path().to_path_buf());
     app.open_screen(Screen::Desktop);
     app.focus = Focus::Main;
     let text = screen(&mut app, 140, 40);
@@ -3059,9 +3106,11 @@ fn the_desktop_screen_offers_its_entries_and_puts_a_saved_look_back() {
     app.popup = None;
     // The look now differs from the desktop: applying it plans the change.
     app.host = plasma("Sweet");
-    app.reload_desktop();
+    app.with_screens(|screens, cx| screens.desktop.reload(cx));
     let look = app
-        .desktop_rows
+        .screens
+        .desktop
+        .rows
         .iter()
         .position(|row| matches!(row, DesktopRow::Look { .. }))
         .unwrap();
@@ -3074,7 +3123,9 @@ fn the_desktop_screen_offers_its_entries_and_puts_a_saved_look_back() {
     );
     press(&mut app, KeyCode::Char('n'));
     let entry = app
-        .desktop_rows
+        .screens
+        .desktop
+        .rows
         .iter()
         .position(|row| matches!(row, DesktopRow::Entry { id, .. } if id == "plymouth-on"))
         .unwrap();
@@ -3153,7 +3204,7 @@ fn home_status() -> home_manager::Status {
 #[test]
 fn the_home_manager_screen_shows_generations_its_repository_and_links() {
     let mut app = app();
-    app.home_status = Some(home_status());
+    app.screens.home.status = Some(home_status());
     app.open_screen(Screen::HomeManager);
     app.focus = Focus::Main;
     let shown = screen(&mut app, 140, 40);
@@ -3172,7 +3223,9 @@ fn the_home_manager_screen_shows_generations_its_repository_and_links() {
     }
     // d tells of the linked file.
     let link = app
-        .home_rows
+        .screens
+        .home
+        .rows
         .iter()
         .position(|row| matches!(row, HomeRow::Link(0)))
         .unwrap();
@@ -3181,8 +3234,8 @@ fn the_home_manager_screen_shows_generations_its_repository_and_links() {
     assert!(screen(&mut app, 140, 40).contains("Home Manager manages it"));
     // Not installed: building says so instead of planning.
     press(&mut app, KeyCode::Esc);
-    app.home_status = Some(home_manager::Status::default());
-    app.build_home_rows();
+    app.screens.home.status = Some(home_manager::Status::default());
+    app.with_screens(|screens, cx| screens.home.build_rows(cx));
     press(&mut app, KeyCode::Char('b'));
     assert!(screen(&mut app, 140, 40).contains("home-manager is not installed here"));
 }
@@ -3190,7 +3243,7 @@ fn the_home_manager_screen_shows_generations_its_repository_and_links() {
 #[test]
 fn the_home_manager_screen_reviews_build_switch_and_going_back() {
     let mut app = app();
-    app.home_status = Some(home_status());
+    app.screens.home.status = Some(home_status());
     app.open_screen(Screen::HomeManager);
     app.focus = Focus::Main;
     press(&mut app, KeyCode::Char('b'));
@@ -3208,7 +3261,9 @@ fn the_home_manager_screen_reviews_build_switch_and_going_back() {
     press(&mut app, KeyCode::Char('n'));
     // The earlier generation was collected: there is no script to run.
     let earlier = app
-        .home_rows
+        .screens
+        .home
+        .rows
         .iter()
         .position(|row| matches!(row, HomeRow::Generation(1)))
         .unwrap();
@@ -3235,13 +3290,13 @@ fn the_doctor_counts_its_checks_shows_repair_commands_and_its_reports_are_entrie
         repair: None,
         entry: None,
     };
-    app.diagnoses = vec![
+    app.screens.doctor.diagnoses = vec![
         check("one", doctor::Health::Problem),
         check("two", doctor::Health::Notice),
         check("three", doctor::Health::Good),
         check("four", doctor::Health::Good),
     ];
-    app.diagnoses[0].repair = Some(doctor::Repair {
+    app.screens.doctor.diagnoses[0].repair = Some(doctor::Repair {
         label: "fix it".into(),
         commands: vec![vec!["sudo".into(), "true".into()]],
     });
@@ -3261,7 +3316,8 @@ fn the_doctor_counts_its_checks_shows_repair_commands_and_its_reports_are_entrie
     );
     app.popup = None;
     // A report row queues, pins and describes like any entry.
-    app.main_state.select(Some(app.diagnoses.len()));
+    app.main_state
+        .select(Some(app.screens.doctor.diagnoses.len()));
     let report = app.selected_entry().cloned().expect("a report entry");
     press(&mut app, KeyCode::Char('d'));
     assert!(matches!(app.popup, Some(Popup::Text(_))));
@@ -3278,7 +3334,7 @@ fn the_doctor_counts_its_checks_shows_repair_commands_and_its_reports_are_entrie
 #[test]
 fn the_updates_screen_lists_entries_with_an_update_below_the_channels() {
     let mut app = app();
-    app.channels = vec![channel("pacman", "Arch packages", Some(Vec::new()))];
+    app.screens.updates.channels = vec![channel("pacman", "Arch packages", Some(Vec::new()))];
     let inventory = Inventory::from_parts(
         Some(helix_toolbox_core::PackageManager::Arch),
         Some([("ripgrep".to_string(), "15.2.0-1".to_string())].into()),
@@ -3316,13 +3372,13 @@ fn drift_shows_was_and_now_what_is_not_compared_and_runs_the_missing_after_revie
     // Opening the screen reads the baselines; the comparison is set after.
     app.open_screen(Screen::Drift);
     app.focus = Focus::Main;
-    app.drift_targets = vec![DriftTarget::Profile {
+    app.screens.drift.targets = vec![DriftTarget::Profile {
         id: "profile:work".into(),
         name: "Work".into(),
         entries: vec!["ripgrep".into(), "gone-entry".into()],
     }];
-    app.drift_target = 0;
-    app.drift_report = Some((
+    app.screens.drift.target = 0;
+    app.screens.drift.report = Some((
         "profile:work".into(),
         drift::Report {
             against: "Work".into(),
@@ -3363,7 +3419,7 @@ fn reliability_says_what_of_the_record_could_not_be_read() {
     evidence
         .problems
         .push("validation.toml cannot be read: broken".into());
-    app.evidence = Some(evidence);
+    app.evidence = OnceCell::from(evidence);
     app.open_screen(Screen::Reliability);
     let shown = screen(&mut app, 160, 40);
     assert!(
@@ -3392,7 +3448,9 @@ fn a_login_application_is_described_before_it_is_switched() {
         press(&mut app, KeyCode::Char('i'));
     }
     let row = app
-        .service_rows
+        .screens
+        .services
+        .rows
         .iter()
         .position(|row| matches!(row, ServiceRow::Autostart(_)))
         .unwrap();
@@ -3413,12 +3471,12 @@ fn a_login_application_is_described_before_it_is_switched() {
 #[test]
 fn migration_says_when_packages_cannot_be_told_apart() {
     let mut app = app();
-    app.migration_here = Some(migration::Migration {
+    app.screens.migration.here = Some(migration::Migration {
         version: migration::VERSION,
         from: "Solus".into(),
         ..Default::default()
     });
-    app.migration_packages_known = false;
+    app.screens.migration.packages_known = false;
     app.open_screen(Screen::Migration);
     let shown = screen(&mut app, 200, 40);
     assert!(
@@ -3433,7 +3491,7 @@ fn restic_restores_what_is_typed_shows_what_it_leaves_out_and_ignores_case() {
     if let Some(ResticReading {
         found: restic::Found::Ready(config),
         ..
-    }) = &mut app.restic_reading
+    }) = &mut app.screens.restic.reading
     {
         config.excludes = vec!["/home/me/.cache".into()];
     }
@@ -3461,7 +3519,7 @@ fn restic_restores_what_is_typed_shows_what_it_leaves_out_and_ignores_case() {
     answer(&mut app, "NOTES.txt");
     press(&mut app, KeyCode::Char('i'));
     settle(&mut app);
-    assert!(app.restic_ignore_case);
+    assert!(app.screens.restic.ignore_case);
     assert!(screen(&mut app, 160, 40).contains("ignoring upper and lower case"));
 }
 
@@ -3493,11 +3551,17 @@ fn a_configuration_draft_is_checked_and_discarded() {
     let mut app = configs_app(&home);
     app.open_screen(Screen::Configs);
     app.focus = Focus::Main;
-    app.set_config(configs::Kind::Ghostty, "font-size", "13");
+    app.with_screens(|screens, cx| {
+        screens
+            .configs
+            .set_config(cx, configs::Kind::Ghostty, "font-size", "13")
+    });
     let shown = screen(&mut app, 160, 50);
     assert!(shown.contains("Draft checks: not checked yet"), "{shown}");
     let field = app
-        .config_rows
+        .screens
+        .configs
+        .rows
         .iter()
         .position(|row| matches!(row, ConfigRow::Field(configs::Kind::Ghostty, 1)))
         .unwrap();

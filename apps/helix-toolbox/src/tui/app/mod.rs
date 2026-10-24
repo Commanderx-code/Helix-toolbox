@@ -3,10 +3,12 @@
 //!
 //! [`App`] holds the state; this file has its startup, the shared state
 //! helpers and the confirm-and-run path. The frame is in `layout`, keys and
-//! the mouse in `input`, the catalog areas, search, Favorites, the Install
-//! Plan and the command palette in `areas`, and each other screen, the
-//! profiles, the reports and the setup wizard add their methods from a file
-//! in `screens`.
+//! the mouse in `input`, and the catalog areas, search, Favorites, the
+//! Install Plan and the command palette in `areas`. Each tool screen is a
+//! module in `screens` that owns its state, its background reads, its rows,
+//! keys and drawing; `App` holds them and hands the current one its keys,
+//! its frame and the runs that end. Settings, the profiles, the reports and
+//! the setup wizard add their methods to `App` from a file there.
 
 use super::{
     banner,
@@ -37,8 +39,7 @@ use helix_toolbox_engine::{
     overview::Overview,
     performance, plan_removal, plan_with, preflight, profiles, recovery, reliability,
     repositories::{self as repos, Change, Details, Summary},
-    restic::{self, Restic},
-    rows,
+    restic, rows,
     services::{self, Verb},
     session::Reading,
     storage, updates,
@@ -55,8 +56,9 @@ use ratatui::{
     widgets::{Block, List, ListItem, ListState, Padding, Paragraph, Wrap},
 };
 use ratatui_image::{Image, protocol::Protocol};
+use screens::{Read, Screens, ToolScreen};
 use std::{
-    cell::RefCell,
+    cell::{OnceCell, RefCell},
     collections::HashMap,
     path::{Path, PathBuf},
     sync::mpsc,
@@ -171,193 +173,6 @@ pub(super) enum Screen {
     Settings,
 }
 
-/// Which units the Services screen lists.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ServiceView {
-    System,
-    Timers,
-    User,
-    Login,
-    Failed,
-}
-
-impl ServiceView {
-    fn next(self) -> Self {
-        match self {
-            ServiceView::System => ServiceView::Timers,
-            ServiceView::Timers => ServiceView::User,
-            ServiceView::User => ServiceView::Login,
-            ServiceView::Login => ServiceView::Failed,
-            ServiceView::Failed => ServiceView::System,
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            ServiceView::System => "the machine's services",
-            ServiceView::Timers => "timers and sockets",
-            ServiceView::User => "your session's",
-            ServiceView::Login => "started at login",
-            ServiceView::Failed => "failed",
-        }
-    }
-}
-
-/// The selected line of the Updates screen.
-#[derive(Clone, Debug)]
-enum UpdateRow {
-    Nothing,
-    Channel,
-    /// A package entry with an update.
-    Entry(Box<Entry>),
-    /// The line that updates every entry with an update.
-    Every,
-}
-
-/// A line of the Services screen.
-#[derive(Clone, Debug)]
-enum ServiceRow {
-    Heading(String),
-    Unit(usize),
-    Autostart(usize),
-}
-
-/// A line of the Storage screen.
-#[derive(Clone, Debug)]
-enum StorageRow {
-    Heading(String),
-    Filesystem(String),
-    Item(usize),
-    Kept(usize),
-}
-
-/// A line of the Performance screen.
-#[derive(Clone, Debug)]
-enum PerformanceRow {
-    Heading(String),
-    Text(String),
-    /// A change from the earlier boot, and whether it is slower.
-    Change(String, bool),
-    /// A unit and how long it took.
-    Unit(String, String),
-    Hint(usize),
-}
-
-/// A reading of the performance, with the boots recorded so far.
-type PerformanceReading = (performance::Performance, Vec<performance::Boot>);
-
-/// A line of the Migration screen.
-#[derive(Clone, Debug)]
-enum MigrationRow {
-    Heading(String),
-    Text(String),
-    /// A thing the opened migration names, by its place in the translation.
-    Item(usize),
-}
-
-/// A line of the Configs screen.
-#[derive(Clone, Debug)]
-enum ConfigRow {
-    Heading(String),
-    Text(String),
-    /// A field of a configuration, by its place in the configuration's fields.
-    Field(configs::Kind, usize),
-    /// The whole file, in the user's editor.
-    Edit(configs::Kind),
-    /// A backup kept beside the file, by its place in its history.
-    Backup(configs::Kind, usize),
-}
-
-/// A configuration as read: the file to edit, its text, what its checks
-/// say and the backups kept beside it.
-struct ConfigPart {
-    kind: configs::Kind,
-    found: Result<configs::Located, String>,
-    loaded: Option<Result<configs::Loaded, String>>,
-    checked: Option<Checked>,
-    history: Vec<backups::Backup>,
-    /// Changes not saved yet, as the window's draft: fields changed one by
-    /// one, then checked and saved once.
-    draft: Option<String>,
-    /// What the checks said of the draft, once asked.
-    draft_checked: Option<Checked>,
-}
-
-/// A private copy of a configuration for the user's editor, which the
-/// event loop opens with the terminal handed back.
-pub struct EditRequest {
-    pub copy: PathBuf,
-    pub editor: String,
-    located: configs::Located,
-    loaded: configs::Loaded,
-}
-
-/// A migration file read here, or why it could not be.
-type MigrationOpened = (PathBuf, Result<Translation, String>);
-
-/// A line of the Home Manager screen.
-#[derive(Clone, Debug)]
-enum HomeRow {
-    Heading(String),
-    Text(String),
-    /// A generation, by its place in the status.
-    Generation(usize),
-    /// A linked configuration file, by its place in the status.
-    Link(usize),
-}
-
-/// A line of the Restic screen.
-#[derive(Clone, Debug)]
-enum ResticRow {
-    Heading(String),
-    Text(String),
-    Snapshot(usize),
-    /// The browsed folder's parent.
-    Up,
-    Node(usize),
-    /// A version of a file the search found: the file, then the version.
-    Version(usize, usize),
-    Baseline(usize),
-}
-
-/// The repository as last read, and what restic said of it.
-#[derive(Clone, Debug)]
-struct ResticReading {
-    found: restic::Found,
-    snapshots: Result<Vec<restic::Snapshot>, String>,
-    /// Whether this restic restores without overwriting (0.17 and later).
-    restores: bool,
-    timer: Option<restic::Every>,
-    baselines: Vec<restic::Baseline>,
-}
-
-/// A folder of a snapshot, and what it holds.
-#[derive(Clone, Debug)]
-struct ResticBrowse {
-    snapshot: restic::Snapshot,
-    folder: String,
-    nodes: Result<Vec<restic::Node>, String>,
-}
-
-/// A search for a file's history, and what it found.
-type ResticSearch = (String, Result<Vec<restic::History>, String>);
-/// A line of the Repositories screen: in the list, a repository; in one
-/// repository, a file, branch, stash, commit or task, by its place.
-#[derive(Clone, Debug)]
-enum RepoRow {
-    Heading(String),
-    Text(String),
-    Repository(usize),
-    File(usize),
-    Branch(usize),
-    Stash(usize),
-    Commit(usize),
-    Task(usize),
-}
-
-/// One repository read, with its tasks, or why it could not be.
-type RepoOpened = Result<(Details, Vec<Task>), String>;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Focus {
     Sidebar,
@@ -430,88 +245,8 @@ enum Asked {
     ConfigField(configs::Kind, &'static str),
 }
 
-/// A line of the Offline bundles screen.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum BundleRow {
-    MakeHeading,
-    Entries,
-    Folder,
-    Complete,
-    Contents,
-    Make,
-    InstallHeading,
-    Source,
-    Trust,
-    Check,
-    Install,
-}
-
-const BUNDLE_ROWS: [BundleRow; 11] = [
-    BundleRow::MakeHeading,
-    BundleRow::Entries,
-    BundleRow::Folder,
-    BundleRow::Complete,
-    BundleRow::Contents,
-    BundleRow::Make,
-    BundleRow::InstallHeading,
-    BundleRow::Source,
-    BundleRow::Trust,
-    BundleRow::Check,
-    BundleRow::Install,
-];
-
-/// Bundle work that asks the package manager or reads every file: done on
-/// the tick after its notice is drawn.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum BundleTask {
-    Contents,
-    Check,
-    Install,
-}
-
-/// A line of the Desktop screen.
-#[derive(Clone, Debug)]
-enum DesktopRow {
-    Heading(String),
-    Info {
-        text: String,
-        details: String,
-    },
-    /// A suggested entry, with what is worth knowing about it here.
-    Entry {
-        id: String,
-        text: String,
-        note: Option<String>,
-    },
-    Look {
-        slug: String,
-        text: String,
-    },
-}
-
 /// A confirmation's header and its steps with their commands.
 type Confirming = (Vec<String>, Vec<(String, String)>);
-
-/// A line of the Hardware screen.
-#[derive(Clone, Debug)]
-enum HardwareRow {
-    Heading(String),
-    Item {
-        text: String,
-        /// Shown in a warning color.
-        attention: bool,
-        details: String,
-        act: Option<HardwareAct>,
-    },
-}
-
-#[derive(Clone, Debug)]
-enum HardwareAct {
-    /// Update this firmware, by its index in the updates.
-    Firmware(usize),
-    /// Check this disk's SMART health.
-    Smart(String),
-}
 
 /// What a command palette choice does.
 #[derive(Clone, Debug)]
@@ -539,65 +274,6 @@ enum Act {
     Mouse,
     Help,
     Quit,
-}
-
-/// Which entries the Reliability screen lists.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Coverage {
-    All,
-    /// Boot, login-screen, driver and whole-system entries.
-    Critical,
-    /// Not yet validated, or tested with stand-ins only.
-    Untested,
-}
-
-impl Coverage {
-    fn next(self) -> Self {
-        match self {
-            Coverage::All => Coverage::Critical,
-            Coverage::Critical => Coverage::Untested,
-            Coverage::Untested => Coverage::All,
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Coverage::All => "all",
-            Coverage::Critical => "critical",
-            Coverage::Untested => "untested",
-        }
-    }
-
-    fn allows(self, assessment: &reliability::Assessment) -> bool {
-        match self {
-            Coverage::All => true,
-            Coverage::Critical => assessment.critical,
-            Coverage::Untested => assessment.level >= reliability::Level::StandInTested,
-        }
-    }
-}
-
-/// What Drift compares the machine with.
-#[derive(Clone, Debug)]
-enum DriftTarget {
-    Baseline {
-        slug: String,
-        baseline: drift::Baseline,
-    },
-    Profile {
-        id: String,
-        name: String,
-        entries: Vec<String>,
-    },
-}
-
-impl DriftTarget {
-    fn key(&self) -> String {
-        match self {
-            DriftTarget::Baseline { slug, .. } => format!("baseline:{slug}"),
-            DriftTarget::Profile { id, .. } => format!("profile:{id}"),
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -772,7 +448,6 @@ pub struct App {
     /// The run session waiting for the user's yes.
     pending: Option<RunSession>,
     popup: Option<Popup>,
-    records: Vec<history::Record>,
     overview: Overview,
     size_bypass: bool,
     skip_confirmation: bool,
@@ -789,10 +464,6 @@ pub struct App {
     snapshots: bool,
     /// The snapshot tool set up on the host, if any, as it was at the start.
     snapshot_tool: Option<backups::Snapshots>,
-    /// The backups the Backups screen lists, newest first.
-    backups: Vec<backups::Backup>,
-    /// What the last health check found.
-    diagnoses: Vec<doctor::Diagnosis>,
     /// Where profiles are saved; the user's configuration unless a test says.
     profiles_dir: Option<std::path::PathBuf>,
     /// Pinned entry ids, in the order pinned.
@@ -805,14 +476,6 @@ pub struct App {
     filter: Filter,
     /// The row selected before a search started, to return to.
     before_search: Option<usize>,
-    /// A health check running in the background, if any.
-    examining: Option<mpsc::Receiver<Vec<doctor::Diagnosis>>>,
-    /// The update channels, from the last look.
-    channels: Vec<updates::Channel>,
-    /// Whether that look asked the network.
-    channels_online: bool,
-    /// A look at the update channels running in the background, if any.
-    gathering: Option<mpsc::Receiver<(Vec<updates::Channel>, bool)>>,
     /// The machine the screens read: this one, or one a test made up.
     host: Host,
     /// Whether the run in the window started from the Install Plan, whose
@@ -830,35 +493,13 @@ pub struct App {
     /// The snapshot that check read, for planning updates.
     inventory: Option<Inventory>,
     /// The check running in the background, if any.
-    checking: Option<mpsc::Receiver<(Inventory, HashMap<String, Status>)>>,
-    /// What Drift can compare with: saved baselines, then profiles.
-    drift_targets: Vec<DriftTarget>,
-    /// The one chosen.
-    drift_target: usize,
-    /// The last comparison, with the target's key.
-    drift_report: Option<(String, drift::Report)>,
+    checking: Read<(Inventory, HashMap<String, Status>)>,
     /// What the palette's choices do, by index.
     palette_acts: Vec<Act>,
-    /// A health check to show once the checks finish, from the palette.
-    doctor_wanted: Option<&'static str>,
     /// What this build knows about how its entries were tested; read once.
-    evidence: Option<reliability::Evidence>,
+    evidence: OnceCell<reliability::Evidence>,
     /// The confirmation's lines, to show it again after the change preview.
     confirming: Option<Confirming>,
-    /// The Reliability screen's rows: entry ids, names and standing.
-    reliability_rows: Vec<(String, String, reliability::Assessment)>,
-    coverage: Coverage,
-    /// What the Hardware screen last read, and its rows.
-    hardware: Option<helix_toolbox_engine::hardware::Hardware>,
-    hardware_rows: Vec<HardwareRow>,
-    /// A look at the hardware running in the background, if any.
-    reading_hardware: Option<mpsc::Receiver<helix_toolbox_engine::hardware::Hardware>>,
-    /// The firmware update waiting for its confirming word.
-    firmware_pending: Option<Plan>,
-    /// The Desktop screen's rows.
-    desktop_rows: Vec<DesktopRow>,
-    /// Where looks are saved; the user's configuration unless a test says.
-    looks_dir: Option<std::path::PathBuf>,
     /// Whether the wizard has been offered, remembered in the settings.
     set_up: bool,
     /// The wizard's workstations, by index, while it is open.
@@ -868,82 +509,16 @@ pub struct App {
     notices: Option<notifications::Places>,
     /// Runs `systemctl --user`; tests answer for it.
     systemctl: fn(&[&str]) -> Option<bool>,
-    /// The folder to make a bundle in, as typed.
-    bundle_folder: String,
-    /// Every dependency, not only what this machine lacks.
-    bundle_complete: bool,
-    /// The bundle to install from, as typed.
-    bundle_source: String,
-    /// Take the bundle's word for what it holds.
-    bundle_trust: bool,
-    /// Bundle work waiting for its notice to be drawn.
-    bundle_due: Option<BundleTask>,
     /// A bug report being gathered in the background, if any.
-    reporting: Option<mpsc::Receiver<String>>,
+    reporting: Read<String>,
     /// Where the bug report is saved; none in tests unless one says.
     reports_dir: Option<PathBuf>,
     /// Opens a link in the browser; tests answer for it.
     opener: fn(&str) -> Result<(), String>,
     /// Copies a report; tests answer for it.
     copier: fn(&str) -> Result<String, String>,
-    /// The units and autostart entries, as last read.
-    services_found: Option<services::Services>,
-    service_rows: Vec<ServiceRow>,
-    service_view: ServiceView,
-    service_filter: String,
-    /// The storage, as last read, and its rows.
-    storage_found: Option<storage::Storage>,
-    storage_rows: Vec<StorageRow>,
-    /// A look at the storage running in the background, if any.
-    reading_storage: Option<mpsc::Receiver<storage::Storage>>,
-    /// The performance as last read, the boots recorded, and which earlier
-    /// boot this one is set beside (0 is the one before).
-    performance_found: Option<PerformanceReading>,
-    performance_against: usize,
-    performance_rows: Vec<PerformanceRow>,
-    reading_performance: Option<mpsc::Receiver<PerformanceReading>>,
-    /// Recovery readiness, as last checked.
-    recovery_found: Vec<doctor::Diagnosis>,
-    /// What a migration of this machine would hold, as last read.
-    migration_here: Option<migration::Migration>,
-    reading_migration: Option<mpsc::Receiver<(migration::Migration, bool)>>,
-    /// Whether the packages installed by hand can be told apart here.
-    migration_packages_known: bool,
-    /// The migration file opened, and what it means here.
-    migration_opened: Option<(PathBuf, Translation)>,
-    opening_migration: Option<mpsc::Receiver<MigrationOpened>>,
-    migration_rows: Vec<MigrationRow>,
-    /// Home Manager as last read, and the screen's lines.
-    home_status: Option<home_manager::Status>,
-    reading_home: Option<mpsc::Receiver<home_manager::Status>>,
-    home_rows: Vec<HomeRow>,
-    /// The restic repository as last read, and the screen's lines.
-    restic_reading: Option<ResticReading>,
-    reading_restic: Option<mpsc::Receiver<ResticReading>>,
-    restic_browse: Option<ResticBrowse>,
-    browsing_restic: Option<mpsc::Receiver<ResticBrowse>>,
-    restic_search: Option<ResticSearch>,
-    /// Whether a file's history is looked for ignoring upper and lower case.
-    restic_ignore_case: bool,
-    searching_restic: Option<mpsc::Receiver<ResticSearch>>,
-    restic_rows: Vec<ResticRow>,
-    /// What runs restic: restic itself, or a test's stand-in.
-    restic: std::sync::Arc<dyn Restic + Send + Sync>,
-    /// Where repositories are looked for; set by tests, else from the
-    /// settings.
-    repo_places: Option<repos::Places>,
-    /// The user's workspaces file: beside the settings, or set by tests.
-    workspaces_file: Option<PathBuf>,
-    repos_found: Option<(repos::Places, Vec<Summary>)>,
-    reading_repos: Option<mpsc::Receiver<(repos::Places, Vec<Summary>)>>,
-    /// The repository open, with its tasks.
-    repo_open: Option<(Details, Vec<Task>)>,
-    opening_repo: Option<mpsc::Receiver<RepoOpened>>,
-    repo_rows: Vec<RepoRow>,
-    config_parts: Vec<ConfigPart>,
-    config_rows: Vec<ConfigRow>,
-    /// A configuration waiting to be opened in the user's editor.
-    edit_request: Option<EditRequest>,
+    /// The tool screens, each with its own state.
+    screens: Screens,
 }
 
 /// A plan of the queue as it was, from when it was made, with what the
@@ -982,7 +557,6 @@ impl App {
             queue: Vec::new(),
             pending: None,
             popup: None,
-            records: Vec::new(),
             overview,
             size_bypass: args.size_bypass,
             skip_confirmation: args.skip_confirmation,
@@ -993,94 +567,32 @@ impl App {
             keep_going: false,
             snapshots: true,
             snapshot_tool,
-            backups: Vec::new(),
-            diagnoses: Vec::new(),
             profiles_dir: None,
             favorites: Vec::new(),
             favorites_path: None,
             recent: Vec::new(),
             filter: Filter::All,
             before_search: None,
-            examining: None,
             host,
-            channels: Vec::new(),
-            channels_online: false,
-            gathering: None,
             ran_from_plan: false,
             settings_path: None,
             banner: None,
             planned: None,
             statuses: HashMap::new(),
             inventory: None,
-            checking: None,
-            drift_targets: Vec::new(),
-            drift_target: 0,
-            drift_report: None,
+            checking: Read::default(),
             palette_acts: Vec::new(),
-            doctor_wanted: None,
-            evidence: None,
+            evidence: OnceCell::new(),
             confirming: None,
-            reliability_rows: Vec::new(),
-            coverage: Coverage::All,
-            hardware: None,
-            hardware_rows: Vec::new(),
-            reading_hardware: None,
-            firmware_pending: None,
-            desktop_rows: Vec::new(),
-            looks_dir: None,
             set_up: true,
             wizard_ids: Vec::new(),
             notices: None,
             systemctl: |_| None,
-            bundle_folder: "~/helix-toolbox-bundle".to_string(),
-            bundle_complete: false,
-            bundle_source: String::new(),
-            bundle_trust: false,
-            bundle_due: None,
-            reporting: None,
+            reporting: Read::default(),
             reports_dir: None,
             opener: |_| Err("there is no browser here".to_string()),
             copier: |_| Err("there is no clipboard here".to_string()),
-            services_found: None,
-            service_rows: Vec::new(),
-            service_view: ServiceView::System,
-            service_filter: String::new(),
-            storage_found: None,
-            storage_rows: Vec::new(),
-            reading_storage: None,
-            performance_found: None,
-            performance_against: 0,
-            performance_rows: Vec::new(),
-            reading_performance: None,
-            recovery_found: Vec::new(),
-            migration_here: None,
-            reading_migration: None,
-            migration_packages_known: true,
-            migration_opened: None,
-            opening_migration: None,
-            migration_rows: Vec::new(),
-            home_status: None,
-            reading_home: None,
-            home_rows: Vec::new(),
-            restic_reading: None,
-            reading_restic: None,
-            restic_browse: None,
-            browsing_restic: None,
-            restic_search: None,
-            restic_ignore_case: false,
-            searching_restic: None,
-            restic_rows: Vec::new(),
-            restic: std::sync::Arc::new(restic::Here),
-            repo_places: None,
-            workspaces_file: None,
-            repos_found: None,
-            reading_repos: None,
-            repo_open: None,
-            opening_repo: None,
-            repo_rows: Vec::new(),
-            config_parts: Vec::new(),
-            config_rows: Vec::new(),
-            edit_request: None,
+            screens: Screens::default(),
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -1134,25 +646,6 @@ impl App {
         self
     }
 
-    /// Read something of the host: on a thread of its own on this machine,
-    /// where it can take a while; at once on a made-up one, whose answers
-    /// are already there, so the next pass of the event loop shows it.
-    fn read_host<T: Send + 'static>(
-        &self,
-        work: impl FnOnce(Host) -> T + Send + 'static,
-    ) -> mpsc::Receiver<T> {
-        let (sender, receiver) = mpsc::channel();
-        let host = self.host.clone();
-        if self.host.is_here() {
-            std::thread::spawn(move || {
-                let _ = sender.send(work(host));
-            });
-        } else {
-            let _ = sender.send(work(host));
-        }
-        receiver
-    }
-
     /// Start a fresh status check; the old answers stay shown until it ends.
     fn refresh_statuses(&mut self) {
         let entries: Vec<Entry> = self
@@ -1163,7 +656,7 @@ impl App {
             .cloned()
             .collect();
         let platform = self.platform.clone();
-        self.checking = Some(self.read_host(move |host| {
+        self.checking.start(&self.host, move |host| {
             let inventory = Inventory::gather(&host, &platform);
             let statuses = entries
                 .iter()
@@ -1174,7 +667,7 @@ impl App {
                 })
                 .collect();
             (inventory, statuses)
-        }));
+        });
     }
 
     /// Draw this picture as the header where it fits.
@@ -1333,31 +826,11 @@ impl App {
             Screen::Dashboard => QUICK_ACTIONS.len(),
             Screen::Area(_) | Screen::Favorites => self.rows.len(),
             Screen::Plan => self.queue.len(),
-            Screen::History => self.records.len(),
-            Screen::Backups => self.backups.len(),
-            Screen::Updates => {
-                let waiting = self.entries_with_updates().len();
-                self.channels.len() + if waiting > 0 { waiting + 1 } else { 0 }
-            }
-            Screen::Drift => self
-                .drift_report
-                .as_ref()
-                .map_or(0, |(_, report)| report.differences.len()),
-            Screen::Reliability => self.reliability_rows.len(),
-            Screen::Hardware => self.hardware_rows.len(),
-            Screen::Desktop => self.desktop_rows.len(),
-            Screen::Bundles => BUNDLE_ROWS.len(),
-            Screen::Services => self.service_rows.len(),
-            Screen::Storage => self.storage_rows.len(),
-            Screen::Performance => self.performance_rows.len(),
-            Screen::Recovery => self.recovery_found.len(),
-            Screen::Migration => self.migration_rows.len(),
-            Screen::Restic => self.restic_rows.len(),
-            Screen::Repositories => self.repo_rows.len(),
-            Screen::Configs => self.config_rows.len(),
-            Screen::HomeManager => self.home_rows.len(),
-            Screen::Doctor => self.diagnoses.len() + self.doctor_entries().len(),
             Screen::Settings => self.settings().len(),
+            screen => self
+                .screens
+                .tool(screen)
+                .map_or(0, |tool| tool.len(&self.view())),
         }
     }
 
@@ -1376,26 +849,8 @@ impl App {
     }
 
     fn selected_entry(&self) -> Option<&Entry> {
-        // The Updates screen's entries come after its channels.
-        if self.screen == Screen::Updates {
-            let index = self
-                .main_state
-                .selected()?
-                .checked_sub(self.channels.len())?;
-            return self.entries_with_updates().into_iter().nth(index);
-        }
-        // The Doctor's report rows come after its checks.
-        if self.screen == Screen::Doctor {
-            let index = self
-                .main_state
-                .selected()?
-                .checked_sub(self.diagnoses.len())?;
-            return self
-                .catalog
-                .tabs
-                .iter()
-                .find(|tab| tab.id == "doctor")
-                .and_then(|tab| tab.entries().into_iter().nth(index));
+        if let Some(tool) = self.screens.tool(self.screen) {
+            return tool.entry(&self.view(), self.main_state.selected());
         }
         match self.selected_row() {
             Some(Row::Entry(entry)) => Some(entry.as_ref()),
@@ -1485,7 +940,7 @@ impl App {
     /// What the footer says of the check of package entries, once one has
     /// started or answered.
     fn check_line(&self) -> Option<String> {
-        if self.checking.is_some() {
+        if self.checking.busy() {
             Some("Checking what is installed…".to_string())
         } else if self.inventory.is_some() || !self.statuses.is_empty() {
             Some(format!(
@@ -1499,7 +954,7 @@ impl App {
 
     /// Check again how package entries stand, unless a check is running.
     fn check_again(&mut self) {
-        if self.checking.is_none() {
+        if !self.checking.busy() {
             self.planned = None;
             self.refresh_statuses();
         }
@@ -1531,288 +986,54 @@ impl App {
             _ => 0,
         };
         self.main_state.select(Some(selected));
-        if screen == Screen::History {
-            self.reload_history();
-        }
-        if screen == Screen::Backups {
-            self.reload_backups();
-        }
         if screen == Screen::Favorites {
             self.reload_recent();
         }
-        if screen == Screen::Doctor && self.diagnoses.is_empty() {
-            self.examine();
-        }
-        if screen == Screen::Updates && self.channels.is_empty() {
-            self.gather_updates(false);
-        }
-        if screen == Screen::Drift {
-            self.reload_drift();
-        }
-        if screen == Screen::Reliability {
-            self.reload_reliability();
-        }
-        if screen == Screen::Hardware && self.hardware.is_none() {
-            self.read_hardware();
-        }
-        if screen == Screen::Desktop {
-            self.reload_desktop();
-        }
-        if screen == Screen::Services {
-            self.reload_services();
-        }
-        if screen == Screen::Storage {
-            if self.storage_found.is_none() {
-                self.read_storage();
-            } else {
-                self.build_storage_rows();
-            }
-        }
-        if screen == Screen::Performance {
-            if self.performance_found.is_none() {
-                self.read_performance();
-            } else {
-                self.build_performance_rows();
-            }
-        }
-        if screen == Screen::Recovery {
-            self.reload_recovery();
-        }
-        if screen == Screen::Migration {
-            if self.migration_here.is_none() {
-                self.read_migration();
-            } else {
-                self.build_migration_rows();
-            }
-        }
-        if screen == Screen::HomeManager {
-            if self.home_status.is_none() {
-                self.read_home();
-            } else {
-                self.build_home_rows();
-            }
-        }
-        if screen == Screen::Restic {
-            if self.restic_reading.is_none() {
-                self.read_restic();
-            } else {
-                self.build_restic_rows();
-            }
-        }
-        if screen == Screen::Configs {
-            self.read_configs();
-        }
-        if screen == Screen::Repositories {
-            if self.repos_found.is_none() {
-                self.read_repos();
-            } else {
-                self.build_repo_rows();
-            }
-        }
+        self.with_tool(|tool, cx| tool.open(cx));
         self.update_rows();
     }
 
     /// Whether something changed without a key press: a finished check, or
     /// a run's events.
     pub fn needs_redraw(&mut self) -> bool {
-        if let Some(task) = self.bundle_due.take() {
-            self.do_bundle_task(task);
+        // One background read is taken in a pass, in this order.
+        if self.with_screens(|screens, cx| screens.bundles.poll(cx)) {
             return true;
         }
-        if let Some(receiver) = &self.reporting {
-            match receiver.try_recv() {
-                Ok(report) => {
-                    self.reporting = None;
-                    self.show_report(&report);
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.reporting = None,
-                Err(mpsc::TryRecvError::Empty) => {}
-            }
+        if let Some(report) = self.reporting.take() {
+            self.show_report(&report);
+            return true;
         }
-        if let Some(receiver) = &self.examining {
-            match receiver.try_recv() {
-                Ok(diagnoses) => {
-                    self.diagnoses = diagnoses;
-                    self.examining = None;
-                    self.clamp_main();
-                    if let Some(wanted) = self.doctor_wanted.take() {
-                        self.show_check(wanted);
-                    }
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.examining = None,
-                Err(mpsc::TryRecvError::Empty) => {}
-            }
+        if self.with_screens(|screens, cx| {
+            screens.doctor.poll(cx)
+                || screens.performance.poll(cx)
+                || screens.migration.poll(cx)
+                || screens.home.poll(cx)
+                || screens.restic.poll(cx)
+                || screens.repos.poll(cx)
+                || screens.storage.poll(cx)
+                || screens.hardware.poll(cx)
+                || screens.updates.poll(cx)
+        }) {
+            return true;
         }
-        if let Some(receiver) = &self.reading_performance {
-            match receiver.try_recv() {
-                Ok(found) => {
-                    self.performance_found = Some(found);
-                    self.reading_performance = None;
-                    self.build_performance_rows();
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.reading_performance = None,
-                Err(mpsc::TryRecvError::Empty) => {}
+        if let Some((inventory, statuses)) = self.checking.take() {
+            self.inventory = Some(inventory);
+            self.statuses = statuses;
+            if self.screen == Screen::Drift {
+                self.with_screens(|screens, cx| screens.drift.check(cx));
             }
-        }
-        if let Some(receiver) = &self.reading_migration {
-            match receiver.try_recv() {
-                Ok((found, known)) => {
-                    self.migration_here = Some(found);
-                    self.migration_packages_known = known;
-                    self.reading_migration = None;
-                    self.build_migration_rows();
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.reading_migration = None,
-                Err(mpsc::TryRecvError::Empty) => {}
-            }
-        }
-        if let Some(receiver) = &self.reading_home {
-            match receiver.try_recv() {
-                Ok(found) => {
-                    self.home_status = Some(found);
-                    self.reading_home = None;
-                    self.build_home_rows();
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.reading_home = None,
-                Err(mpsc::TryRecvError::Empty) => {}
-            }
-        }
-        if let Some(receiver) = &self.reading_restic {
-            match receiver.try_recv() {
-                Ok(found) => {
-                    self.restic_reading = Some(found);
-                    self.reading_restic = None;
-                    self.build_restic_rows();
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.reading_restic = None,
-                Err(mpsc::TryRecvError::Empty) => {}
-            }
-        }
-        if let Some(receiver) = &self.browsing_restic {
-            match receiver.try_recv() {
-                Ok(found) => {
-                    self.restic_browse = Some(found);
-                    self.browsing_restic = None;
-                    self.build_restic_rows();
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.browsing_restic = None,
-                Err(mpsc::TryRecvError::Empty) => {}
-            }
-        }
-        if let Some(receiver) = &self.searching_restic {
-            match receiver.try_recv() {
-                Ok(found) => {
-                    self.restic_search = Some(found);
-                    self.searching_restic = None;
-                    self.build_restic_rows();
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.searching_restic = None,
-                Err(mpsc::TryRecvError::Empty) => {}
-            }
-        }
-        if let Some(receiver) = &self.opening_migration {
-            match receiver.try_recv() {
-                Ok((path, read)) => {
-                    self.opening_migration = None;
-                    self.opened_migration(path, read);
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.opening_migration = None,
-                Err(mpsc::TryRecvError::Empty) => {}
-            }
-        }
-        if let Some(receiver) = &self.reading_repos {
-            match receiver.try_recv() {
-                Ok(found) => {
-                    self.reading_repos = None;
-                    self.repos_found = Some(found);
-                    self.build_repo_rows();
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.reading_repos = None,
-                Err(mpsc::TryRecvError::Empty) => {}
-            }
-        }
-        if let Some(receiver) = &self.opening_repo {
-            match receiver.try_recv() {
-                Ok(read) => {
-                    self.opening_repo = None;
-                    self.opened_repo(read);
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.opening_repo = None,
-                Err(mpsc::TryRecvError::Empty) => {}
-            }
-        }
-        if let Some(receiver) = &self.reading_storage {
-            match receiver.try_recv() {
-                Ok(found) => {
-                    self.storage_found = Some(found);
-                    self.reading_storage = None;
-                    self.build_storage_rows();
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.reading_storage = None,
-                Err(mpsc::TryRecvError::Empty) => {}
-            }
-        }
-        if let Some(receiver) = &self.reading_hardware {
-            match receiver.try_recv() {
-                Ok(found) => {
-                    self.hardware_rows = hardware_rows(&found);
-                    self.hardware = Some(found);
-                    self.reading_hardware = None;
-                    if self.screen == Screen::Hardware {
-                        self.clamp_main();
-                    }
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.reading_hardware = None,
-                Err(mpsc::TryRecvError::Empty) => {}
-            }
-        }
-        if let Some(receiver) = &self.gathering {
-            match receiver.try_recv() {
-                Ok((channels, online)) => {
-                    self.channels = channels;
-                    self.channels_online = online;
-                    self.gathering = None;
-                    if self.screen == Screen::Updates {
-                        self.clamp_main();
-                    }
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.gathering = None,
-                Err(mpsc::TryRecvError::Empty) => {}
-            }
-        }
-        if let Some(receiver) = &self.checking {
-            match receiver.try_recv() {
-                Ok((inventory, statuses)) => {
-                    self.inventory = Some(inventory);
-                    self.statuses = statuses;
-                    self.checking = None;
-                    if self.screen == Screen::Drift {
-                        self.check_drift();
-                    }
-                    return true;
-                }
-                Err(mpsc::TryRecvError::Disconnected) => self.checking = None,
-                Err(mpsc::TryRecvError::Empty) => {}
-            }
+            return true;
         }
         match &mut self.popup {
             Some(Popup::Running(running)) => running.needs_redraw(),
             _ => false,
         }
+    }
+
+    /// Review a change to the open repository.
+    fn plan_repo_change(&mut self, change: Change) {
+        self.with_screens(|screens, cx| screens.repos.plan_change(cx, change));
     }
 
     /// Do what an `Ask` popup was answered for.
@@ -1828,17 +1049,15 @@ impl App {
                 Err("Deleting needs the word yes. The profile is kept.".to_string()),
             ),
             Asked::MakeFolder => {
-                self.bundle_folder = text.trim().to_string();
+                self.screens.bundles.set_folder(text);
                 return;
             }
             Asked::InstallFolder => {
-                self.bundle_source = text.trim().to_string();
+                self.screens.bundles.set_source(text);
                 return;
             }
             Asked::ServiceFilter => {
-                self.service_filter = text.trim().to_string();
-                self.main_state.select(Some(0));
-                self.build_service_rows();
+                self.with_screens(|screens, cx| screens.services.set_filter(cx, text));
                 return;
             }
             Asked::CommitMessage => {
@@ -1846,7 +1065,7 @@ impl App {
                 return;
             }
             Asked::ConfigField(kind, key) => {
-                self.set_config(kind, key, text);
+                self.with_screens(|screens, cx| screens.configs.set_config(cx, kind, key, text));
                 return;
             }
             Asked::NewBranch => {
@@ -1860,14 +1079,25 @@ impl App {
                 });
                 return;
             }
-            Asked::AddTask => ("Task kept", self.add_repo_task(text)),
-            Asked::ExportMigration => ("Migration exported", self.export_migration(text)),
+            Asked::AddTask => (
+                "Task kept",
+                self.with_screens(|screens, cx| screens.repos.add_task(cx, text)),
+            ),
+            Asked::ExportMigration => (
+                "Migration exported",
+                self.with_screens(|screens, cx| screens.migration.export(cx, text)),
+            ),
             Asked::ResticHistory => {
-                self.search_restic(text.trim().to_string());
+                let pattern = text.trim().to_string();
+                self.with_screens(|screens, cx| screens.restic.search(cx, pattern));
                 return;
             }
             Asked::ResticRestore(snapshot, include) => {
-                self.restore_restic(&snapshot, include.as_deref(), text);
+                self.with_screens(|screens, cx| {
+                    screens
+                        .restic
+                        .restore(cx, &snapshot, include.as_deref(), text)
+                });
                 return;
             }
             Asked::ResticRestoreFrom => {
@@ -1877,17 +1107,26 @@ impl App {
                     Some((snapshot, include)) => (snapshot, Some(include.trim().to_string())),
                     None => (text, None),
                 };
-                self.ask_restore_into(snapshot.to_string(), include);
+                self.with_screens(|screens, cx| {
+                    screens
+                        .restic
+                        .ask_restore_into(cx, snapshot.to_string(), include)
+                });
                 return;
             }
-            Asked::ResticBaseline => ("Baseline recorded", self.record_baseline(text)),
+            Asked::ResticBaseline => (
+                "Baseline recorded",
+                self.with_screens(|screens, cx| screens.restic.record_baseline(cx, text)),
+            ),
             Asked::ResticTest(baseline) => {
-                self.test_restic(&baseline, text.trim());
+                self.with_screens(|screens, cx| screens.restic.test(cx, &baseline, text.trim()));
                 return;
             }
             Asked::OpenMigration => {
                 match typed_path(text) {
-                    Ok(path) => self.open_migration(path),
+                    Ok(path) => {
+                        self.with_screens(|screens, cx| screens.migration.open_file(cx, path))
+                    }
                     Err(error) => {
                         self.popup =
                             Some(Popup::Text(TextPopup::new("It did not work", error, true)))
@@ -2035,19 +1274,10 @@ impl App {
 
     /// Read again what a run left out of date, where this screen shows it.
     fn read_again(&mut self, reading: Reading) {
-        match (reading, self.screen) {
-            (Reading::Statuses, _) => self.refresh_statuses(),
-            (Reading::Updates, Screen::Updates) => self.gather_updates(false),
-            (Reading::History, Screen::History) => self.reload_history(),
-            (Reading::Tools, Screen::Services) => self.reload_services(),
-            (Reading::Tools, Screen::Storage) => self.read_storage(),
-            (Reading::Tools, Screen::Recovery) => self.reload_recovery(),
-            (Reading::Tools, Screen::Migration) => self.reload_migration(),
-            (Reading::Tools, Screen::Restic) => self.read_restic(),
-            (Reading::Tools, Screen::Configs) => self.read_configs(),
-            (Reading::Tools, Screen::Repositories) => self.reload_repos(),
-            (Reading::Tools, Screen::HomeManager) => self.read_home(),
-            _ => {}
+        if reading == Reading::Statuses {
+            self.refresh_statuses();
+        } else {
+            self.with_tool(|tool, cx| tool.after_run(cx, reading));
         }
     }
 
@@ -2071,63 +1301,6 @@ impl App {
     }
 }
 
-/// The Hardware screen's lines, section by section, from the rows both
-/// interfaces show, with what this screen's keys do.
-fn hardware_rows(found: &helix_toolbox_engine::hardware::Hardware) -> Vec<HardwareRow> {
-    let shown = rows::hardware(found);
-    let item = |row: &rows::Row, act: Option<HardwareAct>| {
-        let keys = match &act {
-            Some(HardwareAct::Firmware(_)) => {
-                "\n\nf updates it through fwupd after you type FIRMWARE and confirm the plan. Keep the machine on mains power; some updates finish at the next reboot."
-            }
-            Some(HardwareAct::Smart(_)) => {
-                "\n\nSMART health needs root to read; s checks it after confirmation. It only reads the disk's own health record."
-            }
-            None => "",
-        };
-        HardwareRow::Item {
-            text: row.line.clone(),
-            attention: row.attention,
-            details: format!("{}{keys}", row.more),
-            act,
-        }
-    };
-    let mut list = vec![HardwareRow::Heading("Firmware".to_string())];
-    list.extend(shown.note.iter().map(|row| item(row, None)));
-    list.extend(
-        shown
-            .updates
-            .iter()
-            .enumerate()
-            .map(|(index, row)| item(row, Some(HardwareAct::Firmware(index)))),
-    );
-    list.extend(shown.firmware.iter().map(|row| item(row, None)));
-    list.push(HardwareRow::Heading("Disks".to_string()));
-    list.extend(
-        shown
-            .disks
-            .iter()
-            .zip(&found.disks)
-            .map(|(row, disk)| item(row, Some(HardwareAct::Smart(disk.name.clone())))),
-    );
-    list.push(HardwareRow::Heading("Temperatures".to_string()));
-    list.push(item(&shown.temperatures, None));
-    if !shown.batteries.is_empty() {
-        list.push(HardwareRow::Heading("Batteries".to_string()));
-    }
-    list.extend(shown.batteries.iter().map(|row| item(row, None)));
-    for (title, devices) in [("PCI devices", &shown.pci), ("USB devices", &shown.usb)] {
-        list.push(HardwareRow::Heading(title.to_string()));
-        list.extend(devices.iter().map(|row| item(row, None)));
-    }
-    list
-}
-
-/// Whether queueing a difference's entry would put back what it names.
-fn restorable(kind: drift::Kind) -> bool {
-    !matches!(kind, drift::Kind::Added | drift::Kind::Version)
-}
-
 /// Open a link in the desktop's browser, without waiting for it.
 fn open_link(url: &str) -> Result<(), String> {
     std::process::Command::new("xdg-open")
@@ -2146,23 +1319,6 @@ fn open_link(url: &str) -> Result<(), String> {
 /// One of the user's own profiles, which can be exported and deleted.
 fn own_profile(entry: &Entry) -> bool {
     entry.id.starts_with(profiles::PREFIX) && matches!(entry.action, Action::Profile { .. })
-}
-
-/// A task's command as typed, and the shell a "fish:" or "bash:" in front
-/// of it names.
-fn task_shell(text: &str) -> (workspaces::Shell, String) {
-    let text = text.trim();
-    for (prefix, shell) in [
-        ("fish:", workspaces::Shell::Fish),
-        ("bash:", workspaces::Shell::Bash),
-    ] {
-        if let Some(rest) = text.strip_prefix(prefix)
-            && !rest.trim().is_empty()
-        {
-            return (shell, rest.trim().to_string());
-        }
-    }
-    (workspaces::Shell::Direct, text.to_string())
 }
 
 /// A path as the user typed it: `~` is the home folder; anything else must
@@ -2408,15 +1564,6 @@ fn build_menu(catalog: &Catalog) -> Vec<MenuItem> {
         section: "MORE TOOLS",
     });
     menu
-}
-
-/// How the Migration screen names a kind of thing.
-fn migration_kind(kind: migration::Kind) -> &'static str {
-    match kind {
-        migration::Kind::Entry => "entry",
-        migration::Kind::Flatpak => "Flatpak",
-        migration::Kind::Package => "package",
-    }
 }
 
 /// A date and time for a list; UTC is fine there.

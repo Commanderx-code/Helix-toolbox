@@ -1,18 +1,45 @@
 //! The Performance screen.
 
 use super::super::*;
+use super::{Ask, Cx, Read, ToolScreen, View};
 
-impl App {
+/// The boot's times, the machine now, and this boot beside another.
+#[derive(Default)]
+pub(in crate::tui::app) struct Performance {
+    /// The performance as last read, with the boots recorded so far.
+    found: Option<PerformanceReading>,
+    /// Which earlier boot this one is set beside (0 is the one before).
+    against: usize,
+    pub(in crate::tui::app) rows: Vec<PerformanceRow>,
+    reading: Read<PerformanceReading>,
+}
+
+/// A reading of the performance, with the boots recorded so far.
+type PerformanceReading = (performance::Performance, Vec<performance::Boot>);
+
+/// A line of the Performance screen.
+#[derive(Clone, Debug)]
+pub(in crate::tui::app) enum PerformanceRow {
+    Heading(String),
+    Text(String),
+    /// A change from the earlier boot, and whether it is slower.
+    Change(String, bool),
+    /// A unit and how long it took.
+    Unit(String, String),
+    Hint(usize),
+}
+
+impl Performance {
     /// Read the boot and the machine in the background, recording this boot.
-    pub(in crate::tui::app) fn read_performance(&mut self) {
-        self.reading_performance = Some(
-            self.read_host(|host| (performance::gather_on(&host), performance::boots_on(&host))),
-        );
+    fn read(&mut self, cx: &Cx) {
+        self.reading.start(cx.host, |host| {
+            (performance::gather_on(&host), performance::boots_on(&host))
+        });
     }
 
     /// The recorded boots before this one, newest first.
-    pub(in crate::tui::app) fn earlier_boots(&self) -> Vec<&performance::Boot> {
-        let Some((found, boots)) = &self.performance_found else {
+    fn earlier_boots(&self) -> Vec<&performance::Boot> {
+        let Some((found, boots)) = &self.found else {
             return Vec::new();
         };
         let Some(boot) = &found.boot else {
@@ -25,26 +52,23 @@ impl App {
     }
 
     /// This boot beside the chosen earlier one.
-    fn performance_comparison(&self) -> Option<performance::Comparison> {
-        let (found, _) = self.performance_found.as_ref()?;
-        if self.performance_against == 0 {
+    fn comparison(&self, host: &Host) -> Option<performance::Comparison> {
+        let (found, _) = self.found.as_ref()?;
+        if self.against == 0 {
             return found.previous.clone();
         }
-        let before = self
-            .earlier_boots()
-            .get(self.performance_against)
-            .copied()?;
+        let before = self.earlier_boots().get(self.against).copied()?;
         Some(performance::compare(
             before,
             found.boot.as_ref()?,
-            &self.host.history(1000),
+            &host.history(1000),
         ))
     }
 
-    pub(in crate::tui::app) fn build_performance_rows(&mut self) {
+    fn build_rows(&mut self, cx: &mut Cx) {
         let mut list = Vec::new();
-        let comparison = self.performance_comparison();
-        if let Some((found, _)) = &self.performance_found {
+        let comparison = self.comparison(cx.host);
+        if let Some((found, _)) = &self.found {
             list.push(PerformanceRow::Heading("This boot".into()));
             let shown = found.boot.as_ref().map(rows::boot);
             match (&found.boot, &shown) {
@@ -142,28 +166,26 @@ impl App {
                 list.extend((0..found.hints.len()).map(PerformanceRow::Hint));
             }
         }
-        self.performance_rows = list;
-        self.clamp_main();
+        self.rows = list;
+        cx.clamp();
     }
 
-    pub(in crate::tui::app) fn selected_performance_row(&self) -> Option<PerformanceRow> {
-        self.performance_rows
-            .get(self.main_state.selected()?)
-            .cloned()
+    fn selected(&self, at: Option<usize>) -> Option<PerformanceRow> {
+        self.rows.get(at?).cloned()
     }
 
-    fn selected_hint(&self) -> Option<performance::Hint> {
-        let Some(PerformanceRow::Hint(index)) = self.selected_performance_row() else {
+    fn selected_hint(&self, at: Option<usize>) -> Option<performance::Hint> {
+        let Some(PerformanceRow::Hint(index)) = self.selected(at) else {
             return None;
         };
-        let (found, _) = self.performance_found.as_ref()?;
+        let (found, _) = self.found.as_ref()?;
         found.hints.get(index).cloned()
     }
 
-    pub(in crate::tui::app) fn describe_performance(&mut self) {
-        let (title, text) = match self.selected_performance_row() {
+    fn describe(&self, cx: &mut Cx) {
+        let (title, text) = match self.selected(cx.at()) {
             Some(PerformanceRow::Hint(_)) => {
-                let Some(hint) = self.selected_hint() else {
+                let Some(hint) = self.selected_hint(cx.at()) else {
                     return;
                 };
                 let mut text = hint.detail.clone();
@@ -176,7 +198,7 @@ impl App {
                         );
                     }
                 }
-                if let Some(entry) = hint.entry.as_deref().and_then(|id| self.catalog.find(id)) {
+                if let Some(entry) = hint.entry.as_deref().and_then(|id| cx.catalog.find(id)) {
                     text.push_str(&format!(
                         "\n\nThe {} entry sets it up; Enter runs it after confirmation.",
                         entry.name
@@ -192,97 +214,139 @@ impl App {
             ),
             _ => return,
         };
-        self.popup = Some(Popup::Text(TextPopup::new(title, text, true)));
-    }
-
-    /// Show a unit in the Services screen, filtered to it.
-    fn show_unit(&mut self, name: &str) {
-        self.service_filter = name.to_string();
-        self.service_view = ServiceView::System;
-        self.open_screen(Screen::Services);
+        *cx.popup = Some(Popup::Text(TextPopup::new(title, text, true)));
     }
 
     /// Enter on a hint plans what changes it; on a unit, shows it in
     /// Services.
-    pub(in crate::tui::app) fn act_on_performance(&mut self) {
-        match self.selected_performance_row() {
-            Some(PerformanceRow::Unit(name, _)) => self.show_unit(&name),
+    fn act(&self, cx: &mut Cx) {
+        match self.selected(cx.at()) {
+            Some(PerformanceRow::Unit(name, _)) => cx.ask(Ask::ShowUnit(name)),
             Some(PerformanceRow::Hint(_)) => {
-                let Some(hint) = self.selected_hint() else {
+                let Some(hint) = self.selected_hint(cx.at()) else {
                     return;
                 };
                 match (&hint.unit, &hint.command, &hint.entry) {
                     (Some(unit), Some(command), _) if command.contains(" disable ") => {
-                        match services::plan_on(&self.host, unit, false, Verb::Disable) {
-                            Ok(planned) => self.confirm_plan(Ok(planned)),
-                            Err(why) => {
-                                self.popup =
-                                    Some(Popup::Text(TextPopup::new("Cannot plan", why, true)));
-                            }
-                        }
+                        cx.confirm_or_say(services::plan_on(cx.host, unit, false, Verb::Disable));
                     }
-                    (Some(unit), _, _) => {
-                        let unit = unit.clone();
-                        self.show_unit(&unit);
-                    }
-                    (None, _, Some(entry)) => match self.catalog.find(entry).cloned() {
-                        Some(entry) => self.confirm(vec![entry]),
-                        None => self.describe_performance(),
+                    (Some(unit), _, _) => cx.ask(Ask::ShowUnit(unit.clone())),
+                    (None, _, Some(entry)) => match cx.catalog.find(entry).cloned() {
+                        Some(entry) => cx.ask(Ask::Run(vec![entry])),
+                        None => self.describe(cx),
                     },
-                    _ => self.describe_performance(),
+                    _ => self.describe(cx),
                 }
             }
             _ => {}
         }
     }
+}
 
-    pub(in crate::tui::app) fn draw_performance(&mut self, frame: &mut Frame, area: Rect) {
-        let inner = self.page(
+impl ToolScreen for Performance {
+    fn open(&mut self, cx: &mut Cx) {
+        if self.found.is_none() {
+            self.read(cx);
+        } else {
+            self.build_rows(cx);
+        }
+    }
+
+    fn len(&self, _view: &View) -> usize {
+        self.rows.len()
+    }
+
+    fn key(&mut self, cx: &mut Cx, code: KeyCode) {
+        match code {
+            KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('l') | KeyCode::Right => {
+                self.act(cx)
+            }
+            KeyCode::Char('d') => self.describe(cx),
+            KeyCode::Char('b') => {
+                let earlier = self.earlier_boots().len();
+                if earlier > 1 {
+                    self.against = (self.against + 1) % earlier;
+                    self.build_rows(cx);
+                }
+            }
+            KeyCode::Char('r') => self.read(cx),
+            KeyCode::Char('h') | KeyCode::Left => cx.ask(Ask::Sidebar),
+            _ => {}
+        }
+    }
+
+    fn hints(&self, _view: &View, at: Option<usize>, list: &mut Vec<Hint>) {
+        list.push(Hint::new(&["↑↓"], "Navigate"));
+        match self.selected(at) {
+            Some(PerformanceRow::Hint(_)) => {
+                list.push(Hint::new(&["Enter"], "Act on it"));
+                list.push(Hint::new(&["d"], "Details"));
+            }
+            Some(PerformanceRow::Unit(..)) => list.push(Hint::new(&["Enter"], "In Services")),
+            _ => {}
+        }
+        if self.earlier_boots().len() > 1 {
+            list.push(Hint::new(&["b"], "An earlier boot"));
+        }
+        list.push(Hint::new(&["r"], "Read again"));
+    }
+
+    fn poll(&mut self, cx: &mut Cx) -> bool {
+        let Some(found) = self.reading.take() else {
+            return false;
+        };
+        self.found = Some(found);
+        self.build_rows(cx);
+        true
+    }
+
+    fn draw(&self, view: &View, frame: &mut Frame, area: Rect, state: &mut ListState) {
+        let inner = view.page(
             frame,
             area,
             "Performance",
             "How long the boot took and where the time went, and the machine now. It only reads.",
         );
-        self.fill(frame, inner);
-        let focused = self.focus == Focus::Main;
+        view.fill(frame, inner);
+        let focused = view.focused;
         let mut items: Vec<Line> = Vec::new();
-        if self.performance_rows.is_empty() {
+        if self.rows.is_empty() {
             items.push(Line::styled(
-                if self.reading_performance.is_some() {
+                if self.reading.busy() {
                     "Reading the boot…"
                 } else {
                     "Press r to read this boot and the machine now."
                 },
-                Style::default().fg(self.theme.muted()),
+                Style::default().fg(view.theme.muted()),
             ));
         }
         let hints = self
-            .performance_found
+            .found
             .as_ref()
             .map(|(found, _)| found.hints.clone())
             .unwrap_or_default();
-        for row in &self.performance_rows {
+        for row in &self.rows {
             items.push(match row {
                 PerformanceRow::Heading(text) => {
-                    Line::styled(text.clone(), Style::default().fg(self.theme.group()).bold())
+                    Line::styled(text.clone(), Style::default().fg(view.theme.group()).bold())
                 }
                 PerformanceRow::Text(text) => {
-                    Line::styled(format!("  {text}"), Style::default().fg(self.theme.entry()))
+                    Line::styled(format!("  {text}"), Style::default().fg(view.theme.entry()))
                 }
                 PerformanceRow::Change(text, slower) => Line::styled(
                     format!("  {text}"),
                     Style::default().fg(if *slower {
-                        self.theme.warning()
+                        view.theme.warning()
                     } else {
-                        self.theme.success()
+                        view.theme.success()
                     }),
                 ),
                 PerformanceRow::Unit(name, took) => Line::from(vec![
                     Span::styled(
                         format!("  {took:>10}  "),
-                        Style::default().fg(self.theme.muted()),
+                        Style::default().fg(view.theme.muted()),
                     ),
-                    Span::styled(name.clone(), Style::default().fg(self.theme.entry())),
+                    Span::styled(name.clone(), Style::default().fg(view.theme.entry())),
                 ]),
                 PerformanceRow::Hint(index) => {
                     let hint = &hints[*index];
@@ -297,23 +361,23 @@ impl App {
                     Line::from(vec![
                         Span::styled(
                             format!("  {}", hint.title),
-                            Style::default().fg(self.theme.warning()),
+                            Style::default().fg(view.theme.warning()),
                         ),
-                        Span::styled(offer, Style::default().fg(self.theme.focused())),
+                        Span::styled(offer, Style::default().fg(view.theme.focused())),
                     ])
                 }
             });
         }
-        let title = if self.reading_performance.is_some() && !self.performance_rows.is_empty() {
+        let title = if self.reading.busy() && !self.rows.is_empty() {
             "Boot and machine (reading again…)"
         } else {
             "Boot and machine"
         };
-        let list = List::new(self.measure(items))
-            .block(self.card(title))
-            .highlight_style(self.highlight(focused))
-            .highlight_symbol(self.marker(focused))
+        let list = List::new(view.measure(items))
+            .block(view.card(title))
+            .highlight_style(view.highlight(focused))
+            .highlight_symbol(view.marker(focused))
             .scroll_padding(1);
-        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
+        bordered_list(frame, list, inner, state, view.hits);
     }
 }

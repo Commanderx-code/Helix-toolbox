@@ -1,37 +1,71 @@
 //! The Reliability screen.
 
 use super::super::*;
+use super::{Ask, Cx, ToolScreen, View};
 
-impl App {
-    /// This build's testing record, read on first use.
-    pub(in crate::tui::app) fn evidence(&mut self) -> reliability::Evidence {
-        if self.evidence.is_none() {
-            self.evidence = Some(reliability::Evidence::load(self.catalog.root()));
+/// How far each entry has been tested.
+#[derive(Default)]
+pub(in crate::tui::app) struct Reliability {
+    /// Its rows: entry ids, names and standing.
+    pub(in crate::tui::app) rows: Vec<(String, String, reliability::Assessment)>,
+    pub(in crate::tui::app) coverage: Coverage,
+}
+
+/// Which entries the Reliability screen lists.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(in crate::tui::app) enum Coverage {
+    #[default]
+    All,
+    /// Boot, login-screen, driver and whole-system entries.
+    Critical,
+    /// Not yet validated, or tested with stand-ins only.
+    Untested,
+}
+
+impl Coverage {
+    fn next(self) -> Self {
+        match self {
+            Coverage::All => Coverage::Critical,
+            Coverage::Critical => Coverage::Untested,
+            Coverage::Untested => Coverage::All,
         }
-        self.evidence.clone().unwrap_or_default()
     }
 
-    pub(in crate::tui::app) fn run_history(&self) -> Vec<history::Record> {
-        self.host.history(1000)
+    fn label(self) -> &'static str {
+        match self {
+            Coverage::All => "all",
+            Coverage::Critical => "critical",
+            Coverage::Untested => "untested",
+        }
     }
 
-    pub(in crate::tui::app) fn reload_reliability(&mut self) {
-        let evidence = self.evidence();
-        let records = self.run_history();
-        self.reliability_rows = crate::inspect::rows(&self.catalog, &evidence, &records)
+    fn allows(self, assessment: &reliability::Assessment) -> bool {
+        match self {
+            Coverage::All => true,
+            Coverage::Critical => assessment.critical,
+            Coverage::Untested => assessment.level >= reliability::Level::StandInTested,
+        }
+    }
+}
+
+impl Reliability {
+    fn reload(&mut self, cx: &mut Cx) {
+        let evidence = cx.evidence();
+        let records = cx.host.history(1000);
+        self.rows = crate::inspect::rows(cx.catalog, &evidence, &records)
             .into_iter()
             .filter(|(_, assessment)| self.coverage.allows(assessment))
             .map(|(entry, assessment)| (entry.id.clone(), entry.name.clone(), assessment))
             .collect();
-        self.clamp_main();
+        cx.clamp();
     }
 
-    pub(in crate::tui::app) fn describe_reliability(&mut self) {
-        let Some((id, name, assessment)) = self
-            .main_state
-            .selected()
-            .and_then(|index| self.reliability_rows.get(index))
-        else {
+    fn selected(&self, at: Option<usize>) -> Option<&(String, String, reliability::Assessment)> {
+        at.and_then(|index| self.rows.get(index))
+    }
+
+    fn describe(&self, cx: &mut Cx) {
+        let Some((id, name, assessment)) = self.selected(cx.at()) else {
             return;
         };
         let mut text = format!(
@@ -61,55 +95,83 @@ impl App {
         text.push_str(&format!(
             "\nv shows where {id} comes from and what checks it."
         ));
-        self.popup = Some(Popup::Text(TextPopup::new(name.clone(), text, true)));
+        *cx.popup = Some(Popup::Text(TextPopup::new(name.clone(), text, true)));
+    }
+}
+
+impl ToolScreen for Reliability {
+    fn open(&mut self, cx: &mut Cx) {
+        self.reload(cx);
     }
 
-    /// The trust inspector for an entry.
-    pub(in crate::tui::app) fn inspect(&mut self, id: &str) {
-        let Some(entry) = self.catalog.find(id).cloned() else {
-            return;
-        };
-        let evidence = self.evidence();
-        let records = self.run_history();
-        // How this copy was installed is the running program's, which is on
-        // this machine only.
-        let build = if self.host.is_here() {
-            crate::inspect::build()
-        } else {
-            helix_toolbox_engine::trust::Build {
-                version: crate::VERSION.to_string(),
-                release: false,
-                commit: None,
-                install: helix_toolbox_engine::updates::Install::Other,
+    fn len(&self, _view: &View) -> usize {
+        self.rows.len()
+    }
+
+    fn key(&mut self, cx: &mut Cx, code: KeyCode) {
+        match code {
+            KeyCode::Enter | KeyCode::Char('d') => self.describe(cx),
+            KeyCode::Char('v') => {
+                if let Some((id, _, _)) = self.selected(cx.at()) {
+                    cx.ask(Ask::Inspect(id.clone()));
+                }
             }
-        };
-        let found = helix_toolbox_engine::trust::inspect(
-            &entry,
-            self.catalog.root(),
-            &self.platform,
-            &build,
-            &self.host,
-            &evidence,
-            &records,
-        );
-        self.popup = Some(Popup::Text(TextPopup::new(
-            format!("Trust: {}", entry.name),
-            crate::inspect::text(&found),
-            true,
-        )));
+            KeyCode::Char('i') => {
+                self.coverage = self.coverage.next();
+                cx.selected.select(Some(0));
+                self.reload(cx);
+            }
+            KeyCode::Char('w') => {
+                if let Some((id, name, _)) = self.selected(cx.at()).cloned() {
+                    match hardware_report::last_success(&cx.host.history(1000), &id).cloned() {
+                        Some(record) => cx.ask(Ask::ReportWorked(record, Some(id))),
+                        None => {
+                            *cx.popup = Some(Popup::Text(TextPopup::new(
+                                "Not run here",
+                                format!(
+                                    "A hardware report comes from a run that worked on this machine, and {name} has no successful run in this machine's history."
+                                ),
+                                true,
+                            )))
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('h') | KeyCode::Left => cx.ask(Ask::Sidebar),
+            _ => {}
+        }
     }
 
-    pub(in crate::tui::app) fn draw_reliability(&mut self, frame: &mut Frame, area: Rect) {
-        let inner = self.page(
+    fn hints(&self, _view: &View, at: Option<usize>, list: &mut Vec<Hint>) {
+        list.push(Hint::new(&["↑↓"], "Navigate"));
+        if let Some((_, _, assessment)) = self.selected(at) {
+            list.push(Hint::new(&["Enter"], "Details"));
+            list.push(Hint::new(&["v"], "Trust"));
+            if assessment.here.is_some() {
+                list.push(Hint::new(&["w"], "Report it worked"));
+            }
+        }
+        list.push(Hint::new(
+            &["i"],
+            match self.coverage {
+                Coverage::All => "Show: all",
+                Coverage::Critical => "Show: critical",
+                Coverage::Untested => "Show: untested",
+            },
+        ));
+    }
+
+    fn draw(&self, view: &View, frame: &mut Frame, area: Rect, state: &mut ListState) {
+        let inner = view.page(
             frame,
             area,
             "Reliability",
             "How far each entry has been tested; critical entries first. v shows where one comes from.",
         );
-        let evidence = self.evidence();
+        let evidence = view.evidence();
         let counts: Vec<String> = {
-            let records = self.run_history();
-            let all = crate::inspect::rows(&self.catalog, &evidence, &records);
+            let records = view.host.history(1000);
+            let all = crate::inspect::rows(view.catalog, &evidence, &records);
             crate::inspect::counts(&all)
                 .into_iter()
                 .map(|(level, count)| format!("{count} {}", level.label()))
@@ -132,12 +194,12 @@ impl App {
             .sum();
         let mut lines = vec![
             Line::from(summary),
-            Line::styled(counts, Style::default().fg(self.theme.muted())),
+            Line::styled(counts, Style::default().fg(view.theme.muted())),
         ];
         lines.extend(
             problems
                 .into_iter()
-                .map(|problem| Line::styled(problem, Style::default().fg(self.theme.warning()))),
+                .map(|problem| Line::styled(problem, Style::default().fg(view.theme.warning()))),
         );
         let parts = Layout::vertical([
             Constraint::Length(rows as u16 + 2),
@@ -145,26 +207,26 @@ impl App {
             Constraint::Min(1),
         ])
         .split(inner);
-        self.fill(frame, parts[0]);
+        view.fill(frame, parts[0]);
         frame.render_widget(
             Paragraph::new(Text::from(lines))
-                .block(self.card("Record"))
+                .block(view.card("Record"))
                 .wrap(Wrap { trim: true }),
             parts[0],
         );
-        let focused = self.focus == Focus::Main;
+        let focused = view.focused;
         let name_width = 34;
         let items: Vec<Line> = self
-            .reliability_rows
+            .rows
             .iter()
             .map(|(_, name, assessment)| {
                 let color = match assessment.level {
                     reliability::Level::NotYetValidated if assessment.critical => {
-                        self.theme.failure()
+                        view.theme.failure()
                     }
-                    reliability::Level::NotYetValidated => self.theme.muted(),
-                    reliability::Level::StandInTested => self.theme.warning(),
-                    _ => self.theme.success(),
+                    reliability::Level::NotYetValidated => view.theme.muted(),
+                    reliability::Level::StandInTested => view.theme.warning(),
+                    _ => view.theme.success(),
                 };
                 let name: String = name.chars().take(name_width - 2).collect();
                 let mut detail = assessment.systems.join(", ");
@@ -181,17 +243,17 @@ impl App {
                     ),
                     Span::styled(
                         if assessment.critical { "! " } else { "  " },
-                        Style::default().fg(self.theme.failure()).bold(),
+                        Style::default().fg(view.theme.failure()).bold(),
                     ),
                     Span::styled(
                         format!("{name:<name_width$}"),
-                        Style::default().fg(self.theme.entry()),
+                        Style::default().fg(view.theme.entry()),
                     ),
                     Span::styled(
                         format!("{:<12}", assessment.verified.as_deref().unwrap_or("")),
-                        Style::default().fg(self.theme.muted()),
+                        Style::default().fg(view.theme.muted()),
                     ),
-                    Span::styled(detail, Style::default().fg(self.theme.faint())),
+                    Span::styled(detail, Style::default().fg(view.theme.faint())),
                 ])
             })
             .collect();
@@ -199,20 +261,20 @@ impl App {
             Coverage::All => "Entries".to_string(),
             coverage => format!("Entries · {}", coverage.label()),
         };
-        self.fill(frame, parts[2]);
-        let list = List::new(self.measure(items))
+        view.fill(frame, parts[2]);
+        let list = List::new(view.measure(items))
             .block(
-                self.card(&title).title(
+                view.card(&title).title(
                     Line::styled(
                         " ! CRITICAL · LAST VERIFIED ",
-                        Style::default().fg(self.theme.muted()),
+                        Style::default().fg(view.theme.muted()),
                     )
                     .right_aligned(),
                 ),
             )
-            .highlight_style(self.highlight(focused))
-            .highlight_symbol(self.marker(focused))
+            .highlight_style(view.highlight(focused))
+            .highlight_symbol(view.marker(focused))
             .scroll_padding(1);
-        bordered_list(frame, list, parts[2], &mut self.main_state, &self.hits);
+        bordered_list(frame, list, parts[2], state, view.hits);
     }
 }

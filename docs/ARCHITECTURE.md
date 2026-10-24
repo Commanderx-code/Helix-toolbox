@@ -217,7 +217,7 @@ from a host in an `of` or `_on` form: `drift::Sources::of`,
 command line makes a `Host::here()` where it needs one, and the terminal
 interface and the window each hold one, so the three read the machine the
 same way and none builds those parts by hand. The terminal interface reads
-through its host in the background (`read_host`); on a made-up host the
+through its host in the background (`Read`); on a made-up host the
 read runs at once and its answer is taken between frames, so its screen
 tests go through the same reads as on a real machine. Each check returns a `Diagnosis`: an id,
 `Health` (good, notice, problem), a summary, the evidence, advice, and either
@@ -303,10 +303,17 @@ with saved logs) and Settings. Popups over the current screen show text, the
 confirmation with the plan's risk line, and the running terminal. All of it
 is one `App` in `apps/helix-toolbox/src/tui/app/` driven by key events: its
 state, startup and runs in `mod.rs`, the frame every screen shares in
-`layout.rs`, keys and the mouse in `input.rs`, the areas, search,
-Favorites, the Install Plan and the palette in `areas.rs`, and the methods
-of each other screen, the profiles, the reports and the setup wizard in
-`screens/`. Screen tests (`tests.rs`) render it into a test backend. Search
+`layout.rs`, keys and the mouse in `input.rs`, and the areas, search,
+Favorites, the Install Plan and the palette in `areas.rs`. Each tool screen
+(History, Backups, Doctor, Updates, Services, Restic and the rest) is a
+module in `screens/` behind the `ToolScreen` trait: it owns its state, its
+reads in the background (`Read`, one per read), its rows, keys, drawing and
+what it reads again after a run. `App` holds them in `Screens` and hands the
+current one its keys, its frame and the runs that end; a screen sees the
+rest of the interface through a `View` while it draws and a `Cx` while it
+acts, and asks for what only `App` does, such as confirming a plan or
+opening another screen. Settings, the profiles, the reports and the setup
+wizard are `App`'s own and add their methods from a file there. Screen tests (`tests.rs`) render it into a test backend. Search
 ranking is `helix_toolbox_core::search::score`, shared with
 `helix-toolbox search`.
 
