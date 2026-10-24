@@ -831,7 +831,10 @@ On Btrfs with Snapper (a `root` configuration) or with Timeshift, a snapshot
 is taken first before runs that change system files, the kernel or disks
 (flags PFM, K, D, SI, or high risk): **Snapshot before system changes** in
 Settings, which the command line follows too; `--snapshot` takes one there
-when Settings turns it off. Helix Toolbox does not roll
+when Settings turns it off. Where such a run gets no snapshot because
+neither is set up, its confirmation says so (`No snapshot: neither Snapper
+nor Timeshift is set up here.`), and `--snapshot` on a run that changes
+none of those says it takes none. Helix Toolbox does not roll
 snapshots or packages back itself; the Backups screen says where to (Btrfs
 Assistant, `snapper rollback`, Timeshift).
 
@@ -897,7 +900,8 @@ entries were tested), and `After a failed step: stop (Settings changes
 it)` when there is more than one step. It follows the run choices in
 Settings, as they do: a snapshot first before system changes, and whether
 a failed step stops the run; `--snapshot` and `--keep-going` turn those on
-for one run. `plan` and `--dry-run` show the same without running
+for one run. A plan that continues past a failure itself, such as
+`migrate apply`'s, does so whatever Settings says, in every interface. `plan` and `--dry-run` show the same without running
 anything; a blocked plan lists its steps and what blocks it.
 
 `--json` prints one JSON document for other programs instead of text; it

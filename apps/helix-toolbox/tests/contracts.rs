@@ -312,3 +312,18 @@ fn settings_this_release_does_not_know_are_kept() {
     assert!(after.contains("from_a_later_release = \"kept\""), "{after}");
     assert!(after.contains("theme = \"default\""), "{after}");
 }
+
+/// `run --snapshot` says why it takes none, as it did before every
+/// interface prepared plans alike; without it, a run worth no snapshot
+/// says nothing about one.
+#[test]
+fn run_snapshot_says_why_no_snapshot_is_taken() {
+    let home = tempfile::tempdir().unwrap();
+    let (_, text) = run(home.path(), &["run", "marker", "--snapshot", "--dry-run"]);
+    assert!(
+        text.contains("No snapshot: this run does not change system files, the kernel or disks."),
+        "{text}"
+    );
+    let (_, text) = run(home.path(), &["run", "marker", "--dry-run"]);
+    assert!(!text.contains("No snapshot"), "{text}");
+}
