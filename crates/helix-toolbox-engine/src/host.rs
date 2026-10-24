@@ -222,15 +222,19 @@ impl Host {
     }
 
     /// Where configuration backups are looked for: on a made-up host, its
-    /// home and the folders under it only.
+    /// configuration folder, its home and the folders under it only.
     pub fn backup_roots(&self) -> backups::Roots {
         match self.kind {
             Kind::Here => backups::Roots::here(),
             Kind::MadeUp { .. } => backups::Roots {
-                user: [".config", ".local/share", ".local/bin"]
-                    .into_iter()
-                    .map(|folder| self.home.join(folder))
-                    .collect(),
+                user: [
+                    self.config
+                        .clone()
+                        .unwrap_or_else(|| self.home.join(".config")),
+                    self.home.join(".local/share"),
+                    self.home.join(".local/bin"),
+                ]
+                .into(),
                 home: Some(self.home.clone()),
                 system: Vec::new(),
                 beside: Vec::new(),
@@ -322,6 +326,18 @@ impl doctor::System for Host {
     fn processes(&self) -> Vec<String> {
         self.system.processes()
     }
+
+    fn node(&self, path: &Path) -> Option<doctor::Node> {
+        self.system.node(path)
+    }
+
+    fn names(&self, path: &Path) -> Option<Vec<std::ffi::OsString>> {
+        self.system.names(path)
+    }
+
+    fn open(&self, path: &Path) -> Option<doctor::Opened<'_>> {
+        self.system.open(path)
+    }
 }
 
 #[cfg(test)]
@@ -381,5 +397,56 @@ mod tests {
             Host::made_up(fake).snapshots(),
             Some(backups::Snapshots::Snapper)
         );
+    }
+
+    #[test]
+    fn a_made_up_hosts_configuration_folder_is_searched_for_backups() {
+        let home = tempfile::tempdir().unwrap();
+        let config = tempfile::tempdir().unwrap();
+        std::fs::write(
+            config
+                .path()
+                .join("kitty.conf.helix-toolbox-backup-20261015164340"),
+            "font_size 12\n",
+        )
+        .unwrap();
+        let fake = doctor::Fake {
+            home: home.path().to_path_buf(),
+            ..doctor::Fake::default()
+        };
+        let host = Host::made_up(fake).with_config(config.path());
+        assert!(
+            host.backup_roots()
+                .user
+                .contains(&config.path().to_path_buf())
+        );
+        let found = host.backups();
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].original, config.path().join("kitty.conf"));
+    }
+
+    #[test]
+    fn the_checks_kept_for_after_the_reboot_are_read_from_the_state_folder() {
+        // Like the history: Helix Toolbox's own state folder, not the
+        // machine's files, so a made-up host's fake need not hold it.
+        let state = tempfile::tempdir().unwrap();
+        let kept = [crate::verification::Waiting {
+            entry: "marker".into(),
+            name: "Marker".into(),
+            ran: 1_000,
+            checks: Vec::new(),
+        }];
+        std::fs::write(
+            state.path().join(crate::verification::AFTER_REBOOT),
+            serde_json::to_string(&kept).unwrap(),
+        )
+        .unwrap();
+        let host = Host::made_up(doctor::Fake::default()).with_state(state.path());
+        let found = doctor::examine_on(&host, None);
+        let after = found
+            .iter()
+            .find(|diagnosis| diagnosis.id == "after-reboot")
+            .expect("the kept checks were not read");
+        assert_eq!(after.summary, "waiting for the next reboot: Marker");
     }
 }

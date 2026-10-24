@@ -634,7 +634,7 @@ fn main() -> Result<()> {
             let entry = find(&catalog, &id)?;
             if as_json {
                 let status = entry.identity().and_then(|_| {
-                    Inventory::gather(&doctor::Here, &platform).status(entry, &platform, &which)
+                    Inventory::gather(&Host::here(), &platform).status(entry, &platform, &which)
                 });
                 json::print("info", json::info(entry, status.as_ref()));
                 return Ok(());
@@ -727,7 +727,7 @@ fn main() -> Result<()> {
                     .map(|id| find(&catalog, id))
                     .collect::<Result<_>>()?
             };
-            let inventory = Inventory::gather(&doctor::Here, &platform);
+            let inventory = Inventory::gather(&Host::here(), &platform);
             if as_json {
                 let found: Vec<(&Entry, Option<Status>)> = entries
                     .into_iter()
@@ -802,7 +802,7 @@ fn main() -> Result<()> {
             keep_going,
         } => {
             let catalog = load(ids.is_empty())?;
-            let inventory = Inventory::gather(&doctor::Here, &platform);
+            let inventory = Inventory::gather(&Host::here(), &platform);
             let entries: Vec<&Entry> = if ids.is_empty() {
                 catalog
                     .entries()

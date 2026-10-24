@@ -6,7 +6,7 @@
 //! put a missing part back; nothing here changes the machine.
 
 use crate::{
-    doctor::System,
+    doctor::{Node, System},
     history,
     host::Host,
     inventory::{Inventory, Status},
@@ -356,7 +356,7 @@ pub fn capture(name: &str, taken: u64, sources: &Sources, extra: &[String]) -> B
         let Some(full) = expand(sources.home, &path) else {
             continue;
         };
-        let (kind, sha256, target) = look(&full);
+        let (kind, sha256, target) = look(sources.system, &full);
         // Paths no entry has written are left out, unless the user named them.
         if kind == FileKind::Missing && entry.is_some() {
             continue;
@@ -426,7 +426,8 @@ fn set_up_here(entry: &Entry, sources: &Sources) -> Option<bool> {
         return None;
     }
     Some(entry.writes.iter().all(|path| {
-        expand(sources.home, path).is_some_and(|full| look(&full).0 != FileKind::Missing)
+        expand(sources.home, path)
+            .is_some_and(|full| look(sources.system, &full).0 != FileKind::Missing)
     }))
 }
 
@@ -552,7 +553,7 @@ pub fn compare(baseline: &Baseline, sources: &Sources) -> Report {
         let Some(full) = expand(sources.home, &record.path) else {
             continue;
         };
-        let (kind, sha256, target) = look(&full);
+        let (kind, sha256, target) = look(sources.system, &full);
         let path = printable(&record.path);
         let writer = record
             .entry
@@ -737,7 +738,8 @@ pub fn compare_profile(name: &str, ids: &[String], sources: &Sources) -> Report 
                 .writes
                 .iter()
                 .filter(|path| {
-                    expand(sources.home, path).is_none_or(|full| look(&full).0 == FileKind::Missing)
+                    expand(sources.home, path)
+                        .is_none_or(|full| look(sources.system, &full).0 == FileKind::Missing)
                 })
                 .collect();
             if missing.is_empty() {
@@ -912,46 +914,41 @@ const TREE_FILES: usize = 5_000;
 const TREE_BYTES: u64 = 256 << 20;
 const TREE_DEPTH: usize = 64;
 
-/// What a path is now: its kind, its checksum and a link's target.
-fn look(path: &Path) -> (FileKind, Option<String>, Option<String>) {
-    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+/// What a path is now on the machine `system` reads: its kind, its
+/// checksum and a link's target.
+fn look(system: &dyn System, path: &Path) -> (FileKind, Option<String>, Option<String>) {
+    let Some(node) = system.node(path) else {
         return (FileKind::Missing, None, None);
     };
-    if metadata.file_type().is_symlink() {
-        let target = std::fs::read_link(path)
-            .ok()
-            .map(|target| target.to_string_lossy().into_owned());
-        return (FileKind::Link, None, target);
+    match node {
+        Node::Link => {
+            let target = system
+                .link(path)
+                .map(|target| target.to_string_lossy().into_owned());
+            (FileKind::Link, None, target)
+        }
+        Node::Folder => {
+            let mut hasher = Sha256::new();
+            let mut budget = (TREE_FILES, TREE_BYTES);
+            let sum = tree(system, path, Path::new(""), &mut hasher, &mut budget)
+                .then(|| hex(&hasher.finalize()));
+            (FileKind::Directory, sum, None)
+        }
+        Node::File(_) => (FileKind::File, file_sum(system, path, TREE_BYTES), None),
+        // A device, a pipe or a socket is compared by its presence only:
+        // reading one could block or never end.
+        Node::Special => (FileKind::File, None, None),
     }
-    if metadata.is_dir() {
-        let mut hasher = Sha256::new();
-        let mut budget = (TREE_FILES, TREE_BYTES);
-        let sum =
-            tree(path, Path::new(""), &mut hasher, &mut budget).then(|| hex(&hasher.finalize()));
-        return (FileKind::Directory, sum, None);
-    }
-    // A device, a pipe or a socket is compared by its presence only: reading
-    // one could block or never end.
-    let sum = metadata
-        .is_file()
-        .then(|| file_sum(path, TREE_BYTES))
-        .flatten();
-    (FileKind::File, sum, None)
 }
 
 /// A regular file's checksum, reading at most `limit` bytes; None for
 /// anything else, or a file larger than that. The file is opened without
 /// following a link or waiting on a pipe, and checked once open, so a path
 /// swapped after it was looked at is not read either.
-fn file_sum(path: &Path, limit: u64) -> Option<String> {
-    use std::{io::Read, os::unix::fs::OpenOptionsExt};
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK)
-        .open(path)
-        .ok()?;
-    let metadata = file.metadata().ok()?;
-    if !metadata.is_file() || metadata.len() > limit {
+fn file_sum(system: &dyn System, path: &Path, limit: u64) -> Option<String> {
+    use std::io::Read;
+    let (size, file) = system.open(path)?;
+    if size > limit {
         return None;
     }
     let mut hasher = Sha256::new();
@@ -961,16 +958,19 @@ fn file_sum(path: &Path, limit: u64) -> Option<String> {
 
 /// Hash a folder's names, kinds and contents in a fixed order; false when it
 /// is too large or unreadable to compare.
-fn tree(root: &Path, relative: &Path, hasher: &mut Sha256, budget: &mut (usize, u64)) -> bool {
+fn tree(
+    system: &dyn System,
+    root: &Path,
+    relative: &Path,
+    hasher: &mut Sha256,
+    budget: &mut (usize, u64),
+) -> bool {
     if relative.components().count() > TREE_DEPTH {
         return false;
     }
-    let Ok(listing) = std::fs::read_dir(root.join(relative)) else {
+    let Some(names) = system.names(&root.join(relative)) else {
         return false;
     };
-    let mut names: Vec<std::ffi::OsString> =
-        listing.flatten().map(|item| item.file_name()).collect();
-    names.sort();
     for name in names {
         if budget.0 == 0 {
             return false;
@@ -978,34 +978,37 @@ fn tree(root: &Path, relative: &Path, hasher: &mut Sha256, budget: &mut (usize, 
         budget.0 -= 1;
         let child = relative.join(&name);
         let full = root.join(&child);
-        let Ok(metadata) = std::fs::symlink_metadata(&full) else {
+        let Some(node) = system.node(&full) else {
             return false;
         };
         hasher.update(child.to_string_lossy().as_bytes());
         hasher.update([0]);
-        if metadata.file_type().is_symlink() {
-            hasher.update(b"link ");
-            if let Ok(target) = std::fs::read_link(&full) {
-                hasher.update(target.to_string_lossy().as_bytes());
+        match node {
+            Node::Link => {
+                hasher.update(b"link ");
+                if let Some(target) = system.link(&full) {
+                    hasher.update(target.to_string_lossy().as_bytes());
+                }
             }
-        } else if metadata.is_dir() {
-            hasher.update(b"dir");
-            if !tree(root, &child, hasher, budget) {
-                return false;
+            Node::Folder => {
+                hasher.update(b"dir");
+                if !tree(system, root, &child, hasher, budget) {
+                    return false;
+                }
             }
-        } else if metadata.is_file() {
-            if metadata.len() > budget.1 {
-                return false;
+            Node::File(size) => {
+                if size > budget.1 {
+                    return false;
+                }
+                hasher.update(b"file ");
+                match file_sum(system, &full, budget.1) {
+                    Some(sum) => hasher.update(sum.as_bytes()),
+                    None => return false,
+                }
+                budget.1 -= size;
             }
-            hasher.update(b"file ");
-            match file_sum(&full, budget.1) {
-                Some(sum) => hasher.update(sum.as_bytes()),
-                None => return false,
-            }
-            budget.1 -= metadata.len();
-        } else {
             // Devices, pipes and sockets count by name only.
-            hasher.update(b"special");
+            Node::Special => hasher.update(b"special"),
         }
         hasher.update([0]);
     }
@@ -1182,7 +1185,8 @@ mod tests {
     use helix_toolbox_core::PackageManager;
     use std::collections::{HashMap, HashSet};
 
-    /// A machine whose settings and files come from a temporary home.
+    /// A machine whose settings and files come from a temporary home: its
+    /// files are the real ones under it, and none elsewhere.
     struct Fake {
         home: PathBuf,
         passwd: String,
@@ -1203,6 +1207,9 @@ mod tests {
             Vec::new()
         }
         fn link(&self, path: &Path) -> Option<PathBuf> {
+            if path.starts_with(&self.home) {
+                return crate::doctor::Here.link(path);
+            }
             (path == Path::new("/etc/systemd/system/display-manager.service"))
                 .then(|| PathBuf::from("/usr/lib/systemd/system/sddm.service"))
         }
@@ -1232,6 +1239,21 @@ mod tests {
         }
         fn processes(&self) -> Vec<String> {
             Vec::new()
+        }
+        fn node(&self, path: &Path) -> Option<crate::doctor::Node> {
+            path.starts_with(&self.home)
+                .then(|| crate::doctor::Here.node(path))
+                .flatten()
+        }
+        fn names(&self, path: &Path) -> Option<Vec<std::ffi::OsString>> {
+            path.starts_with(&self.home)
+                .then(|| crate::doctor::Here.names(path))
+                .flatten()
+        }
+        fn open(&self, path: &Path) -> Option<crate::doctor::Opened<'_>> {
+            path.starts_with(&self.home)
+                .then(|| crate::doctor::Here.open(path))
+                .flatten()
         }
     }
 
@@ -1553,21 +1575,22 @@ mod tests {
     #[test]
     fn devices_pipes_and_huge_files_are_never_read() {
         // /dev/zero would never end; a pipe would wait for a writer.
-        let (kind, sum, _) = look(Path::new("/dev/zero"));
+        let here = &crate::doctor::Here;
+        let (kind, sum, _) = look(here, Path::new("/dev/zero"));
         assert_eq!((kind, sum), (FileKind::File, None));
         let directory = tempfile::tempdir().unwrap();
         let pipe = directory.path().join("pipe");
         nix::unistd::mkfifo(&pipe, nix::sys::stat::Mode::S_IRWXU).unwrap();
-        assert_eq!(look(&pipe).1, None);
+        assert_eq!(look(here, &pipe).1, None);
         let start = std::time::Instant::now();
-        let (kind, sum, _) = look(directory.path());
+        let (kind, sum, _) = look(here, directory.path());
         assert_eq!(kind, FileKind::Directory);
         assert!(sum.is_some());
         assert!(start.elapsed() < std::time::Duration::from_secs(5));
         let big = directory.path().join("big");
         std::fs::write(&big, vec![0u8; 64]).unwrap();
-        assert!(file_sum(&big, 63).is_none());
-        assert!(file_sum(&big, 64).is_some());
+        assert!(file_sum(here, &big, 63).is_none());
+        assert!(file_sum(here, &big, 64).is_some());
     }
 
     #[test]
@@ -1702,5 +1725,44 @@ mod tests {
             "{}",
             dracula.note
         );
+    }
+
+    #[test]
+    fn a_capture_on_a_made_up_host_records_its_files() {
+        let mut fake = crate::doctor::Fake {
+            home: PathBuf::from("/home/me"),
+            ..crate::doctor::Fake::default()
+        };
+        fake.files
+            .insert("/etc/os-release".into(), "ID=madeup\n".into());
+        fake.folders
+            .insert("/home/me/made".into(), vec!["inner".into()]);
+        fake.files.insert("/home/me/made/inner".into(), "x".into());
+        fake.links
+            .insert("/home/me/up".into(), "/home/me/made".into());
+        let host = Host::made_up(fake);
+        let catalog = Catalog::builtin(false).unwrap();
+        let platform = arch();
+        let empty = inventory(&[]);
+        let sources = Sources::of(&host, &catalog, &platform, &empty);
+        let extra = ["/etc/os-release", "~/made", "~/up"].map(String::from);
+        let baseline = capture("Made up", 0, &sources, &extra);
+        let file = |path: &str| {
+            baseline
+                .files
+                .iter()
+                .find(|file| file.path == path)
+                .unwrap()
+        };
+        assert_eq!(file("/etc/os-release").kind, FileKind::File);
+        assert_eq!(
+            file("/etc/os-release").sha256.as_deref(),
+            Some(hex(&Sha256::digest(b"ID=madeup\n")).as_str()),
+            "recorded this machine's /etc/os-release"
+        );
+        assert_eq!(file("~/made").kind, FileKind::Directory);
+        assert!(file("~/made").sha256.is_some());
+        assert_eq!(file("~/up").kind, FileKind::Link);
+        assert_eq!(file("~/up").target.as_deref(), Some("/home/me/made"));
     }
 }

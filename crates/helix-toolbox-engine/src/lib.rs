@@ -1480,7 +1480,7 @@ pub fn verify(plan: &Plan) -> Vec<Check> {
         .iter()
         .any(|step| matches!(step, Step::Update { .. }))
     {
-        let after = inventory::Inventory::gather_for(&doctor::Here, manager);
+        let after = inventory::Inventory::gather_for(&host::Host::here(), manager);
         checks.extend(verify_updates_with(
             plan,
             &|probe| after.version(probe),

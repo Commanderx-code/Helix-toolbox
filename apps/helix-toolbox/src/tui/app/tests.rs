@@ -3591,3 +3591,47 @@ fn settings_say_where_they_are_kept() {
         "{shown}"
     );
 }
+
+/// The dashboard's overview is read from the host, so a made-up host's
+/// desktop and kernel show, not this machine's.
+#[test]
+fn the_overview_is_the_hosts() {
+    let mut machine = made_up();
+    machine.files.insert(
+        "/proc/sys/kernel/osrelease".into(),
+        "6.0.0-made-up\n".into(),
+    );
+    let app = app_on(Host::made_up(machine).with_variable("XDG_CURRENT_DESKTOP", "MadeUpDE"));
+    let rows: Vec<String> = app
+        .overview
+        .rows
+        .iter()
+        .map(|(label, value)| format!("{label}: {value}"))
+        .collect();
+    assert!(rows.contains(&"Desktop: MadeUpDE".to_string()), "{rows:#?}");
+    assert!(
+        rows.contains(&"Kernel: 6.0.0-made-up".to_string()),
+        "{rows:#?}"
+    );
+}
+
+/// c checks the selected entry on the host: the made-up machine's package
+/// list says Lynx is installed, though its command is not on the PATH.
+#[test]
+fn checking_an_entry_asks_the_host_for_its_package() {
+    let mut machine = made_up();
+    machine
+        .commands
+        .insert("pacman -Q lynx".into(), (true, "lynx 2.9.2-1\n".into()));
+    let mut app = app_on(Host::made_up(machine));
+    press(&mut app, KeyCode::Char('/'));
+    type_text(&mut app, "lynx");
+    press(&mut app, KeyCode::Enter);
+    press(&mut app, KeyCode::Char('c'));
+    let text = screen(&mut app, 160, 50);
+    assert!(
+        text.contains("Everything that can be checked here is as it should be"),
+        "{text}"
+    );
+    assert!(text.contains("pacman lists lynx"), "{text}");
+}
