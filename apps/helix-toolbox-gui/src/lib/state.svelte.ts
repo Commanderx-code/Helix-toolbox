@@ -216,14 +216,15 @@ class Toolbox {
   }
 
   /** The run window closed: the engine records the run and says which
-   * queued entries remain (what did not finish) and what to read again. */
+   * queued entries remain (what did not finish, or all of them when the
+   * run could not start) and what to read again. */
   async closeRun() {
     const fromPlan = this.running?.fromPlan ?? false;
     this.running = null;
     this.busy = false;
     let closed: ClosedView;
     try {
-      closed = await api.closeRun();
+      closed = await api.closeRun(this.queue);
     } catch (error) {
       this.error = String(error);
       closed = { remaining: this.queue, read_again: ['statuses', 'updates', 'tools', 'history'], not_recorded: null };

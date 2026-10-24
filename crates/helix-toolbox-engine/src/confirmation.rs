@@ -68,10 +68,44 @@ pub struct Line {
 /// How the run should go, from the settings, for [`prepare_with`].
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Choices {
-    /// Take a snapshot first with this tool, when the plan is worth one.
-    pub snapshot: Option<backups::Snapshots>,
+    /// Whether to take a snapshot first, and with which tool.
+    pub snapshot: Snapshot,
     /// After a failed step, continue with the steps that do not need it.
+    /// A plan that does so itself (a migration's) still does.
     pub keep_going: bool,
+}
+
+/// Whether a run takes a snapshot before it changes the system.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Snapshot {
+    /// Settings turns snapshots off.
+    #[default]
+    Off,
+    /// Settings wants one before system changes: with this tool, or, where
+    /// the machine has neither Snapper nor Timeshift, a note saying so.
+    Wanted(Option<backups::Snapshots>),
+    /// Asked for on this run (`run --snapshot`): as `Wanted`, and a run
+    /// that changes no system files says why it takes none.
+    Asked(Option<backups::Snapshots>),
+}
+
+/// What the user chose for a run: the run choices in Settings (with what
+/// the command line's flags turned on), and whether this run itself asked
+/// for a snapshot.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Wants {
+    pub run_choices: RunChoices,
+    /// `run --snapshot`: a run not worth a snapshot says so.
+    pub snapshot_asked: bool,
+}
+
+impl From<RunChoices> for Wants {
+    fn from(run_choices: RunChoices) -> Self {
+        Self {
+            run_choices,
+            snapshot_asked: false,
+        }
+    }
 }
 
 /// Get a plan ready to confirm on this machine, as the settings' run
@@ -82,13 +116,20 @@ pub fn prepare(
     planned: Plan,
     catalog: &Catalog,
     platform: &LinuxInfo,
-    run_choices: RunChoices,
+    wants: impl Into<Wants>,
 ) -> Prepared {
+    let Wants {
+        run_choices,
+        snapshot_asked,
+    } = wants.into();
     let choices = Choices {
-        snapshot: run_choices
-            .snapshots
-            .then(backups::Snapshots::here)
-            .flatten(),
+        snapshot: if snapshot_asked {
+            Snapshot::Asked(backups::Snapshots::here())
+        } else if run_choices.snapshots {
+            Snapshot::Wanted(backups::Snapshots::here())
+        } else {
+            Snapshot::Off
+        },
         keep_going: run_choices.keep_going,
     };
     prepare_with(
@@ -112,7 +153,10 @@ pub fn prepare_with<'a>(
     evidence: &Evidence,
 ) -> Prepared {
     let mut planned = planned;
-    planned.keep_going = choices.keep_going;
+    // A plan that keeps going after a failure itself (a migration's) still
+    // does; Settings can only turn it on for the rest.
+    let own_choice = planned.keep_going;
+    planned.keep_going |= choices.keep_going;
     if planned.is_empty() {
         let mut lines = planned.notes.clone();
         lines.extend(
@@ -131,11 +175,22 @@ pub fn prepare_with<'a>(
             verdict: Verdict::Nothing(lines),
         };
     }
-    // A snapshot first when the run changes the system, where possible.
-    if let Some(tool) = choices.snapshot
-        && backups::worth_a_snapshot(&planned, &|id| lookup(id).map(|entry| entry.flags.clone()))
-    {
-        backups::with_snapshot(&mut planned, tool);
+    // A snapshot first when the run changes the system, where possible;
+    // where a wanted one is not taken, why, when that tells the user
+    // something.
+    let worth =
+        backups::worth_a_snapshot(&planned, &|id| lookup(id).map(|entry| entry.flags.clone()));
+    match choices.snapshot {
+        Snapshot::Wanted(tool) | Snapshot::Asked(tool) if worth => match tool {
+            Some(tool) => backups::with_snapshot(&mut planned, tool),
+            None => planned
+                .notes
+                .push("No snapshot: neither Snapper nor Timeshift is set up here.".into()),
+        },
+        Snapshot::Asked(_) => planned.notes.push(
+            "No snapshot: this run does not change system files, the kernel or disks.".into(),
+        ),
+        Snapshot::Wanted(_) | Snapshot::Off => {}
     }
     let findings = preflight::check(&planned, platform, lookup, facts);
     if preflight::blocked(&findings) {
@@ -170,14 +225,14 @@ pub fn prepare_with<'a>(
             .map(|warning| format!("Warning: {warning}")),
     );
     if planned.steps.len() > 1 {
-        header.push(format!(
-            "After a failed step: {} (Settings changes it)",
-            if choices.keep_going {
-                "continue with what does not need it"
-            } else {
-                "stop"
+        header.push(match (planned.keep_going, own_choice) {
+            (_, true) => "After a failed step: continue with what does not need it".to_string(),
+            (true, false) => {
+                "After a failed step: continue with what does not need it (Settings changes it)"
+                    .to_string()
             }
-        ));
+            (false, _) => "After a failed step: stop (Settings changes it)".to_string(),
+        });
     }
     let mut lines: Vec<Line> = planned
         .steps
@@ -309,7 +364,7 @@ mod tests {
     #[test]
     fn a_snapshot_comes_first_only_for_system_changes() {
         let snapper = Choices {
-            snapshot: Some(backups::Snapshots::Snapper),
+            snapshot: Snapshot::Wanted(Some(backups::Snapshots::Snapper)),
             ..Choices::default()
         };
         let plain = prepared(&[package("ripgrep", "I")], snapper, None);
@@ -321,6 +376,94 @@ mod tests {
             panic!("ready");
         };
         assert!(lines[0].detail.contains("snapper"));
+    }
+
+    /// The notes about a snapshot not taken, or None when there is none.
+    fn no_snapshot(entry: Entry, snapshot: Snapshot) -> Option<String> {
+        let choices = Choices {
+            snapshot,
+            ..Choices::default()
+        };
+        let ready = prepared(&[entry], choices, None);
+        let Verdict::Ready { lines, .. } = &ready.verdict else {
+            panic!("ready");
+        };
+        let notes: Vec<&str> = lines
+            .iter()
+            .filter(|line| line.name.starts_with("No snapshot"))
+            .map(|line| line.name.as_str())
+            .collect();
+        (!notes.is_empty()).then(|| notes.join("\n"))
+    }
+
+    #[test]
+    fn a_snapshot_not_taken_is_explained_only_where_one_was_expected() {
+        let kernel = || package("linux-zen", "I K");
+        let plain = || package("ripgrep", "I");
+        let neither = "No snapshot: neither Snapper nor Timeshift is set up here.";
+        let unchanged = "No snapshot: this run does not change system files, the kernel or disks.";
+        // A system change on a machine without a snapshot tool says so,
+        // whether Settings or `--snapshot` wants one.
+        assert_eq!(
+            no_snapshot(kernel(), Snapshot::Wanted(None)).as_deref(),
+            Some(neither)
+        );
+        assert_eq!(
+            no_snapshot(kernel(), Snapshot::Asked(None)).as_deref(),
+            Some(neither)
+        );
+        // Only `--snapshot` hears that a run is not worth one.
+        assert_eq!(
+            no_snapshot(plain(), Snapshot::Asked(Some(backups::Snapshots::Snapper))).as_deref(),
+            Some(unchanged)
+        );
+        assert_eq!(
+            no_snapshot(plain(), Snapshot::Asked(None)).as_deref(),
+            Some(unchanged)
+        );
+        // Otherwise nothing: the snapshot is taken, nothing wanted one, or
+        // Settings wants one and the run is not worth it.
+        let snapper = Snapshot::Wanted(Some(backups::Snapshots::Snapper));
+        assert_eq!(no_snapshot(kernel(), snapper), None);
+        assert_eq!(no_snapshot(kernel(), Snapshot::Off), None);
+        assert_eq!(no_snapshot(plain(), Snapshot::Wanted(None)), None);
+        assert_eq!(no_snapshot(plain(), snapper), None);
+    }
+
+    /// A migration plan keeps going after a failure (`migration::plan` sets
+    /// it); with Settings' choice off it still does, in every interface.
+    #[test]
+    fn a_plan_that_keeps_going_still_does_with_settings_off() {
+        let entries = [package("ripgrep", "I"), package("fzf", "I")];
+        let lookup = |id: &str| entries.iter().find(|entry| entry.id == id);
+        let mut planned = plan_with(&entries, &arch(), &lookup, NOTHING_HELD).unwrap();
+        planned.keep_going = true; // as migration::plan does
+        let facts = preflight::Facts {
+            machine: NOTHING_HELD,
+            present: &|_| true,
+            free_bytes: &|_| None,
+            gpus: &Vec::new,
+            repositories: &|| None,
+            sizes: &|_, _| Some(1 << 20),
+            active_runs: &Vec::new,
+        };
+        let ready = prepare_with(
+            planned,
+            &arch(),
+            &lookup,
+            Choices::default(),
+            &facts,
+            &Evidence::default(),
+        );
+        assert!(ready.plan.keep_going, "Settings' choice dropped it");
+        let Verdict::Ready { header, .. } = &ready.verdict else {
+            panic!("ready");
+        };
+        // The plan's own choice, which Settings does not change.
+        assert_eq!(
+            header.last().unwrap(),
+            "After a failed step: continue with what does not need it"
+        );
     }
 
     #[test]

@@ -31,7 +31,12 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver},
     },
+    time::{Duration, Instant},
 };
+
+/// How long a run stopped as its panel closes is given to end after the
+/// hangup, and again after the kill, before the session stops waiting.
+const GRACE: Duration = Duration::from_secs(2);
 
 /// What an interface shows that a run can leave out of date.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -252,13 +257,18 @@ impl RunSession {
     /// and the processes of the run still alive. Only the first call once
     /// the run has ended writes it; dropping the session writes it without a
     /// log if no call did. Until then the history's marker keeps the
-    /// outcome, in case Helix Toolbox stops first.
+    /// outcome, in case Helix Toolbox stops first. A run stopped before it
+    /// ended, as when the window's run panel closes on it, is waited for a
+    /// moment (and killed if it ignores the hangup), then recorded as
+    /// interrupted.
     pub fn record(&self, log: Option<PathBuf>) -> io::Result<()> {
         let Some(shared) = &self.shared else {
             return Ok(());
         };
-        let Some(finished) = shared.finished.get() else {
-            return Ok(());
+        let finished = match shared.finished.get() {
+            Some(finished) => finished.clone(),
+            None if self.stop_requested() && end(shared) => conclude(shared),
+            None => return Ok(()),
         };
         let left = self.survivors();
         let mut book = shared.book.lock().unwrap();
@@ -334,8 +344,10 @@ impl Drop for RunSession {
         let Some(shared) = &self.shared else {
             return;
         };
-        // A run that ended just now is still concluded and recorded.
-        if shared.finished.get().is_none() && shared.runner.lock().unwrap().outcome().is_some() {
+        // A run that ended just now is still concluded and recorded, and so
+        // is one still going: it is stopped, as its terminal closing would
+        // stop it, so its marker does not stay behind as a run going on.
+        if shared.finished.get().is_none() && end(shared) {
             conclude(shared);
         }
         let _ = self.record(None);
@@ -349,6 +361,39 @@ impl Drop for Shared {
             let _ = std::fs::remove_file(status);
         }
     }
+}
+
+/// Bring a run that has not ended to its end: a hangup unless one was
+/// sent already, then, after a grace period, a kill for what ignored it.
+/// True once the program has ended; false at once where the runner cannot
+/// stop it (the command line's own terminal), or when it outlives the kill.
+fn end(shared: &Shared) -> bool {
+    let ended = || shared.runner.lock().unwrap().outcome().is_some();
+    if ended() {
+        return true;
+    }
+    {
+        let mut runner = shared.runner.lock().unwrap();
+        if !runner.stop_requested() {
+            runner.stop();
+            if !runner.stop_requested() {
+                return false;
+            }
+        }
+    }
+    for last in [false, true] {
+        let since = Instant::now();
+        while since.elapsed() < GRACE {
+            if ended() {
+                return true;
+            }
+            std::thread::sleep(execution::TICK);
+        }
+        if !last {
+            shared.runner.lock().unwrap().stop();
+        }
+    }
+    ended()
 }
 
 /// Conclude the ended run, once however many ask: read how each step
@@ -706,6 +751,66 @@ mod tests {
                 .start(MockRunner::default(), Path::new("/"), Path::new("/"), quiet)
                 .is_err()
         );
+    }
+
+    /// A step that runs until it is stopped, and says when it has begun.
+    fn going(started: &Path) -> Step {
+        Step::Command {
+            id: "long".into(),
+            name: "Long".into(),
+            line: format!("touch {}; exec sleep 300", started.display()),
+        }
+    }
+
+    /// Start a session of `going` in a pseudo-terminal and wait until its
+    /// step has begun.
+    fn start_going(state: &Path) -> RunSession {
+        let started = state.join("started");
+        let _ = std::fs::remove_file(&started);
+        let mut session = RunSession::new(plan(vec![going(&started)]));
+        session
+            .start(
+                crate::PtyRunner::default(),
+                Path::new("/lib"),
+                Path::new("/bin/hf"),
+                into(state),
+            )
+            .unwrap();
+        let since = std::time::Instant::now();
+        while !started.exists() {
+            assert!(since.elapsed() < Duration::from_secs(10), "it began");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        session
+    }
+
+    fn markers(state: &Path) -> usize {
+        std::fs::read_dir(state.join("running")).map_or(0, |dir| dir.count())
+    }
+
+    #[test]
+    fn a_run_stopped_as_its_panel_closes_is_recorded_and_leaves_no_marker() {
+        // The window's close_run: a run still going is stopped, recorded,
+        // and the session goes.
+        let state = tempfile::tempdir().unwrap();
+        let session = start_going(state.path());
+        session.stop();
+        session.record(None).unwrap();
+        assert_eq!(session.remaining(&|_| true), ["long"], "it did not finish");
+        drop(session);
+        let records = history::read_in(state.path(), 5).unwrap();
+        assert_eq!(records.len(), 1, "the stopped run is in the history");
+        assert!(!records[0].success);
+        assert_eq!(markers(state.path()), 0, "no run looks still going");
+
+        // The terminal interface quits with a run going: the session is
+        // dropped without a stop or a record first.
+        let state = tempfile::tempdir().unwrap();
+        drop(start_going(state.path()));
+        let records = history::read_in(state.path(), 5).unwrap();
+        assert_eq!(records.len(), 1, "the dropped run is in the history");
+        assert!(!records[0].success);
+        assert_eq!(markers(state.path()), 0);
     }
 
     #[test]

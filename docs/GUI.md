@@ -95,7 +95,8 @@ second **Stop** kills what ignored that. When the run ends, the result and
 the checks of the package steps appear below, and **Close** records the run
 in the history. A run from the Install Plan leaves in it what did not
 finish, as the terminal interface does: a queued profile's unfinished
-entries take its place, and an entry that needed nothing leaves. Then the
+entries take its place, and an entry that needed nothing leaves; a run
+that could not start leaves the Install Plan as it was. Then the
 window reads again what the run can change, as the engine's run session
 says: how entries stand, Updates, History and the tool screens.
 
@@ -283,7 +284,7 @@ Its commands:
 | `cancel` | forgets a plan that was not confirmed |
 | `run` | starts the confirmed plan in a terminal of the given size and sends its events to a channel: `ExecutionEvent`'s JSON form, output as base64 |
 | `write`, `resize`, `stop` | what the user typed, the terminal's size, a stop |
-| `close_run` | records the run in the history; the queued entries that remain, what to read again (`statuses`, `updates`, `tools`, `history`) and why it was not recorded, if it was not |
+| `close_run` | stops a run still going and records it in the history; which of the queued entries it is given remain (all of them when the run could not start), what to read again (`statuses`, `updates`, `tools`, `history`) and why it was not recorded, if it was not |
 | `runs` | the history |
 | `save_profile` | the Install Plan as a profile |
 | `bug_report`, `copy_text` | `helix-toolbox report` with the window's facts, and text put on the clipboard |

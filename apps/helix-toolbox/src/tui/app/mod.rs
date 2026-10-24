@@ -1257,7 +1257,11 @@ impl App {
         // what planning asked.
         let evidence = self.evidence();
         let choices = confirmation::Choices {
-            snapshot: self.snapshot_tool.filter(|_| self.snapshots),
+            snapshot: if self.snapshots {
+                confirmation::Snapshot::Wanted(self.snapshot_tool)
+            } else {
+                confirmation::Snapshot::Off
+            },
             keep_going: self.keep_going,
         };
         self.with_facts(|facts| {

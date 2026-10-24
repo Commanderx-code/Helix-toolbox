@@ -18,14 +18,17 @@ use std::{
 };
 
 /// The run choices in Settings, with --keep-going and --snapshot turning
-/// theirs on.
-pub fn run_choices(keep_going: bool, snapshot: bool) -> settings::RunChoices {
+/// theirs on; --snapshot also hears why a run takes none.
+pub fn run_choices(keep_going: bool, snapshot: bool) -> confirmation::Wants {
     let saved = settings::path()
         .map(|path| settings::run_choices(&path))
         .unwrap_or_default();
-    settings::RunChoices {
-        keep_going: saved.keep_going || keep_going,
-        snapshots: saved.snapshots || snapshot,
+    confirmation::Wants {
+        run_choices: settings::RunChoices {
+            keep_going: saved.keep_going || keep_going,
+            snapshots: saved.snapshots || snapshot,
+        },
+        snapshot_asked: snapshot,
     }
 }
 
@@ -36,7 +39,7 @@ fn prepare(catalog: &Catalog, platform: &LinuxInfo, planned: &Plan) -> Prepared 
         planned.clone(),
         catalog,
         platform,
-        run_choices(planned.keep_going, false),
+        run_choices(false, false),
     )
 }
 
@@ -65,7 +68,7 @@ pub fn confirm_and_run_with(
     catalog: &Catalog,
     platform: &LinuxInfo,
     planned: &Plan,
-    choices: settings::RunChoices,
+    choices: confirmation::Wants,
     dry_run: bool,
     yes: bool,
     word: &str,
@@ -285,7 +288,7 @@ mod tests {
     use super::*;
     use helix_toolbox_engine::{
         Machine, backups,
-        confirmation::{Choices, prepare_with},
+        confirmation::{Choices, Snapshot, prepare_with},
         plan_with, preflight,
         reliability::Evidence,
     };
@@ -360,7 +363,7 @@ mod tests {
             &["failing", "marker"],
             Choices {
                 keep_going: true,
-                snapshot: Some(backups::Snapshots::Snapper),
+                snapshot: Snapshot::Wanted(Some(backups::Snapshots::Snapper)),
             },
         );
         assert!(going.plan.keep_going);

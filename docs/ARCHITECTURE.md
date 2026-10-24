@@ -105,7 +105,9 @@ entries ──plan──▶ Plan ──confirmation::prepare──▶ Prepared �
 interface: it holds the plan the confirmation made ready, starts its
 program through a `Runner`, follows it as execution events, concludes it
 once when the program ends, writes the record when the interface is done
-with it, and then answers which queued entries remain (those whose steps
+with it (a run still going when the interface lets go of it is stopped
+first, then recorded as interrupted, so its marker does not stay behind),
+and then answers which queued entries remain (those whose steps
 did not finish) and what an interface should read again (`Reading`: the
 statuses, the updates, the tool screens, the history). The runners differ
 only in where the program runs: `PtyRunner` in a pseudo-terminal of its

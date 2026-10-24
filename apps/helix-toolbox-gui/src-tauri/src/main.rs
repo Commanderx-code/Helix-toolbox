@@ -403,19 +403,34 @@ fn stop(gui: State<Gui>) {
 }
 
 /// The terminal panel closed: record the run in the history, and say which
-/// queued entries remain and what to read again.
+/// of the queued entries, `queue`, remain and what to read again.
 #[tauri::command]
-fn close_run(gui: State<Gui>) -> ClosedView {
-    let Some(run) = gui.running.lock().unwrap().take() else {
-        return ClosedView::default();
+fn close_run(gui: State<Gui>, queue: Vec<String>) -> ClosedView {
+    let run = gui.running.lock().unwrap().take();
+    let catalog = gui.catalog.read().unwrap();
+    closed_run(run, queue, &|id| catalog.find(id).is_some())
+}
+
+/// Close the run panel on `run`: stop it if it is still going, record it,
+/// and say which entries of `queue` remain. When nothing ran, because the
+/// run could not start, the queue stays as it was.
+fn closed_run(
+    run: Option<RunSession>,
+    queue: Vec<String>,
+    known: &dyn Fn(&str) -> bool,
+) -> ClosedView {
+    let Some(run) = run else {
+        return ClosedView {
+            remaining: queue,
+            ..ClosedView::default()
+        };
     };
     if !run.is_finished() {
         run.stop();
     }
-    let catalog = gui.catalog.read().unwrap();
     views::closed(
         &run,
-        &|id| catalog.find(id).is_some(),
+        known,
         run.record(None)
             .err()
             .map(|error| format!("The run was not recorded in the history: {error}")),
@@ -2984,6 +2999,43 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn closing_a_run_that_never_started_keeps_the_queue() {
+        let queue = vec!["ripgrep".to_string(), "fzf".to_string()];
+        let closed = closed_run(None, queue.clone(), &|_| true);
+        assert_eq!(
+            closed.remaining, queue,
+            "nothing ran, so nothing left the queue"
+        );
+        assert!(closed.read_again.is_empty());
+        assert!(closed.not_recorded.is_none());
+
+        // A run that finished leaves what did not finish, whatever the
+        // queue was.
+        let mut session = RunSession::new(Plan {
+            steps: vec![helix_toolbox_engine::Step::Command {
+                id: "ripgrep".into(),
+                name: "ripgrep".into(),
+                line: "true".into(),
+            }],
+            ..Plan::default()
+        });
+        let runner = helix_toolbox_engine::MockRunner {
+            steps: vec!["0 done 0".into()],
+            ..Default::default()
+        };
+        let options = Options {
+            history: helix_toolbox_engine::execution::HistoryPlace::Off,
+            ..Options::default()
+        };
+        session
+            .start(runner, Path::new("/lib"), Path::new("/bin/hf"), options)
+            .unwrap();
+        session.wait().unwrap();
+        let closed = closed_run(Some(session), queue, &|_| true);
+        assert!(closed.remaining.is_empty(), "{:?}", closed.remaining);
+    }
 
     #[test]
     fn the_person_is_their_full_name_else_their_login() {
