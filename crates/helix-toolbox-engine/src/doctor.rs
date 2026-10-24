@@ -154,6 +154,7 @@ pub trait System {
 }
 
 /// This machine.
+#[derive(Clone, Copy, Debug)]
 pub struct Here;
 
 impl System for Here {
@@ -1079,7 +1080,7 @@ fn space(system: &dyn System, manager: Option<PackageManager>, into: &mut Vec<Di
 }
 
 /// A made-up machine, for tests.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Fake {
     pub files: HashMap<PathBuf, String>,
     pub folders: HashMap<PathBuf, Vec<String>>,

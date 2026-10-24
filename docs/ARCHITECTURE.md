@@ -100,11 +100,17 @@ only then whether its optional `binary` is on the PATH: `Installed`,
 `OnPath` (an install Helix Toolbox did not make, such as Nix's) or `Absent`
 with the installed packages it would replace.
 
-`inventory::Inventory` is the same knowledge for showing it. `gather()` runs
-a few read-only queries once (`pacman -Q` and `-Qu`, `dpkg-query -W` and
-`apt list --upgradable`, `rpm -qa` and `dnf -C list --upgrades`, `flatpak
-list` and `flatpak remote-ls --updates --cached`), none of which needs root
-or the network, and answers probes from that snapshot. `status()` turns an
+`inventory::Inventory` is the same knowledge for showing it. `gather()` asks
+a `doctor::System` a few read-only queries once (`pacman -Q` and `-Qu`,
+`dpkg-query -W` and `apt list --upgradable`, `rpm -qa` with `dnf -C list
+--upgrades` on Fedora or `zypper --no-refresh list-updates` on openSUSE,
+`flatpak list` and `flatpak remote-ls --updates --cached`), none of which
+needs root or the network, and answers probes from that snapshot. It keeps
+the `System` for what the snapshot cannot answer: which package owns a
+file, and the probes of families whose list it does not read. The waiting
+updates are read by the same parsers as `updates::overview()`, and tests
+gather from `doctor::Fake`; the migration hub asks its package lists
+through a `System` too. `status()` turns an
 entry into a `Status`: `Installed` and `Update` (source, version, newer
 version, and a Nix copy of the command found first on the PATH), `Managed`
 (the command resolves into the Nix store: Home Manager when the current

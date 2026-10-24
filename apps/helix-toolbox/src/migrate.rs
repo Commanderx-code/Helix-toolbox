@@ -7,7 +7,7 @@ use clap::Subcommand;
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::printable;
 use helix_toolbox_engine::{
-    history,
+    doctor, history,
     migration::{self, Kind, Standing, Translation},
 };
 use helix_toolbox_platform::LinuxInfo;
@@ -43,7 +43,12 @@ pub enum MigrateCommand {
 
 /// A migration file read on this machine.
 pub fn translate(path: &Path, catalog: &Catalog, platform: &LinuxInfo) -> Result<Translation> {
-    Ok(migration::read_here(path, &catalog.entries(), platform)?)
+    Ok(migration::read_here(
+        &doctor::Here,
+        path,
+        &catalog.entries(),
+        platform,
+    )?)
 }
 
 /// The translation as JSON, for `migrate show --json` and the window.
@@ -72,7 +77,8 @@ pub fn migrate(
 ) -> Result<()> {
     match command {
         MigrateCommand::Export { file } => {
-            let found = migration::gather(&catalog.entries(), platform, history::now());
+            let found =
+                migration::gather(&doctor::Here, &catalog.entries(), platform, history::now());
             if as_json {
                 crate::json::print("migrate-export", json!(found));
                 return Ok(());
@@ -87,7 +93,7 @@ pub fn migrate(
                 found.packages.len(),
                 found.from
             );
-            if migration::chosen(platform.manager).is_none() {
+            if migration::chosen(&doctor::Here, platform.manager).is_none() {
                 println!(
                     "The packages you installed yourself cannot be told apart here, so only the entries and Flatpaks are in it."
                 );
@@ -109,8 +115,9 @@ pub fn migrate(
         }
         MigrateCommand::Apply { file, dry_run, yes } => {
             let translation = translate(&file, catalog, platform)?;
-            let planned = migration::plan_here(&translation, &catalog.entries(), platform)
-                .with_context(|| format!("cannot plan {}", file.display()))?;
+            let planned =
+                migration::plan_here(&doctor::Here, &translation, &catalog.entries(), platform)
+                    .with_context(|| format!("cannot plan {}", file.display()))?;
             let yours =
                 translation.count(Standing::Yours) + translation.count(Standing::Unavailable);
             if !crate::JSON.load(std::sync::atomic::Ordering::Relaxed) && yours > 0 {

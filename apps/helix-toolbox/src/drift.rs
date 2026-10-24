@@ -64,7 +64,7 @@ struct Here {
 impl Here {
     fn gather(platform: &LinuxInfo) -> Self {
         Here {
-            inventory: Inventory::gather(platform),
+            inventory: Inventory::gather(&doctor::Here, platform),
             home: std::env::var_os("HOME")
                 .map(PathBuf::from)
                 .unwrap_or_default(),

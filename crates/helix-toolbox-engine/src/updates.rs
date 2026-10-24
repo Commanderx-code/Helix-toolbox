@@ -927,15 +927,23 @@ pub fn apt(text: &str) -> Vec<Pending> {
 
 /// `name.arch version repository` lines from dnf list --upgrades.
 pub fn dnf(text: &str) -> Vec<Pending> {
-    let mut found: Vec<Pending> = crate::inventory::parse_dnf_upgrades(text)
-        .into_iter()
-        .map(|(name, to)| Pending {
-            name,
-            from: None,
-            to: Some(to),
+    let mut found: Vec<Pending> = text
+        .lines()
+        .filter_map(|line| {
+            let mut words = line.split_whitespace();
+            let package = words.next()?;
+            let version = words.next()?;
+            let (name, arch) = package.rsplit_once('.')?;
+            // Headings such as "Available upgrades" have no architecture.
+            (!arch.is_empty() && version.chars().next()?.is_ascii_digit()).then(|| Pending {
+                name: name.to_string(),
+                from: None,
+                to: Some(version.to_string()),
+            })
         })
         .collect();
     found.sort_by(|a, b| a.name.cmp(&b.name));
+    found.dedup_by(|a, b| a.name == b.name);
     found
 }
 
@@ -1491,7 +1499,14 @@ mod tests {
         assert_eq!(zypper.len(), 1);
         assert_eq!(zypper[0].to.as_deref(), Some("9.1-1"));
         let dnf = dnf("Available Upgrades\ngit.x86_64 2.47.0-1.fc41 updates\n");
+        assert_eq!(dnf.len(), 1);
         assert_eq!(dnf[0].name, "git");
+        assert_eq!(dnf[0].to.as_deref(), Some("2.47.0-1.fc41"));
+        let arrows = arrows("ripgrep 15.2.0-1 -> 15.3.0-1\nlinux 6.1-1 -> 6.2-1 [ignored]\n");
+        assert_eq!(arrows.len(), 1, "an ignored package waits for nothing");
+        assert_eq!(arrows[0].name, "ripgrep");
+        assert_eq!(arrows[0].from.as_deref(), Some("15.2.0-1"));
+        assert_eq!(arrows[0].to.as_deref(), Some("15.3.0-1"));
         assert_eq!(date(0), "1970-01-01");
         assert_eq!(date(1_792_022_400), "2026-10-15");
     }

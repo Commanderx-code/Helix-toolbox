@@ -7,7 +7,9 @@
 //! package of the same name. Exporting only reads; bringing a migration
 //! over is a plan, reviewed like any other.
 
-use crate::{EngineError, Machine, PackageState, Plan, Probe, Step, inventory::Inventory};
+use crate::{
+    EngineError, Machine, PackageState, Plan, Probe, Step, doctor::System, inventory::Inventory,
+};
 use helix_toolbox_core::{
     Action, Entry, PackageManager, PackageNames, printable, valid_flatpak_id, valid_id,
     valid_package_name,
@@ -17,7 +19,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
 };
 
 /// The format of the files written now.
@@ -629,7 +630,8 @@ fn package_entry(id: String, name: &str, packages: PackageNames, flatpak: Option
 
 /// The packages the user installed themselves, as the family's package
 /// manager records them; None where it cannot be told.
-pub fn chosen(manager: Option<PackageManager>) -> Option<Vec<String>> {
+pub fn chosen(system: &dyn System, manager: Option<PackageManager>) -> Option<Vec<String>> {
+    let output = |command: &[&str]| output(system, command);
     match manager? {
         PackageManager::Arch => output(&["pacman", "-Qqe"]).map(|text| names(&text)),
         PackageManager::Debian => output(&["apt-mark", "showmanual"]).map(|text| names(&text)),
@@ -647,11 +649,11 @@ pub fn chosen(manager: Option<PackageManager>) -> Option<Vec<String>> {
             // zypper records the packages it installed as dependencies; the
             // others were asked for.
             let installed = output(&["rpm", "-qa", "--qf", "%{NAME}\n"])?;
-            let automatic = std::fs::read_to_string("/var/lib/zypp/AutoInstalled").ok()?;
+            let automatic = system.read(Path::new("/var/lib/zypp/AutoInstalled"))?;
             Some(asked_for(&installed, &automatic))
         }
-        PackageManager::Alpine => std::fs::read_to_string("/etc/apk/world")
-            .ok()
+        PackageManager::Alpine => system
+            .read(Path::new("/etc/apk/world"))
             .map(|text| apk_world(&text)),
         PackageManager::Void => output(&["xbps-query", "-m"]).map(|text| xbps_names(&text)),
         PackageManager::Solus => None,
@@ -660,7 +662,8 @@ pub fn chosen(manager: Option<PackageManager>) -> Option<Vec<String>> {
 
 /// The package names this family's repositories offer, from the metadata
 /// already on the machine (no network); None where it is not read.
-pub fn available(manager: Option<PackageManager>) -> Option<HashSet<String>> {
+pub fn available(system: &dyn System, manager: Option<PackageManager>) -> Option<HashSet<String>> {
+    let output = |command: &[&str]| output(system, command);
     let text = match manager? {
         PackageManager::Arch => output(&["pacman", "-Slq"])?,
         PackageManager::Debian => output(&["apt-cache", "pkgnames"])?,
@@ -685,18 +688,24 @@ pub fn available(manager: Option<PackageManager>) -> Option<HashSet<String>> {
     (!found.is_empty()).then_some(found)
 }
 
-/// A migration file read on this machine, its packages read once.
-pub fn read_here(
+/// A migration file read on the machine `system` answers for, its
+/// packages read once.
+pub fn read_here<S>(
+    system: &S,
     path: &Path,
     entries: &[&Entry],
     platform: &LinuxInfo,
-) -> Result<Translation, MigrationError> {
+) -> Result<Translation, MigrationError>
+where
+    S: System + Clone + Send + Sync + 'static,
+{
     let migration = read(path)?;
-    let inventory = Inventory::gather(platform);
+    let inventory = Inventory::gather(system, platform);
     let holds = |probe: &Probe| inventory.holds(probe);
+    let on_path = |tool: &str| system.on_path(tool);
     let machine = Machine {
         holds: &holds,
-        on_path: &helix_toolbox_platform::binary_exists,
+        on_path: &on_path,
         ..crate::Machine::blind()
     };
     Ok(translate(
@@ -704,43 +713,47 @@ pub fn read_here(
         entries,
         platform,
         machine,
-        available(platform.manager).as_ref(),
+        available(system, platform.manager).as_ref(),
     ))
 }
 
-/// `plan` on this machine, its packages read once.
-pub fn plan_here(
+/// `plan` on the machine `system` answers for, its packages read once.
+pub fn plan_here<S>(
+    system: &S,
     translation: &Translation,
     entries: &[&Entry],
     platform: &LinuxInfo,
-) -> Result<Plan, EngineError> {
-    let inventory = Inventory::gather(platform);
+) -> Result<Plan, EngineError>
+where
+    S: System + Clone + Send + Sync + 'static,
+{
+    let inventory = Inventory::gather(system, platform);
     let holds = |probe: &Probe| inventory.holds(probe);
+    let on_path = |tool: &str| system.on_path(tool);
     let machine = Machine {
         holds: &holds,
-        on_path: &helix_toolbox_platform::binary_exists,
+        on_path: &on_path,
         ..crate::Machine::blind()
     };
     plan(translation, entries, platform, machine)
 }
 
-/// What this machine has, its packages read once.
-pub fn gather(entries: &[&Entry], platform: &LinuxInfo, made: u64) -> Migration {
-    let inventory = Inventory::gather(platform);
-    let chosen = chosen(platform.manager);
+/// What the machine `system` answers for has, its packages read once.
+pub fn gather<S>(system: &S, entries: &[&Entry], platform: &LinuxInfo, made: u64) -> Migration
+where
+    S: System + Clone + Send + Sync + 'static,
+{
+    let inventory = Inventory::gather(system, platform);
+    let chosen = chosen(system, platform.manager);
     export(entries, platform, &inventory, chosen.as_deref(), made)
 }
 
-fn output(command: &[&str]) -> Option<String> {
-    let output = Command::new(command[0])
-        .args(&command[1..])
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .env("LC_ALL", "C")
-        .output()
-        .ok()
-        .filter(|output| output.status.success())?;
-    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+/// A read-only query's standard output; None when it failed or could not run.
+fn output(system: &dyn System, command: &[&str]) -> Option<String> {
+    system
+        .run(command)
+        .filter(|(success, _)| *success)
+        .map(|(_, text)| text)
 }
 
 /// One name a line.
@@ -1068,5 +1081,47 @@ mod tests {
             zypper_names(xml),
             ["htop".to_string(), "nano".to_string()].into()
         );
+    }
+
+    #[test]
+    fn the_machine_is_asked_through_its_system() {
+        let mut fake = crate::doctor::Fake::default();
+        let mut answer = |command: &str, success: bool, text: &str| {
+            fake.commands.insert(command.into(), (success, text.into()));
+        };
+        answer("pacman -Q", true, "firefox 130-1\nhtop 3-1\n");
+        answer("pacman -Qqe", true, "firefox\nhtop\n");
+        answer("pacman -Slq", true, "firefox\nhtop\nnano\n");
+        answer("rpm -qa --qf %{NAME}\n", true, "bash\nhtop\n");
+        // A failed query says nothing, even with output.
+        answer("apt-mark showmanual", false, "htop\n");
+        fake.files
+            .insert("/var/lib/zypp/AutoInstalled".into(), "bash\n".into());
+        fake.files
+            .insert("/etc/apk/world".into(), "alpine-base\nhtop>=3\n".into());
+        assert_eq!(
+            chosen(&fake, Some(PackageManager::Arch)),
+            Some(vec!["firefox".to_string(), "htop".to_string()])
+        );
+        assert_eq!(
+            chosen(&fake, Some(PackageManager::Suse)),
+            Some(vec!["htop".to_string()])
+        );
+        assert_eq!(
+            chosen(&fake, Some(PackageManager::Alpine)),
+            Some(vec!["alpine-base".to_string(), "htop".to_string()])
+        );
+        assert_eq!(chosen(&fake, Some(PackageManager::Debian)), None);
+        assert_eq!(chosen(&fake, Some(PackageManager::Fedora)), None);
+        assert_eq!(
+            available(&fake, Some(PackageManager::Arch)).map(|names| names.len()),
+            Some(3)
+        );
+        assert_eq!(available(&fake, Some(PackageManager::Debian)), None);
+        let entries = catalog();
+        let refs: Vec<&Entry> = entries.iter().collect();
+        let found = gather(&fake, &refs, &arch(), 0);
+        assert_eq!(found.entries, ["firefox"]);
+        assert_eq!(found.packages, ["htop"]);
     }
 }

@@ -1165,7 +1165,7 @@ impl App {
         let platform = self.platform.clone();
         let (sender, receiver) = mpsc::channel();
         std::thread::spawn(move || {
-            let inventory = Inventory::gather(&platform);
+            let inventory = Inventory::gather(&doctor::Here, &platform);
             let statuses = entries
                 .iter()
                 .filter_map(|entry| {

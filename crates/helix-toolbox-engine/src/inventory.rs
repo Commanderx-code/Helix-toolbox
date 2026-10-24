@@ -3,13 +3,13 @@
 //! updates come from the repository metadata already on the machine), so a
 //! list of entries is answered by lookups.
 
-use crate::{PackageState, Plan, Probe, Source, Step, UpdateTarget};
+use crate::{PackageState, Plan, Probe, Source, Step, UpdateTarget, doctor::System, updates};
 use helix_toolbox_core::{Entry, PackageManager, Risk};
 use helix_toolbox_platform::LinuxInfo;
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    sync::Arc,
 };
 
 /// How an entry stands, for showing it.
@@ -105,20 +105,53 @@ pub struct Inventory {
     /// Where Home Manager's and NixOS's commands are, to name who manages a
     /// command from the Nix store.
     nix_places: Vec<(String, PathBuf)>,
-    /// Which package owns a file, fixed for tests; None asks the manager.
-    owners: Option<HashMap<PathBuf, String>>,
+    /// The machine it was read from, asked later for what the snapshot
+    /// does not hold: which package owns a file, and the probes of
+    /// families whose list is not read.
+    system: Asked,
     /// What Helix Toolbox installed from GitHub releases, by entry.
     releases: HashMap<String, crate::release::Record>,
 }
 
+/// The machine an inventory asks, shared with every copy of it.
+#[derive(Clone)]
+struct Asked(Arc<dyn System + Send + Sync>);
+
+impl Default for Asked {
+    /// A machine that answers nothing.
+    fn default() -> Self {
+        Asked(Arc::new(crate::doctor::Fake::default()))
+    }
+}
+
+impl std::fmt::Debug for Asked {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("System")
+    }
+}
+
 impl Inventory {
-    /// Read this machine.
-    pub fn gather(platform: &LinuxInfo) -> Self {
-        Self::gather_for(platform.manager)
+    /// Read the machine `system` answers for, such as `doctor::Here`.
+    pub fn gather<S>(system: &S, platform: &LinuxInfo) -> Self
+    where
+        S: System + Clone + Send + Sync + 'static,
+    {
+        Self::gather_for(system, platform.manager)
     }
 
-    /// Read this machine, whose packages `manager` keeps.
-    pub fn gather_for(manager: Option<PackageManager>) -> Self {
+    /// Read the machine `system` answers for, whose packages `manager`
+    /// keeps.
+    pub fn gather_for<S>(system: &S, manager: Option<PackageManager>) -> Self
+    where
+        S: System + Clone + Send + Sync + 'static,
+    {
+        Self::read(Arc::new(system.clone()), manager)
+    }
+
+    fn read(system: Arc<dyn System + Send + Sync>, manager: Option<PackageManager>) -> Self {
+        // The standard output whatever the exit status: pacman -Qu exits 1
+        // when nothing is outdated.
+        let output = |command: &[&str]| system.run(command).map(|(_, text)| text);
         let mut inventory = Inventory {
             manager,
             nix_places: nix_places(),
@@ -132,7 +165,7 @@ impl Inventory {
             Some(PackageManager::Arch) => {
                 inventory.native = output(&["pacman", "-Q"]).map(|text| parse_pacman(&text));
                 inventory.native_updates = output(&["pacman", "-Qu"])
-                    .map(|text| parse_pacman_updates(&text))
+                    .map(|text| newer(updates::arrows(&text)))
                     .unwrap_or_default();
             }
             Some(PackageManager::Debian) => {
@@ -143,19 +176,22 @@ impl Inventory {
                 ])
                 .map(|text| parse_dpkg(&text));
                 inventory.native_updates = output(&["apt", "list", "--upgradable"])
-                    .map(|text| parse_apt_upgradable(&text))
+                    .map(|text| newer(updates::apt(&text)))
                     .unwrap_or_default();
             }
             Some(PackageManager::Fedora | PackageManager::Suse) => {
                 inventory.native =
                     output(&["rpm", "-qa", "--qf", "%{NAME} %{VERSION}-%{RELEASE}\n"])
                         .map(|text| parse_pacman(&text));
-                if manager == Some(PackageManager::Fedora) {
-                    // -C: the metadata already downloaded, no network.
-                    inventory.native_updates = output(&["dnf", "-C", "-q", "list", "--upgrades"])
-                        .map(|text| parse_dnf_upgrades(&text))
-                        .unwrap_or_default();
+                // -C and --no-refresh: the metadata already here, no network.
+                inventory.native_updates = if manager == Some(PackageManager::Fedora) {
+                    output(&["dnf", "-C", "-q", "list", "--upgrades"])
+                        .map(|text| newer(updates::dnf(&text)))
+                } else {
+                    output(&["zypper", "-q", "--no-refresh", "list-updates"])
+                        .map(|text| newer(updates::zypper(&text)))
                 }
+                .unwrap_or_default();
             }
             _ => {}
         }
@@ -186,6 +222,7 @@ impl Inventory {
                 );
             }
         }
+        inventory.system = Asked(system);
         inventory
     }
 
@@ -204,7 +241,7 @@ impl Inventory {
             flatpaks,
             flatpak_updates,
             nix_places: Vec::new(),
-            owners: Some(HashMap::new()),
+            system: Asked::default(),
             releases: HashMap::new(),
         }
     }
@@ -232,12 +269,6 @@ impl Inventory {
             .filter(|record| record.path.symlink_metadata().is_ok())
     }
 
-    /// The same, with which package owns each file fixed, for tests.
-    pub fn with_owners(mut self, owners: HashMap<PathBuf, String>) -> Self {
-        self.owners = Some(owners);
-        self
-    }
-
     /// Whether a probe holds, answered from the snapshot where it can be,
     /// and by asking the machine where it cannot (families not read).
     pub fn holds(&self, probe: &Probe) -> bool {
@@ -245,10 +276,10 @@ impl Inventory {
             Probe::Package { manager, name } if Some(*manager) == self.manager => {
                 match &self.native {
                     Some(native) => native.contains_key(name),
-                    None => probe.holds(),
+                    None => probe.holds_on(self.system.0.as_ref()),
                 }
             }
-            Probe::Package { .. } => probe.holds(),
+            Probe::Package { .. } => probe.holds_on(self.system.0.as_ref()),
             Probe::Flatpak(id) => self.flatpaks.contains_key(id),
             Probe::Release { entry, .. } => self.release(entry).is_some(),
         }
@@ -597,10 +628,8 @@ impl Inventory {
     /// The package of this machine's manager that owns a file.
     pub fn owner(&self, path: &Path) -> Option<(PackageManager, String)> {
         let manager = self.manager?;
-        if let Some(owners) = &self.owners {
-            return owners.get(path).map(|name| (manager, name.clone()));
-        }
         let path = path.to_str()?;
+        let output = |command: &[&str]| self.system.0.run(command).map(|(_, text)| text);
         let name = match manager {
             PackageManager::Arch => output(&["pacman", "-Qoq", path])?,
             PackageManager::Debian => output(&["dpkg", "-S", path])?
@@ -640,19 +669,6 @@ fn source_name(manager: PackageManager) -> &'static str {
     }
 }
 
-/// Run a read-only query; its output when it ran. pacman -Qu exits 1 when
-/// nothing is outdated, so the status is not checked, only that it ran.
-fn output(command: &[&str]) -> Option<String> {
-    let output = Command::new(command[0])
-        .args(&command[1..])
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .env("LC_ALL", "C")
-        .output()
-        .ok()?;
-    Some(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
 /// `name version` lines (pacman -Q, and rpm with that format).
 pub fn parse_pacman(text: &str) -> HashMap<String, String> {
     text.lines()
@@ -661,17 +677,11 @@ pub fn parse_pacman(text: &str) -> HashMap<String, String> {
         .collect()
 }
 
-/// `name old -> new` lines from pacman -Qu, skipping ignored packages.
-pub fn parse_pacman_updates(text: &str) -> HashMap<String, String> {
-    text.lines()
-        .filter(|line| !line.contains("[ignored]"))
-        .filter_map(|line| {
-            let mut words = line.split_whitespace();
-            let name = words.next()?;
-            let _old = words.next()?;
-            (words.next()? == "->").then_some(())?;
-            Some((name.to_string(), words.next()?.to_string()))
-        })
+/// The newer version of each package a tool says is waiting, by name.
+fn newer(pending: Vec<updates::Pending>) -> HashMap<String, String> {
+    pending
+        .into_iter()
+        .filter_map(|pending| Some((pending.name, pending.to?)))
         .collect()
 }
 
@@ -682,33 +692,6 @@ pub fn parse_dpkg(text: &str) -> HashMap<String, String> {
             let mut words = line.split_whitespace();
             (words.next()? == "installed").then_some(())?;
             Some((words.next()?.to_string(), words.next()?.to_string()))
-        })
-        .collect()
-}
-
-/// `name/suite version arch [upgradable from: old]` lines from apt list.
-pub fn parse_apt_upgradable(text: &str) -> HashMap<String, String> {
-    text.lines()
-        .filter(|line| line.contains("[upgradable from:"))
-        .filter_map(|line| {
-            let mut words = line.split_whitespace();
-            let name = words.next()?.split('/').next()?;
-            Some((name.to_string(), words.next()?.to_string()))
-        })
-        .collect()
-}
-
-/// `name.arch version repository` lines from dnf list --upgrades.
-pub fn parse_dnf_upgrades(text: &str) -> HashMap<String, String> {
-    text.lines()
-        .filter_map(|line| {
-            let mut words = line.split_whitespace();
-            let package = words.next()?;
-            let version = words.next()?;
-            let (name, arch) = package.rsplit_once('.')?;
-            // Headings such as "Available upgrades" have no architecture.
-            (!arch.is_empty() && version.chars().next()?.is_ascii_digit())
-                .then(|| (name.to_string(), version.to_string()))
         })
         .collect()
 }
@@ -801,6 +784,7 @@ pub fn which(binary: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::doctor::Fake;
     use helix_toolbox_core::{Action, PackageNames};
 
     fn platform(manager: PackageManager) -> LinuxInfo {
@@ -859,22 +843,8 @@ mod tests {
             map(&[("ripgrep", "15.2.0-1"), ("wine", "11.19-1")])
         );
         assert_eq!(
-            parse_pacman_updates("ripgrep 15.2.0-1 -> 15.3.0-1\nlinux 6.1-1 -> 6.2-1 [ignored]\n"),
-            map(&[("ripgrep", "15.3.0-1")])
-        );
-        assert_eq!(
             parse_dpkg("installed ripgrep 14.1.0-1\nconfig-files old 1.0\nnot-installed gone 2\n"),
             map(&[("ripgrep", "14.1.0-1")])
-        );
-        assert_eq!(
-            parse_apt_upgradable(
-                "Listing...\nripgrep/noble-updates 14.1.1-1 amd64 [upgradable from: 14.1.0-1]\n"
-            ),
-            map(&[("ripgrep", "14.1.1-1")])
-        );
-        assert_eq!(
-            parse_dnf_upgrades("Available upgrades\nripgrep.x86_64 14.1.1-2.fc43 updates\n"),
-            map(&[("ripgrep", "14.1.1-2.fc43")])
         );
         assert_eq!(
             parse_columns("com.rtosta.zapzap\t7.5\norg.example.NoVersion\t\n"),
@@ -1294,20 +1264,20 @@ mod tests {
     #[test]
     fn a_command_from_another_package_is_shown_and_updated_through_it() {
         let arch = platform(PackageManager::Arch);
-        let inventory = Inventory::from_parts(
-            Some(PackageManager::Arch),
-            Some(map(&[("github-desktop", "3.4.14-2")])),
-            map(&[("github-desktop", "3.4.15-1")]),
-            HashMap::new(),
-            HashSet::new(),
-        )
-        .with_owners(
-            [(
-                PathBuf::from("/usr/bin/github-desktop"),
-                "github-desktop".to_string(),
-            )]
-            .into(),
+        let mut fake = Fake::default();
+        answer(&mut fake, &["pacman", "-Q"], "github-desktop 3.4.14-2\n");
+        answer(
+            &mut fake,
+            &["pacman", "-Qu"],
+            "github-desktop 3.4.14-2 -> 3.4.15-1\n",
         );
+        let unowned = Inventory::gather(&fake, &arch);
+        answer(
+            &mut fake,
+            &["pacman", "-Qoq", "/usr/bin/github-desktop"],
+            "github-desktop\n",
+        );
+        let inventory = Inventory::gather(&fake, &arch);
         let mut entry = package(
             "github-desktop",
             Some("github-desktop"),
@@ -1350,9 +1320,233 @@ mod tests {
         );
         assert_eq!(targets[0].from.as_deref(), Some("3.4.14-2"));
         // Not owned by any package: installed elsewhere, nothing to update.
-        let unowned = inventory.clone().with_owners(HashMap::new());
         let planned = unowned.plan_update([&entry], &arch, &found);
         assert!(planned.steps.is_empty());
         assert!(planned.notes[0].contains("installed outside a package manager"));
+    }
+
+    /// The made-up machine answers `command` with `text`.
+    fn answer(fake: &mut Fake, command: &[&str], text: &str) {
+        fake.commands
+            .insert(command.join(" "), (true, text.to_string()));
+    }
+
+    /// An entry with the same package name in every family.
+    fn everywhere(name: &str) -> Entry {
+        let mut entry = package(name, None, Some(name), None, None, &[]);
+        if let Action::Package { packages, .. } = &mut entry.action {
+            packages.debian = Some(name.into());
+            packages.fedora = Some(name.into());
+            packages.suse = Some(name.into());
+            packages.alpine = Some(name.into());
+        }
+        entry
+    }
+
+    /// The statuses of ripgrep and fd on a machine of `manager`'s family.
+    fn statuses(fake: &Fake, manager: PackageManager) -> (Status, Status) {
+        let family = platform(manager);
+        let inventory = Inventory::gather(fake, &family);
+        let nowhere = |_: &str| None;
+        let status = |name: &str| inventory.status(&everywhere(name), &family, &nowhere);
+        (status("ripgrep").unwrap(), status("fd").unwrap())
+    }
+
+    fn update(source: &str, version: &str, latest: &str) -> Status {
+        Status::Update {
+            source: source.into(),
+            version: Some(version.into()),
+            latest: Some(latest.into()),
+            shadowed: None,
+        }
+    }
+
+    fn installed(source: &str, version: &str) -> Status {
+        Status::Installed {
+            source: source.into(),
+            version: Some(version.into()),
+            shadowed: None,
+        }
+    }
+
+    #[test]
+    fn arch_is_read_from_pacman_and_its_ignored_packages_wait_for_nothing() {
+        let mut fake = Fake::default();
+        answer(
+            &mut fake,
+            &["pacman", "-Q"],
+            "ripgrep 15.2.0-1\nfd 10.2.0-1\n",
+        );
+        // pacman -Qu exits 1 when nothing waits; the output still counts.
+        fake.commands.insert(
+            "pacman -Qu".into(),
+            (
+                false,
+                "ripgrep 15.2.0-1 -> 15.3.0-1\nfd 10.2.0-1 -> 10.3.0-1 [ignored]\n".into(),
+            ),
+        );
+        assert_eq!(
+            statuses(&fake, PackageManager::Arch),
+            (
+                update("pacman", "15.2.0-1", "15.3.0-1"),
+                installed("pacman", "10.2.0-1")
+            )
+        );
+    }
+
+    #[test]
+    fn debian_is_read_from_dpkg_and_apt() {
+        let mut fake = Fake::default();
+        answer(
+            &mut fake,
+            &[
+                "dpkg-query",
+                "-W",
+                "-f=${db:Status-Status} ${Package} ${Version}\n",
+            ],
+            "installed ripgrep 14.1.0-1\ninstalled fd-find 9.0.0-1\nconfig-files fd 8.0\n",
+        );
+        answer(
+            &mut fake,
+            &["apt", "list", "--upgradable"],
+            "Listing...\nripgrep/noble-updates 14.1.1-1 amd64 [upgradable from: 14.1.0-1]\n",
+        );
+        let (ripgrep, fd) = statuses(&fake, PackageManager::Debian);
+        assert_eq!(ripgrep, update("apt", "14.1.0-1", "14.1.1-1"));
+        // Only its configuration files are left: not installed.
+        assert_eq!(fd, Status::Absent { replaces: vec![] });
+    }
+
+    const RPM: &[&str] = &["rpm", "-qa", "--qf", "%{NAME} %{VERSION}-%{RELEASE}\n"];
+
+    #[test]
+    fn fedora_is_read_from_rpm_and_dnfs_cached_metadata() {
+        let mut fake = Fake::default();
+        answer(&mut fake, RPM, "ripgrep 14.1.1-2.fc43\nfd 10.2.0-1.fc43\n");
+        answer(
+            &mut fake,
+            &["dnf", "-C", "-q", "list", "--upgrades"],
+            "Available upgrades\nripgrep.x86_64 14.1.2-1.fc43 updates\n",
+        );
+        assert_eq!(
+            statuses(&fake, PackageManager::Fedora),
+            (
+                update("dnf", "14.1.1-2.fc43", "14.1.2-1.fc43"),
+                installed("dnf", "10.2.0-1.fc43")
+            )
+        );
+    }
+
+    #[test]
+    fn opensuse_is_read_from_rpm_and_zyppers_cached_repositories() {
+        let mut fake = Fake::default();
+        answer(&mut fake, RPM, "ripgrep 14.1.1-1.1\nfd 10.2.0-1.1\n");
+        answer(
+            &mut fake,
+            &["zypper", "-q", "--no-refresh", "list-updates"],
+            "S | Repository | Name | Current Version | Available Version | Arch\n\
+             --+------------+------+-----------------+-------------------+-------\n\
+             v | Main | ripgrep | 14.1.1-1.1 | 14.1.2-1.1 | x86_64\n",
+        );
+        let (ripgrep, fd) = statuses(&fake, PackageManager::Suse);
+        assert_eq!(ripgrep, update("zypper", "14.1.1-1.1", "14.1.2-1.1"));
+        assert_eq!(fd, installed("zypper", "10.2.0-1.1"));
+        let planned = Inventory::gather(&fake, &platform(PackageManager::Suse)).plan_update(
+            [&everywhere("ripgrep"), &everywhere("fd")],
+            &platform(PackageManager::Suse),
+            &|_| None,
+        );
+        assert_eq!(planned.steps.len(), 1);
+        assert_eq!(planned.steps[0].display(), "sudo zypper update ripgrep");
+    }
+
+    #[test]
+    fn a_family_whose_list_is_not_read_asks_its_probes_through_the_same_machine() {
+        let mut fake = Fake::default();
+        fake.commands
+            .insert("apk info -e ripgrep".into(), (true, "ripgrep\n".into()));
+        fake.commands
+            .insert("apk info -e fd".into(), (false, String::new()));
+        let alpine = platform(PackageManager::Alpine);
+        let inventory = Inventory::gather(&fake, &alpine);
+        let probe = |name: &str| Probe::Package {
+            manager: PackageManager::Alpine,
+            name: name.into(),
+        };
+        assert!(inventory.holds(&probe("ripgrep")));
+        assert!(!inventory.holds(&probe("fd")));
+        assert_eq!(inventory.version(&probe("ripgrep")), None);
+    }
+
+    #[test]
+    fn flatpaks_are_read_from_both_installations() {
+        let mut fake = Fake::default();
+        answer(
+            &mut fake,
+            &[
+                "flatpak",
+                "list",
+                "--app",
+                "--system",
+                "--columns=application,version",
+            ],
+            "org.gimp.GIMP\t2.10.38\n",
+        );
+        answer(
+            &mut fake,
+            &[
+                "flatpak",
+                "list",
+                "--app",
+                "--user",
+                "--columns=application,version",
+            ],
+            "com.rtosta.zapzap\t7.5\n",
+        );
+        answer(
+            &mut fake,
+            &[
+                "flatpak",
+                "remote-ls",
+                "--updates",
+                "--app",
+                "--cached",
+                "--user",
+                "--columns=application",
+            ],
+            "com.rtosta.zapzap\n",
+        );
+        // No family: only the Flatpaks are read.
+        let inventory = Inventory::gather_for(&fake, None);
+        let mut ids = inventory.flatpak_ids();
+        ids.sort();
+        assert_eq!(ids, ["com.rtosta.zapzap", "org.gimp.GIMP"]);
+        let arch = platform(PackageManager::Arch);
+        let nowhere = |_: &str| None;
+        let status = |id: &str| {
+            inventory
+                .status(
+                    &package(id, None, None, None, Some(id), &[]),
+                    &arch,
+                    &nowhere,
+                )
+                .unwrap()
+        };
+        assert_eq!(status("org.gimp.GIMP"), installed("Flatpak", "2.10.38"));
+        assert_eq!(status("com.rtosta.zapzap").label(), "Update");
+    }
+
+    #[test]
+    fn a_machine_that_answers_nothing_has_nothing_installed() {
+        let fake = Fake::default();
+        for manager in [
+            PackageManager::Arch,
+            PackageManager::Debian,
+            PackageManager::Fedora,
+            PackageManager::Suse,
+        ] {
+            let (ripgrep, _) = statuses(&fake, manager);
+            assert_eq!(ripgrep, Status::Absent { replaces: vec![] }, "{manager:?}");
+        }
     }
 }

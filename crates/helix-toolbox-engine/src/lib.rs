@@ -56,7 +56,7 @@ use helix_toolbox_core::{
 use helix_toolbox_platform::{LinuxInfo, binary_exists};
 use std::{
     path::{Path, PathBuf},
-    process::{Command, ExitStatus, Stdio},
+    process::{Command, ExitStatus},
 };
 use thiserror::Error;
 use tracing::{info, warn};
@@ -310,23 +310,22 @@ impl Probe {
 
     /// Whether the probe holds now.
     pub fn holds(&self) -> bool {
+        self.holds_on(&doctor::Here)
+    }
+
+    /// Whether the probe holds, a package's query asked through `system`.
+    pub fn holds_on(&self, system: &dyn doctor::System) -> bool {
         match self {
             Probe::Package {
                 manager: PackageManager::Debian,
                 name,
-            } => Command::new("dpkg-query")
-                .args(["-W", "-f=${db:Status-Status}", name])
-                .stderr(Stdio::null())
-                .output()
-                .is_ok_and(|output| output.stdout == b"installed"),
+            } => system
+                .run(&["dpkg-query", "-W", "-f=${db:Status-Status}", name])
+                .is_some_and(|(_, text)| text == "installed"),
             Probe::Package { manager, name } => {
                 let query = Probe::query(*manager, name);
-                Command::new(&query[0])
-                    .args(&query[1..])
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status()
-                    .is_ok_and(|status| status.success())
+                let query: Vec<&str> = query.iter().map(String::as_str).collect();
+                system.run(&query).is_some_and(|(success, _)| success)
             }
             Probe::Flatpak(id) => flatpak_installed_in(&flatpak_roots(), id),
             Probe::Release { entry, .. } => release::installed(entry).is_some(),
@@ -1474,7 +1473,7 @@ pub fn verify(plan: &Plan) -> Vec<Check> {
         .iter()
         .any(|step| matches!(step, Step::Update { .. }))
     {
-        let after = inventory::Inventory::gather_for(manager);
+        let after = inventory::Inventory::gather_for(&doctor::Here, manager);
         checks.extend(verify_updates_with(
             plan,
             &|probe| after.version(probe),

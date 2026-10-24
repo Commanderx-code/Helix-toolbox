@@ -202,7 +202,7 @@ fn areas(gui: State<Gui>) -> Vec<AreaView> {
 async fn statuses(app: AppHandle) -> Result<HashMap<String, StatusView>, String> {
     blocking(app, |gui| {
         let catalog = gui.catalog.read().unwrap();
-        let inventory = Inventory::gather(&gui.platform);
+        let inventory = Inventory::gather(&doctor::Here, &gui.platform);
         let statuses = catalog
             .entries()
             .into_iter()
@@ -1507,11 +1507,16 @@ struct MigrationExportView {
 async fn read_migration_export(app: AppHandle) -> Result<MigrationExportView, String> {
     blocking(app, |gui| {
         let catalog = gui.catalog.read().unwrap();
-        let found = migration::gather(&catalog.entries(), &gui.platform, history::now());
+        let found = migration::gather(
+            &doctor::Here,
+            &catalog.entries(),
+            &gui.platform,
+            history::now(),
+        );
         MigrationExportView {
             file_name: migration::file_name(&found),
             migration: found,
-            packages_known: migration::chosen(gui.platform.manager).is_some(),
+            packages_known: migration::chosen(&doctor::Here, gui.platform.manager).is_some(),
         }
     })
     .await
@@ -1526,7 +1531,7 @@ async fn export_migration(app: AppHandle, path: Option<String>) -> Result<Option
     blocking(app, move |gui| {
         let found = {
             let catalog = gui.catalog.read().unwrap();
-            migration::gather(&catalog.entries(), &gui.platform, history::now())
+            migration::gather(&doctor::Here, &catalog.entries(), &gui.platform, history::now())
         };
         let Some(path) = path.map(PathBuf::from).or_else(|| {
             choose_toml(
@@ -1581,8 +1586,9 @@ async fn open_migration(
             return Ok(None);
         };
         let catalog = gui.catalog.read().unwrap();
-        let translation = migration::read_here(&path, &catalog.entries(), &gui.platform)
-            .map_err(|error| error.to_string())?;
+        let translation =
+            migration::read_here(&doctor::Here, &path, &catalog.entries(), &gui.platform)
+                .map_err(|error| error.to_string())?;
         Ok(Some(TranslationView {
             path: path.display().to_string(),
             install: translation.count(Standing::Install),
@@ -1602,12 +1608,13 @@ async fn prepare_migration(app: AppHandle, path: String) -> Result<PreparedView,
     blocking(app, move |gui| {
         let catalog = gui.catalog.read().unwrap();
         let entries = catalog.entries();
-        let planned = migration::read_here(Path::new(&path), &entries, &gui.platform)
-            .map_err(|error| error.to_string())
-            .and_then(|translation| {
-                migration::plan_here(&translation, &entries, &gui.platform)
-                    .map_err(|error| error.to_string())
-            });
+        let planned =
+            migration::read_here(&doctor::Here, Path::new(&path), &entries, &gui.platform)
+                .map_err(|error| error.to_string())
+                .and_then(|translation| {
+                    migration::plan_here(&doctor::Here, &translation, &entries, &gui.platform)
+                        .map_err(|error| error.to_string())
+                });
         match planned {
             Ok(planned) => prepare_plan(gui, &catalog, planned),
             Err(why) => cannot(gui, why),

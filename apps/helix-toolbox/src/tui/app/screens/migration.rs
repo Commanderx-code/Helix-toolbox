@@ -16,8 +16,8 @@ impl App {
             let refs: Vec<&Entry> = entries.iter().collect();
             // As migration::gather, keeping whether the packages chosen by
             // hand could be read.
-            let inventory = Inventory::gather(&platform);
-            let chosen = migration::chosen(platform.manager);
+            let inventory = Inventory::gather(&doctor::Here, &platform);
+            let chosen = migration::chosen(&doctor::Here, platform.manager);
             let found = migration::export(
                 &refs,
                 &platform,
@@ -61,8 +61,8 @@ impl App {
         let (sender, receiver) = mpsc::channel();
         std::thread::spawn(move || {
             let refs: Vec<&Entry> = entries.iter().collect();
-            let read =
-                migration::read_here(&path, &refs, &platform).map_err(|error| error.to_string());
+            let read = migration::read_here(&doctor::Here, &path, &refs, &platform)
+                .map_err(|error| error.to_string());
             let _ = sender.send((path, read));
         });
         self.opening_migration = Some(receiver);
@@ -99,9 +99,12 @@ impl App {
         }
         let found = match &self.migration_here {
             Some(found) => found.clone(),
-            None if self.examine_here => {
-                migration::gather(&self.catalog.entries(), &self.platform, history::now())
-            }
+            None if self.examine_here => migration::gather(
+                &doctor::Here,
+                &self.catalog.entries(),
+                &self.platform,
+                history::now(),
+            ),
             None => return Err("What this machine has is still being read.".to_string()),
         };
         migration::write(&path, &found).map_err(|error| error.to_string())?;
@@ -134,7 +137,7 @@ impl App {
         }
         let entries = self.catalog.entries();
         let planned = if self.examine_here {
-            migration::plan_here(translation, &entries, &self.platform)
+            migration::plan_here(&doctor::Here, translation, &entries, &self.platform)
         } else {
             migration::plan(translation, &entries, &self.platform, Self::test_machine())
         };
