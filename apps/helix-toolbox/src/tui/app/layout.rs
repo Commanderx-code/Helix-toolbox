@@ -1,10 +1,11 @@
 //! The frame every screen shares: header, sidebar, Dashboard, footer and hints.
 
 use super::*;
+use screens::View;
 
 impl App {
     pub(in crate::tui::app) fn glyph(&self, icon: Icon) -> &'static str {
-        icon.glyph(self.icons)
+        self.view().glyph(icon)
     }
 
     /// An icon and the space after it, or nothing when icons are off.
@@ -45,20 +46,12 @@ impl App {
 
     /// The style of the selected row of a list that has the focus.
     pub(in crate::tui::app) fn highlight(&self, focused: bool) -> Style {
-        if focused {
-            self.theme.selection()
-        } else {
-            Style::default()
-        }
+        self.view().highlight(focused)
     }
 
     /// What marks the selected row of a list.
     pub(in crate::tui::app) fn marker(&self, focused: bool) -> &'static str {
-        match (focused, self.icons) {
-            (false, _) => "  ",
-            (true, true) => "▌ ",
-            (true, false) => HIGHLIGHT,
-        }
+        self.view().marker(focused)
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
@@ -107,25 +100,14 @@ impl App {
             Screen::Area(_) => self.draw_area(frame, main),
             Screen::Favorites => self.draw_favorites(frame, main),
             Screen::Plan => self.draw_plan(frame, main),
-            Screen::History => self.draw_history(frame, main),
-            Screen::Backups => self.draw_backups(frame, main),
-            Screen::Updates => self.draw_updates(frame, main),
-            Screen::Drift => self.draw_drift(frame, main),
-            Screen::Reliability => self.draw_reliability(frame, main),
-            Screen::Hardware => self.draw_hardware(frame, main),
-            Screen::Desktop => self.draw_desktop(frame, main),
-            Screen::Bundles => self.draw_bundles(frame, main),
-            Screen::Services => self.draw_services(frame, main),
-            Screen::Storage => self.draw_storage(frame, main),
-            Screen::Performance => self.draw_performance(frame, main),
-            Screen::Recovery => self.draw_recovery(frame, main),
-            Screen::Migration => self.draw_migration(frame, main),
-            Screen::Restic => self.draw_restic(frame, main),
-            Screen::Repositories => self.draw_repos(frame, main),
-            Screen::Configs => self.draw_configs(frame, main),
-            Screen::HomeManager => self.draw_home(frame, main),
-            Screen::Doctor => self.draw_doctor(frame, main),
             Screen::Settings => self.draw_settings(frame, main),
+            screen => {
+                let mut state = std::mem::take(&mut self.main_state);
+                if let Some(tool) = self.screens.tool(screen) {
+                    tool.draw(&self.view(), frame, main, &mut state);
+                }
+                self.main_state = state;
+            }
         }
         match &mut self.popup {
             // The keys are wider than the screen beside the sidebar; under
@@ -502,31 +484,7 @@ impl App {
         title: &str,
         subtitle: &str,
     ) -> Rect {
-        let inner = Rect::new(
-            area.x + 2,
-            area.y + 1,
-            area.width.saturating_sub(4),
-            area.height.saturating_sub(1),
-        );
-        frame.render_widget(
-            Paragraph::new(Text::from(vec![
-                Line::styled(
-                    title.to_string(),
-                    Style::default().fg(self.theme.entry()).bold(),
-                ),
-                Line::styled(
-                    subtitle.to_string(),
-                    Style::default().fg(self.theme.muted()),
-                ),
-            ])),
-            inner,
-        );
-        Rect::new(
-            inner.x,
-            inner.y + 3,
-            inner.width,
-            inner.height.saturating_sub(3),
-        )
+        self.view().page(frame, area, title, subtitle)
     }
 
     /// A list's items, their heights noted for the mouse.
@@ -534,27 +492,17 @@ impl App {
         &self,
         items: impl IntoIterator<Item = T>,
     ) -> Vec<ListItem<'a>> {
-        let items: Vec<ListItem> = items.into_iter().map(Into::into).collect();
-        self.hits
-            .borrow_mut()
-            .measured(items.iter().map(|item| item.height() as u16).collect());
-        items
+        self.view().measure(items)
     }
 
     pub(in crate::tui::app) fn card(&self, title: &str) -> Block<'static> {
-        Block::bordered()
-            .border_set(border::ROUNDED)
-            .border_style(Style::default().fg(self.theme.line()))
-            .title(format!(" {title} "))
-            .title_style(Style::default().fg(self.theme.entry()).bold())
-            .padding(Padding::horizontal(1))
+        self.view().card(title)
     }
 
     /// Fill a card's inside, so the fill never reaches past its rounded
     /// border; draw the card's widget over it afterward.
     pub(in crate::tui::app) fn fill(&self, frame: &mut Frame, area: Rect) {
-        let inside = Block::bordered().inner(area);
-        frame.render_widget(Block::default().style(self.theme.card()), inside);
+        self.view().fill(frame, area)
     }
 
     fn draw_dashboard(&mut self, frame: &mut Frame, area: Rect) {
@@ -1032,285 +980,12 @@ impl App {
                     list.push(Hint::new(&["x"], "Remove"));
                     list.push(Hint::new(&["c"], "Clear"));
                 }
-                Screen::History => {
-                    list.push(Hint::new(&["Enter"], "Show log"));
-                    if self
-                        .main_state
-                        .selected()
-                        .and_then(|index| self.records.get(index))
-                        .is_some_and(|record| record.success)
-                    {
-                        list.push(Hint::new(&["w"], "Report it worked"));
-                    }
-                    list.push(Hint::new(&["r"], "Reload"));
-                }
-                Screen::Doctor => {
-                    list.push(Hint::new(&["↑↓"], "Navigate"));
-                    match self.selected_diagnosis() {
-                        Some(diagnosis) => {
-                            list.push(Hint::new(&["Enter"], "Details"));
-                            if diagnosis.repair.is_some() {
-                                list.push(Hint::new(&["f"], "Repair"));
-                            } else if diagnosis.entry.is_some() {
-                                list.push(Hint::new(&["f"], "Run the entry"));
-                            }
-                        }
-                        None => {
-                            list.push(Hint::new(&["Enter"], "Run"));
-                            list.push(Hint::new(&["Space"], "Plan"));
-                            list.push(Hint::new(&["d"], "Details"));
-                        }
-                    }
-                    list.push(Hint::new(&["r"], "Check again"));
-                }
-                Screen::Updates => {
-                    list.push(Hint::new(&["↑↓"], "Navigate"));
-                    match self.selected_update_row() {
-                        UpdateRow::Channel => {
-                            list.push(Hint::new(&["Enter"], "Details"));
-                            list.push(Hint::new(&["u"], "Update"));
-                            list.push(Hint::new(&["U"], "Update all"));
-                        }
-                        UpdateRow::Entry(_) => {
-                            list.push(Hint::new(&["Enter", "u"], "Update it"));
-                            list.push(Hint::new(&["d"], "Details"));
-                        }
-                        UpdateRow::Every => list.push(Hint::new(&["Enter"], "Update every entry")),
-                        UpdateRow::Nothing => {}
-                    }
-                    list.push(Hint::new(&["r"], "Check online"));
-                }
-                Screen::Drift => {
-                    list.push(Hint::new(&["↑↓"], "Navigate"));
-                    if let Some(difference) = self.selected_difference() {
-                        list.push(Hint::new(&["Enter"], "Details"));
-                        if difference.entry.is_some() && restorable(difference.kind) {
-                            list.push(Hint::new(&["Space"], "Plan"));
-                        }
-                    }
-                    if self
-                        .drift_report
-                        .as_ref()
-                        .is_some_and(|(_, report)| !report.restore().is_empty())
-                    {
-                        list.push(Hint::new(&["a"], "Plan all missing"));
-                        list.push(Hint::new(&["R"], "Run them now"));
-                    }
-                    if self.drift_targets.len() > 1 {
-                        list.push(Hint::new(&["b"], "Compare with"));
-                    }
-                    list.push(Hint::new(&["s"], "Save baseline"));
-                    list.push(Hint::new(&["r"], "Check again"));
-                }
-                Screen::Desktop => {
-                    list.push(Hint::new(&["↑↓"], "Navigate"));
-                    match self.selected_desktop_row() {
-                        Some(DesktopRow::Entry { .. }) => {
-                            list.push(Hint::new(&["Enter"], "Run"));
-                            list.push(Hint::new(&["Space"], "Plan"));
-                        }
-                        Some(DesktopRow::Look { .. }) => list.push(Hint::new(&["Enter"], "Apply")),
-                        Some(DesktopRow::Info { .. }) => {
-                            list.push(Hint::new(&["Enter"], "Details"))
-                        }
-                        _ => {}
-                    }
-                    list.push(Hint::new(&["s"], "Save this look"));
-                    list.push(Hint::new(&["r"], "Read again"));
-                }
-                Screen::Hardware => {
-                    list.push(Hint::new(&["↑↓"], "Navigate"));
-                    if let Some(HardwareRow::Item { act, .. }) = self.selected_hardware() {
-                        list.push(Hint::new(&["Enter"], "Details"));
-                        match act {
-                            Some(HardwareAct::Firmware(_)) => {
-                                list.push(Hint::new(&["f"], "Update firmware"))
-                            }
-                            Some(HardwareAct::Smart(_)) => {
-                                list.push(Hint::new(&["s"], "SMART check"))
-                            }
-                            None => {}
-                        }
-                    }
-                    list.push(Hint::new(&["r"], "Read again"));
-                }
-                Screen::Reliability => {
-                    list.push(Hint::new(&["↑↓"], "Navigate"));
-                    if let Some((_, _, assessment)) = self
-                        .main_state
-                        .selected()
-                        .and_then(|index| self.reliability_rows.get(index))
-                    {
-                        list.push(Hint::new(&["Enter"], "Details"));
-                        list.push(Hint::new(&["v"], "Trust"));
-                        if assessment.here.is_some() {
-                            list.push(Hint::new(&["w"], "Report it worked"));
-                        }
-                    }
-                    list.push(Hint::new(
-                        &["i"],
-                        match self.coverage {
-                            Coverage::All => "Show: all",
-                            Coverage::Critical => "Show: critical",
-                            Coverage::Untested => "Show: untested",
-                        },
-                    ));
-                }
-                Screen::Backups => {
-                    list.push(Hint::new(&["↑↓"], "Navigate"));
-                    if !self.backups.is_empty() {
-                        list.push(Hint::new(&["Enter"], "Restore"));
-                        list.push(Hint::new(&["e"], "Side by side"));
-                        list.push(Hint::new(&["d"], "Details"));
-                    }
-                    list.push(Hint::new(&["r"], "Reload"));
-                }
-                Screen::Bundles => {
-                    list.push(Hint::new(&["↑↓"], "Navigate"));
-                    let verb = match self.selected_bundle_row() {
-                        Some(BundleRow::Entries) => "Install Plan",
-                        Some(BundleRow::Folder | BundleRow::Source) => "Change",
-                        Some(BundleRow::Complete | BundleRow::Trust) => "Switch",
-                        Some(BundleRow::Contents | BundleRow::Check) => "Check",
-                        Some(BundleRow::Make) => "Make",
-                        Some(BundleRow::Install) => "Install",
-                        _ => "",
-                    };
-                    if !verb.is_empty() {
-                        list.push(Hint::new(&["Enter"], verb));
-                    }
-                }
-                Screen::Services => {
-                    list.push(Hint::new(&["↑↓"], "Navigate"));
-                    match self.selected_service_row() {
-                        Some(ServiceRow::Unit(index)) => {
-                            list.push(Hint::new(&["Enter"], "Details"));
-                            if let Some(unit) = self.unit(index) {
-                                list.push(Hint::new(
-                                    &["s"],
-                                    if unit.running() { "Stop" } else { "Start" },
-                                ));
-                                if unit.switchable() {
-                                    list.push(Hint::new(
-                                        &["e"],
-                                        if unit.enabled() { "Disable" } else { "Enable" },
-                                    ));
-                                }
-                                if unit.running() {
-                                    list.push(Hint::new(&["R"], "Restart"));
-                                }
-                            }
-                        }
-                        Some(ServiceRow::Autostart(_)) => {
-                            list.push(Hint::new(&["Enter"], "On or off at login"));
-                            list.push(Hint::new(&["d"], "Details"));
-                        }
-                        _ => {}
-                    }
-                    list.push(Hint::new(&["i"], "Show"));
-                    list.push(Hint::new(&["f"], "Filter"));
-                    list.push(Hint::new(&["r"], "Read again"));
-                }
-                Screen::Storage => {
-                    list.push(Hint::new(&["↑↓"], "Navigate"));
-                    if let Some(StorageRow::Item(index)) = self.selected_storage_row()
-                        && self
-                            .storage_found
-                            .as_ref()
-                            .and_then(|found| found.items.get(index))
-                            .is_some_and(|item| item.not_offered.is_none())
-                    {
-                        list.push(Hint::new(&["Enter"], "Clean"));
-                    }
-                    list.push(Hint::new(&["d"], "Details"));
-                    list.push(Hint::new(&["r"], "Read again"));
-                }
-                Screen::Performance => {
-                    list.push(Hint::new(&["↑↓"], "Navigate"));
-                    match self.selected_performance_row() {
-                        Some(PerformanceRow::Hint(_)) => {
-                            list.push(Hint::new(&["Enter"], "Act on it"));
-                            list.push(Hint::new(&["d"], "Details"));
-                        }
-                        Some(PerformanceRow::Unit(..)) => {
-                            list.push(Hint::new(&["Enter"], "In Services"))
-                        }
-                        _ => {}
-                    }
-                    if self.earlier_boots().len() > 1 {
-                        list.push(Hint::new(&["b"], "An earlier boot"));
-                    }
-                    list.push(Hint::new(&["r"], "Read again"));
-                }
-                Screen::Recovery => {
-                    list.push(Hint::new(&["↑↓"], "Navigate"));
-                    list.push(Hint::new(&["Enter"], "Details"));
-                    if self
-                        .selected_readiness()
-                        .and_then(|check| check.entry.as_deref())
-                        .and_then(|id| self.catalog.find(id))
-                        .is_some()
-                    {
-                        list.push(Hint::new(&["f"], "Set it up"));
-                    }
-                    if self.snapshots_here().is_some() {
-                        list.push(Hint::new(&["c"], "Check snapshots"));
-                    }
-                    list.push(Hint::new(&["r"], "Check again"));
-                }
-                Screen::Migration => {
-                    list.push(Hint::new(&["↑↓"], "Navigate"));
-                    if self.selected_migration_item().is_some() {
-                        list.push(Hint::new(&["d"], "Details"));
-                    }
-                    list.push(Hint::new(&["e"], "Export"));
-                    list.push(Hint::new(&["o"], "Open a file"));
-                    if self
-                        .migration_opened
-                        .as_ref()
-                        .is_some_and(|(_, translation)| translation.count(Standing::Install) > 0)
-                    {
-                        list.push(Hint::new(&["a"], "Install"));
-                    }
-                    list.push(Hint::new(&["r"], "Read again"));
-                }
-                Screen::Restic => {
-                    list.push(Hint::new(&["↑↓"], "Navigate"));
-                    if self.restic_config().is_some() {
-                        match self
-                            .restic_rows
-                            .get(self.main_state.selected().unwrap_or(0))
-                        {
-                            Some(ResticRow::Snapshot(_)) => {
-                                list.push(Hint::new(&["Enter"], "Browse"));
-                                list.push(Hint::new(&["R"], "Restore"));
-                            }
-                            Some(ResticRow::Node(_) | ResticRow::Version(..)) => {
-                                list.push(Hint::new(&["R"], "Restore"));
-                            }
-                            Some(ResticRow::Baseline(_)) => list.push(Hint::new(&["v"], "Test")),
-                            _ => list.push(Hint::new(&["F"], "Restore…")),
-                        }
-                        list.push(Hint::new(&["b"], "Back up"));
-                        list.push(Hint::new(&["s"], "History"));
-                        if self.restic_search.is_some() {
-                            list.push(Hint::new(
-                                &["i"],
-                                if self.restic_ignore_case {
-                                    "Match case"
-                                } else {
-                                    "Ignore case"
-                                },
-                            ));
-                        }
-                        list.push(Hint::new(&["n"], "Baseline"));
-                    }
-                    list.push(Hint::new(&["r"], "Read again"));
-                }
-                Screen::Repositories => self.repo_hints(&mut list),
-                Screen::Configs => self.config_hints(&mut list),
-                Screen::HomeManager => self.home_hints(&mut list),
                 Screen::Settings => list.push(Hint::new(&["Enter"], "Change")),
+                screen => {
+                    if let Some(tool) = self.screens.tool(screen) {
+                        tool.hints(&self.view(), self.main_state.selected(), &mut list);
+                    }
+                }
             },
         }
         list.push(Hint::new(&["/"], "Search"));
@@ -1328,5 +1003,93 @@ impl App {
             Status::Managed { .. } => self.theme.title(),
             Status::Absent { .. } => self.theme.muted(),
         }
+    }
+}
+
+/// The pieces every screen is drawn with.
+impl View<'_> {
+    pub(in crate::tui::app) fn glyph(&self, icon: Icon) -> &'static str {
+        icon.glyph(self.icons)
+    }
+
+    /// The style of the selected row of a list that has the focus.
+    pub(in crate::tui::app) fn highlight(&self, focused: bool) -> Style {
+        if focused {
+            self.theme.selection()
+        } else {
+            Style::default()
+        }
+    }
+
+    /// What marks the selected row of a list.
+    pub(in crate::tui::app) fn marker(&self, focused: bool) -> &'static str {
+        match (focused, self.icons) {
+            (false, _) => "  ",
+            (true, true) => "▌ ",
+            (true, false) => HIGHLIGHT,
+        }
+    }
+
+    /// A screen's title and subtitle; returns the space below them.
+    pub(in crate::tui::app) fn page(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        title: &str,
+        subtitle: &str,
+    ) -> Rect {
+        let inner = Rect::new(
+            area.x + 2,
+            area.y + 1,
+            area.width.saturating_sub(4),
+            area.height.saturating_sub(1),
+        );
+        frame.render_widget(
+            Paragraph::new(Text::from(vec![
+                Line::styled(
+                    title.to_string(),
+                    Style::default().fg(self.theme.entry()).bold(),
+                ),
+                Line::styled(
+                    subtitle.to_string(),
+                    Style::default().fg(self.theme.muted()),
+                ),
+            ])),
+            inner,
+        );
+        Rect::new(
+            inner.x,
+            inner.y + 3,
+            inner.width,
+            inner.height.saturating_sub(3),
+        )
+    }
+
+    /// A list's items, their heights noted for the mouse.
+    pub(in crate::tui::app) fn measure<'a, T: Into<ListItem<'a>>>(
+        &self,
+        items: impl IntoIterator<Item = T>,
+    ) -> Vec<ListItem<'a>> {
+        let items: Vec<ListItem> = items.into_iter().map(Into::into).collect();
+        self.hits
+            .borrow_mut()
+            .measured(items.iter().map(|item| item.height() as u16).collect());
+        items
+    }
+
+    pub(in crate::tui::app) fn card(&self, title: &str) -> Block<'static> {
+        Block::bordered()
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(self.theme.line()))
+            .title(format!(" {title} "))
+            .title_style(Style::default().fg(self.theme.entry()).bold())
+            .padding(Padding::horizontal(1))
+    }
+
+    /// Fill a card's inside, so the fill never reaches past its rounded
+    /// border; draw the card's widget over it afterward.
+    pub(in crate::tui::app) fn fill(&self, frame: &mut Frame, area: Rect) {
+        let inside = Block::bordered().inner(area);
+        frame.render_widget(Block::default().style(self.theme.card()), inside);
     }
 }

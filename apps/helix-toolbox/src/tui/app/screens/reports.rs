@@ -7,9 +7,9 @@ impl App {
     /// seconds.
     pub(in crate::tui::app) fn make_report(&mut self) {
         let platform = self.platform.clone();
-        self.reporting = Some(self.read_host(move |host| {
+        self.reporting.start(&self.host, move |host| {
             crate::report::markdown(&crate::report::gather(&host, &platform, true))
-        }));
+        });
         self.popup = Some(Popup::Text(TextPopup::new(
             "Bug report",
             "Gathering the report; the health checks take a few seconds…",
@@ -56,7 +56,11 @@ impl App {
         record: &history::Record,
         only: Option<&str>,
     ) {
-        let machine = hardware_report::machine(&self.host, &self.platform, &self.desktop_here());
+        let machine = hardware_report::machine(
+            &self.host,
+            &self.platform,
+            &helix_toolbox_engine::desktop::detect_on(&self.host),
+        );
         let report = match hardware_report::prepare(record, only, machine, crate::VERSION, "") {
             Ok(report) => report,
             Err(why) => {
