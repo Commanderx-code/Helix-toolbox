@@ -85,18 +85,22 @@ checkPackageManager() {
     fi
 }
 
+# Say which administrator group the account is in. Commander's version
+# stopped here when it was in none, but openSUSE's sudoers lets any user in
+# with the root password (Defaults targetpw) and its first user is in no
+# such group, so every script stopped there; the escalation tool decides who
+# may use it, and refuses an account it does not allow. Nothing read the
+# group it kept (SUGROUP), so it is no longer kept.
 checkSuperUser() {
     for group in wheel sudo root; do
         case " $(id -nG) " in
             *" $group "*)
-                SUGROUP=$group
                 printf '%b\n' "${CYAN}Administrator group: ${group}${RC}"
                 return 0
                 ;;
         esac
     done
-    printf '%b\n' "${RED}Your account is not in the wheel, sudo or root group${RC}"
-    exit 1
+    printf '%b\n' "${YELLOW}Your account is not in the wheel, sudo or root group; ${ESCALATION_TOOL} decides whether it may make changes${RC}"
 }
 
 checkCurrentDirectoryWritable() {

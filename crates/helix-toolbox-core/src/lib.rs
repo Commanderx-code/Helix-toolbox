@@ -778,10 +778,17 @@ impl Tab {
     }
 }
 
-/// Reject values that could become flags or shell syntax in a command line.
+/// Reject values that could become flags or shell syntax in a command line,
+/// or that a package manager reads as something other than a package to
+/// install: a trailing `-` makes `apt-get install` remove the package, a
+/// leading `@` makes dnf install a group, and a name ending in `.rpm` is a
+/// local file to dnf and zypper. A trailing `+` (apt's install mark) stays,
+/// since names such as `g++` end in one.
 pub fn valid_package_name(name: &str) -> bool {
     !name.is_empty()
-        && !name.starts_with('-')
+        && !name.starts_with(['-', '@'])
+        && !name.ends_with('-')
+        && !name.ends_with(".rpm")
         && name.len() <= 128
         && name
             .bytes()
@@ -1017,5 +1024,17 @@ mod tests {
         assert!(tab.items_at(&[1]).is_none());
         assert!(tab.items_at(&[5]).is_none());
         assert_eq!(tab.entries().len(), 2);
+    }
+
+    #[test]
+    fn package_names_a_package_manager_reads_as_another_operation_are_refused() {
+        // `apt-get install systemd-` removes systemd; `dnf install @group`
+        // installs a whole group; `dnf install name.rpm` a local file.
+        for bad in ["systemd-", "@virtualization", "download.rpm"] {
+            assert!(!valid_package_name(bad), "accepted {bad}");
+        }
+        for good in ["g++", "dvd+rw-tools", "rpm", "python3-rpm"] {
+            assert!(valid_package_name(good), "rejected {good}");
+        }
     }
 }

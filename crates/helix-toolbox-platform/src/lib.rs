@@ -1,7 +1,10 @@
 //! Read-only Linux identification and executable detection.
 
 use helix_toolbox_core::PackageManager;
-use std::{env, fs, path::Path};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 use thiserror::Error;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -14,19 +17,32 @@ pub struct LinuxInfo {
 
 #[derive(Debug, Error)]
 pub enum PlatformError {
-    #[error("cannot read /etc/os-release: {0}")]
-    OsRelease(#[from] std::io::Error),
-    #[error("missing ID field in os-release")]
-    MissingId,
+    #[error("cannot read {0}: {1}")]
+    OsRelease(PathBuf, std::io::Error),
 }
 
 impl LinuxInfo {
     pub fn detect() -> Result<Self, PlatformError> {
-        // Most Linux distributions expose this file, including Garuda.
-        let contents = fs::read_to_string("/etc/os-release")?;
+        Self::detect_in(Path::new("/"))
+    }
+
+    /// The distribution whose root file system is at `root`: from
+    /// `etc/os-release`, or `usr/lib/os-release` where that is missing, as
+    /// os-release(5) says to read them.
+    pub fn detect_in(root: &Path) -> Result<Self, PlatformError> {
+        let etc = root.join("etc/os-release");
+        let contents = match fs::read_to_string(&etc) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let usr = root.join("usr/lib/os-release");
+                fs::read_to_string(&usr).map_err(|error| PlatformError::OsRelease(usr, error))?
+            }
+            read => read.map_err(|error| PlatformError::OsRelease(etc, error))?,
+        };
         Self::from_os_release(&contents)
     }
 
+    /// Read an os-release file's text. A file without `ID` is plain
+    /// `linux`, the default os-release(5) gives it.
     pub fn from_os_release(text: &str) -> Result<Self, PlatformError> {
         let mut id = String::new();
         let mut pretty_name = String::new();
@@ -51,7 +67,7 @@ impl LinuxInfo {
             }
         }
         if id.is_empty() {
-            return Err(PlatformError::MissingId);
+            id = "linux".into();
         }
         if pretty_name.is_empty() {
             pretty_name = id.clone();
@@ -168,5 +184,26 @@ mod tests {
     fn path_injection_is_rejected() {
         assert!(!binary_exists("/bin/sh"));
         assert!(!binary_exists("../foo"));
+    }
+
+    #[test]
+    fn an_os_release_without_id_is_linux() {
+        // os-release(5): "If not set, a default of ID=linux may be used."
+        let info = LinuxInfo::from_os_release("NAME=\"Linux From Scratch\"\nVERSION=12.2\n");
+        assert_eq!(info.map(|info| info.id).ok().as_deref(), Some("linux"));
+    }
+
+    #[test]
+    fn os_release_is_read_from_usr_lib_where_etc_has_none() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(LinuxInfo::detect_in(root.path()).is_err());
+        fs::create_dir_all(root.path().join("usr/lib")).unwrap();
+        fs::write(root.path().join("usr/lib/os-release"), "ID=fedora\n").unwrap();
+        let info = LinuxInfo::detect_in(root.path()).unwrap();
+        assert_eq!(info.manager, Some(PackageManager::Fedora));
+        // The one in /etc wins where both are there.
+        fs::create_dir_all(root.path().join("etc")).unwrap();
+        fs::write(root.path().join("etc/os-release"), "ID=arch\n").unwrap();
+        assert_eq!(LinuxInfo::detect_in(root.path()).unwrap().id, "arch");
     }
 }
