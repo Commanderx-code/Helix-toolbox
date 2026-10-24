@@ -1,32 +1,54 @@
 //! The Home Manager screen.
 
 use super::super::*;
+use super::{Ask, Cx, Read, ToolScreen, View};
 
-impl App {
+/// Home Manager's generations, building and switching.
+#[derive(Default)]
+pub(in crate::tui::app) struct Home {
+    /// Home Manager as last read.
+    pub(in crate::tui::app) status: Option<home_manager::Status>,
+    reading: Read<home_manager::Status>,
+    pub(in crate::tui::app) rows: Vec<HomeRow>,
+}
+
+/// A line of the Home Manager screen.
+#[derive(Clone, Debug)]
+pub(in crate::tui::app) enum HomeRow {
+    Heading(String),
+    Text(String),
+    /// A generation, by its place in the status.
+    Generation(usize),
+    /// A linked configuration file, by its place in the status.
+    Link(usize),
+}
+
+impl Home {
     /// Read Home Manager in the background: its generations, its
     /// configuration's repository and the files it links.
-    pub(in crate::tui::app) fn read_home(&mut self) {
-        self.reading_home = Some(self.read_host(|host| home_manager::status(&host, &repos::Here)));
-        self.build_home_rows();
+    fn read(&mut self, cx: &mut Cx) {
+        self.reading
+            .start(cx.host, |host| home_manager::status(&host, &repos::Here));
+        self.build_rows(cx);
     }
 
-    fn selected_generation(&self) -> Option<&home_manager::Generation> {
-        let HomeRow::Generation(index) = self.home_rows.get(self.main_state.selected()?)? else {
+    fn selected_generation(&self, at: Option<usize>) -> Option<&home_manager::Generation> {
+        let HomeRow::Generation(index) = self.rows.get(at?)? else {
             return None;
         };
-        self.home_status.as_ref()?.generations.get(*index)
+        self.status.as_ref()?.generations.get(*index)
     }
 
-    fn selected_link(&self) -> Option<&home_manager::Link> {
-        let HomeRow::Link(index) = self.home_rows.get(self.main_state.selected()?)? else {
+    fn selected_link(&self, at: Option<usize>) -> Option<&home_manager::Link> {
+        let HomeRow::Link(index) = self.rows.get(at?)? else {
             return None;
         };
-        self.home_status.as_ref()?.links.get(*index)
+        self.status.as_ref()?.links.get(*index)
     }
 
     /// The configuration to build, or a popup saying why there is none.
-    fn home_config(&mut self) -> Option<home_manager::Config> {
-        let why = match self.home_status.as_ref() {
+    fn config(&self, cx: &mut Cx) -> Option<home_manager::Config> {
+        let why = match self.status.as_ref() {
             None => "Home Manager has not been read yet; r reads it.".to_string(),
             Some(status) if !status.installed => "home-manager is not installed here.".to_string(),
             Some(home_manager::Status {
@@ -39,63 +61,33 @@ impl App {
             }) => problem.clone(),
             Some(_) => "No Home Manager configuration was found: name its folder as flake under [home_manager] in settings.toml.".to_string(),
         };
-        self.popup = Some(Popup::Text(TextPopup::new("Home Manager", why, true)));
+        *cx.popup = Some(Popup::Text(TextPopup::new("Home Manager", why, true)));
         None
-    }
-
-    fn confirm_home(&mut self, planned: Result<Plan, String>) {
-        match planned {
-            Ok(planned) => self.confirm_plan(Ok(planned)),
-            Err(why) => {
-                self.popup = Some(Popup::Text(TextPopup::new("Cannot plan", why, true)));
-            }
-        }
-    }
-
-    pub(in crate::tui::app) fn home_key(&mut self, code: KeyCode) {
-        match code {
-            KeyCode::Char('b') => {
-                if let Some(config) = self.home_config() {
-                    self.confirm_home(Ok(home_manager::plan_build(&config)));
-                }
-            }
-            KeyCode::Char('s') => {
-                if let Some(config) = self.home_config() {
-                    self.confirm_home(Ok(home_manager::plan_switch(&config)));
-                }
-            }
-            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.home_enter(),
-            KeyCode::Char('p') => self.pull_home(),
-            KeyCode::Char('d') => self.describe_home(),
-            KeyCode::Char('r') => self.read_home(),
-            KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Sidebar,
-            _ => {}
-        }
     }
 
     /// Enter on an earlier generation plans going back to it; on anything
     /// else it tells of it.
-    fn home_enter(&mut self) {
-        match self.selected_generation().cloned() {
+    fn enter(&self, cx: &mut Cx) {
+        match self.selected_generation(cx.at()).cloned() {
             Some(generation) if !generation.current => {
-                let planned = home_manager::plan_activate(&self.host, &generation);
-                self.confirm_home(planned);
+                let planned = home_manager::plan_activate(cx.host, &generation);
+                cx.confirm_or_say(planned);
             }
-            _ => self.describe_home(),
+            _ => self.describe(cx),
         }
     }
 
     /// Pull the configuration's repository, fast-forward only.
-    fn pull_home(&mut self) {
-        if self.home_config().is_none() {
+    fn pull(&self, cx: &mut Cx) {
+        if self.config(cx).is_none() {
             return;
         }
         let Some(repository) = self
-            .home_status
+            .status
             .as_ref()
             .and_then(|status| status.repository.clone())
         else {
-            self.popup = Some(Popup::Text(TextPopup::new(
+            *cx.popup = Some(Popup::Text(TextPopup::new(
                 "Home Manager",
                 "The configuration is not in a Git repository.",
                 true,
@@ -104,16 +96,16 @@ impl App {
         };
         // Git is asked through its own seam, which a made-up host does not
         // stand in for.
-        if !self.host.is_here() {
+        if !cx.host.is_here() {
             return;
         }
         let planned = repos::details(&repos::Here, &repository.path)
             .and_then(|details| repos::plan(&repos::Here, &details, &Change::Pull));
-        self.confirm_home(planned);
+        cx.confirm_or_say(planned);
     }
 
-    fn describe_home(&mut self) {
-        let (title, text) = if let Some(generation) = self.selected_generation() {
+    fn describe(&self, cx: &mut Cx) {
+        let (title, text) = if let Some(generation) = self.selected_generation(cx.at()) {
             (
                 format!("Generation {}", generation.id),
                 format!(
@@ -127,7 +119,7 @@ impl App {
                     }
                 ),
             )
-        } else if let Some(link) = self.selected_link() {
+        } else if let Some(link) = self.selected_link(cx.at()) {
             (
                 link.name.clone(),
                 match (&link.target, link.managed) {
@@ -148,47 +140,23 @@ impl App {
         } else {
             return;
         };
-        self.popup = Some(Popup::Text(TextPopup::new(
+        *cx.popup = Some(Popup::Text(TextPopup::new(
             helix_toolbox_core::printable(&title),
             helix_toolbox_core::printable(&text),
             true,
         )));
     }
 
-    pub(in crate::tui::app) fn home_hints(&self, list: &mut Vec<Hint>) {
-        list.push(Hint::new(&["↑↓"], "Navigate"));
-        if self
-            .selected_generation()
-            .is_some_and(|generation| !generation.current)
-        {
-            list.push(Hint::new(&["Enter"], "Go back to it"));
-        }
-        if let Some(status) = &self.home_status
-            && status.installed
-            && status.config.is_some()
-        {
-            list.push(Hint::new(&["b"], "Build"));
-            list.push(Hint::new(&["s"], "Switch"));
-            if status.repository.is_some() {
-                list.push(Hint::new(&["p"], "Pull"));
-            }
-        }
-        if self.selected_generation().is_some() || self.selected_link().is_some() {
-            list.push(Hint::new(&["d"], "Details"));
-        }
-        list.push(Hint::new(&["r"], "Read again"));
-    }
-
-    pub(in crate::tui::app) fn build_home_rows(&mut self) {
+    pub(in crate::tui::app) fn build_rows(&mut self, cx: &mut Cx) {
         let mut rows = vec![HomeRow::Heading("Home Manager".into())];
-        let Some(status) = &self.home_status else {
-            rows.push(HomeRow::Text(if self.reading_home.is_some() {
+        let Some(status) = &self.status else {
+            rows.push(HomeRow::Text(if self.reading.busy() {
                 "Reading Home Manager…".into()
             } else {
                 "Press r to read Home Manager.".into()
             }));
-            self.home_rows = rows;
-            self.clamp_main();
+            self.rows = rows;
+            cx.clamp();
             return;
         };
         rows.push(HomeRow::Text(match (&status.version, status.installed) {
@@ -239,38 +207,112 @@ impl App {
             rows.push(HomeRow::Heading("Configuration files".into()));
             rows.extend((0..status.links.len()).map(HomeRow::Link));
         }
-        self.home_rows = rows;
-        self.clamp_main();
+        self.rows = rows;
+        cx.clamp();
+    }
+}
+
+impl ToolScreen for Home {
+    fn open(&mut self, cx: &mut Cx) {
+        if self.status.is_none() {
+            self.read(cx);
+        } else {
+            self.build_rows(cx);
+        }
     }
 
-    pub(in crate::tui::app) fn draw_home(&mut self, frame: &mut Frame, area: Rect) {
-        let inner = self.page(
+    fn len(&self, _view: &View) -> usize {
+        self.rows.len()
+    }
+
+    fn key(&mut self, cx: &mut Cx, code: KeyCode) {
+        match code {
+            KeyCode::Char('b') => {
+                if let Some(config) = self.config(cx) {
+                    cx.confirm(home_manager::plan_build(&config));
+                }
+            }
+            KeyCode::Char('s') => {
+                if let Some(config) = self.config(cx) {
+                    cx.confirm(home_manager::plan_switch(&config));
+                }
+            }
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.enter(cx),
+            KeyCode::Char('p') => self.pull(cx),
+            KeyCode::Char('d') => self.describe(cx),
+            KeyCode::Char('r') => self.read(cx),
+            KeyCode::Char('h') | KeyCode::Left => cx.ask(Ask::Sidebar),
+            _ => {}
+        }
+    }
+
+    fn hints(&self, _view: &View, at: Option<usize>, list: &mut Vec<Hint>) {
+        list.push(Hint::new(&["↑↓"], "Navigate"));
+        if self
+            .selected_generation(at)
+            .is_some_and(|generation| !generation.current)
+        {
+            list.push(Hint::new(&["Enter"], "Go back to it"));
+        }
+        if let Some(status) = &self.status
+            && status.installed
+            && status.config.is_some()
+        {
+            list.push(Hint::new(&["b"], "Build"));
+            list.push(Hint::new(&["s"], "Switch"));
+            if status.repository.is_some() {
+                list.push(Hint::new(&["p"], "Pull"));
+            }
+        }
+        if self.selected_generation(at).is_some() || self.selected_link(at).is_some() {
+            list.push(Hint::new(&["d"], "Details"));
+        }
+        list.push(Hint::new(&["r"], "Read again"));
+    }
+
+    fn poll(&mut self, cx: &mut Cx) -> bool {
+        let Some(found) = self.reading.take() else {
+            return false;
+        };
+        self.status = Some(found);
+        self.build_rows(cx);
+        true
+    }
+
+    fn after_run(&mut self, cx: &mut Cx, reading: Reading) {
+        if reading == Reading::Tools {
+            self.read(cx);
+        }
+    }
+
+    fn draw(&self, view: &View, frame: &mut Frame, area: Rect, state: &mut ListState) {
+        let inner = view.page(
             frame,
             area,
             "Home Manager",
             "Its generations and configuration; building, switching and going back are plans you review.",
         );
-        self.fill(frame, inner);
-        let focused = self.focus == Focus::Main;
-        let muted = Style::default().fg(self.theme.muted());
+        view.fill(frame, inner);
+        let focused = view.focused;
+        let muted = Style::default().fg(view.theme.muted());
         let mut items: Vec<Line> = Vec::new();
-        for row in &self.home_rows {
+        for row in &self.rows {
             items.push(match row {
                 HomeRow::Heading(text) => {
-                    Line::styled(text.clone(), Style::default().fg(self.theme.group()).bold())
+                    Line::styled(text.clone(), Style::default().fg(view.theme.group()).bold())
                 }
                 HomeRow::Text(text) => {
                     Line::styled(format!("  {}", helix_toolbox_core::printable(text)), muted)
                 }
                 HomeRow::Generation(index) => {
-                    let generation = &self.home_status.as_ref().unwrap().generations[*index];
+                    let generation = &self.status.as_ref().unwrap().generations[*index];
                     Line::from(vec![
                         Span::styled(
                             format!("  {:>5}  {}", generation.id, generation.built),
                             Style::default().fg(if generation.current {
-                                self.theme.success()
+                                view.theme.success()
                             } else {
-                                self.theme.entry()
+                                view.theme.entry()
                             }),
                         ),
                         Span::styled(
@@ -279,16 +321,16 @@ impl App {
                             } else {
                                 String::new()
                             },
-                            Style::default().fg(self.theme.success()),
+                            Style::default().fg(view.theme.success()),
                         ),
                     ])
                 }
                 HomeRow::Link(index) => {
-                    let link = &self.home_status.as_ref().unwrap().links[*index];
+                    let link = &self.status.as_ref().unwrap().links[*index];
                     Line::from(vec![
                         Span::styled(
                             format!("  {:<12}", link.name),
-                            Style::default().fg(self.theme.entry()),
+                            Style::default().fg(view.theme.entry()),
                         ),
                         Span::styled(
                             if link.managed {
@@ -304,11 +346,11 @@ impl App {
                 }
             });
         }
-        let list = List::new(self.measure(items))
-            .block(self.card("Home Manager"))
-            .highlight_style(self.highlight(focused))
-            .highlight_symbol(self.marker(focused))
+        let list = List::new(view.measure(items))
+            .block(view.card("Home Manager"))
+            .highlight_style(view.highlight(focused))
+            .highlight_symbol(view.marker(focused))
             .scroll_padding(1);
-        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
+        bordered_list(frame, list, inner, state, view.hits);
     }
 }

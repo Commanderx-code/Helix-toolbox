@@ -1,13 +1,61 @@
 //! The Migration screen.
 
 use super::super::*;
+use super::{Ask, Cx, Read, ToolScreen, View};
 
-impl App {
+/// What this machine has, to take elsewhere, and a migration brought here.
+pub(in crate::tui::app) struct Migration {
+    /// What a migration of this machine would hold, as last read.
+    pub(in crate::tui::app) here: Option<migration::Migration>,
+    reading: Read<(migration::Migration, bool)>,
+    /// Whether the packages installed by hand can be told apart here.
+    pub(in crate::tui::app) packages_known: bool,
+    /// The migration file opened, and what it means here.
+    pub(in crate::tui::app) opened: Option<(PathBuf, Translation)>,
+    opening: Read<MigrationOpened>,
+    pub(in crate::tui::app) rows: Vec<MigrationRow>,
+}
+
+impl Default for Migration {
+    fn default() -> Self {
+        Self {
+            here: None,
+            reading: Read::default(),
+            packages_known: true,
+            opened: None,
+            opening: Read::default(),
+            rows: Vec::new(),
+        }
+    }
+}
+
+/// A migration file read here, or why it could not be.
+type MigrationOpened = (PathBuf, Result<Translation, String>);
+
+/// A line of the Migration screen.
+#[derive(Clone, Debug)]
+pub(in crate::tui::app) enum MigrationRow {
+    Heading(String),
+    Text(String),
+    /// A thing the opened migration names, by its place in the translation.
+    Item(usize),
+}
+
+/// How the Migration screen names a kind of thing.
+fn migration_kind(kind: migration::Kind) -> &'static str {
+    match kind {
+        migration::Kind::Entry => "entry",
+        migration::Kind::Flatpak => "Flatpak",
+        migration::Kind::Package => "package",
+    }
+}
+
+impl Migration {
     /// Read in the background what a migration of this machine would hold.
-    pub(in crate::tui::app) fn read_migration(&mut self) {
-        let entries: Vec<Entry> = self.catalog.entries().into_iter().cloned().collect();
-        let platform = self.platform.clone();
-        self.reading_migration = Some(self.read_host(move |host| {
+    fn read(&mut self, cx: &mut Cx) {
+        let entries: Vec<Entry> = cx.catalog.entries().into_iter().cloned().collect();
+        let platform = cx.platform.clone();
+        self.reading.start(cx.host, move |host| {
             let refs: Vec<&Entry> = entries.iter().collect();
             // As migration::gather, keeping whether the packages chosen by
             // hand could be read.
@@ -16,44 +64,41 @@ impl App {
             let found =
                 migration::export(&refs, &platform, &inventory, chosen.as_deref(), host.now());
             (found, chosen.is_some())
-        }));
-        self.build_migration_rows();
+        });
+        self.build_rows(cx);
     }
 
     /// Read this machine again, and the opened migration with it.
-    pub(in crate::tui::app) fn reload_migration(&mut self) {
-        self.read_migration();
-        if let Some((path, _)) = self.migration_opened.clone() {
-            self.open_migration(path);
+    fn reload(&mut self, cx: &mut Cx) {
+        self.read(cx);
+        if let Some((path, _)) = self.opened.clone() {
+            self.open_file(cx, path);
         }
     }
 
     /// Read a migration file and what it means here, in the background.
-    pub(in crate::tui::app) fn open_migration(&mut self, path: PathBuf) {
-        let entries: Vec<Entry> = self.catalog.entries().into_iter().cloned().collect();
-        let platform = self.platform.clone();
-        self.opening_migration = Some(self.read_host(move |host| {
+    pub(in crate::tui::app) fn open_file(&mut self, cx: &mut Cx, path: PathBuf) {
+        let entries: Vec<Entry> = cx.catalog.entries().into_iter().cloned().collect();
+        let platform = cx.platform.clone();
+        self.opening.start(cx.host, move |host| {
             let refs: Vec<&Entry> = entries.iter().collect();
             let read = migration::read_here(&host, &path, &refs, &platform)
                 .map_err(|error| error.to_string());
             (path, read)
-        }));
-        self.build_migration_rows();
+        });
+        self.build_rows(cx);
     }
 
-    pub(in crate::tui::app) fn opened_migration(
-        &mut self,
-        path: PathBuf,
-        read: Result<Translation, String>,
-    ) {
+    /// The migration file read, or why it could not be.
+    fn file_read(&mut self, cx: &mut Cx, path: PathBuf, read: Result<Translation, String>) {
         match read {
             Ok(translation) => {
-                self.migration_opened = Some((path, translation));
-                self.build_migration_rows();
+                self.opened = Some((path, translation));
+                self.build_rows(cx);
             }
             Err(error) => {
-                self.build_migration_rows();
-                self.popup = Some(Popup::Text(TextPopup::new(
+                self.build_rows(cx);
+                *cx.popup = Some(Popup::Text(TextPopup::new(
                     "Cannot open the migration",
                     error,
                     true,
@@ -64,19 +109,14 @@ impl App {
 
     /// Write what this machine has to a file, as `helix-toolbox migrate
     /// export` does.
-    pub(in crate::tui::app) fn export_migration(&mut self, text: &str) -> Result<String, String> {
+    pub(in crate::tui::app) fn export(&self, cx: &Cx, text: &str) -> Result<String, String> {
         let path = typed_path(text)?;
         if path.extension().is_none_or(|extension| extension != "toml") {
             return Err("A migration is written to a .toml file.".to_string());
         }
-        let found = match &self.migration_here {
+        let found = match &self.here {
             Some(found) => found.clone(),
-            None => migration::gather(
-                &self.host,
-                &self.catalog.entries(),
-                &self.platform,
-                self.host.now(),
-            ),
+            None => migration::gather(cx.host, &cx.catalog.entries(), cx.platform, cx.host.now()),
         };
         migration::write(&path, &found).map_err(|error| error.to_string())?;
         Ok(format!(
@@ -89,9 +129,9 @@ impl App {
     }
 
     /// Plan what the opened migration marks Install, to review and run.
-    pub(in crate::tui::app) fn apply_migration(&mut self) {
-        let Some((_, translation)) = &self.migration_opened else {
-            self.popup = Some(Popup::Text(TextPopup::new(
+    fn apply(&self, cx: &mut Cx) {
+        let Some((_, translation)) = &self.opened else {
+            *cx.popup = Some(Popup::Text(TextPopup::new(
                 "No migration open",
                 "o opens a migration file made on the other machine; then a installs what it can here.",
                 true,
@@ -99,28 +139,27 @@ impl App {
             return;
         };
         if translation.count(Standing::Install) == 0 {
-            self.popup = Some(Popup::Text(TextPopup::new(
+            *cx.popup = Some(Popup::Text(TextPopup::new(
                 "Nothing to install",
                 "Everything the migration names is here already, cannot be installed here, or is left to you.",
                 true,
             )));
             return;
         }
-        let entries = self.catalog.entries();
-        let planned = migration::plan_here(&self.host, translation, &entries, &self.platform);
-        self.confirm_plan(planned);
+        let entries = cx.catalog.entries();
+        let planned = migration::plan_here(cx.host, translation, &entries, cx.platform);
+        cx.ask(Ask::Plan(planned));
     }
 
-    pub(in crate::tui::app) fn selected_migration_item(&self) -> Option<&migration::Item> {
-        let MigrationRow::Item(index) = self.migration_rows.get(self.main_state.selected()?)?
-        else {
+    fn selected(&self, at: Option<usize>) -> Option<&migration::Item> {
+        let MigrationRow::Item(index) = self.rows.get(at?)? else {
             return None;
         };
-        self.migration_opened.as_ref()?.1.items.get(*index)
+        self.opened.as_ref()?.1.items.get(*index)
     }
 
-    pub(in crate::tui::app) fn describe_migration(&mut self) {
-        let Some(item) = self.selected_migration_item() else {
+    fn describe(&self, cx: &mut Cx) {
+        let Some(item) = self.selected(cx.at()) else {
             return;
         };
         let kind = migration_kind(item.kind);
@@ -137,16 +176,16 @@ impl App {
             helix_toolbox_core::printable(&item.id),
             helix_toolbox_core::printable(&item.detail)
         );
-        self.popup = Some(Popup::Text(TextPopup::new(
+        *cx.popup = Some(Popup::Text(TextPopup::new(
             helix_toolbox_core::printable(&item.name),
             text,
             true,
         )));
     }
 
-    pub(in crate::tui::app) fn build_migration_rows(&mut self) {
+    fn build_rows(&mut self, cx: &mut Cx) {
         let mut rows = vec![MigrationRow::Heading("This machine".into())];
-        rows.push(MigrationRow::Text(match &self.migration_here {
+        rows.push(MigrationRow::Text(match &self.here {
             Some(found) => format!(
                 "{} entries, {} Flatpaks and {} packages of yours, from {}",
                 found.entries.len(),
@@ -154,10 +193,10 @@ impl App {
                 found.packages.len(),
                 found.from
             ),
-            None if self.reading_migration.is_some() => "Reading what this machine has…".into(),
+            None if self.reading.busy() => "Reading what this machine has…".into(),
             None => "Press r to read what this machine has.".into(),
         }));
-        if self.migration_here.is_some() && !self.migration_packages_known {
+        if self.here.is_some() && !self.packages_known {
             rows.push(MigrationRow::Text(
                 "The packages you installed yourself cannot be told apart here, so only the entries and Flatpaks go in the file.".into(),
             ));
@@ -165,10 +204,10 @@ impl App {
         rows.push(MigrationRow::Text(
             "e writes it to a file to take to another machine; o opens one made elsewhere.".into(),
         ));
-        if self.opening_migration.is_some() {
+        if self.opening.busy() {
             rows.push(MigrationRow::Heading("Opening the migration…".into()));
         }
-        if let Some((path, translation)) = &self.migration_opened {
+        if let Some((path, translation)) = &self.opened {
             let read = &translation.migration;
             rows.push(MigrationRow::Heading(format!(
                 "From {} ({}), made {}{}",
@@ -211,21 +250,116 @@ impl App {
                 );
             }
         }
-        self.migration_rows = rows;
-        self.clamp_main();
+        self.rows = rows;
+        cx.clamp();
+    }
+}
+
+impl ToolScreen for Migration {
+    fn open(&mut self, cx: &mut Cx) {
+        if self.here.is_none() {
+            self.read(cx);
+        } else {
+            self.build_rows(cx);
+        }
     }
 
-    pub(in crate::tui::app) fn draw_migration(&mut self, frame: &mut Frame, area: Rect) {
-        let inner = self.page(
+    fn len(&self, _view: &View) -> usize {
+        self.rows.len()
+    }
+
+    fn key(&mut self, cx: &mut Cx, code: KeyCode) {
+        match code {
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => match self.selected(cx.at()) {
+                Some(item) if item.standing == Standing::Install => self.apply(cx),
+                Some(_) => self.describe(cx),
+                None => {}
+            },
+            KeyCode::Char('d') => self.describe(cx),
+            KeyCode::Char('e') => {
+                let name = self
+                    .here
+                    .as_ref()
+                    .map(migration::file_name)
+                    .unwrap_or_else(|| "helix-toolbox-migration.toml".to_string());
+                *cx.popup = Some(Popup::Ask(
+                    InputPopup::new(
+                        "Export this machine",
+                        "The file to write its entries, Flatpaks and packages to, to take to the other machine:",
+                    )
+                    .with_value(format!("~/{name}"))
+                    .path()
+                    .answering("Export"),
+                    Asked::ExportMigration,
+                ));
+            }
+            KeyCode::Char('o') => {
+                let mut ask = InputPopup::new(
+                    "Open a migration",
+                    "The migration file made on the other machine, such as ~/helix-toolbox-migration.toml:",
+                )
+                .path()
+                .answering("Open");
+                if let Some((path, _)) = &self.opened {
+                    ask = ask.with_value(path.display().to_string());
+                }
+                *cx.popup = Some(Popup::Ask(ask, Asked::OpenMigration));
+            }
+            KeyCode::Char('a') => self.apply(cx),
+            KeyCode::Char('r') => self.reload(cx),
+            KeyCode::Char('h') | KeyCode::Left => cx.ask(Ask::Sidebar),
+            _ => {}
+        }
+    }
+
+    fn hints(&self, _view: &View, at: Option<usize>, list: &mut Vec<Hint>) {
+        list.push(Hint::new(&["↑↓"], "Navigate"));
+        if self.selected(at).is_some() {
+            list.push(Hint::new(&["d"], "Details"));
+        }
+        list.push(Hint::new(&["e"], "Export"));
+        list.push(Hint::new(&["o"], "Open a file"));
+        if self
+            .opened
+            .as_ref()
+            .is_some_and(|(_, translation)| translation.count(Standing::Install) > 0)
+        {
+            list.push(Hint::new(&["a"], "Install"));
+        }
+        list.push(Hint::new(&["r"], "Read again"));
+    }
+
+    fn poll(&mut self, cx: &mut Cx) -> bool {
+        if let Some((found, known)) = self.reading.take() {
+            self.here = Some(found);
+            self.packages_known = known;
+            self.build_rows(cx);
+            return true;
+        }
+        if let Some((path, read)) = self.opening.take() {
+            self.file_read(cx, path, read);
+            return true;
+        }
+        false
+    }
+
+    fn after_run(&mut self, cx: &mut Cx, reading: Reading) {
+        if reading == Reading::Tools {
+            self.reload(cx);
+        }
+    }
+
+    fn draw(&self, view: &View, frame: &mut Frame, area: Rect, state: &mut ListState) {
+        let inner = view.page(
             frame,
             area,
             "Migration",
             "Take this machine's applications to another machine or distribution. Exporting only reads.",
         );
-        self.fill(frame, inner);
-        let focused = self.focus == Focus::Main;
+        view.fill(frame, inner);
+        let focused = view.focused;
         let items_of = self
-            .migration_opened
+            .opened
             .as_ref()
             .map(|(_, translation)| translation.items.as_slice())
             .unwrap_or_default();
@@ -237,21 +371,21 @@ impl App {
             .min(36)
             + 2;
         let mut items: Vec<Line> = Vec::new();
-        for row in &self.migration_rows {
+        for row in &self.rows {
             items.push(match row {
                 MigrationRow::Heading(text) => {
-                    Line::styled(text.clone(), Style::default().fg(self.theme.group()).bold())
+                    Line::styled(text.clone(), Style::default().fg(view.theme.group()).bold())
                 }
                 MigrationRow::Text(text) => {
-                    Line::styled(format!("  {text}"), Style::default().fg(self.theme.muted()))
+                    Line::styled(format!("  {text}"), Style::default().fg(view.theme.muted()))
                 }
                 MigrationRow::Item(index) => {
                     let item = &items_of[*index];
                     let color = match item.standing {
-                        Standing::Install => self.theme.entry(),
-                        Standing::Here => self.theme.success(),
-                        Standing::Unavailable => self.theme.failure(),
-                        Standing::Yours => self.theme.warning(),
+                        Standing::Install => view.theme.entry(),
+                        Standing::Here => view.theme.success(),
+                        Standing::Unavailable => view.theme.failure(),
+                        Standing::Yours => view.theme.warning(),
                     };
                     Line::from(vec![
                         Span::styled(
@@ -263,21 +397,21 @@ impl App {
                         ),
                         Span::styled(
                             format!("{:<9}", migration_kind(item.kind)),
-                            Style::default().fg(self.theme.muted()),
+                            Style::default().fg(view.theme.muted()),
                         ),
                         Span::styled(
                             helix_toolbox_core::printable(&item.detail),
-                            Style::default().fg(self.theme.muted()),
+                            Style::default().fg(view.theme.muted()),
                         ),
                     ])
                 }
             });
         }
-        let list = List::new(self.measure(items))
-            .block(self.card("Migration"))
-            .highlight_style(self.highlight(focused))
-            .highlight_symbol(self.marker(focused))
+        let list = List::new(view.measure(items))
+            .block(view.card("Migration"))
+            .highlight_style(view.highlight(focused))
+            .highlight_symbol(view.marker(focused))
             .scroll_padding(1);
-        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
+        bordered_list(frame, list, inner, state, view.hits);
     }
 }

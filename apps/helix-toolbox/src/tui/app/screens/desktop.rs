@@ -1,24 +1,48 @@
 //! The Desktop screen.
 
 use super::super::*;
+use super::{Ask, Cx, ToolScreen, View};
+use helix_toolbox_engine::desktop;
 
-impl App {
-    pub(in crate::tui::app) fn desktop_here(&self) -> helix_toolbox_engine::desktop::Desktop {
-        helix_toolbox_engine::desktop::detect_on(&self.host)
+/// The desktop environment, its look and the entries for it.
+#[derive(Default)]
+pub(in crate::tui::app) struct Desktop {
+    pub(in crate::tui::app) rows: Vec<DesktopRow>,
+    /// Where looks are saved; the user's configuration unless a test says.
+    pub(in crate::tui::app) looks_dir: Option<PathBuf>,
+}
+
+/// A line of the Desktop screen.
+#[derive(Clone, Debug)]
+pub(in crate::tui::app) enum DesktopRow {
+    Heading(String),
+    Info {
+        text: String,
+        details: String,
+    },
+    /// A suggested entry, with what is worth knowing about it here.
+    Entry {
+        id: String,
+        text: String,
+        note: Option<String>,
+    },
+    Look {
+        slug: String,
+        text: String,
+    },
+}
+
+impl Desktop {
+    fn selected(&self, at: Option<usize>) -> Option<&DesktopRow> {
+        self.rows.get(at?)
     }
 
-    pub(in crate::tui::app) fn selected_desktop_row(&self) -> Option<&DesktopRow> {
-        self.desktop_rows.get(self.main_state.selected()?)
+    fn looks_directory(&self) -> Option<PathBuf> {
+        self.looks_dir.clone().or_else(desktop::dir)
     }
 
-    fn looks_directory(&self) -> Option<std::path::PathBuf> {
-        self.looks_dir
-            .clone()
-            .or_else(helix_toolbox_engine::desktop::dir)
-    }
-
-    pub(in crate::tui::app) fn reload_desktop(&mut self) {
-        let found = self.desktop_here();
+    pub(in crate::tui::app) fn reload(&mut self, cx: &mut Cx) {
+        let found = desktop::detect_on(cx.host);
         let mut rows = vec![DesktopRow::Heading("This desktop".to_string())];
         let name = match (&found.name, &found.session) {
             (Some(name), Some(session)) => format!("{name}, {session} session"),
@@ -87,7 +111,7 @@ impl App {
         }
         let looks = self
             .looks_directory()
-            .map(|directory| helix_toolbox_engine::desktop::load_all(&directory).0)
+            .map(|directory| desktop::load_all(&directory).0)
             .unwrap_or_default();
         if !looks.is_empty() {
             rows.push(DesktopRow::Heading("Saved looks".to_string()));
@@ -110,11 +134,11 @@ impl App {
                 slug,
             });
         }
-        let offered = helix_toolbox_engine::setup::load(self.catalog.root())
+        let offered = helix_toolbox_engine::setup::load(cx.catalog.root())
             .map(|setup| setup.for_desktop(found.kind))
             .unwrap_or_default();
         let offered: Vec<_> =
-            helix_toolbox_engine::setup::suggestions(&offered, &self.catalog, &self.platform)
+            helix_toolbox_engine::setup::suggestions(&offered, cx.catalog, cx.platform)
                 .into_iter()
                 .filter(|suggestion| suggestion.available)
                 .collect();
@@ -122,7 +146,7 @@ impl App {
             rows.push(DesktopRow::Heading("For this desktop".to_string()));
         }
         for suggestion in offered {
-            let queued = self.queue.iter().any(|entry| entry.id == suggestion.id);
+            let queued = cx.queue.iter().any(|entry| entry.id == suggestion.id);
             rows.push(DesktopRow::Entry {
                 text: format!(
                     "{}{}",
@@ -133,13 +157,14 @@ impl App {
                 note: suggestion.note,
             });
         }
-        self.desktop_rows = rows;
-        self.clamp_main();
+        self.rows = rows;
+        cx.clamp();
     }
 
-    pub(in crate::tui::app) fn save_look_as(&mut self, name: &str) {
-        let found = self.desktop_here();
-        let saved = helix_toolbox_engine::desktop::capture(name, &found)
+    /// Save the desktop's look under `name`.
+    pub(in crate::tui::app) fn save_look_as(&mut self, cx: &mut Cx, name: &str) {
+        let found = desktop::detect_on(cx.host);
+        let saved = desktop::capture(name, &found)
             .ok_or_else(|| {
                 "no desktop whose appearance Helix Toolbox can read is running here".to_string()
             })
@@ -147,11 +172,11 @@ impl App {
                 let directory = self
                     .looks_directory()
                     .ok_or_else(|| "cannot find the configuration folder".to_string())?;
-                helix_toolbox_engine::desktop::save(&directory, &look)
+                desktop::save(&directory, &look)
                     .map(|path| (look, path))
                     .map_err(|error| error.to_string())
             });
-        self.popup = Some(Popup::Text(match saved {
+        *cx.popup = Some(Popup::Text(match saved {
             Ok((look, path)) => TextPopup::new(
                 "Look saved",
                 format!(
@@ -164,25 +189,25 @@ impl App {
             ),
             Err(error) => TextPopup::new("Look not saved", error, true),
         }));
-        self.reload_desktop();
+        self.reload(cx);
     }
 
-    pub(in crate::tui::app) fn apply_look(&mut self, slug: &str) {
+    fn apply_look(&self, cx: &mut Cx, slug: &str) {
         let Some(directory) = self.looks_directory() else {
             return;
         };
-        let Some((_, look)) = helix_toolbox_engine::desktop::load_all(&directory)
+        let Some((_, look)) = desktop::load_all(&directory)
             .0
             .into_iter()
             .find(|(known, _)| known == slug)
         else {
             return;
         };
-        let found = self.desktop_here();
-        match helix_toolbox_engine::desktop::plan_apply(&look, &found) {
-            Ok(planned) => self.confirm_plan(Ok(planned)),
+        let found = desktop::detect_on(cx.host);
+        match desktop::plan_apply(&look, &found) {
+            Ok(planned) => cx.confirm(planned),
             Err(why) => {
-                self.popup = Some(Popup::Text(TextPopup::new(
+                *cx.popup = Some(Popup::Text(TextPopup::new(
                     "Cannot apply this look",
                     why,
                     true,
@@ -190,23 +215,82 @@ impl App {
             }
         }
     }
+}
 
-    pub(in crate::tui::app) fn draw_desktop(&mut self, frame: &mut Frame, area: Rect) {
-        let inner = self.page(
+impl ToolScreen for Desktop {
+    fn open(&mut self, cx: &mut Cx) {
+        self.reload(cx);
+    }
+
+    fn len(&self, _view: &View) -> usize {
+        self.rows.len()
+    }
+
+    fn key(&mut self, cx: &mut Cx, code: KeyCode) {
+        match code {
+            KeyCode::Enter | KeyCode::Char('d') => match self.selected(cx.at()).cloned() {
+                Some(DesktopRow::Info { text, details }) => {
+                    *cx.popup = Some(Popup::Text(TextPopup::new(text, details, true)));
+                }
+                Some(DesktopRow::Entry { id, .. }) => {
+                    if let Some(entry) = cx.catalog.find(&id).cloned() {
+                        cx.ask(Ask::Run(vec![entry]));
+                    }
+                }
+                Some(DesktopRow::Look { slug, .. }) => self.apply_look(cx, &slug),
+                _ => {}
+            },
+            KeyCode::Char(' ') => {
+                if let Some(DesktopRow::Entry { id, .. }) = self.selected(cx.at()).cloned()
+                    && let Some(entry) = cx.catalog.find(&id).cloned()
+                {
+                    cx.toggle_queued(entry);
+                    self.reload(cx);
+                }
+            }
+            KeyCode::Char('s') => {
+                *cx.popup = Some(Popup::LookName(InputPopup::new(
+                    "Save this look",
+                    "A name for the desktop's look (it is saved in ~/.config/helix-toolbox/looks):",
+                )));
+            }
+            KeyCode::Char('r') => self.reload(cx),
+            KeyCode::Char('h') | KeyCode::Left => cx.ask(Ask::Sidebar),
+            _ => {}
+        }
+    }
+
+    fn hints(&self, _view: &View, at: Option<usize>, list: &mut Vec<Hint>) {
+        list.push(Hint::new(&["↑↓"], "Navigate"));
+        match self.selected(at) {
+            Some(DesktopRow::Entry { .. }) => {
+                list.push(Hint::new(&["Enter"], "Run"));
+                list.push(Hint::new(&["Space"], "Plan"));
+            }
+            Some(DesktopRow::Look { .. }) => list.push(Hint::new(&["Enter"], "Apply")),
+            Some(DesktopRow::Info { .. }) => list.push(Hint::new(&["Enter"], "Details")),
+            _ => {}
+        }
+        list.push(Hint::new(&["s"], "Save this look"));
+        list.push(Hint::new(&["r"], "Read again"));
+    }
+
+    fn draw(&self, view: &View, frame: &mut Frame, area: Rect, state: &mut ListState) {
+        let inner = view.page(
             frame,
             area,
             "Desktop",
             "The desktop, its login screen and look, and the entries for it; who else sets the look.",
         );
-        self.fill(frame, inner);
-        let focused = self.focus == Focus::Main;
+        view.fill(frame, inner);
+        let focused = view.focused;
         let items: Vec<Line> = self
-            .desktop_rows
+            .rows
             .iter()
             .map(|row| match row {
                 DesktopRow::Heading(title) => Line::styled(
                     title.clone(),
-                    Style::default().fg(self.theme.group()).bold(),
+                    Style::default().fg(view.theme.group()).bold(),
                 ),
                 DesktopRow::Info { text, .. } => Line::from(vec![
                     Span::raw("  "),
@@ -214,40 +298,40 @@ impl App {
                         text.clone(),
                         Style::default().fg(
                             if text.starts_with("Note:") || text.starts_with("Not changed") {
-                                self.theme.warning()
+                                view.theme.warning()
                             } else {
-                                self.theme.entry()
+                                view.theme.entry()
                             },
                         ),
                     ),
                 ]),
                 DesktopRow::Entry { text, note, .. } => Line::from(vec![
                     Span::styled(
-                        format!("  {} ", self.glyph(Icon::Entry)),
-                        Style::default().fg(self.theme.muted()),
+                        format!("  {} ", view.glyph(Icon::Entry)),
+                        Style::default().fg(view.theme.muted()),
                     ),
-                    Span::styled(text.clone(), Style::default().fg(self.theme.entry())),
+                    Span::styled(text.clone(), Style::default().fg(view.theme.entry())),
                     Span::styled(
                         note.as_ref()
                             .map(|note| format!("  {note}"))
                             .unwrap_or_default(),
-                        Style::default().fg(self.theme.faint()),
+                        Style::default().fg(view.theme.faint()),
                     ),
                 ]),
                 DesktopRow::Look { text, .. } => Line::from(vec![
                     Span::styled(
-                        format!("  {} ", self.glyph(Icon::Entry)),
-                        Style::default().fg(self.theme.muted()),
+                        format!("  {} ", view.glyph(Icon::Entry)),
+                        Style::default().fg(view.theme.muted()),
                     ),
-                    Span::styled(text.clone(), Style::default().fg(self.theme.entry())),
+                    Span::styled(text.clone(), Style::default().fg(view.theme.entry())),
                 ]),
             })
             .collect();
-        let list = List::new(self.measure(items))
-            .block(self.card("This machine"))
-            .highlight_style(self.highlight(focused))
-            .highlight_symbol(self.marker(focused))
+        let list = List::new(view.measure(items))
+            .block(view.card("This machine"))
+            .highlight_style(view.highlight(focused))
+            .highlight_symbol(view.marker(focused))
             .scroll_padding(1);
-        bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
+        bordered_list(frame, list, inner, state, view.hits);
     }
 }
