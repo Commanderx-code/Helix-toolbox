@@ -299,7 +299,7 @@ export async function call(command: string, args: Record<string, unknown> = {}):
         ],
       };
     case 'list_backups':
-      return { snapshots: { tool: 'Snapper', restore: 'snapper list shows them; snapper undochange N puts one back.' }, backups: [{ index: 0, original: '/home/me/.config/fish/config.fish', backup: '/home/me/.config/fish/config.fish.helix-toolbox-backup-20261018', taken: '2026-10-18 21:04', system: false, directory: false }] };
+      return { snapshots: { tool: 'Snapper', restore: 'snapper list shows them; snapper undochange N puts one back.' }, backups: [{ key: '/home/me/.config/fish/config.fish.helix-toolbox-backup-20261018', original: '/home/me/.config/fish/config.fish', backup: '/home/me/.config/fish/config.fish.helix-toolbox-backup-20261018', taken: '2026-10-18 21:04', system: false, directory: false }] };
     case 'drift_targets':
       return [{ key: 'baseline:laptop', kind: 'baseline', name: 'Laptop', detail: 'saved 2026-10-01 on Sample Linux: 42 entries, 12 configuration paths' }];
     case 'drift_check':

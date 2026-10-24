@@ -129,8 +129,13 @@ fn firmware(found: &Hardware) -> Row {
         })
         .collect();
     let label = format!(
-        "{} devices, {} updatable through fwupd{}",
+        "{} {}, {} updatable through fwupd{}",
         found.firmware.devices.len(),
+        if found.firmware.devices.len() == 1 {
+            "device"
+        } else {
+            "devices"
+        },
         updatable.len(),
         if found.firmware.updates.is_empty() {
             "; no updates in the metadata fwupd has"
@@ -239,8 +244,13 @@ fn temperatures(sensors: &[hardware::Sensor]) -> Row {
     };
     let hot = sensors.iter().filter(|sensor| sensor.hot()).count();
     let label = format!(
-        "{} sensors; the warmest {} {} at {}{}",
+        "{} {}; the warmest {} {} at {}{}",
         sensors.len(),
+        if sensors.len() == 1 {
+            "sensor"
+        } else {
+            "sensors"
+        },
         warmest.chip,
         warmest.label,
         celsius(warmest.celsius),
@@ -274,7 +284,7 @@ fn battery(battery: &hardware::Battery) -> Row {
         .unwrap_or_default();
     let cycles = battery
         .cycles
-        .map(|cycles| format!("{cycles} cycles"))
+        .map(|cycles| format!("{cycles} {}", if cycles == 1 { "cycle" } else { "cycles" }))
         .unwrap_or_default();
     let line = format!(
         "{}: {}",
@@ -630,7 +640,15 @@ pub fn now(now: &Now) -> Vec<Fact> {
     let mut facts = Vec::new();
     if let Some([one, five, fifteen]) = now.load {
         facts.push(Fact {
-            note: format!("(1, 5 and 15 minutes) on {} processors", now.cpus),
+            note: format!(
+                "(1, 5 and 15 minutes) on {} {}",
+                now.cpus,
+                if now.cpus == 1 {
+                    "processor"
+                } else {
+                    "processors"
+                }
+            ),
             ..fact("Load", format!("{one:.2} {five:.2} {fifteen:.2}"))
         });
     }
@@ -673,7 +691,8 @@ pub fn now(now: &Now) -> Vec<Fact> {
         ("disk", now.pressure.io),
     ]
     .into_iter()
-    .filter_map(|(what, waited)| Some(format!("{what} {:.0}%", waited?)))
+    // Rounded half up, as the window did: 2.5% reads 3%, not 2%.
+    .filter_map(|(what, waited)| Some(format!("{what} {:.0}%", waited?.round())))
     .collect();
     if !pressure.is_empty() {
         facts.push(fact("Waiting, last minute", pressure.join(", ")));
@@ -798,7 +817,7 @@ pub fn bundle_contents(found: &Contents, complete: bool) -> Vec<String> {
 /// What a checked bundle holds, line by line, as `bundle verify` says it.
 pub fn manifest(directory: &Path, manifest: &Manifest) -> Vec<String> {
     let mut lines = vec![format!(
-        "{}: made for {} {} with Helix Toolbox {}{}; {} files, every one matching its checksum.",
+        "{}: made for {} {} with Helix Toolbox {}{}; {}.",
         directory.display(),
         printable(&manifest.distribution),
         printable(&manifest.architecture),
@@ -808,7 +827,10 @@ pub fn manifest(directory: &Path, manifest: &Manifest) -> Vec<String> {
         } else {
             ""
         },
-        manifest.files.len()
+        match manifest.files.len() {
+            1 => "1 file, matching its checksum".to_string(),
+            files => format!("{files} files, every one matching its checksum"),
+        }
     )];
     for flatpak in &manifest.flatpaks {
         lines.push(format!("  Flatpak: {}", bundled_flatpak(flatpak)));
@@ -835,7 +857,7 @@ pub fn bundle_size(manifest: &Manifest) -> String {
 mod tests {
     use super::*;
     use crate::{
-        bundle::Download,
+        bundle::{BundledFile, Download},
         hardware::{Battery, Disk, Firmware, FirmwareDevice, FirmwareUpdate, Sensor},
         performance::{Phases, Swap},
     };
@@ -1126,7 +1148,8 @@ mod tests {
             ("1.1 s", "+100 ms", true)
         );
         let faster = change(Some(2000), Some(850)).unwrap();
-        assert_eq!((faster.how.as_str(), faster.slower), ("-1.1 s", false));
+        // 1150 ms is 1.15 s, rounded half up.
+        assert_eq!((faster.how.as_str(), faster.slower), ("-1.2 s", false));
         let new = change(None, Some(40)).unwrap();
         assert_eq!((new.how.as_str(), new.slower), ("new", true));
         let gone = change(Some(40), None).unwrap();
@@ -1244,5 +1267,138 @@ mod tests {
             ..flatpak
         };
         assert!(bundled_flatpak(&short).contains("at commit abc,"));
+    }
+
+    fn disk_detail(bytes: u64) -> String {
+        hardware(&Hardware {
+            disks: vec![Disk {
+                name: "mmcblk0boot0".into(),
+                bytes: Some(bytes),
+                kind: "SSD".into(),
+                ..Disk::default()
+            }],
+            ..Hardware::default()
+        })
+        .disks[0]
+            .detail
+            .clone()
+    }
+
+    #[test]
+    fn a_small_disk_reads_in_megabytes() {
+        // An eMMC boot area of 4 MiB.
+        assert_eq!(disk_detail(4_194_304), "SSD · 4.2 MB");
+        assert_eq!(disk_detail(999_600_000), "SSD · 1 GB");
+    }
+
+    #[test]
+    fn a_disk_just_under_a_terabyte_reads_in_terabytes() {
+        assert_eq!(disk_detail(999_600_000_000), "SSD · 1.0 TB");
+        assert_eq!(disk_detail(999_400_000_000), "SSD · 999 GB");
+    }
+
+    #[test]
+    fn space_takes_its_unit_after_rounding() {
+        let text = |free| {
+            space(&Filesystem {
+                path: "/".into(),
+                free,
+                total: 2_000_000_000_000,
+            })
+            .text
+        };
+        assert_eq!(text(999_600_000_000), "1.0 TB free of 2.0 TB");
+        assert_eq!(text(99_960_000_000), "100 GB free of 2.0 TB");
+    }
+
+    #[test]
+    fn a_boot_just_under_a_minute_reads_in_minutes() {
+        let shown = boot(&Boot {
+            phases: Phases {
+                kernel: 1000,
+                userspace: 58_960,
+                total: 59_960,
+                ..Phases::default()
+            },
+            ..Boot::default()
+        });
+        assert_eq!(shown.total, "1 min 0 s");
+    }
+
+    #[test]
+    fn a_damaged_boot_record_does_not_overflow() {
+        let shown = boot(&Boot {
+            phases: Phases {
+                total: u64::MAX,
+                ..Phases::default()
+            },
+            ..Boot::default()
+        });
+        assert_eq!(shown.total, "307445734561825 min 52 s");
+    }
+
+    #[test]
+    fn one_of_a_kind_is_singular() {
+        let found = hardware(&Hardware {
+            firmware: Firmware {
+                available: true,
+                devices: vec![FirmwareDevice {
+                    name: "UEFI dbx".into(),
+                    ..FirmwareDevice::default()
+                }],
+                ..Firmware::default()
+            },
+            sensors: vec![sensor(96.0, None, Some(100.0))],
+            batteries: vec![Battery {
+                name: "BAT0".into(),
+                cycles: Some(1),
+                ..Battery::default()
+            }],
+            ..Hardware::default()
+        });
+        assert!(
+            found
+                .firmware
+                .unwrap()
+                .label
+                .starts_with("1 device, 0 updatable")
+        );
+        assert_eq!(
+            found.temperatures.label,
+            "1 sensor; the warmest coretemp Package at 96 °C; 1 near their limit"
+        );
+        assert!(found.batteries[0].detail.contains("1 cycle"));
+        assert!(!found.batteries[0].detail.contains("1 cycles"));
+        let facts = now(&Now {
+            cpus: 1,
+            load: Some([0.1, 0.1, 0.1]),
+            ..Now::default()
+        });
+        assert_eq!(facts[0].note, "(1, 5 and 15 minutes) on 1 processor");
+        let lines = manifest(
+            Path::new("bundle"),
+            &Manifest {
+                files: vec![BundledFile::default()],
+                ..Manifest::default()
+            },
+        );
+        assert!(lines[0].ends_with("; 1 file, matching its checksum."));
+    }
+
+    #[test]
+    fn waiting_percentages_round_half_up() {
+        let facts = now(&Now {
+            pressure: crate::performance::Pressure {
+                cpu: Some(2.5),
+                memory: Some(0.5),
+                io: None,
+            },
+            ..Now::default()
+        });
+        let waiting = facts
+            .iter()
+            .find(|fact| fact.term == "Waiting, last minute")
+            .unwrap();
+        assert_eq!(waiting.text, "processor 3%, memory 1%");
     }
 }

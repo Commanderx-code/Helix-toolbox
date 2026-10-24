@@ -94,20 +94,47 @@ pub fn parse_size(text: &str) -> Option<u64> {
     Some((number * scale) as u64)
 }
 
-/// A size for people: "1.6 GB", "512 KB", "0 B".
+/// A size for people: "1.6 GB", "512 KB", "0 B". One decimal under 100
+/// of a unit, whole numbers from 100.
 pub fn shown(bytes: u64) -> String {
-    let units = [("TB", 1e12), ("GB", 1e9), ("MB", 1e6), ("KB", 1e3)];
-    for (unit, scale) in units {
+    decimal(bytes, |_, value| if value < 100.0 { 1 } else { 0 })
+}
+
+/// Bytes in decimal units, with as many decimals as `places` gives a
+/// value in a unit. The unit is picked after rounding, so 999.96 GB reads
+/// "1.0 TB" rather than "1000 GB", and `places` sees the value rounded
+/// to one decimal, so 99.96 GB reads "100 GB" rather than "100.0 GB".
+pub(crate) fn decimal(bytes: u64, places: impl Fn(&str, f64) -> usize) -> String {
+    const UNITS: [(&str, f64); 5] = [
+        ("B", 1.0),
+        ("KB", 1e3),
+        ("MB", 1e6),
+        ("GB", 1e9),
+        ("TB", 1e12),
+    ];
+    let round = |value: f64, places: usize| {
+        let scale = 10f64.powi(places as i32);
+        (value * scale).round() / scale
+    };
+    let mut index = UNITS
+        .iter()
+        .rposition(|(_, scale)| bytes as f64 >= *scale)
+        .unwrap_or(0);
+    loop {
+        let (unit, scale) = UNITS[index];
         let value = bytes as f64 / scale;
-        if value >= 1.0 {
-            return if value >= 100.0 {
-                format!("{value:.0} {unit}")
-            } else {
-                format!("{value:.1} {unit}")
-            };
+        let places = if index == 0 {
+            0
+        } else {
+            places(unit, round(value, 1))
+        };
+        let rounded = round(value, places);
+        if rounded >= 1000.0 && index + 1 < UNITS.len() {
+            index += 1;
+            continue;
         }
+        return format!("{rounded:.places$} {unit}");
     }
-    format!("{bytes} B")
 }
 
 /// Kernels are never removed as unused packages.
@@ -776,6 +803,17 @@ mod tests {
         assert_eq!(shown(1_610_612_736), "1.6 GB");
         assert_eq!(shown(524_288), "524 KB");
         assert_eq!(shown(12), "12 B");
+        assert_eq!(shown(0), "0 B");
+    }
+
+    #[test]
+    fn a_size_takes_its_unit_and_decimals_after_rounding() {
+        assert_eq!(shown(999_600_000_000), "1.0 TB");
+        assert_eq!(shown(99_960_000_000), "100 GB");
+        assert_eq!(shown(99_940_000_000), "99.9 GB");
+        assert_eq!(shown(999_999), "1.0 MB");
+        assert_eq!(shown(999), "999 B");
+        assert_eq!(shown(u64::MAX), "18446744 TB");
     }
 
     #[test]

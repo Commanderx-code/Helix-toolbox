@@ -404,13 +404,39 @@ fn meter(meter: Meter) -> MeterView {
 pub struct HardwareView {
     /// Why fwupd could not be read, and what it lists.
     pub firmware: Vec<String>,
-    /// By their place in the list, which `prepare_firmware` takes.
-    pub updates: Vec<DisplayRowView>,
+    pub updates: Vec<FirmwareUpdateView>,
     pub disks: Vec<DisplayRowView>,
     pub sensors: Vec<DisplayRowView>,
     pub batteries: Vec<DisplayRowView>,
     pub pci: Vec<DeviceView>,
     pub usb: Vec<DeviceView>,
+}
+
+/// A firmware update, with what `prepare_firmware` takes to find it again:
+/// fwupd's device id and the version it installs. Not its place in the
+/// list, which reading the hardware again can change while the FIRMWARE
+/// prompt is open.
+#[derive(Debug, Serialize)]
+pub struct FirmwareUpdateView {
+    #[serde(flatten)]
+    pub row: DisplayRowView,
+    pub device_id: String,
+    pub version: String,
+}
+
+/// The update the screen showed as `device_id` and `version`, if the
+/// hardware read last still lists it.
+pub fn listed_update(
+    found: Option<&Hardware>,
+    device_id: &str,
+    version: &str,
+) -> Option<hardware::FirmwareUpdate> {
+    found?
+        .firmware
+        .updates
+        .iter()
+        .find(|update| update.device_id == device_id && update.to == version)
+        .cloned()
 }
 
 /// A PCI or USB device; empty where it is not known.
@@ -442,7 +468,17 @@ pub fn hardware(found: &Hardware) -> HardwareView {
             .chain(&shown.firmware)
             .map(|row| row.label.clone())
             .collect(),
-        updates: shown.updates.iter().map(display_row).collect(),
+        // The engine's update rows are in the order of its updates.
+        updates: shown
+            .updates
+            .iter()
+            .zip(&found.firmware.updates)
+            .map(|(row, update)| FirmwareUpdateView {
+                row: display_row(row),
+                device_id: update.device_id.clone(),
+                version: update.to.clone(),
+            })
+            .collect(),
         disks: shown.disks.iter().map(display_row).collect(),
         sensors: shown.sensors.iter().map(display_row).collect(),
         batteries: shown.batteries.iter().map(display_row).collect(),
@@ -944,8 +980,9 @@ pub fn channel(channel: &Channel) -> ChannelView {
 /// A backup Helix Toolbox or an installer left beside a file.
 #[derive(Debug, Serialize)]
 pub struct BackupView {
-    /// Its place in the list, for `prepare_restore`.
-    pub index: usize,
+    /// Its own path as it is, which `prepare_restore` takes to find it
+    /// again; not its place in the list, which looking again can change.
+    pub key: String,
     pub original: String,
     pub backup: String,
     pub taken: Option<String>,
@@ -953,14 +990,27 @@ pub struct BackupView {
     pub directory: bool,
 }
 
-pub fn backup(index: usize, backup: &Backup) -> BackupView {
+pub fn backup(backup: &Backup) -> BackupView {
     BackupView {
-        index,
+        key: backup.backup.display().to_string(),
         original: helix_toolbox_core::printable(&backup.original.display().to_string()),
         backup: helix_toolbox_core::printable(&backup.backup.display().to_string()),
         taken: backup.taken.clone(),
         system: backup.system,
         directory: backup.directory,
+    }
+}
+
+/// The backup the screen showed as `key`, if the list read last still
+/// has it, and only it: two paths that differ only in bytes that are not
+/// text would share a key.
+pub fn listed_backup(found: &[Backup], key: &str) -> Option<Backup> {
+    let mut matching = found
+        .iter()
+        .filter(|backup| backup.backup.display().to_string() == key);
+    match (matching.next(), matching.next()) {
+        (Some(backup), None) => Some(backup.clone()),
+        _ => None,
     }
 }
 
@@ -1120,6 +1170,81 @@ mod tests {
         assert_eq!(value["pci"][0]["class"], "");
         assert_eq!(value["pci"][0]["driver"], "i915");
         assert_eq!(value["firmware"], json!([]));
+    }
+
+    #[test]
+    fn a_firmware_update_is_found_again_by_its_device_and_version() {
+        use helix_toolbox_engine::hardware::{Firmware, FirmwareUpdate};
+        let update = |device_id: &str, device: &str, to: &str| FirmwareUpdate {
+            device_id: device_id.into(),
+            device: device.into(),
+            to: to.into(),
+            ..FirmwareUpdate::default()
+        };
+        let read = |updates| Hardware {
+            firmware: Firmware {
+                available: true,
+                updates,
+                ..Firmware::default()
+            },
+            ..Hardware::default()
+        };
+        let shown = read(vec![
+            update("1111", "System Firmware", "1.2"),
+            update("2222", "Bolt Receiver", "MPR05.06"),
+        ]);
+        let value = serde_json::to_value(hardware(&shown)).unwrap();
+        let clicked = &value["updates"][1];
+        assert_eq!(clicked["label"], "Bolt Receiver");
+        let (device_id, version) = (
+            clicked["device_id"].as_str().unwrap(),
+            clicked["version"].as_str().unwrap(),
+        );
+        // "Read again" finished while the FIRMWARE prompt was open, and
+        // the list came back in another order: the receiver's update is
+        // still the one planned, not whatever took its place.
+        let again = read(vec![
+            update("2222", "Bolt Receiver", "MPR05.06"),
+            update("1111", "System Firmware", "1.2"),
+        ]);
+        let found = listed_update(Some(&again), device_id, version).unwrap();
+        assert_eq!(found.device, "Bolt Receiver");
+        // Gone, or now offering another version: no longer listed.
+        let gone = read(vec![update("1111", "System Firmware", "1.2")]);
+        assert!(listed_update(Some(&gone), device_id, version).is_none());
+        let newer = read(vec![update("2222", "Bolt Receiver", "MPR05.07")]);
+        assert!(listed_update(Some(&newer), device_id, version).is_none());
+        assert!(listed_update(None, device_id, version).is_none());
+    }
+
+    #[test]
+    fn a_backup_is_found_again_by_its_path() {
+        let backup = |path: &str| Backup {
+            backup: path.into(),
+            original: "/home/me/.bashrc".into(),
+            taken: None,
+            system: false,
+            directory: false,
+        };
+        let shown = [
+            backup("/home/me/.bashrc.bak-1"),
+            backup("/home/me/.bashrc.bak-2"),
+        ];
+        let key = serde_json::to_value(super::backup(&shown[1])).unwrap()["key"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        // Looked at again, a newer backup came first.
+        let again = [
+            backup("/home/me/.bashrc.bak-3"),
+            backup("/home/me/.bashrc.bak-1"),
+            backup("/home/me/.bashrc.bak-2"),
+        ];
+        assert_eq!(
+            listed_backup(&again, &key).unwrap().backup,
+            Path::new("/home/me/.bashrc.bak-2")
+        );
+        assert!(listed_backup(&again[..2], &key).is_none());
     }
 
     #[test]

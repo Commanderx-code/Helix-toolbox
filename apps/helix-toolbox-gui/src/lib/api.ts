@@ -97,7 +97,7 @@ export const prepareUpdate = (ids: string[]) => call<Prepared>('prepare_update',
 export const prepareRemove = (ids: string[]) => call<Prepared>('prepare_remove', { ids });
 
 export const backups = () => call<BackupsView>('list_backups');
-export const prepareRestore = (index: number) => call<Prepared>('prepare_restore', { index });
+export const prepareRestore = (key: string) => call<Prepared>('prepare_restore', { key });
 
 export const driftTargets = () => call<TargetView[]>('drift_targets');
 export const driftCheck = (key: string) => call<DriftView>('drift_check', { key });
@@ -158,7 +158,7 @@ export const prepareConfigSave = (kind: ConfigKind, path: string, revision: stri
 export const prepareConfigRestore = (kind: ConfigKind, backup: string) => call<Prepared>('prepare_config_restore', { kind, backup });
 
 export const hardware = () => call<HardwareView>('read_hardware');
-export const prepareFirmware = (index: number) => call<Prepared>('prepare_firmware', { index });
+export const prepareFirmware = (deviceId: string, version: string) => call<Prepared>('prepare_firmware', { deviceId, version });
 export const prepareSmart = (disk: string) => call<Prepared>('prepare_smart', { disk });
 
 export const desktop = () => call<DesktopView>('read_desktop');
