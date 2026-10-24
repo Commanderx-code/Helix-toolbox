@@ -2,7 +2,7 @@
   import Icon from '../components/Icon.svelte';
   import * as api from '../lib/api';
   import { toolbox } from '../lib/state.svelte';
-  import type { Device, HardwareView } from '../lib/types';
+  import type { Device, FirmwareUpdate, HardwareView } from '../lib/types';
 
   let found = $state<HardwareView | null>(null);
   let problem = $state<string | null>(null);
@@ -23,7 +23,8 @@
 
   read();
 
-  async function updateFirmware(index: number, device: string) {
+  async function updateFirmware(update: FirmwareUpdate) {
+    const device = update.label;
     const word = await toolbox.ask(
       'Firmware update',
       `Updating firmware can leave ${device} unusable if it is interrupted. Keep the machine on mains power. Type FIRMWARE to see the plan:`,
@@ -31,7 +32,7 @@
       'FIRMWARE',
     );
     if (word !== 'FIRMWARE') return;
-    await toolbox.reviewWith(() => api.prepareFirmware(index));
+    await toolbox.reviewWith(() => api.prepareFirmware(update.device_id, update.version));
   }
 
   const devices = $derived<Device[]>(showDevices === 'pci' ? (found?.pci ?? []) : showDevices === 'usb' ? (found?.usb ?? []) : []);
@@ -56,14 +57,14 @@
       <section>
         <h2 class="section">Firmware</h2>
         {#each found.firmware as line, index (index)}<p class="muted">{line}</p>{/each}
-        {#each found.updates as update, index (index)}
+        {#each found.updates as update (`${update.device_id} ${update.version}`)}
           <div class="line">
             <span class="pill notice">update</span>
             <span class="grow">
               <span class="name">{update.label}</span>
               <span class="sub">{update.detail}</span>
             </span>
-            <button class="button small" disabled={toolbox.preparing || toolbox.busy} onclick={() => updateFirmware(index, update.label)}>Update…</button>
+            <button class="button small" disabled={toolbox.preparing || toolbox.busy} onclick={() => updateFirmware(update)}>Update…</button>
           </div>
         {/each}
       </section>

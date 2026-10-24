@@ -931,11 +931,7 @@ struct SnapshotsView {
 async fn list_backups(app: AppHandle) -> Result<BackupsView, String> {
     blocking(app, |gui| {
         let found = gui.host.backups();
-        let views = found
-            .iter()
-            .enumerate()
-            .map(|(index, backup)| views::backup(index, backup))
-            .collect();
+        let views = found.iter().map(views::backup).collect();
         *gui.backups.lock().unwrap() = found;
         BackupsView {
             snapshots: backups::Snapshots::here().map(|tool| SnapshotsView {
@@ -949,11 +945,12 @@ async fn list_backups(app: AppHandle) -> Result<BackupsView, String> {
 }
 
 /// Put a backup back, ready to confirm; the current file is moved aside
-/// as its own backup first.
+/// as its own backup first. The backup is the one listed by `key`, so a
+/// list read again in between cannot swap it for another.
 #[tauri::command]
-async fn prepare_restore(app: AppHandle, index: usize) -> Result<PreparedView, String> {
+async fn prepare_restore(app: AppHandle, key: String) -> Result<PreparedView, String> {
     blocking(app, move |gui| {
-        let backup = gui.backups.lock().unwrap().get(index).cloned();
+        let backup = views::listed_backup(&gui.backups.lock().unwrap(), &key);
         let Some(backup) = backup else {
             return cannot(gui, "That backup is no longer listed; look again.".into());
         };
@@ -2325,16 +2322,18 @@ async fn read_hardware(app: AppHandle) -> Result<HardwareView, String> {
     .await
 }
 
-/// A firmware update, by its place in the list, ready to confirm.
+/// A firmware update, by fwupd's device id and the version it installs,
+/// ready to confirm. The hardware may have been read again since the
+/// screen showed it; an update no longer listed is refused.
 #[tauri::command]
-async fn prepare_firmware(app: AppHandle, index: usize) -> Result<PreparedView, String> {
+async fn prepare_firmware(
+    app: AppHandle,
+    device_id: String,
+    version: String,
+) -> Result<PreparedView, String> {
     blocking(app, move |gui| {
-        let update = gui
-            .hardware
-            .lock()
-            .unwrap()
-            .as_ref()
-            .and_then(|found| found.firmware.updates.get(index).cloned());
+        let update =
+            views::listed_update(gui.hardware.lock().unwrap().as_ref(), &device_id, &version);
         let Some(update) = update else {
             return cannot(
                 gui,

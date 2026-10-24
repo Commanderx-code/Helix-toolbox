@@ -467,14 +467,15 @@ pub fn plan_smart(disk: &str) -> Option<Plan> {
     })
 }
 
-/// Bytes as GB or TB, as disks are sold.
+/// Bytes as disks are sold: whole GB, TB with one decimal, and a small
+/// disk (an eMMC boot area, a USB stick) in MB or KB as Storage shows it.
 pub fn size(bytes: u64) -> String {
-    let gb = bytes as f64 / 1e9;
-    if gb >= 1000.0 {
-        format!("{:.1} TB", gb / 1000.0)
-    } else {
-        format!("{gb:.0} GB")
-    }
+    crate::storage::decimal(bytes, |unit, value| match unit {
+        "GB" => 0,
+        "TB" => 1,
+        _ if value < 100.0 => 1,
+        _ => 0,
+    })
 }
 
 #[cfg(test)]
@@ -621,6 +622,7 @@ mod tests {
         );
         assert_eq!(found.disks[0].celsius, Some(38.85));
         assert_eq!(size(found.disks[0].bytes.unwrap()), "1.0 TB");
+        assert_eq!(size(256_060_514_304), "256 GB");
         assert_eq!(found.disks[1].kind, "HDD");
         assert_eq!(found.sensors.len(), 2);
         assert!(found.sensors[0].hot());

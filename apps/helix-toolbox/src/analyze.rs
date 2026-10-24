@@ -155,8 +155,13 @@ pub fn performance(command: Option<PerformanceCommand>, as_json: bool) -> Result
             println!("\nNow:");
             if let Some([one, five, fifteen]) = now.load {
                 println!(
-                    "  Load {one:.2} {five:.2} {fifteen:.2} (1, 5 and 15 minutes) on {} processors",
-                    now.cpus
+                    "  Load {one:.2} {five:.2} {fifteen:.2} (1, 5 and 15 minutes) on {} {}",
+                    now.cpus,
+                    if now.cpus == 1 {
+                        "processor"
+                    } else {
+                        "processors"
+                    }
                 );
             }
             if now.memory_total > 0 {

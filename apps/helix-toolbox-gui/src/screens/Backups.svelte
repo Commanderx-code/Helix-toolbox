@@ -7,9 +7,9 @@
 
   let view = $state<BackupsView | null>(null);
   let problem = $state<string | null>(null);
-  let selectedIndex = $state<number | null>(null);
+  let selectedKey = $state<string | null>(null);
 
-  const selected = $derived(view?.backups.find((backup) => backup.index === selectedIndex) ?? null);
+  const selected = $derived(view?.backups.find((backup) => backup.key === selectedKey) ?? null);
 
   async function load() {
     try {
@@ -50,8 +50,8 @@
         <p class="empty-note">No backups found. Entries that change a file keep the old one beside it, and they appear here.</p>
       {:else}
         <div class="rows" use:arrows={{ items: '.row-item', follow: '.row-item' }}>
-          {#each view.backups as backup (backup.index)}
-            <button class="row-item backup" class:selected={selectedIndex === backup.index} onclick={() => (selectedIndex = backup.index)}>
+          {#each view.backups as backup (backup.key)}
+            <button class="row-item backup" class:selected={selectedKey === backup.key} onclick={() => (selectedKey = backup.key)}>
               <span class="faint"><Icon name={backup.directory ? 'folder' : 'backups'} size={16} /></span>
               <span>
                 <span class="name mono">{backup.original}</span>
@@ -83,7 +83,7 @@
           <button
             class="button primary"
             disabled={toolbox.preparing || toolbox.busy}
-            onclick={() => toolbox.reviewWith(() => api.prepareRestore(selected.index))}
+            onclick={() => toolbox.reviewWith(() => api.prepareRestore(selected.key))}
           >
             <Icon name="play" size={14} /> Restore…
           </button>
