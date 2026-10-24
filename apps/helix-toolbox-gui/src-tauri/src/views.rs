@@ -5,9 +5,10 @@ use base64::Engine as _;
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, Item};
 use helix_toolbox_engine::{
+    RunSession,
     backups::Backup,
     bundle::{BundledEntry, Contents, Manifest},
-    confirmation::{Line, Prepared},
+    confirmation::{Line, Prepared, Verdict},
     doctor::{Diagnosis, Health},
     execution::ExecutionEvent,
     hardware::{self, Hardware},
@@ -18,6 +19,7 @@ use helix_toolbox_engine::{
     profiles,
     rows::{self, Meter, Row},
     services::Services,
+    session::Reading,
     storage::Storage,
     updates::Channel,
 };
@@ -168,19 +170,41 @@ pub enum PreparedView {
 }
 
 pub fn prepared(prepared: &Prepared) -> PreparedView {
-    match prepared {
-        Prepared::Nothing(lines) => PreparedView::Nothing {
+    match &prepared.verdict {
+        Verdict::Nothing(lines) => PreparedView::Nothing {
             lines: lines.clone(),
         },
-        Prepared::Blocked(lines) => PreparedView::Blocked {
+        Verdict::Blocked(lines) => PreparedView::Blocked {
             lines: lines.clone(),
         },
-        Prepared::Ready(ready) => PreparedView::Ready {
-            header: ready.header.clone(),
-            lines: ready.lines.clone(),
-            risk: ready.plan.risk.label(),
-            privileged: ready.plan.privileged,
+        Verdict::Ready { header, lines } => PreparedView::Ready {
+            header: header.clone(),
+            lines: lines.clone(),
+            risk: prepared.plan.risk.label(),
+            privileged: prepared.plan.privileged,
         },
+    }
+}
+
+/// A run the terminal panel closed: the queued entries that stay queued,
+/// what to read again, and why it was not recorded, if it was not.
+#[derive(Debug, Default, Serialize)]
+pub struct ClosedView {
+    pub remaining: Vec<String>,
+    /// `statuses`, `updates`, `tools` or `history`.
+    pub read_again: Vec<Reading>,
+    pub not_recorded: Option<String>,
+}
+
+pub fn closed(
+    session: &RunSession,
+    known: &dyn Fn(&str) -> bool,
+    not_recorded: Option<String>,
+) -> ClosedView {
+    ClosedView {
+        remaining: session.remaining(known),
+        read_again: session.read_again(),
+        not_recorded,
     }
 }
 

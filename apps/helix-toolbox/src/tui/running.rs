@@ -4,9 +4,10 @@
 use super::{hints::Hint, theme::Theme};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use helix_toolbox_engine::{
-    Check, Finished, Outcome, Plan, StepState,
-    execution::{Execution, ExecutionEvent, Options},
+    Check, Finished, Outcome, Plan, PtyRunner, RunSession, StepState,
+    execution::{ExecutionEvent, Options},
     history,
+    session::Reading,
 };
 use ratatui::{
     Frame,
@@ -281,7 +282,7 @@ impl Shown {
 }
 
 pub struct RunningView {
-    execution: Execution,
+    session: RunSession,
     events: Receiver<ExecutionEvent>,
     /// The terminal's output, as the events brought it.
     output: Vec<u8>,
@@ -295,14 +296,17 @@ pub struct RunningView {
 }
 
 impl RunningView {
-    pub fn start(plan: &Plan, lib_dir: &Path, this: &Path) -> Result<Self, String> {
-        let (execution, events) = Execution::start(plan, lib_dir, this, Options::default())
+    /// Start a confirmed plan's run session in a pseudo-terminal.
+    pub fn start(mut session: RunSession, lib_dir: &Path, this: &Path) -> Result<Self, String> {
+        let events = session
+            .start(PtyRunner::default(), lib_dir, this, Options::default())
             .map_err(|error| error.to_string())?;
+        let shown = Shown::new(session.plan());
         Ok(Self {
-            execution,
+            session,
             events,
             output: Vec::new(),
-            shown: Shown::new(plan),
+            shown,
             recorded: false,
             log: None,
             problem: None,
@@ -327,7 +331,7 @@ impl RunningView {
                     let offset = usize::try_from(offset).unwrap_or(usize::MAX);
                     if offset > self.output.len() {
                         // Never expected: the events lose nothing.
-                        self.output = self.execution.transcript();
+                        self.output = self.session.transcript();
                     } else if let Some(new) = bytes.get(self.output.len() - offset..) {
                         self.output.extend_from_slice(new);
                     }
@@ -346,22 +350,20 @@ impl RunningView {
             return;
         }
         self.recorded = true;
-        if let Err(error) = self.execution.record(self.log.clone()) {
+        if let Err(error) = self.session.record(self.log.clone()) {
             self.problem = Some(format!("The run was not recorded in the history: {error}"));
         }
     }
 
-    /// The ids of the steps that did not finish, once the run has ended.
-    pub fn unfinished(&self) -> Vec<String> {
-        self.finished()
-            .map(|finished| {
-                finished
-                    .unfinished()
-                    .iter()
-                    .map(|step| step.id.clone())
-                    .collect()
-            })
-            .unwrap_or_default()
+    /// The queued entries that stay queued after the run, of those `known`
+    /// names: what did not finish.
+    pub fn remaining(&self, known: &dyn Fn(&str) -> bool) -> Vec<String> {
+        self.session.remaining(known)
+    }
+
+    /// What to read again now that the run is over.
+    pub fn read_again(&self) -> Vec<Reading> {
+        self.session.read_again()
     }
 
     /// Each step and how it ended, one per line.
@@ -427,8 +429,8 @@ impl RunningView {
             .filter(|check| !failed || !check.passed)
             .map(|check| format!("{}: {}", check.name, check.detail))
             .collect();
-        let left = if self.is_finished() && self.execution.stop_requested() {
-            self.execution.survivors()
+        let left = if self.is_finished() && self.session.stop_requested() {
+            self.session.survivors()
         } else {
             0
         };
@@ -490,7 +492,7 @@ impl RunningView {
                 below,
             );
         }
-        self.execution.resize(terminal.height, terminal.width);
+        self.session.resize(terminal.height, terminal.width);
         let mut parser = vt100::Parser::new(terminal.height.max(1), terminal.width.max(1), 2000);
         parser.process(&self.output);
         parser.screen_mut().set_scrollback(self.scrollback);
@@ -507,14 +509,14 @@ impl RunningView {
     pub fn handle_key(&mut self, key: &KeyEvent) -> bool {
         match key.code {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.execution.stop()
+                self.session.stop()
             }
             KeyCode::Enter | KeyCode::Char('q') if self.is_finished() => {
                 self.record();
                 return true;
             }
             KeyCode::Char('l') if self.is_finished() && self.log.is_none() => {
-                match history::save_log(&self.execution.transcript()) {
+                match history::save_log(&self.session.transcript()) {
                     Ok(path) => self.log = Some(path),
                     Err(error) => self.problem = Some(format!("The log was not saved: {error}")),
                 }
@@ -556,7 +558,7 @@ impl RunningView {
             KeyCode::Insert => b"\x1b[2~".to_vec(),
             _ => return,
         };
-        self.execution.write(&bytes);
+        self.session.write(&bytes);
     }
 
     pub fn hints(&self) -> (&'static str, Vec<Hint>) {

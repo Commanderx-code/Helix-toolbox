@@ -40,6 +40,15 @@
   gather(toolbox.wantOnline);
   toolbox.wantOnline = false;
 
+  // A run that left what waits out of date, such as "Update all", is read
+  // again from what the tools already know.
+  let read = toolbox.readAgain.updates;
+  $effect(() => {
+    if (toolbox.readAgain.updates === read) return;
+    read = toolbox.readAgain.updates;
+    gather(false);
+  });
+
   const versions = (from: string | null, to: string | null) => (from && to ? `${from} → ${to}` : (to ?? ''));
 </script>
 

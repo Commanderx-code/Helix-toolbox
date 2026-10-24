@@ -1,11 +1,12 @@
 //! A run of a plan as a stream of events, for any interface to show.
 //!
-//! [`Execution::start`] runs a plan's program in a pseudo-terminal and
-//! returns a handle with a bounded channel of [`ExecutionEvent`]s. The handle
+//! [`RunSession::start`](crate::session::RunSession::start) starts a plan's
+//! program through a runner and returns a bounded channel of
+//! [`ExecutionEvent`]s, which a thread of the run's own sends: the run and
+//! each step starting and ending, the terminal's output as it arrives,
+//! progress, warnings, and how the run ended, with its checks. The session
 //! is what an interface acts through: keyboard input, the terminal's size,
-//! stopping the run and writing its history record. The events are what it
-//! shows: the run and each step starting and ending, the terminal's output as
-//! it arrives, progress, warnings, and how the run ended, with its checks.
+//! stopping the run and writing its history record.
 //!
 //! A consumer that falls behind never holds the run up. Output waits in the
 //! run's transcript until the channel has room and then arrives in larger
@@ -21,17 +22,16 @@
 //! Output can follow the end when processes the run left behind still write.
 
 use crate::{
-    EngineError, Finished, Outcome, Plan, StepState, check_requirements, history, pty::Session,
-    shell_program_with, status_file,
+    EngineError, Finished, Outcome, Plan, StepState, history,
+    session::{Shared, conclude},
 };
 use serde::{Serialize, Serializer};
 use std::{
     collections::VecDeque,
-    io,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
-        Arc, Mutex, OnceLock,
-        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+        atomic::Ordering,
         mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError},
     },
     time::{Duration, Instant},
@@ -44,7 +44,7 @@ pub const DEFAULT_CAPACITY: usize = 256;
 pub const OUTPUT_CHUNK: usize = 64 * 1024;
 
 /// How often the run is looked at when nothing wakes the monitor sooner.
-const TICK: Duration = Duration::from_millis(10);
+pub(crate) const TICK: Duration = Duration::from_millis(10);
 
 /// How long the end of a run waits for output still on its way from the
 /// terminal, when something the run started keeps it open.
@@ -112,7 +112,9 @@ pub enum HistoryPlace {
 /// How to start a run.
 #[derive(Clone, Debug)]
 pub struct Options {
-    /// The terminal's first size; [`Execution::resize`] changes it.
+    /// The terminal's first size; [`RunSession::resize`] changes it.
+    ///
+    /// [`RunSession::resize`]: crate::session::RunSession::resize
     pub rows: u16,
     pub cols: u16,
     /// How many events the channel holds; at least 1.
@@ -131,211 +133,19 @@ impl Default for Options {
     }
 }
 
-/// A running plan. Every method takes `&self`, and the handle can be shared
-/// between threads.
-pub struct Execution {
-    shared: Arc<Shared>,
-}
-
-struct Shared {
-    session: Mutex<Session>,
-    plan: Plan,
-    /// Where the program writes each step's outcome.
-    status: Option<PathBuf>,
-    /// The finished run, once the monitor has seen the program end.
-    finished: OnceLock<Finished>,
-    history: Mutex<Book>,
-    /// Set when the handle is dropped: the monitor stops.
-    closed: AtomicBool,
-}
-
-/// The run's history record, from its marker to the record.
-struct Book {
-    place: HistoryPlace,
-    pending: Option<history::Pending>,
-    recorded: bool,
-}
-
-impl Execution {
-    /// Check the plan's requirements and start its program, with its
-    /// history marker. Errors are what keeps it from starting.
-    pub fn start(
-        plan: &Plan,
-        lib_dir: &Path,
-        this: &Path,
-        options: Options,
-    ) -> Result<(Self, Receiver<ExecutionEvent>), EngineError> {
-        check_requirements(plan)?;
-        tracing::info!(steps = ?plan.entries(), "run started");
-        let status = status_file();
-        let (bell, ring) = mpsc::sync_channel(1);
-        let session = Session::spawn_sized(
-            &shell_program_with(plan, lib_dir, this, status.as_deref()),
-            lib_dir,
-            options.rows,
-            options.cols,
-            Some(bell),
-        )
-        .inspect_err(|_| {
-            if let Some(status) = &status {
-                let _ = std::fs::remove_file(status);
-            }
-        })?;
-        let entries = plan.entries();
-        let mut first = vec![ExecutionEvent::RunStarted {
-            entries: entries.clone(),
-            steps: (0..plan.steps.len())
-                .map(|index| step_info(plan, index))
-                .collect(),
-        }];
-        let begun = match &options.history {
-            HistoryPlace::Default => Some(history::begin(&entries)),
-            HistoryPlace::In(directory) => Some(history::begin_in(directory, &entries)),
+impl HistoryPlace {
+    /// The history's folder, where the checks for after the reboot are kept
+    /// too; None for no history.
+    pub fn directory(&self) -> Option<PathBuf> {
+        match self {
+            HistoryPlace::Default => history::state_dir(),
+            HistoryPlace::In(directory) => Some(directory.clone()),
             HistoryPlace::Off => None,
-        };
-        let pending = match begun {
-            Some(Ok(pending)) => Some(pending),
-            Some(Err(error)) => {
-                tracing::warn!(%error, "the run start was not recorded");
-                first.push(ExecutionEvent::Warning(format!(
-                    "The start of this run was not recorded in the history: {error}"
-                )));
-                None
-            }
-            None => None,
-        };
-        if status.is_none() {
-            first.push(ExecutionEvent::Warning(
-                "No file for the steps' outcomes could be made, so the steps are not followed one by one".into(),
-            ));
-        }
-        let shared = Arc::new(Shared {
-            session: Mutex::new(session),
-            plan: plan.clone(),
-            status,
-            finished: OnceLock::new(),
-            history: Mutex::new(Book {
-                place: options.history,
-                pending,
-                recorded: false,
-            }),
-            closed: AtomicBool::new(false),
-        });
-        let (sender, receiver) = mpsc::sync_channel(options.capacity.max(1));
-        let monitored = shared.clone();
-        std::thread::Builder::new()
-            .name("helix-toolbox-run".into())
-            .spawn(move || monitor(&monitored, sender, &ring, first))
-            .map_err(EngineError::Spawn)?;
-        Ok((Self { shared }, receiver))
-    }
-
-    /// Send keyboard input to the program, as a terminal would: `\r` for
-    /// Enter, `\x03` for Ctrl-C (which the program sees, unlike [`stop`]).
-    ///
-    /// [`stop`]: Execution::stop
-    pub fn write(&self, bytes: &[u8]) {
-        self.shared.session.lock().unwrap().write(bytes);
-    }
-
-    /// Give the terminal a new size; the program is told when it changes.
-    pub fn resize(&self, rows: u16, cols: u16) {
-        self.shared.session.lock().unwrap().resize(rows, cols);
-    }
-
-    /// Stop the run. The first request hangs up every process in the run's
-    /// process group, as a closing terminal does; a later one, while any of
-    /// them is still running, kills them.
-    pub fn stop(&self) {
-        self.shared.session.lock().unwrap().kill();
-    }
-
-    /// Whether a stop was requested.
-    pub fn stop_requested(&self) -> bool {
-        self.shared.session.lock().unwrap().stop_requested()
-    }
-
-    /// How many processes of the run are still alive, such as ones that
-    /// ignored the hangup.
-    pub fn survivors(&self) -> usize {
-        self.shared.session.lock().unwrap().survivors()
-    }
-
-    /// Whether the run has ended and been checked: true from just before
-    /// its `Completed` or `Interrupted` event is sent.
-    pub fn is_finished(&self) -> bool {
-        self.shared.finished.get().is_some()
-    }
-
-    /// How the run ended, once it has.
-    pub fn finished(&self) -> Option<Finished> {
-        self.shared.finished.get().cloned()
-    }
-
-    /// Everything the program has written so far, as the `Output` events
-    /// carry it.
-    pub fn transcript(&self) -> Vec<u8> {
-        let transcript = self.shared.session.lock().unwrap().transcript();
-        transcript.lock().unwrap().clone()
-    }
-
-    /// Write the run's history record, with a saved log if there is one.
-    /// Only the first call once the run has ended writes it; dropping the
-    /// handle writes it without a log if no call did. Until then the
-    /// history's marker keeps the outcome, in case Helix Toolbox stops first.
-    pub fn record(&self, log: Option<PathBuf>) -> io::Result<()> {
-        let Some(finished) = self.shared.finished.get() else {
-            return Ok(());
-        };
-        let left = self.survivors();
-        let mut book = self.shared.history.lock().unwrap();
-        if book.recorded {
-            return Ok(());
-        }
-        book.recorded = true;
-        tracing::info!(outcome = finished.describe(), "run finished");
-        let mut result = finished.describe();
-        if left > 0 {
-            result.push_str(&format!("; {left} process(es) left running"));
-        }
-        let entries = self.shared.plan.entries();
-        let written = match (book.pending.take(), &book.place) {
-            (_, HistoryPlace::Off) => return Ok(()),
-            (Some(pending), _) => pending.finish(finished.succeeded(), &result, log),
-            (None, HistoryPlace::Default) => {
-                history::record(&entries, finished.succeeded(), &result, log)
-            }
-            (None, HistoryPlace::In(directory)) => {
-                history::record_in(directory, &entries, finished.succeeded(), &result, log)
-            }
-        };
-        written.map(|_| ()).inspect_err(|error| {
-            tracing::warn!(%error, "the run was not recorded");
-        })
-    }
-}
-
-impl Drop for Execution {
-    fn drop(&mut self) {
-        // A run that ended just now is still checked and recorded.
-        if self.shared.finished.get().is_none() && self.shared.session.lock().unwrap().is_finished()
-        {
-            conclude(&self.shared);
-        }
-        let _ = self.record(None);
-        self.shared.closed.store(true, Ordering::Release);
-    }
-}
-
-impl Drop for Shared {
-    fn drop(&mut self) {
-        if let Some(status) = &self.status {
-            let _ = std::fs::remove_file(status);
         }
     }
 }
 
-fn step_info(plan: &Plan, index: usize) -> StepInfo {
+pub(crate) fn step_info(plan: &Plan, index: usize) -> StepInfo {
     let step = &plan.steps[index];
     StepInfo {
         index,
@@ -344,15 +154,31 @@ fn step_info(plan: &Plan, index: usize) -> StepInfo {
     }
 }
 
+/// Follow a started run on a thread of its own, sending its events on a
+/// channel of `capacity`: `first`, then what the run does.
+pub(crate) fn follow(
+    shared: Arc<Shared>,
+    capacity: usize,
+    ring: Receiver<()>,
+    first: Vec<ExecutionEvent>,
+) -> Result<Receiver<ExecutionEvent>, EngineError> {
+    let (sender, receiver) = mpsc::sync_channel(capacity.max(1));
+    std::thread::Builder::new()
+        .name("helix-toolbox-run".into())
+        .spawn(move || monitor(&shared, sender, &ring, first))
+        .map_err(EngineError::Spawn)?;
+    Ok(receiver)
+}
+
 /// Follows the run until it has ended and everything is sent, or until the
-/// handle is dropped.
+/// session is dropped.
 fn monitor(
     shared: &Shared,
     sender: SyncSender<ExecutionEvent>,
     ring: &Receiver<()>,
     first: Vec<ExecutionEvent>,
 ) {
-    let transcript = shared.session.lock().unwrap().transcript();
+    let transcript = shared.runner.lock().unwrap().transcript();
     let mut outlet = Outlet {
         sender,
         connected: true,
@@ -373,7 +199,8 @@ fn monitor(
     let mut announced = false;
     loop {
         if let Err(RecvTimeoutError::Disconnected) = ring.recv_timeout(TICK) {
-            // The terminal is closed; nothing rings any more.
+            // Nothing rings any more: the terminal is closed, or the runner
+            // has no bell.
             std::thread::sleep(TICK);
         }
         if shared.closed.load(Ordering::Acquire) {
@@ -387,8 +214,8 @@ fn monitor(
             }
         }
         let (ended, reading) = {
-            let session = shared.session.lock().unwrap();
-            (session.is_finished(), session.reading())
+            let mut runner = shared.runner.lock().unwrap();
+            (runner.outcome().is_some(), runner.reading())
         };
         if ended && !announced {
             let since = *exited.get_or_insert_with(Instant::now);
@@ -400,7 +227,7 @@ fn monitor(
                 outlet.after_output_so_far(event);
             }
             let finished = conclude(shared);
-            let left = shared.session.lock().unwrap().survivors();
+            let left = shared.runner.lock().unwrap().survivors();
             if left > 0 {
                 outlet.after_output_so_far(ExecutionEvent::Warning(format!(
                     "{left} process(es) of this run are still running"
@@ -418,35 +245,6 @@ fn monitor(
             return;
         }
     }
-}
-
-/// Check the ended run and keep its outcome in the history's marker, once
-/// however many ask.
-fn conclude(shared: &Shared) -> Finished {
-    shared
-        .finished
-        .get_or_init(|| {
-            let outcome = shared
-                .session
-                .lock()
-                .unwrap()
-                .outcome()
-                .unwrap_or_else(|| Outcome::CouldNotStart("unknown".into()));
-            let finished = Finished::from_run(&shared.plan, outcome, shared.status.as_deref());
-            if let Some(pending) = &mut shared.history.lock().unwrap().pending {
-                let _ = pending.ended(finished.succeeded(), &finished.describe());
-                if let Err(error) = crate::verification::keep(
-                    pending.directory(),
-                    &shared.plan,
-                    &finished,
-                    crate::history::now(),
-                ) {
-                    tracing::warn!(%error, "the checks for after the reboot were not kept");
-                }
-            }
-            finished
-        })
-        .clone()
 }
 
 /// The step lines the run's program has written so far.
@@ -801,7 +599,8 @@ impl Serialize for ExecutionEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Check, Step, StepResult};
+    use crate::{Check, EngineError, PtyRunner, Step, StepResult, session::RunSession};
+    use std::path::Path;
 
     fn command(id: &str, line: &str) -> Step {
         Step::Command {
@@ -825,8 +624,18 @@ mod tests {
         }
     }
 
-    fn start(plan: &Plan, options: Options) -> (Execution, Receiver<ExecutionEvent>) {
-        Execution::start(plan, Path::new("/lib"), Path::new("/bin/hf"), options).unwrap()
+    /// Start a plan in a pseudo-terminal, as the interfaces do.
+    fn start(plan: &Plan, options: Options) -> (RunSession, Receiver<ExecutionEvent>) {
+        let mut session = RunSession::new(plan.clone());
+        let events = session
+            .start(
+                PtyRunner::default(),
+                Path::new("/lib"),
+                Path::new("/bin/hf"),
+                options,
+            )
+            .unwrap();
+        (session, events)
     }
 
     fn is_end(event: &ExecutionEvent) -> bool {
@@ -865,7 +674,7 @@ mod tests {
     }
 
     /// Wait for the transcript to show `text`.
-    fn wait_for(execution: &Execution, text: &str) {
+    fn wait_for(execution: &RunSession, text: &str) {
         let start = Instant::now();
         while !String::from_utf8_lossy(&execution.transcript()).contains(text) {
             assert!(
@@ -1148,7 +957,7 @@ mod tests {
             assert!(start.elapsed() < Duration::from_secs(10));
             std::thread::sleep(Duration::from_millis(10));
         }
-        // Dropping the handle writes the record.
+        // Dropping the session writes the record.
         drop(execution);
         let records = history::read_in(state.path(), 10).unwrap();
         assert_eq!(records.len(), 1);
@@ -1156,7 +965,7 @@ mod tests {
     }
 
     #[test]
-    fn dropping_the_handle_hangs_up_a_run_in_progress() {
+    fn dropping_the_session_hangs_up_a_run_in_progress() {
         let directory = tempfile::tempdir().unwrap();
         let pid_file = directory.path().join("pid");
         let plan = plan(vec![command(
@@ -1200,16 +1009,20 @@ mod tests {
     fn missing_requirements_stop_a_run_before_it_starts() {
         let mut plan = plan(vec![command("one", "echo hi")]);
         plan.requirements = vec!["helix-toolbox-no-such-tool".into()];
-        let error = Execution::start(&plan, Path::new("/"), Path::new("/"), quiet())
+        let error = RunSession::new(plan)
+            .start(
+                PtyRunner::default(),
+                Path::new("/"),
+                Path::new("/"),
+                quiet(),
+            )
             .err()
             .unwrap();
         assert!(matches!(error, EngineError::MissingExecutable(_)));
     }
 
     #[test]
-    fn the_handle_can_be_shared_between_threads() {
-        fn shared<T: Send + Sync>() {}
-        shared::<Execution>();
+    fn the_events_can_go_to_another_thread() {
         fn sent<T: Send>() {}
         sent::<Receiver<ExecutionEvent>>();
     }

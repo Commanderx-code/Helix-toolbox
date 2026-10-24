@@ -32,7 +32,7 @@
   }
 
   $effect(() => {
-    void toolbox.runs;
+    void toolbox.readAgain.tools;
     load();
   });
 

@@ -267,6 +267,47 @@
     return `${changes} changes previewed; ${result.textContent.trim()}`;
   });
 
+  await step('a run from the Install Plan keeps what did not finish queued', async () => {
+    // Failing stops the run first, so Marker after it never runs: the
+    // engine's run session says both remain, as in the terminal interface.
+    const queued = () => withText('nav .item', 'Install Plan')?.querySelector('.count')?.textContent.trim() ?? '0';
+    for (const name of ['Failing', 'Marker']) {
+      key(window, 'k', { ctrlKey: true });
+      const input = await until('the palette', () => document.querySelector('[aria-label="Command palette"] input'));
+      await type(input, name.toLowerCase());
+      await until(`${name} first`, () => document.querySelector('[aria-label="Command palette"] .row.current .label')?.textContent.includes(name));
+      key(input, 'Enter');
+      const details = await until('the details', () => withText('aside h2', name)?.closest('aside'));
+      await click('Add to plan', details);
+    }
+    if (queued() !== '2') throw new Error(`${queued()} queued`);
+    await click('Install Plan', document.querySelector('nav'));
+    await until('the plan screen', () => screenTitle().startsWith('Install Plan'));
+    await click('Review and run');
+    const title = await until('the confirmation', () => document.querySelector('#confirm-title'));
+    const primary = await until('the confirm button', () => title.closest('[role="dialog"]').querySelector('.button.primary'));
+    primary.click();
+    const result = await until('the result', () => withText('.good, .bad', 'Result:'), 60000);
+    if (!result.classList.contains('bad')) throw new Error(`the failing run says ${result.textContent.trim()}`);
+    await click('Close');
+    await until('the run panel to close', () => !document.querySelector('#run-title'));
+    await until('both still queued', () => queued() === '2' && withText('.rows .row', 'Failing') && withText('.rows .row', 'Marker'));
+    key(window, 'k', { ctrlKey: true });
+    const again = await until('the palette', () => document.querySelector('[aria-label="Command palette"] input'));
+    await type(again, 'clear the install plan');
+    key(again, 'Enter');
+    await until('the plan emptied', () => !withText('nav .item', 'Install Plan')?.querySelector('.count'));
+    key(window, 'Escape');
+    // Back where the next step starts: Marker shown in its area.
+    key(window, 'k', { ctrlKey: true });
+    const find = await until('the palette', () => document.querySelector('[aria-label="Command palette"] input'));
+    await type(find, 'marker');
+    await until('Marker first', () => document.querySelector('[aria-label="Command palette"] .row.current .label')?.textContent.includes('Marker'));
+    key(find, 'Enter');
+    await until('the details', () => withText('aside h2', 'Marker'));
+    return `${result.textContent.trim()}; Failing and Marker stay queued`;
+  });
+
   await step('the plan is saved as a profile', async () => {
     const details = await until('the details', () => withText('aside h2', 'Marker')?.closest('aside'));
     await click('Add to plan', details);

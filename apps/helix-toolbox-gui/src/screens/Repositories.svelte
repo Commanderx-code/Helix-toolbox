@@ -45,13 +45,13 @@
   }
 
   $effect(() => {
-    void toolbox.runs;
+    void toolbox.readAgain.tools;
     load();
   });
 
   // After a run, the open repository has changed too.
   $effect(() => {
-    void toolbox.runs;
+    void toolbox.readAgain.tools;
     const path = untrack(() => open?.summary.path);
     if (path) show(path);
   });

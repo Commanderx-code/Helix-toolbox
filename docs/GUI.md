@@ -93,8 +93,11 @@ interface uses: type into it when a step asks something, including the
 `sudo` password prompt, which does not echo. **Stop** hangs the run up; a
 second **Stop** kills what ignored that. When the run ends, the result and
 the checks of the package steps appear below, and **Close** records the run
-in the history. Entries that finished leave the Install Plan; the others
-stay.
+in the history. A run from the Install Plan leaves in it what did not
+finish, as the terminal interface does: a queued profile's unfinished
+entries take its place, and an entry that needed nothing leaves. Then the
+window reads again what the run can change, as the engine's run session
+says: how entries stand, Updates, History and the tool screens.
 
 The other tools, under **More tools** in the sidebar, in four groups that
 open and close: **Health** (Helix Doctor, Hardware, Performance, Services,
@@ -276,11 +279,11 @@ Its commands:
 | `areas` | the catalog's areas, groups and entries |
 | `statuses` | how each package entry stands, by id; asks the package managers, off the window's thread |
 | `favorites`, `pin` | the pinned entries, and pinning one |
-| `prepare` | plans entries and runs the checks before a run (`confirmation::prepare()`); a plan ready to run waits for `run` |
+| `prepare` | plans entries and runs the checks before a run (`confirmation::prepare()`); a plan ready to run waits for `run` as its run session |
 | `cancel` | forgets a plan that was not confirmed |
 | `run` | starts the confirmed plan in a terminal of the given size and sends its events to a channel: `ExecutionEvent`'s JSON form, output as base64 |
 | `write`, `resize`, `stop` | what the user typed, the terminal's size, a stop |
-| `close_run` | records the run in the history |
+| `close_run` | records the run in the history; the queued entries that remain, what to read again (`statuses`, `updates`, `tools`, `history`) and why it was not recorded, if it was not |
 | `runs` | the history |
 | `save_profile` | the Install Plan as a profile |
 | `bug_report`, `copy_text` | `helix-toolbox report` with the window's facts, and text put on the clipboard |
@@ -353,7 +356,8 @@ is tested where no pointer reaches it. `scripts/gui-smoke.sh BINARY` runs
 `tests/drive/smoke.js` that way against the fixture catalog, with scratch
 folders for the home and settings: the wizard on the first start, the
 palette, every screen, a run of the marker fixture through the
-confirmation and the terminal, a saved profile exported, deleted and
+confirmation and the terminal, a failed run from the Install Plan keeping
+both its entries queued, a saved profile exported, deleted and
 imported again, the Remove button, a bug report from a stand-in
 command line, a hardware report of the run whose issue goes to a stand-in
 `xdg-open`, and the notifications of updates and health problems turned on and off with a

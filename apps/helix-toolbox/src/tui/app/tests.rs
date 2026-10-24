@@ -396,7 +396,7 @@ fn offline_bundles_are_made_from_the_install_plan_and_checked_before_installing(
     app.main_state.select(row(BundleRow::Make));
     press(&mut app, KeyCode::Enter);
     assert!(matches!(app.popup, Some(Popup::Confirm(_))));
-    let planned = app.pending.as_ref().unwrap();
+    let planned = app.pending.as_ref().unwrap().plan();
     let command = planned.steps[0].display();
     assert!(
         command.contains("bundle create") && command.contains("--complete"),

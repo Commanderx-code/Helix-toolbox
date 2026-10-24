@@ -788,6 +788,9 @@ export async function call(command: string, args: Record<string, unknown> = {}):
       return notifications || health || watched
         ? 'Helix Toolbox checks every 6 hours, and soon after you log in, and shows a notification when something is new; a click on it opens the screen here. It never updates, repairs or puts back anything itself.'
         : 'Notifications are off.';
+    case 'close_run':
+      // Every pretend run finishes.
+      return { remaining: [], read_again: ['statuses', 'updates', 'tools', 'history'], not_recorded: null };
     case 'read_settings':
     case 'save_settings':
       return { keep_going: args.keepGoing ?? false, snapshots: args.snapshots ?? true, snapshot_tool: 'Snapper', path: '/home/me/.config/helix-toolbox/settings.toml', theme, notifications, health, drift: watched, baselines: [['fresh-install', 'Fresh install']], restic_timer: null, restic_ready: true };

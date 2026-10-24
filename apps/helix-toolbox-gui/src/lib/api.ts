@@ -10,6 +10,7 @@ import type {
   BundleContents,
   BundleView,
   ChangesView,
+  ClosedView,
   Comparison,
   ConfigChecked,
   ConfigDraft,
@@ -72,7 +73,7 @@ export const cancel = () => call<void>('cancel');
 export const write = (data: string) => call<void>('write', { data });
 export const resize = (rows: number, cols: number) => call<void>('resize', { rows, cols });
 export const stop = () => call<void>('stop');
-export const closeRun = () => call<void>('close_run');
+export const closeRun = () => call<ClosedView>('close_run');
 export const runs = () => call<RecordView[]>('runs');
 export const saveProfile = (name: string, ids: string[]) => call<string>('save_profile', { name, ids });
 /** Import a profile file, chosen in the file chooser; null when it was closed. */

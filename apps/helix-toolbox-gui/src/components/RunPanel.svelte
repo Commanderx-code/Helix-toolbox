@@ -98,8 +98,7 @@
   }
 
   function close() {
-    const done = (finished?.steps ?? []).filter((step) => step.state === 'done').map((step) => step.id);
-    toolbox.closeRun(done);
+    toolbox.closeRun();
   }
 
   const ICONS = {

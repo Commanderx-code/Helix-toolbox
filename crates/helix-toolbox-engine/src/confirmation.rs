@@ -1,38 +1,60 @@
 //! Between a plan and its run: what an interface shows to ask the user, or
-//! why there is nothing to ask. The terminal interface's confirmation and a
-//! graphical one show the same lines.
+//! why there is nothing to ask. The command line, the terminal interface
+//! and the window show the same lines, from the same checks.
 
 use crate::{
     Plan, backups, preflight,
     reliability::{self, Evidence},
+    session::RunSession,
+    settings::RunChoices,
 };
+use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::Entry;
 use helix_toolbox_platform::LinuxInfo;
 use serde::Serialize;
 
-/// What to ask, or why not.
+/// A plan checked and ready to ask about, or why not.
 #[derive(Debug)]
-pub enum Prepared {
+pub struct Prepared {
+    /// The plan as it would run on a yes: the snapshot first where it is
+    /// wanted and worth one, the choice after a failure applied.
+    pub plan: Plan,
+    /// What the checks before a run found.
+    pub findings: Vec<preflight::Finding>,
+    pub verdict: Verdict,
+}
+
+/// Whether a prepared plan can run, with what to show.
+#[derive(Debug)]
+pub enum Verdict {
     /// The plan runs nothing; its notes and what it left out say why.
     Nothing(Vec<String>),
     /// The checks before a run found something that stops it. Nothing was
     /// changed.
     Blocked(Vec<String>),
     /// Ready for the user's yes.
-    Ready(Confirmation),
+    Ready {
+        /// What to know first: the risk and password, the checks' warnings,
+        /// warnings about how entries were tested, what happens after a
+        /// failure.
+        header: Vec<String>,
+        /// Each step's name and command, then the notes and what is not
+        /// run.
+        lines: Vec<Line>,
+    },
 }
 
-/// A plan ready to run, with what to show before it does.
-#[derive(Debug)]
-pub struct Confirmation {
-    /// The plan to run on a yes, with the snapshot and the choice after a
-    /// failure applied.
-    pub plan: Plan,
-    /// What to know first: the risk and password, the checks' warnings,
-    /// warnings about how entries were tested, what happens after a failure.
-    pub header: Vec<String>,
-    /// Each step's name and command, then the notes and what is not run.
-    pub lines: Vec<Line>,
+impl Prepared {
+    /// Whether the plan can run: it has steps and nothing blocks it.
+    pub fn is_ready(&self) -> bool {
+        matches!(self.verdict, Verdict::Ready { .. })
+    }
+
+    /// The run session for the user's yes; None when there is nothing to
+    /// run or something blocks it.
+    pub fn session(self) -> Option<RunSession> {
+        self.is_ready().then(|| RunSession::new(self.plan))
+    }
 }
 
 /// One line of the confirmation's list.
@@ -43,7 +65,7 @@ pub struct Line {
     pub detail: String,
 }
 
-/// How the run should go, from the settings.
+/// How the run should go, from the settings, for [`prepare_with`].
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Choices {
     /// Take a snapshot first with this tool, when the plan is worth one.
@@ -52,9 +74,36 @@ pub struct Choices {
     pub keep_going: bool,
 }
 
-/// Get a plan ready to confirm: add the snapshot, run the checks before a
-/// run, and gather what the user should see.
-pub fn prepare<'a>(
+/// Get a plan ready to confirm on this machine, as the settings' run
+/// choices say: add the snapshot (Snapper or Timeshift, where set up), run
+/// the checks before a run, and gather what the user should see, with how
+/// this build's entries were tested.
+pub fn prepare(
+    planned: Plan,
+    catalog: &Catalog,
+    platform: &LinuxInfo,
+    run_choices: RunChoices,
+) -> Prepared {
+    let choices = Choices {
+        snapshot: run_choices
+            .snapshots
+            .then(backups::Snapshots::here)
+            .flatten(),
+        keep_going: run_choices.keep_going,
+    };
+    prepare_with(
+        planned,
+        platform,
+        &|id| catalog.find(id),
+        choices,
+        &preflight::Facts::real(),
+        &Evidence::load(catalog.root()),
+    )
+}
+
+/// `prepare` with the entries, the snapshot tool, the machine's answers and
+/// the testing record given, for tests.
+pub fn prepare_with<'a>(
     planned: Plan,
     platform: &LinuxInfo,
     lookup: &dyn Fn(&str) -> Option<&'a Entry>,
@@ -62,6 +111,8 @@ pub fn prepare<'a>(
     facts: &preflight::Facts,
     evidence: &Evidence,
 ) -> Prepared {
+    let mut planned = planned;
+    planned.keep_going = choices.keep_going;
     if planned.is_empty() {
         let mut lines = planned.notes.clone();
         lines.extend(
@@ -73,10 +124,14 @@ pub fn prepare<'a>(
         if lines.is_empty() {
             lines.push("Nothing to run.".to_string());
         }
-        return Prepared::Nothing(lines);
+        let findings = preflight::check(&planned, platform, lookup, facts);
+        return Prepared {
+            plan: planned,
+            findings,
+            verdict: Verdict::Nothing(lines),
+        };
     }
     // A snapshot first when the run changes the system, where possible.
-    let mut planned = planned;
     if let Some(tool) = choices.snapshot
         && backups::worth_a_snapshot(&planned, &|id| lookup(id).map(|entry| entry.flags.clone()))
     {
@@ -84,7 +139,12 @@ pub fn prepare<'a>(
     }
     let findings = preflight::check(&planned, platform, lookup, facts);
     if preflight::blocked(&findings) {
-        return Prepared::Blocked(findings.iter().map(preflight::Finding::line).collect());
+        let lines = findings.iter().map(preflight::Finding::line).collect();
+        return Prepared {
+            plan: planned,
+            findings,
+            verdict: Verdict::Blocked(lines),
+        };
     }
     let mut header = vec![format!(
         "Risk: {}{}",
@@ -109,7 +169,6 @@ pub fn prepare<'a>(
             .into_iter()
             .map(|warning| format!("Warning: {warning}")),
     );
-    planned.keep_going = choices.keep_going;
     if planned.steps.len() > 1 {
         header.push(format!(
             "After a failed step: {} (Settings changes it)",
@@ -139,11 +198,11 @@ pub fn prepare<'a>(
             .iter()
             .map(|blocked| note(format!("Not run: {blocked}"))),
     );
-    Prepared::Ready(Confirmation {
+    Prepared {
         plan: planned,
-        header,
-        lines,
-    })
+        findings,
+        verdict: Verdict::Ready { header, lines },
+    }
 }
 
 #[cfg(test)]
@@ -206,7 +265,7 @@ mod tests {
             sizes: &|_, _| Some(1 << 20),
             active_runs: &Vec::new,
         };
-        prepare(
+        prepare_with(
             planned,
             &arch(),
             &lookup,
@@ -219,28 +278,32 @@ mod tests {
     #[test]
     fn a_plan_is_ready_with_its_risk_steps_and_the_choice_after_a_failure() {
         let entries = [package("ripgrep", "I"), package("fzf", "I")];
-        let Prepared::Ready(ready) = prepared(&entries, Choices::default(), None) else {
+        let ready = prepared(&entries, Choices::default(), None);
+        assert!(!ready.plan.keep_going);
+        let Verdict::Ready { header, lines } = &ready.verdict else {
             panic!("ready");
         };
-        assert_eq!(ready.header[0], "Risk: medium · asks for your password");
+        assert_eq!(header[0], "Risk: medium · asks for your password");
         assert_eq!(
-            ready.header.last().unwrap(),
+            header.last().unwrap(),
             "After a failed step: stop (Settings changes it)"
         );
-        let names: Vec<&str> = ready.lines.iter().map(|line| line.name.as_str()).collect();
+        let names: Vec<&str> = lines.iter().map(|line| line.name.as_str()).collect();
         assert_eq!(names, ["RIPGREP", "FZF"]);
-        assert!(ready.lines[0].detail.contains("pacman -S --needed ripgrep"));
-        assert!(!ready.plan.keep_going);
+        assert!(lines[0].detail.contains("pacman -S --needed ripgrep"));
+        let session = ready.session().expect("a session for the yes");
+        assert_eq!(session.plan().steps.len(), 2);
 
         let keep_going = Choices {
             keep_going: true,
             ..Choices::default()
         };
-        let Prepared::Ready(ready) = prepared(&entries, keep_going, None) else {
+        let going = prepared(&entries, keep_going, None);
+        assert!(going.plan.keep_going);
+        let Verdict::Ready { header, .. } = &going.verdict else {
             panic!("ready");
         };
-        assert!(ready.plan.keep_going);
-        assert!(ready.header.last().unwrap().contains("continue with what"));
+        assert!(header.last().unwrap().contains("continue with what"));
     }
 
     #[test]
@@ -249,32 +312,35 @@ mod tests {
             snapshot: Some(backups::Snapshots::Snapper),
             ..Choices::default()
         };
-        let Prepared::Ready(plain) = prepared(&[package("ripgrep", "I")], snapper, None) else {
-            panic!("ready");
-        };
+        let plain = prepared(&[package("ripgrep", "I")], snapper, None);
+        assert!(plain.is_ready());
         assert_eq!(plain.plan.steps.len(), 1);
-        let Prepared::Ready(kernel) = prepared(&[package("linux-zen", "I K")], snapper, None)
-        else {
+        let kernel = prepared(&[package("linux-zen", "I K")], snapper, None);
+        assert_eq!(kernel.plan.steps.len(), 2);
+        let Verdict::Ready { lines, .. } = &kernel.verdict else {
             panic!("ready");
         };
-        assert_eq!(kernel.plan.steps.len(), 2);
-        assert!(kernel.lines[0].detail.contains("snapper"));
+        assert!(lines[0].detail.contains("snapper"));
     }
 
     #[test]
     fn a_full_disk_blocks_and_an_empty_plan_says_why() {
-        let Prepared::Blocked(lines) =
-            prepared(&[package("ripgrep", "I")], Choices::default(), Some(0))
-        else {
+        let blocked = prepared(&[package("ripgrep", "I")], Choices::default(), Some(0));
+        assert!(preflight::blocked(&blocked.findings));
+        let Verdict::Blocked(lines) = &blocked.verdict else {
             panic!("blocked");
         };
         assert!(
             lines.iter().all(|line| line.starts_with("Blocked: ")),
             "{lines:?}"
         );
-        let Prepared::Nothing(lines) = prepared(&[], Choices::default(), None) else {
+        assert_eq!(blocked.plan.steps.len(), 1, "the plan is kept to show");
+        assert!(blocked.session().is_none(), "nothing to say yes to");
+        let nothing = prepared(&[], Choices::default(), None);
+        let Verdict::Nothing(lines) = &nothing.verdict else {
             panic!("nothing");
         };
-        assert_eq!(lines, ["Nothing to run."]);
+        assert_eq!(lines, &["Nothing to run."]);
+        assert!(nothing.session().is_none());
     }
 }

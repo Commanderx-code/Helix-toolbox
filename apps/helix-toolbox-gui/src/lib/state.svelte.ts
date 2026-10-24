@@ -5,7 +5,7 @@
 import * as api from './api';
 import { sectionOf } from './nav';
 import { applyTheme } from './theme';
-import type { About, AreaView, EntryView, HardwareReport, ItemView, Prepared, StatusView } from './types';
+import type { About, AreaView, ClosedView, EntryView, HardwareReport, ItemView, Prepared, Reading, StatusView } from './types';
 
 export type Screen =
   | { kind: 'dashboard' }
@@ -82,8 +82,9 @@ class Toolbox {
   prompt = $state<Prompt | null>(null);
   /** The bug report being shown: its text once gathered, or what went wrong. */
   report = $state<{ text: string | null; problem: string | null } | null>(null);
-  /** How many runs have closed, for screens that read again after one. */
-  runs = $state(0);
+  /** How many closed runs have left each reading out of date, for the
+   * screens that read it to read it again. */
+  readAgain = $state<Record<Reading, number>>({ statuses: 0, updates: 0, tools: 0, history: 0 });
   /** The hardware report being shown, before it is sent. */
   worked = $state<HardwareReport | null>(null);
   /** The setup wizard is open; on the first start it opens by itself. */
@@ -214,21 +215,25 @@ class Toolbox {
     this.confirming = null;
   }
 
-  /** The run window closed: what finished leaves the queue. */
-  async closeRun(finished: string[]) {
+  /** The run window closed: the engine records the run and says which
+   * queued entries remain (what did not finish) and what to read again. */
+  async closeRun() {
     const fromPlan = this.running?.fromPlan ?? false;
     this.running = null;
     this.busy = false;
+    let closed: ClosedView;
     try {
-      await api.closeRun();
+      closed = await api.closeRun();
     } catch (error) {
       this.error = String(error);
+      closed = { remaining: this.queue, read_again: ['statuses', 'updates', 'tools', 'history'], not_recorded: null };
     }
+    if (closed.not_recorded) this.error = closed.not_recorded;
     if (fromPlan) {
-      this.queue = this.queue.filter((id) => !finished.includes(id));
+      this.queue = closed.remaining.filter((id) => this.entry(id) !== undefined);
     }
-    this.runs += 1;
-    await this.refresh();
+    for (const reading of closed.read_again) this.readAgain[reading] += 1;
+    if (closed.read_again.includes('statuses')) await this.refresh();
   }
 
   /** Ask for a name or a word; null when the user cancels. */

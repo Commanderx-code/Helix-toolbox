@@ -26,9 +26,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, Item};
 use helix_toolbox_engine::{
-    EngineError, Machine, Plan, Probe, backups, bundle,
+    EngineError, Machine, Plan, Probe, RunSession, backups, bundle,
     configs::{self, Checked},
-    confirmation::{self, Prepared},
+    confirmation::{self, Prepared, Verdict},
     doctor, drift, hardware_report, history, home_manager,
     inventory::{Inventory, Status, which},
     migration::{self, Standing, Translation},
@@ -39,6 +39,7 @@ use helix_toolbox_engine::{
     restic::{self, Restic},
     rows,
     services::{self, Verb},
+    session::Reading,
     storage, updates,
     watch::{self, Watch},
     workspaces::{self, Task, Workspaces},
@@ -767,7 +768,8 @@ pub struct App {
     cursor: usize,
     completion: Option<String>,
     queue: Vec<Entry>,
-    pending: Option<Plan>,
+    /// The run session waiting for the user's yes.
+    pending: Option<RunSession>,
     popup: Option<Popup>,
     records: Vec<history::Record>,
     overview: Overview,
@@ -1973,23 +1975,9 @@ impl App {
                 return;
             }
         };
-        let evidence = self.evidence();
-        let choices = confirmation::Choices {
-            snapshot: self.snapshot_tool.filter(|_| self.snapshots),
-            keep_going: self.keep_going,
-        };
-        let prepared = self.with_facts(|facts| {
-            confirmation::prepare(
-                planned,
-                &self.platform,
-                &|id| self.catalog.find(id),
-                choices,
-                facts,
-                &evidence,
-            )
-        });
-        let ready = match prepared {
-            Prepared::Nothing(lines) => {
+        let prepared = self.prepare(planned);
+        let (header, lines) = match prepared.verdict {
+            Verdict::Nothing(lines) => {
                 self.popup = Some(Popup::Text(TextPopup::new(
                     "Nothing to run",
                     lines.join("\n"),
@@ -1997,7 +1985,7 @@ impl App {
                 )));
                 return;
             }
-            Prepared::Blocked(lines) => {
+            Verdict::Blocked(lines) => {
                 self.popup = Some(Popup::Text(TextPopup::new(
                     "Cannot run yet",
                     format!("{}\n\nNothing was changed.", lines.join("\n")),
@@ -2005,15 +1993,13 @@ impl App {
                 )));
                 return;
             }
-            Prepared::Ready(ready) => ready,
+            Verdict::Ready { header, lines } => (header, lines),
         };
-        let header = ready.header;
-        let lines: Vec<(String, String)> = ready
-            .lines
+        let lines: Vec<(String, String)> = lines
             .into_iter()
             .map(|line| (line.name, line.detail))
             .collect();
-        self.pending = Some(ready.plan);
+        self.pending = Some(RunSession::new(prepared.plan));
         if self.skip_confirmation {
             self.run_pending();
             return;
@@ -2022,14 +2008,61 @@ impl App {
         self.confirming = Some((header, lines));
     }
 
+    /// Get a plan ready to confirm, as every interface does, with the run
+    /// choices in Settings.
+    fn prepare(&mut self, planned: Plan) -> Prepared {
+        let choices = helix_toolbox_engine::settings::RunChoices {
+            keep_going: self.keep_going,
+            snapshots: self.snapshots,
+        };
+        if self.check_statuses {
+            return confirmation::prepare(planned, &self.catalog, &self.platform, choices);
+        }
+        // Tests: the snapshot tool they set, no machine questions beyond
+        // what planning asked.
+        let evidence = self.evidence();
+        let choices = confirmation::Choices {
+            snapshot: self.snapshot_tool.filter(|_| self.snapshots),
+            keep_going: self.keep_going,
+        };
+        self.with_facts(|facts| {
+            confirmation::prepare_with(
+                planned,
+                &self.platform,
+                &|id| self.catalog.find(id),
+                choices,
+                facts,
+                &evidence,
+            )
+        })
+    }
+
+    /// Read again what a run left out of date, where this screen shows it.
+    fn read_again(&mut self, reading: Reading) {
+        match (reading, self.screen) {
+            (Reading::Statuses, _) => self.refresh_statuses(),
+            (Reading::Updates, Screen::Updates) => self.gather_updates(false),
+            (Reading::History, Screen::History) => self.reload_history(),
+            (Reading::Tools, Screen::Services) => self.reload_services(),
+            (Reading::Tools, Screen::Storage) => self.read_storage(),
+            (Reading::Tools, Screen::Recovery) => self.reload_recovery(),
+            (Reading::Tools, Screen::Migration) => self.reload_migration(),
+            (Reading::Tools, Screen::Restic) => self.read_restic(),
+            (Reading::Tools, Screen::Configs) => self.read_configs(),
+            (Reading::Tools, Screen::Repositories) => self.reload_repos(),
+            (Reading::Tools, Screen::HomeManager) => self.read_home(),
+            _ => {}
+        }
+    }
+
     fn run_pending(&mut self) {
-        let Some(planned) = self.pending.take() else {
+        let Some(session) = self.pending.take() else {
             return;
         };
         let this =
             std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("helix-toolbox"));
         self.popup = Some(
-            match RunningView::start(&planned, &self.catalog.lib_dir(), &this) {
+            match RunningView::start(session, &self.catalog.lib_dir(), &this) {
                 Ok(running) => {
                     // What ran from the plan screen leaves the queue when it
                     // finishes; what does not finish stays.

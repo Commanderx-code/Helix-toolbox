@@ -294,7 +294,9 @@ impl App {
                         self.confirming = None;
                     }
                     Decision::Effects => {
-                        if let Some(planned) = self.pending.clone() {
+                        if let Some(planned) =
+                            self.pending.as_ref().map(|session| session.plan().clone())
+                        {
                             self.show_effects(&planned, true);
                         }
                     }
@@ -306,21 +308,18 @@ impl App {
                 if popup.handle_key(key) {
                     // What is installed may have changed.
                     self.planned = None;
-                    let unfinished = popup.unfinished();
+                    let remaining = popup.remaining(&|id| self.catalog.find(id).is_some());
+                    let read_again = popup.read_again();
                     let summary = popup.summary();
                     self.popup = popup
                         .take_problem()
                         .map(|problem| Popup::Text(TextPopup::new("Not recorded", problem, true)));
                     if std::mem::take(&mut self.ran_from_plan) {
-                        let mut kept: Vec<Entry> = Vec::new();
-                        for id in &unfinished {
-                            if let Some(entry) = self.catalog.find(id)
-                                && !kept.iter().any(|kept| kept.id == entry.id)
-                            {
-                                kept.push(entry.clone());
-                            }
-                        }
-                        self.queue = kept;
+                        // The queue keeps what did not finish.
+                        self.queue = remaining
+                            .iter()
+                            .filter_map(|id| self.catalog.find(id).cloned())
+                            .collect();
                         self.clamp_main();
                         if !self.queue.is_empty() && self.popup.is_none() {
                             self.popup = Some(Popup::Text(TextPopup::new(
@@ -332,36 +331,8 @@ impl App {
                             )));
                         }
                     }
-                    self.refresh_statuses();
-                    if self.screen == Screen::Updates {
-                        self.gather_updates(false);
-                    }
-                    if self.screen == Screen::History {
-                        self.reload_history();
-                    }
-                    if self.screen == Screen::Services {
-                        self.reload_services();
-                    }
-                    if self.screen == Screen::Storage {
-                        self.read_storage();
-                    }
-                    if self.screen == Screen::Recovery {
-                        self.reload_recovery();
-                    }
-                    if self.screen == Screen::Migration {
-                        self.reload_migration();
-                    }
-                    if self.screen == Screen::Restic {
-                        self.read_restic();
-                    }
-                    if self.screen == Screen::Configs {
-                        self.read_configs();
-                    }
-                    if self.screen == Screen::Repositories {
-                        self.reload_repos();
-                    }
-                    if self.screen == Screen::HomeManager {
-                        self.read_home();
+                    for reading in read_again {
+                        self.read_again(reading);
                     }
                 }
                 return true;
