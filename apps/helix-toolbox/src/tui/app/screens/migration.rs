@@ -13,6 +13,12 @@ pub(in crate::tui::app) struct Migration {
     /// The migration file opened, and what it means here.
     pub(in crate::tui::app) opened: Option<(PathBuf, Translation)>,
     opening: Read<MigrationOpened>,
+    /// Why the migration file asked for could not be opened, answered after
+    /// the screen was left.
+    unopened: Option<String>,
+    /// A run while another screen was shown left what it read out of
+    /// date.
+    stale: bool,
     pub(in crate::tui::app) rows: Vec<MigrationRow>,
 }
 
@@ -24,6 +30,8 @@ impl Default for Migration {
             packages_known: true,
             opened: None,
             opening: Read::default(),
+            unopened: None,
+            stale: false,
             rows: Vec::new(),
         }
     }
@@ -96,15 +104,27 @@ impl Migration {
                 self.opened = Some((path, translation));
                 self.build_rows(cx);
             }
-            Err(error) => {
-                self.build_rows(cx);
-                *cx.popup = Some(Popup::Text(TextPopup::new(
-                    "Cannot open the migration",
-                    error,
-                    true,
-                )));
-            }
+            Err(error) => self.not_opened(cx, error),
         }
+    }
+
+    /// The migration file could not be opened. The popup is the screen
+    /// shown: when it was left, why waits until it is shown again.
+    fn not_opened(&mut self, cx: &mut Cx, error: String) {
+        self.build_rows(cx);
+        if cx.screen == Screen::Migration {
+            Self::cannot_open(cx, error);
+        } else {
+            self.unopened = Some(error);
+        }
+    }
+
+    fn cannot_open(cx: &mut Cx, error: String) {
+        *cx.popup = Some(Popup::Text(TextPopup::new(
+            "Cannot open the migration",
+            error,
+            true,
+        )));
     }
 
     /// Write what this machine has to a file, as `helix-toolbox migrate
@@ -194,6 +214,9 @@ impl Migration {
                 found.from
             ),
             None if self.reading.busy() => "Reading what this machine has…".into(),
+            None if self.reading.failed() => {
+                "Could not read what this machine has. r reads again.".into()
+            }
             None => "Press r to read what this machine has.".into(),
         }));
         if self.here.is_some() && !self.packages_known {
@@ -257,10 +280,15 @@ impl Migration {
 
 impl ToolScreen for Migration {
     fn open(&mut self, cx: &mut Cx) {
-        if self.here.is_none() {
+        if std::mem::take(&mut self.stale) {
+            self.reload(cx);
+        } else if self.here.is_none() {
             self.read(cx);
         } else {
             self.build_rows(cx);
+        }
+        if let Some(error) = self.unopened.take() {
+            Self::cannot_open(cx, error);
         }
     }
 
@@ -330,14 +358,19 @@ impl ToolScreen for Migration {
     }
 
     fn poll(&mut self, cx: &mut Cx) -> bool {
-        if let Some((found, known)) = self.reading.take() {
-            self.here = Some(found);
-            self.packages_known = known;
+        if let Some(answer) = self.reading.take() {
+            if let Ok((found, known)) = answer {
+                self.here = Some(found);
+                self.packages_known = known;
+            }
             self.build_rows(cx);
             return true;
         }
-        if let Some((path, read)) = self.opening.take() {
-            self.file_read(cx, path, read);
+        if let Some(answer) = self.opening.take() {
+            match answer {
+                Ok((path, read)) => self.file_read(cx, path, read),
+                Err(_) => self.not_opened(cx, "Reading the file stopped without an answer.".into()),
+            }
             return true;
         }
         false
@@ -346,6 +379,12 @@ impl ToolScreen for Migration {
     fn after_run(&mut self, cx: &mut Cx, reading: Reading) {
         if reading == Reading::Tools {
             self.reload(cx);
+        }
+    }
+
+    fn stale(&mut self, reading: Reading) {
+        if reading == Reading::Tools {
+            self.stale = true;
         }
     }
 

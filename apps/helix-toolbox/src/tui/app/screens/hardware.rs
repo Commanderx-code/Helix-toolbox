@@ -193,11 +193,13 @@ impl ToolScreen for Hardware {
     }
 
     fn poll(&mut self, cx: &mut Cx) -> bool {
-        let Some(found) = self.reading.take() else {
+        let Some(answer) = self.reading.take() else {
             return false;
         };
-        self.rows = hardware_rows(&found);
-        self.found = Some(found);
+        if let Ok(found) = answer {
+            self.rows = hardware_rows(&found);
+            self.found = Some(found);
+        }
         if cx.screen == Screen::Hardware {
             cx.clamp();
         }
@@ -218,6 +220,8 @@ impl ToolScreen for Hardware {
             items.push(Line::styled(
                 if self.reading.busy() {
                     "Reading the hardware…"
+                } else if self.reading.failed() {
+                    "Could not read this machine's hardware. r reads again."
                 } else {
                     "Press r to read this machine's hardware."
                 },
