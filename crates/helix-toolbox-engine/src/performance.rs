@@ -559,13 +559,16 @@ pub fn now(system: &dyn System) -> Now {
 }
 
 /// A span in milliseconds for people: `850 ms`, `2.3 s`, `1 min 25 s`.
+/// The unit is picked after rounding, so 59.96 s reads "1 min 0 s", and
+/// the rounding cannot overflow, whatever a damaged record holds.
 pub fn shown(ms: u64) -> String {
+    let tenths = ms / 100 + u64::from(ms % 100 >= 50);
     if ms < 1000 {
         format!("{ms} ms")
-    } else if ms < 60_000 {
-        format!("{:.1} s", ms as f64 / 1000.0)
+    } else if tenths < 600 {
+        format!("{}.{} s", tenths / 10, tenths % 10)
     } else {
-        let seconds = (ms + 500) / 1000;
+        let seconds = ms / 1000 + u64::from(ms % 1000 >= 500);
         format!("{} min {} s", seconds / 60, seconds % 60)
     }
 }
@@ -969,6 +972,10 @@ mod tests {
         assert_eq!(shown(850), "850 ms");
         assert_eq!(shown(2340), "2.3 s");
         assert_eq!(shown(85603), "1 min 26 s");
+        // The unit after rounding, and no overflow on a damaged record.
+        assert_eq!(shown(59_949), "59.9 s");
+        assert_eq!(shown(59_950), "1 min 0 s");
+        assert_eq!(shown(u64::MAX), "307445734561825 min 52 s");
         assert_eq!(shown_change(-850), "-850 ms");
         assert_eq!(shown_change(1200), "+1.2 s");
     }

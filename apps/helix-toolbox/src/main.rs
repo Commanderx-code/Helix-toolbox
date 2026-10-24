@@ -1507,7 +1507,10 @@ fn hardware_text(found: &helix_toolbox_engine::hardware::Hardware) -> String {
                 .unwrap_or_default(),
             battery
                 .cycles
-                .map(|cycles| format!(", {cycles} cycles"))
+                .map(|cycles| format!(
+                    ", {cycles} {}",
+                    if cycles == 1 { "cycle" } else { "cycles" }
+                ))
                 .unwrap_or_default(),
             battery
                 .status

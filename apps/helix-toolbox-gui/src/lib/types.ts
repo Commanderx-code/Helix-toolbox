@@ -171,7 +171,8 @@ export type UpdatesView = { online: boolean; channels: ChannelView[] };
 // Backups
 
 export type BackupView = {
-  index: number;
+  /** The backup's own path, which prepare_restore takes. */
+  key: string;
   original: string;
   backup: string;
   taken: string | null;
@@ -233,14 +234,16 @@ export type Meter = { percent: number; full: boolean };
 export type HardwareView = {
   /** Why fwupd could not be read, and what it lists. */
   firmware: string[];
-  /** By their place in the list, which prepare_firmware takes. */
-  updates: DisplayRow[];
+  updates: FirmwareUpdate[];
   disks: DisplayRow[];
   sensors: DisplayRow[];
   batteries: DisplayRow[];
   pci: Device[];
   usb: Device[];
 };
+
+/** A firmware update, found again by prepare_firmware from fwupd's device id and the version it installs. */
+export type FirmwareUpdate = DisplayRow & { device_id: string; version: string };
 
 /** Empty where it is not known. */
 export type Device = { address: string; name: string; class: string; driver: string };
