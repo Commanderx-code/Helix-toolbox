@@ -8,6 +8,7 @@ use clap::Subcommand;
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_engine::{
     doctor,
+    host::Host,
     services::{self, Verb},
     storage,
 };
@@ -96,14 +97,6 @@ pub enum StorageCommand {
     },
 }
 
-fn desktop() -> Option<String> {
-    std::env::var("XDG_CURRENT_DESKTOP").ok()
-}
-
-fn ssh() -> bool {
-    std::env::var_os("SSH_CONNECTION").is_some()
-}
-
 fn state(unit: &services::Unit) -> String {
     format!(
         "{}, {}",
@@ -122,7 +115,8 @@ pub fn services(
     platform: &LinuxInfo,
     as_json: bool,
 ) -> Result<()> {
-    let found = services::gather(&doctor::Here, desktop().as_deref());
+    let host = Host::here();
+    let found = services::gather_on(&host);
     let command = command.unwrap_or(ServicesCommand::List {
         filter: None,
         user: false,
@@ -140,8 +134,7 @@ pub fn services(
                 change.unit
             );
         }
-        let needed = services::needed_by(&doctor::Here, &change.unit, change.user);
-        let planned = services::plan(&change.unit, change.user, verb, &needed, ssh())
+        let planned = services::plan_on(&host, &change.unit, change.user, verb)
             .map_err(anyhow::Error::msg)?;
         crate::confirm_and_run(
             catalog,
@@ -209,8 +202,8 @@ pub fn services(
             else {
                 bail!("no unit named {unit}; see helix-toolbox services list");
             };
-            let needed = services::needed_by(&doctor::Here, &found.name, found.user);
-            let cost = services::consequence(&found.name, found.user, ssh());
+            let needed = services::needed_by(&host, &found.name, found.user);
+            let cost = services::consequence(&found.name, found.user, host.ssh());
             if as_json {
                 crate::json::print(
                     "service",
@@ -254,8 +247,9 @@ pub fn startup(
     platform: &LinuxInfo,
     as_json: bool,
 ) -> Result<()> {
-    let dirs = services::AutostartDirs::here(&doctor::Here);
-    let found = services::autostart_in(&doctor::Here, &dirs, desktop().as_deref());
+    let host = Host::here();
+    let dirs = services::AutostartDirs::of(&host);
+    let found = services::autostart_in(&host, &dirs, host.desktop().as_deref());
     match command.unwrap_or(StartupCommand::List) {
         StartupCommand::List => {
             if as_json {
@@ -297,8 +291,8 @@ pub fn startup(
                     switch.file
                 );
             };
-            let planned = services::plan_autostart(item, on, &dirs, &doctor::Here)
-                .map_err(anyhow::Error::msg)?;
+            let planned =
+                services::plan_autostart(item, on, &dirs, &host).map_err(anyhow::Error::msg)?;
             crate::confirm_and_run(
                 catalog,
                 platform,
@@ -317,7 +311,7 @@ pub fn storage(
     platform: &LinuxInfo,
     as_json: bool,
 ) -> Result<()> {
-    let found = storage::gather(&doctor::Here, platform.manager);
+    let found = storage::gather_on(&Host::here(), platform.manager);
     match command.unwrap_or(StorageCommand::Show) {
         StorageCommand::Show => {
             if as_json {

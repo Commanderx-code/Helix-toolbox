@@ -10,8 +10,7 @@ impl App {
             return Some(places.clone());
         }
         let settings = self.settings_path.as_ref()?;
-        let home = std::env::var_os("HOME").map(PathBuf::from)?;
-        Some(repos::places(settings, &home))
+        Some(repos::places(settings, self.host.home()))
     }
 
     fn workspaces_path(&self) -> Option<PathBuf> {
@@ -50,15 +49,7 @@ impl App {
             summaries.sort_by_key(|summary| !kept.favorite(&summary.path));
             (places, summaries)
         };
-        if self.examine_here {
-            let (sender, receiver) = mpsc::channel();
-            std::thread::spawn(move || {
-                let _ = sender.send(read());
-            });
-            self.reading_repos = Some(receiver);
-        } else {
-            self.repos_found = Some(read());
-        }
+        self.reading_repos = Some(self.read_host(move |_| read()));
         self.build_repo_rows();
     }
 
@@ -79,16 +70,8 @@ impl App {
             let tasks = workspaces::tasks(&path, &kept);
             Ok((found, tasks))
         };
-        if self.examine_here {
-            let (sender, receiver) = mpsc::channel();
-            std::thread::spawn(move || {
-                let _ = sender.send(read());
-            });
-            self.opening_repo = Some(receiver);
-            self.build_repo_rows();
-        } else {
-            self.opened_repo(read());
-        }
+        self.opening_repo = Some(self.read_host(move |_| read()));
+        self.build_repo_rows();
     }
 
     pub(in crate::tui::app) fn opened_repo(&mut self, read: RepoOpened) {

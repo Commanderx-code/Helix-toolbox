@@ -5,7 +5,7 @@
 //! and after. It only reads. The one thing it writes is its own record of
 //! boots, `boots.json` in the state folder, one line per boot it has seen.
 
-use crate::{doctor::System, history::Record};
+use crate::{doctor::System, history::Record, host::Host};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -238,6 +238,19 @@ pub fn gather(system: &dyn System, state: Option<&Path>, history: &[Record]) -> 
         recorded: boots.len(),
         hints,
     }
+}
+
+/// `gather` on a host: its state folder keeps the boots, and its history
+/// says what ran between them.
+pub fn gather_on(host: &Host) -> Performance {
+    gather(host, host.state(), &host.history(1000))
+}
+
+/// The boots a host recorded, newest first.
+pub fn boots_on(host: &Host) -> Vec<Boot> {
+    host.state()
+        .map(|state| load(&boots_path(state)))
+        .unwrap_or_default()
 }
 
 /// The boots recorded in `path`, newest first.

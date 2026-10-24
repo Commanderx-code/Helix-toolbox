@@ -3,28 +3,15 @@
 use super::super::*;
 
 impl App {
-    /// Where a configuration is: in the tests' folders, else this machine's.
+    /// Where a configuration is on the host.
     fn locate_config(&self, kind: configs::Kind) -> Result<configs::Located, String> {
-        match &self.config_places {
-            Some((home, config)) => configs::locate(
-                kind,
-                &configs::Facts {
-                    home,
-                    config_home: config,
-                    settings: None,
-                    command_center: None,
-                    store: Path::new("/nix/store"),
-                },
-            ),
-            None if self.examine_here => configs::here(kind),
-            None => Err("configurations are not read here".to_string()),
-        }
+        configs::locate_on(&self.host, kind)
     }
 
-    /// The private folder for copies: the tests' own, else beside the
-    /// history; never a shared one.
+    /// The private folder for copies, beside the host's history; never a
+    /// shared one.
     fn copies_folder(&self) -> Option<PathBuf> {
-        self.config_folder.clone().or_else(configs::private_folder)
+        self.host.state().map(|state| state.join("configs"))
     }
 
     fn no_copies_folder(&mut self) {
@@ -33,9 +20,10 @@ impl App {
         );
     }
 
-    /// Ghostty's own check on this machine; none in tests.
+    /// Ghostty's own check, which runs this machine's Ghostty; none on a
+    /// made-up host.
     fn config_check(&self) -> fn(&Path) -> Option<(bool, String)> {
-        if self.examine_here {
+        if self.host.is_here() {
             configs::ghostty_here
         } else {
             |_| None

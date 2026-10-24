@@ -6,17 +6,18 @@ impl App {
     /// Look at the update channels in the background; `online` also asks the
     /// network, through read-only commands.
     pub(in crate::tui::app) fn gather_updates(&mut self, online: bool) {
-        if !self.examine_here {
-            return;
-        }
         let platform = self.platform.clone();
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
-            let channels =
-                updates::overview(&doctor::Here, &platform, &crate::this_places(), online);
-            let _ = sender.send((channels, online));
-        });
-        self.gathering = Some(receiver);
+        // The running Helix Toolbox, with its own update, is on this machine
+        // only.
+        let places = if self.host.is_here() {
+            crate::this_places()
+        } else {
+            updates::Places::of(&self.host)
+        };
+        self.gathering = Some(self.read_host(move |host| {
+            let channels = updates::overview(&host, &platform, &places, online);
+            (channels, online)
+        }));
     }
 
     /// Package entries whose status says an update waits.

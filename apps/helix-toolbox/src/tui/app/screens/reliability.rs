@@ -12,11 +12,7 @@ impl App {
     }
 
     pub(in crate::tui::app) fn run_history(&self) -> Vec<history::Record> {
-        if self.examine_here {
-            history::read(1000).unwrap_or_default()
-        } else {
-            self.records.clone()
-        }
+        self.host.history(1000)
     }
 
     pub(in crate::tui::app) fn reload_reliability(&mut self) {
@@ -75,7 +71,9 @@ impl App {
         };
         let evidence = self.evidence();
         let records = self.run_history();
-        let build = if self.examine_here {
+        // How this copy was installed is the running program's, which is on
+        // this machine only.
+        let build = if self.host.is_here() {
             crate::inspect::build()
         } else {
             helix_toolbox_engine::trust::Build {
@@ -90,7 +88,7 @@ impl App {
             self.catalog.root(),
             &self.platform,
             &build,
-            &doctor::Here,
+            &self.host,
             &evidence,
             &records,
         );
