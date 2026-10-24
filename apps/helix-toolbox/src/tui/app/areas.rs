@@ -979,7 +979,7 @@ impl App {
             &entry,
             &self.platform,
             rebooted,
-            &helix_toolbox_engine::Probe::holds,
+            &|probe| probe.holds_on(&self.host),
             &|tool| self.host.which(tool).is_some(),
             &self.host,
         );

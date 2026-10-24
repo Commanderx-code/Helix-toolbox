@@ -431,10 +431,11 @@ pub struct Waiting {
     pub checks: Vec<Verify>,
 }
 
-/// The kept checks, oldest first; none when the file is missing or unreadable.
-pub fn kept(system: &dyn System, directory: &Path) -> Vec<Waiting> {
-    system
-        .read(&directory.join(AFTER_REBOOT))
+/// The kept checks in Helix Toolbox's state folder `directory`, oldest
+/// first; none when the file is missing or unreadable.
+pub fn kept(directory: &Path) -> Vec<Waiting> {
+    std::fs::read_to_string(directory.join(AFTER_REBOOT))
+        .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or_default()
 }
@@ -477,7 +478,7 @@ pub fn keep(
         })
         .collect();
     let path = directory.join(AFTER_REBOOT);
-    let mut all = kept(&crate::doctor::Here, directory);
+    let mut all = kept(directory);
     let before = all.len();
     all.retain(|waiting| {
         now.saturating_sub(waiting.ran) < KEPT_FOR
@@ -512,7 +513,7 @@ pub struct Reviewed {
 
 pub fn review(system: &dyn System, directory: &Path) -> Vec<Reviewed> {
     let started = booted(system);
-    kept(system, directory)
+    kept(directory)
         .into_iter()
         .map(|waiting| {
             let rebooted = started.is_some_and(|started| started > waiting.ran);
@@ -1035,13 +1036,8 @@ mod tests {
         keep(directory.path(), &plan, &finished, 1_000).unwrap();
         // Again later: one kept, the newer.
         keep(directory.path(), &plan, &finished, 2_000).unwrap();
-        let text = std::fs::read_to_string(directory.path().join(AFTER_REBOOT)).unwrap();
         let machine = |booted: u64, cmdline: &str| {
             Fake::default()
-                .file(
-                    &directory.path().join(AFTER_REBOOT).display().to_string(),
-                    &text,
-                )
                 .file("/proc/stat", &format!("cpu 1 2 3\nbtime {booted}\n"))
                 .file("/proc/cmdline", cmdline)
         };
@@ -1069,6 +1065,6 @@ mod tests {
             2_000 + KEPT_FOR,
         )
         .unwrap();
-        assert!(kept(&crate::doctor::Here, directory.path()).is_empty());
+        assert!(kept(directory.path()).is_empty());
     }
 }

@@ -7,6 +7,8 @@ use crate::{Plan, Step, quote};
 use helix_toolbox_core::{PackageManager, Risk, printable};
 use std::{
     collections::HashMap,
+    ffi::OsString,
+    io::Read,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     time::Duration,
@@ -116,6 +118,20 @@ impl Repair {
     }
 }
 
+/// What a path itself is, a link not followed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Node {
+    /// A regular file of this many bytes.
+    File(u64),
+    Folder,
+    Link,
+    /// A device, a pipe or a socket.
+    Special,
+}
+
+/// A regular file opened to read, and its size in bytes when it was opened.
+pub type Opened<'a> = (u64, Box<dyn Read + 'a>);
+
 /// What the checks read from the machine; tests give a made-up one.
 pub trait System {
     fn read(&self, path: &Path) -> Option<String>;
@@ -151,6 +167,28 @@ pub trait System {
     }
     /// Names of running processes.
     fn processes(&self) -> Vec<String>;
+    /// What the path itself is, a link not followed; None when it is not
+    /// there or cannot be looked at.
+    fn node(&self, path: &Path) -> Option<Node> {
+        if self.is_link(path) {
+            Some(Node::Link)
+        } else if let Some(text) = self.read(path) {
+            Some(Node::File(text.len() as u64))
+        } else {
+            self.is_dir(path).then_some(Node::Folder)
+        }
+    }
+    /// A folder's names, sorted; None when it cannot be read.
+    fn names(&self, path: &Path) -> Option<Vec<OsString>> {
+        self.is_dir(path)
+            .then(|| self.list(path).into_iter().map(OsString::from).collect())
+    }
+    /// A regular file, opened to read without following a link or waiting
+    /// on a pipe; None for anything else, checked once it is open.
+    fn open(&self, path: &Path) -> Option<Opened<'_>> {
+        let bytes = self.read(path)?.into_bytes();
+        Some((bytes.len() as u64, Box::new(std::io::Cursor::new(bytes))))
+    }
 }
 
 /// This machine.
@@ -273,6 +311,42 @@ impl System for Here {
             .filter_map(|pid| self.read(&Path::new("/proc").join(pid).join("comm")))
             .map(|name| name.trim().to_string())
             .collect()
+    }
+
+    fn node(&self, path: &Path) -> Option<Node> {
+        let metadata = std::fs::symlink_metadata(path).ok()?;
+        Some(if metadata.file_type().is_symlink() {
+            Node::Link
+        } else if metadata.is_dir() {
+            Node::Folder
+        } else if metadata.is_file() {
+            Node::File(metadata.len())
+        } else {
+            Node::Special
+        })
+    }
+
+    fn names(&self, path: &Path) -> Option<Vec<OsString>> {
+        let mut names: Vec<OsString> = std::fs::read_dir(path)
+            .ok()?
+            .flatten()
+            .map(|item| item.file_name())
+            .collect();
+        names.sort();
+        Some(names)
+    }
+
+    fn open(&self, path: &Path) -> Option<Opened<'_>> {
+        use std::os::unix::fs::OpenOptionsExt;
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK)
+            .open(path)
+            .ok()?;
+        let metadata = file.metadata().ok()?;
+        metadata
+            .is_file()
+            .then(|| (metadata.len(), Box::new(file) as Box<dyn Read>))
     }
 }
 
@@ -1172,6 +1246,22 @@ impl System for Fake {
 
     fn processes(&self) -> Vec<String> {
         self.running.clone()
+    }
+
+    fn node(&self, path: &Path) -> Option<Node> {
+        if self.links.contains_key(path) {
+            Some(Node::Link)
+        } else if let Some(text) = self.files.get(path) {
+            Some(Node::File(text.len() as u64))
+        } else {
+            self.folders.contains_key(path).then_some(Node::Folder)
+        }
+    }
+
+    fn names(&self, path: &Path) -> Option<Vec<OsString>> {
+        let mut names: Vec<OsString> = self.folders.get(path)?.iter().map(OsString::from).collect();
+        names.sort();
+        Some(names)
     }
 }
 

@@ -408,6 +408,11 @@ pub fn here(kind: Kind) -> Result<Located, String> {
 /// settings read there.
 pub fn locate_on(host: &crate::host::Host, kind: Kind) -> Result<Located, String> {
     use crate::doctor::System;
+    // Without HOME, Host::here() has an empty home: nothing is built on it,
+    // or the paths would be relative to the folder Helix Toolbox started in.
+    if !host.home().is_absolute() {
+        return Err("there is no home folder".to_string());
+    }
     let config = host
         .config()
         .map(Path::to_path_buf)
@@ -1649,5 +1654,19 @@ mod tests {
         assert!(!again.status.success());
         assert_eq!(fs::read_to_string(&file).unwrap(), "font-size = 13\n");
         assert_eq!(history(&located).len(), 1);
+    }
+
+    #[test]
+    fn a_host_without_a_home_has_no_file_to_edit() {
+        // As Host::here() is when HOME is not set: no folder to build on, so
+        // nothing relative to the folder Helix Toolbox was started in.
+        let host = crate::host::Host::made_up(crate::doctor::Fake::default());
+        for kind in Kind::ALL {
+            assert_eq!(
+                locate_on(&host, kind).map(|located| located.path),
+                Err("there is no home folder".to_string()),
+                "{kind:?}"
+            );
+        }
     }
 }

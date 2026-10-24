@@ -8,6 +8,7 @@ use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::printable;
 use helix_toolbox_engine::{
     doctor, history,
+    host::Host,
     migration::{self, Kind, Standing, Translation},
 };
 use helix_toolbox_platform::LinuxInfo;
@@ -44,7 +45,7 @@ pub enum MigrateCommand {
 /// A migration file read on this machine.
 pub fn translate(path: &Path, catalog: &Catalog, platform: &LinuxInfo) -> Result<Translation> {
     Ok(migration::read_here(
-        &doctor::Here,
+        &Host::here(),
         path,
         &catalog.entries(),
         platform,
@@ -78,7 +79,7 @@ pub fn migrate(
     match command {
         MigrateCommand::Export { file } => {
             let found =
-                migration::gather(&doctor::Here, &catalog.entries(), platform, history::now());
+                migration::gather(&Host::here(), &catalog.entries(), platform, history::now());
             if as_json {
                 crate::json::print("migrate-export", json!(found));
                 return Ok(());
@@ -116,7 +117,7 @@ pub fn migrate(
         MigrateCommand::Apply { file, dry_run, yes } => {
             let translation = translate(&file, catalog, platform)?;
             let planned =
-                migration::plan_here(&doctor::Here, &translation, &catalog.entries(), platform)
+                migration::plan_here(&Host::here(), &translation, &catalog.entries(), platform)
                     .with_context(|| format!("cannot plan {}", file.display()))?;
             let yours =
                 translation.count(Standing::Yours) + translation.count(Standing::Unavailable);

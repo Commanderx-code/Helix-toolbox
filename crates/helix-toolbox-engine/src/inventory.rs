@@ -3,7 +3,9 @@
 //! updates come from the repository metadata already on the machine), so a
 //! list of entries is answered by lookups.
 
-use crate::{PackageState, Plan, Probe, Source, Step, UpdateTarget, doctor::System, updates};
+use crate::{
+    PackageState, Plan, Probe, Source, Step, UpdateTarget, doctor::System, host::Host, updates,
+};
 use helix_toolbox_core::{Entry, PackageManager, Risk};
 use helix_toolbox_platform::LinuxInfo;
 use std::{
@@ -131,31 +133,35 @@ impl std::fmt::Debug for Asked {
 }
 
 impl Inventory {
-    /// Read the machine `system` answers for, such as `doctor::Here`.
-    pub fn gather<S>(system: &S, platform: &LinuxInfo) -> Self
-    where
-        S: System + Clone + Send + Sync + 'static,
-    {
-        Self::gather_for(system, platform.manager)
+    /// Read the machine `host` is, such as `Host::here()`.
+    pub fn gather(host: &Host, platform: &LinuxInfo) -> Self {
+        Self::gather_for(host, platform.manager)
     }
 
-    /// Read the machine `system` answers for, whose packages `manager`
-    /// keeps.
-    pub fn gather_for<S>(system: &S, manager: Option<PackageManager>) -> Self
-    where
-        S: System + Clone + Send + Sync + 'static,
-    {
-        Self::read(Arc::new(system.clone()), manager)
+    /// Read the machine `host` is, whose packages `manager` keeps: its
+    /// package lists, where its Nix commands are, and the releases recorded
+    /// in its state folder.
+    pub fn gather_for(host: &Host, manager: Option<PackageManager>) -> Self {
+        let releases = host
+            .state()
+            .map(|state| crate::release::records_in(&state.join("releases")))
+            .unwrap_or_default();
+        Self::read(Arc::new(host.clone()), manager, nix_places(host), releases)
     }
 
-    fn read(system: Arc<dyn System + Send + Sync>, manager: Option<PackageManager>) -> Self {
+    fn read(
+        system: Arc<dyn System + Send + Sync>,
+        manager: Option<PackageManager>,
+        nix_places: Vec<(String, PathBuf)>,
+        releases: Vec<crate::release::Record>,
+    ) -> Self {
         // The standard output whatever the exit status: pacman -Qu exits 1
         // when nothing is outdated.
         let output = |command: &[&str]| system.run(command).map(|(_, text)| text);
         let mut inventory = Inventory {
             manager,
-            nix_places: nix_places(),
-            releases: crate::release::records()
+            nix_places,
+            releases: releases
                 .into_iter()
                 .map(|record| (record.entry.clone(), record))
                 .collect(),
@@ -724,20 +730,22 @@ pub fn store_version(path: &Path) -> Option<String> {
     Some(version.join("-"))
 }
 
-/// Home Manager's and NixOS's command directories on this machine.
-fn nix_places() -> Vec<(String, PathBuf)> {
+/// Home Manager's and NixOS's command directories on the host, from its
+/// home and environment.
+fn nix_places(host: &Host) -> Vec<(String, PathBuf)> {
     let mut places = Vec::new();
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    let state = std::env::var_os("XDG_STATE_HOME")
+    let home = Some(host.home()).filter(|home| !home.as_os_str().is_empty());
+    let state = host
+        .variable("XDG_STATE_HOME")
         .map(PathBuf::from)
-        .or_else(|| home.as_ref().map(|home| home.join(".local/state")));
+        .or_else(|| home.map(|home| home.join(".local/state")));
     if let Some(state) = state {
         places.push((
             "Home Manager".to_string(),
             state.join("home-manager/gcroots/current-home/home-path/bin"),
         ));
     }
-    if let Ok(user) = std::env::var("USER") {
+    if let Some(user) = host.variable("USER") {
         places.push((
             "Home Manager".to_string(),
             PathBuf::from(format!("/etc/profiles/per-user/{user}/bin")),
@@ -1271,13 +1279,13 @@ mod tests {
             &["pacman", "-Qu"],
             "github-desktop 3.4.14-2 -> 3.4.15-1\n",
         );
-        let unowned = Inventory::gather(&fake, &arch);
+        let unowned = Inventory::gather(&Host::made_up(fake.clone()), &arch);
         answer(
             &mut fake,
             &["pacman", "-Qoq", "/usr/bin/github-desktop"],
             "github-desktop\n",
         );
-        let inventory = Inventory::gather(&fake, &arch);
+        let inventory = Inventory::gather(&Host::made_up(fake), &arch);
         let mut entry = package(
             "github-desktop",
             Some("github-desktop"),
@@ -1346,7 +1354,7 @@ mod tests {
     /// The statuses of ripgrep and fd on a machine of `manager`'s family.
     fn statuses(fake: &Fake, manager: PackageManager) -> (Status, Status) {
         let family = platform(manager);
-        let inventory = Inventory::gather(fake, &family);
+        let inventory = Inventory::gather(&Host::made_up(fake.clone()), &family);
         let nowhere = |_: &str| None;
         let status = |name: &str| inventory.status(&everywhere(name), &family, &nowhere);
         (status("ripgrep").unwrap(), status("fd").unwrap())
@@ -1451,11 +1459,12 @@ mod tests {
         let (ripgrep, fd) = statuses(&fake, PackageManager::Suse);
         assert_eq!(ripgrep, update("zypper", "14.1.1-1.1", "14.1.2-1.1"));
         assert_eq!(fd, installed("zypper", "10.2.0-1.1"));
-        let planned = Inventory::gather(&fake, &platform(PackageManager::Suse)).plan_update(
-            [&everywhere("ripgrep"), &everywhere("fd")],
-            &platform(PackageManager::Suse),
-            &|_| None,
-        );
+        let planned = Inventory::gather(&Host::made_up(fake), &platform(PackageManager::Suse))
+            .plan_update(
+                [&everywhere("ripgrep"), &everywhere("fd")],
+                &platform(PackageManager::Suse),
+                &|_| None,
+            );
         assert_eq!(planned.steps.len(), 1);
         assert_eq!(planned.steps[0].display(), "sudo zypper update ripgrep");
     }
@@ -1468,7 +1477,7 @@ mod tests {
         fake.commands
             .insert("apk info -e fd".into(), (false, String::new()));
         let alpine = platform(PackageManager::Alpine);
-        let inventory = Inventory::gather(&fake, &alpine);
+        let inventory = Inventory::gather(&Host::made_up(fake), &alpine);
         let probe = |name: &str| Probe::Package {
             manager: PackageManager::Alpine,
             name: name.into(),
@@ -1517,7 +1526,7 @@ mod tests {
             "com.rtosta.zapzap\n",
         );
         // No family: only the Flatpaks are read.
-        let inventory = Inventory::gather_for(&fake, None);
+        let inventory = Inventory::gather_for(&Host::made_up(fake), None);
         let mut ids = inventory.flatpak_ids();
         ids.sort();
         assert_eq!(ids, ["com.rtosta.zapzap", "org.gimp.GIMP"]);
@@ -1548,5 +1557,72 @@ mod tests {
             let (ripgrep, _) = statuses(&fake, manager);
             assert_eq!(ripgrep, Status::Absent { replaces: vec![] }, "{manager:?}");
         }
+    }
+
+    #[test]
+    fn the_releases_are_those_recorded_in_the_hosts_state_folder() {
+        let state = tempfile::tempdir().unwrap();
+        let program = state.path().join("marker");
+        std::fs::write(&program, b"marker").unwrap();
+        let records = state.path().join("releases");
+        std::fs::create_dir(&records).unwrap();
+        let record = crate::release::Record {
+            entry: "marker".into(),
+            path: program,
+            version: "1.0.0".into(),
+            tag: "v1.0.0".into(),
+            repository: "example/marker".into(),
+            sha256: "ab".repeat(32),
+        };
+        std::fs::write(
+            records.join("marker.toml"),
+            toml::to_string(&record).unwrap(),
+        )
+        .unwrap();
+        let host = Host::made_up(Fake::default()).with_state(state.path());
+        let inventory = Inventory::gather_for(&host, Some(PackageManager::Arch));
+        assert_eq!(inventory.release_records(), [&record]);
+        assert!(inventory.holds(&Probe::Release {
+            entry: "marker".into(),
+            binary: "marker".into(),
+        }));
+        // Without a state folder there are no records to read.
+        let bare =
+            Inventory::gather_for(&Host::made_up(Fake::default()), Some(PackageManager::Arch));
+        assert!(bare.release_records().is_empty());
+    }
+
+    #[test]
+    fn nix_places_come_from_the_hosts_home_and_environment() {
+        let fake = Fake {
+            home: PathBuf::from("/home/me"),
+            ..Fake::default()
+        };
+        let places = |host: &Host| -> Vec<PathBuf> {
+            nix_places(host)
+                .into_iter()
+                .map(|(_, place)| place)
+                .collect()
+        };
+        assert_eq!(
+            places(&Host::made_up(fake.clone())),
+            [
+                PathBuf::from(
+                    "/home/me/.local/state/home-manager/gcroots/current-home/home-path/bin"
+                ),
+                PathBuf::from("/run/current-system/sw/bin"),
+            ]
+        );
+        let host = Host::made_up(fake)
+            .with_variable("XDG_STATE_HOME", "/state")
+            .with_variable("USER", "me");
+        assert_eq!(
+            places(&host),
+            [
+                PathBuf::from("/state/home-manager/gcroots/current-home/home-path/bin"),
+                PathBuf::from("/etc/profiles/per-user/me/bin"),
+                PathBuf::from("/run/current-system/sw/bin"),
+            ]
+        );
     }
 }

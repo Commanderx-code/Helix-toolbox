@@ -537,7 +537,7 @@ impl App {
     pub fn new(catalog: Catalog, platform: LinuxInfo, host: Host, args: &TuiArgs) -> Self {
         let menu = build_menu(&catalog);
         let areas = vec![AreaState::default(); catalog.tabs.len()];
-        let overview = Overview::gather(&platform);
+        let overview = Overview::gather(&host, &platform);
         let snapshot_tool = host.snapshots();
         let mut app = Self {
             catalog,
