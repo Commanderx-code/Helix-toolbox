@@ -13,6 +13,9 @@ pub(in crate::tui::app) struct Updates {
     online: bool,
     /// A look at the update channels running in the background.
     gathering: Read<(Vec<updates::Channel>, bool)>,
+    /// A run while another screen was shown left what it read out of
+    /// date.
+    stale: bool,
 }
 
 /// The selected line of the Updates screen.
@@ -56,6 +59,12 @@ impl Updates {
         });
     }
 
+    /// The rows above the entries: the channels, or the line that says
+    /// they are being looked for or none was found.
+    fn channel_rows(&self) -> usize {
+        self.channels.len().max(1)
+    }
+
     /// What row `at` is: a channel, then the entries with an update, then
     /// the row that updates them all.
     fn row(
@@ -70,12 +79,13 @@ impl Updates {
         if index < self.channels.len() {
             return UpdateRow::Channel;
         }
+        let Some(index) = index.checked_sub(self.channel_rows()) else {
+            return UpdateRow::Nothing;
+        };
         let waiting = entries_with_updates(catalog, statuses);
-        match waiting.get(index - self.channels.len()) {
+        match waiting.get(index) {
             Some(entry) => UpdateRow::Entry(Box::new((*entry).clone())),
-            None if !waiting.is_empty() && index == self.channels.len() + waiting.len() => {
-                UpdateRow::Every
-            }
+            None if !waiting.is_empty() && index == waiting.len() => UpdateRow::Every,
             None => UpdateRow::Nothing,
         }
     }
@@ -145,14 +155,14 @@ impl Updates {
 
 impl ToolScreen for Updates {
     fn open(&mut self, cx: &mut Cx) {
-        if self.channels.is_empty() {
+        if std::mem::take(&mut self.stale) || self.channels.is_empty() {
             self.gather(cx, false);
         }
     }
 
     fn len(&self, view: &View) -> usize {
         let waiting = entries_with_updates(view.catalog, view.statuses).len();
-        self.channels.len() + if waiting > 0 { waiting + 1 } else { 0 }
+        self.channel_rows() + if waiting > 0 { waiting + 1 } else { 0 }
     }
 
     fn key(&mut self, cx: &mut Cx, code: KeyCode) {
@@ -208,11 +218,13 @@ impl ToolScreen for Updates {
     }
 
     fn poll(&mut self, cx: &mut Cx) -> bool {
-        let Some((channels, online)) = self.gathering.take() else {
+        let Some(answer) = self.gathering.take() else {
             return false;
         };
-        self.channels = channels;
-        self.online = online;
+        if let Ok((channels, online)) = answer {
+            self.channels = channels;
+            self.online = online;
+        }
         if cx.screen == Screen::Updates {
             cx.clamp();
         }
@@ -225,9 +237,15 @@ impl ToolScreen for Updates {
         }
     }
 
+    fn stale(&mut self, reading: Reading) {
+        if reading == Reading::Updates {
+            self.stale = true;
+        }
+    }
+
     /// The entries come after the channels.
     fn entry<'a>(&self, view: &View<'a>, at: Option<usize>) -> Option<&'a Entry> {
-        let index = at?.checked_sub(self.channels.len())?;
+        let index = at?.checked_sub(self.channel_rows())?;
         entries_with_updates(view.catalog, view.statuses)
             .into_iter()
             .nth(index)
@@ -246,6 +264,8 @@ impl ToolScreen for Updates {
             items.push(Line::styled(
                 if self.gathering.busy() {
                     "Looking…"
+                } else if self.gathering.failed() {
+                    "The look at the update channels stopped without an answer. r looks again, online."
                 } else {
                     "No package manager, Flatpak or Nix setup Helix Toolbox knows was found. r looks again, online."
                 },

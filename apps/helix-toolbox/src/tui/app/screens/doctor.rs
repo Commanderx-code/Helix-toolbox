@@ -85,9 +85,15 @@ impl Doctor {
         }
     }
 
+    /// The rows above the reports: the checks, or the line that says they
+    /// are running or how to run them.
+    fn checks(&self) -> usize {
+        self.diagnoses.len().max(1)
+    }
+
     /// The report the selected row is, below the checks.
     fn selected_report<'a>(&self, catalog: &'a Catalog, at: Option<usize>) -> Option<&'a Entry> {
-        let index = at?.checked_sub(self.diagnoses.len())?;
+        let index = at?.checked_sub(self.checks())?;
         reports(catalog).into_iter().nth(index)
     }
 
@@ -145,11 +151,15 @@ impl ToolScreen for Doctor {
     fn open(&mut self, cx: &mut Cx) {
         if self.diagnoses.is_empty() {
             self.examine(cx);
+        } else if let Some(wanted) = self.wanted.take() {
+            // Asked for from the palette, but the checks answered after the
+            // screen was left.
+            self.show_check(cx, wanted);
         }
     }
 
     fn len(&self, view: &View) -> usize {
-        self.diagnoses.len() + reports(view.catalog).len()
+        self.checks() + reports(view.catalog).len()
     }
 
     fn key(&mut self, cx: &mut Cx, code: KeyCode) {
@@ -157,18 +167,20 @@ impl ToolScreen for Doctor {
             KeyCode::Enter => match self.selected(cx.at()) {
                 Some(_) => self.describe(cx),
                 None => {
-                    let index = cx.at().unwrap_or(0).saturating_sub(self.diagnoses.len());
-                    if let Some(entry) = reports(cx.catalog).get(index).copied().cloned() {
+                    if let Some(entry) = self.selected_report(cx.catalog, cx.at()).cloned() {
                         cx.ask(Ask::Run(vec![entry]));
                     }
                 }
             },
             KeyCode::Char('f') => self.repair_selected(cx),
             KeyCode::Char('r') => self.examine(cx),
-            KeyCode::Char('d') | KeyCode::Char('D') => match self.selected(cx.at()) {
-                Some(_) => self.describe(cx),
-                None => cx.ask(Ask::Describe),
-            },
+            KeyCode::Char('d') | KeyCode::Char('D') => {
+                if self.selected(cx.at()).is_some() {
+                    self.describe(cx);
+                } else if self.selected_report(cx.catalog, cx.at()).is_some() {
+                    cx.ask(Ask::Describe);
+                }
+            }
             // A report row is an entry like any other.
             KeyCode::Char('p') | KeyCode::Char('P') => cx.ask(Ask::Preview),
             KeyCode::Char('v') => {
@@ -187,34 +199,37 @@ impl ToolScreen for Doctor {
         }
     }
 
-    fn hints(&self, _view: &View, at: Option<usize>, list: &mut Vec<Hint>) {
+    fn hints(&self, view: &View, at: Option<usize>, list: &mut Vec<Hint>) {
         list.push(Hint::new(&["↑↓"], "Navigate"));
-        match self.selected(at) {
-            Some(diagnosis) => {
-                list.push(Hint::new(&["Enter"], "Details"));
-                if diagnosis.repair.is_some() {
-                    list.push(Hint::new(&["f"], "Repair"));
-                } else if diagnosis.entry.is_some() {
-                    list.push(Hint::new(&["f"], "Run the entry"));
-                }
+        if let Some(diagnosis) = self.selected(at) {
+            list.push(Hint::new(&["Enter"], "Details"));
+            if diagnosis.repair.is_some() {
+                list.push(Hint::new(&["f"], "Repair"));
+            } else if diagnosis.entry.is_some() {
+                list.push(Hint::new(&["f"], "Run the entry"));
             }
-            None => {
-                list.push(Hint::new(&["Enter"], "Run"));
-                list.push(Hint::new(&["Space"], "Plan"));
-                list.push(Hint::new(&["d"], "Details"));
-            }
+        } else if self.selected_report(view.catalog, at).is_some() {
+            list.push(Hint::new(&["Enter"], "Run"));
+            list.push(Hint::new(&["Space"], "Plan"));
+            list.push(Hint::new(&["d"], "Details"));
         }
         list.push(Hint::new(&["r"], "Check again"));
     }
 
     fn poll(&mut self, cx: &mut Cx) -> bool {
-        let Some(diagnoses) = self.examining.take() else {
+        let Some(answer) = self.examining.take() else {
             return false;
         };
-        self.diagnoses = diagnoses;
-        cx.clamp();
-        if let Some(wanted) = self.wanted.take() {
-            cx.ask(Ask::ShowCheck(wanted));
+        if let Ok(diagnoses) = answer {
+            self.diagnoses = diagnoses;
+        }
+        // The selection and the popup are the screen shown: a check asked
+        // for waits until this one is shown again.
+        if cx.screen == Screen::Doctor {
+            cx.clamp();
+            if let Some(wanted) = self.wanted.take() {
+                cx.ask(Ask::ShowCheck(wanted));
+            }
         }
         true
     }
@@ -236,6 +251,8 @@ impl ToolScreen for Doctor {
             items.push(Line::styled(
                 if self.examining.busy() {
                     "Checking…"
+                } else if self.examining.failed() {
+                    "The checks stopped without an answer. Press r to check again."
                 } else {
                     "Press r to check this machine."
                 },

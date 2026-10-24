@@ -292,10 +292,12 @@ impl ToolScreen for Performance {
     }
 
     fn poll(&mut self, cx: &mut Cx) -> bool {
-        let Some(found) = self.reading.take() else {
+        let Some(answer) = self.reading.take() else {
             return false;
         };
-        self.found = Some(found);
+        if let Ok(found) = answer {
+            self.found = Some(found);
+        }
         self.build_rows(cx);
         true
     }
@@ -314,6 +316,8 @@ impl ToolScreen for Performance {
             items.push(Line::styled(
                 if self.reading.busy() {
                     "Reading the boot…"
+                } else if self.reading.failed() {
+                    "Could not read the boot. r reads again."
                 } else {
                     "Press r to read this boot and the machine now."
                 },

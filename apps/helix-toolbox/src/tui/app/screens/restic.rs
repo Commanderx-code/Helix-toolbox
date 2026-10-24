@@ -17,6 +17,9 @@ pub(in crate::tui::app) struct Restic {
     /// Whether that search ignores upper and lower case.
     pub(in crate::tui::app) ignore_case: bool,
     searching: Read<ResticSearch>,
+    /// A run while another screen was shown left what it read out of
+    /// date.
+    stale: bool,
     pub(in crate::tui::app) rows: Vec<ResticRow>,
     /// What runs restic: restic itself, or a test's stand-in.
     pub(in crate::tui::app) runner: Arc<dyn restic::Restic + Send + Sync>,
@@ -32,6 +35,7 @@ impl Default for Restic {
             search: None,
             ignore_case: false,
             searching: Read::default(),
+            stale: false,
             rows: Vec::new(),
             runner: Arc::new(restic::Here),
         }
@@ -484,6 +488,9 @@ impl Restic {
         let mut rows = vec![ResticRow::Heading("The repository".into())];
         match self.reading.as_ref().map(|reading| &reading.found) {
             None if self.loading.busy() => rows.push(ResticRow::Text("Asking restic…".into())),
+            None if self.loading.failed() => rows.push(ResticRow::Text(
+                "Could not read the repository: asking restic stopped without an answer. r reads again.".into(),
+            )),
             None => rows.push(ResticRow::Text("Press r to read the repository.".into())),
             Some(restic::Found::Missing) => {
                 rows.push(ResticRow::Text("No restic repository is set up.".into()));
@@ -545,6 +552,10 @@ impl Restic {
         }
         if self.browsing.busy() {
             rows.push(ResticRow::Heading("Listing the folder…".into()));
+        } else if self.browsing.failed() {
+            rows.push(ResticRow::Heading(
+                "Could not list the folder: restic stopped without an answer.".into(),
+            ));
         } else if let Some(browse) = &self.browse {
             rows.push(ResticRow::Heading(format!(
                 "In {} at {}",
@@ -562,6 +573,10 @@ impl Restic {
         }
         if self.searching.busy() {
             rows.push(ResticRow::Heading("Looking through the snapshots…".into()));
+        } else if self.searching.failed() {
+            rows.push(ResticRow::Heading(
+                "Could not look through the snapshots: restic stopped without an answer.".into(),
+            ));
         } else if let Some((pattern, found)) = &self.search {
             rows.push(ResticRow::Heading(format!(
                 "History of {}{}",
@@ -621,7 +636,7 @@ fn no_repository(cx: &mut Cx) {
 
 impl ToolScreen for Restic {
     fn open(&mut self, cx: &mut Cx) {
-        if self.reading.is_none() {
+        if std::mem::take(&mut self.stale) || self.reading.is_none() {
             self.read(cx);
         } else {
             self.build_rows(cx);
@@ -710,12 +725,19 @@ impl ToolScreen for Restic {
     }
 
     fn poll(&mut self, cx: &mut Cx) -> bool {
-        if let Some(found) = self.loading.take() {
-            self.reading = Some(found);
-        } else if let Some(found) = self.browsing.take() {
-            self.browse = Some(found);
-        } else if let Some(found) = self.searching.take() {
-            self.search = Some(found);
+        // A read that ended without an answer leaves what was read before.
+        if let Some(answer) = self.loading.take() {
+            if let Ok(found) = answer {
+                self.reading = Some(found);
+            }
+        } else if let Some(answer) = self.browsing.take() {
+            if let Ok(found) = answer {
+                self.browse = Some(found);
+            }
+        } else if let Some(answer) = self.searching.take() {
+            if let Ok(found) = answer {
+                self.search = Some(found);
+            }
         } else {
             return false;
         }
@@ -726,6 +748,12 @@ impl ToolScreen for Restic {
     fn after_run(&mut self, cx: &mut Cx, reading: Reading) {
         if reading == Reading::Tools {
             self.read(cx);
+        }
+    }
+
+    fn stale(&mut self, reading: Reading) {
+        if reading == Reading::Tools {
+            self.stale = true;
         }
     }
 
