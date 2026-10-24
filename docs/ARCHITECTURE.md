@@ -134,16 +134,19 @@ only then whether its optional `binary` is on the PATH: `Installed`,
 with the installed packages it would replace.
 
 `inventory::Inventory` is the same knowledge for showing it. `gather()` asks
-a `doctor::System` a few read-only queries once (`pacman -Q` and `-Qu`,
+a host a few read-only queries once (`pacman -Q` and `-Qu`,
 `dpkg-query -W` and `apt list --upgradable`, `rpm -qa` with `dnf -C list
 --upgrades` on Fedora or `zypper --no-refresh list-updates` on openSUSE,
 `flatpak list` and `flatpak remote-ls --updates --cached`), none of which
-needs root or the network, and answers probes from that snapshot. It keeps
-the `System` for what the snapshot cannot answer: which package owns a
-file, and the probes of families whose list it does not read. The waiting
-updates are read by the same parsers as `updates::overview()`, and tests
-gather from `doctor::Fake`; the migration hub asks its package lists
-through a `System` too. `status()` turns an
+needs root or the network, and answers probes from that snapshot. Where
+Home Manager's and NixOS's commands are comes from the host's home and
+environment, and the releases Helix Toolbox installed from the records in
+its state folder. It keeps the host's `System` for what the snapshot
+cannot answer: which package owns a file, and the probes of families whose
+list it does not read. The waiting updates are read by the same parsers as
+`updates::overview()` (dnf 4's long names, wrapped onto a line of their
+own, included), and tests gather from a made-up host; the migration hub
+reads through a host too. `status()` turns an
 entry into a `Status`: `Installed` and `Update` (source, version, newer
 version, and a Nix copy of the command found first on the PATH), `Managed`
 (the command resolves into the Nix store: Home Manager when the current
@@ -175,7 +178,7 @@ run, with the choice after a failure applied, the findings, and a
 entries were tested, the steps). `prepare_with()` takes those answers
 instead, for tests. `Prepared::session()` turns a ready plan into its run
 session. The command line prints the same lines as text, and its `--json`
-plan is the prepared plan and its findings. `overview::Overview` is the dashboard's facts about the machine,
+plan is the prepared plan and its findings. `overview::Overview` is the dashboard's facts about the machine, read from a host,
 and `settings` reads the run choices from `settings.toml` and keeps the
 favorites in `favorites.toml`, so the interfaces share them.
 
@@ -204,7 +207,14 @@ the Install Plan into a profile, expanding profiles so none nests.
 `doctor::examine()` runs the health checks through a `System` (reading
 files, listing folders, links, a few read-only commands, a name lookup with a
 time limit, free space, owners, running processes); `Here` is this machine
-and `Fake` a made-up one for tests.
+and `Fake` a made-up one for tests. A `System` also says what a path itself
+is (`node`: a file and its size, a folder, a link or something special, a
+link not followed), lists a folder's names, and opens a regular file to
+read without following a link or waiting on a pipe; Drift's checksums of
+files and folders go through these, so a capture on a made-up host records
+its files. Helix Toolbox's own state folder (the history, the release
+records, the checks kept for after a reboot) is read as files, not through
+the `System`.
 
 The engine's `host::Host` is what "this machine" means to every feature:
 a `System` together with the user's home, configuration and state

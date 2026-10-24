@@ -8,7 +8,8 @@
 //! over is a plan, reviewed like any other.
 
 use crate::{
-    EngineError, Machine, PackageState, Plan, Probe, Step, doctor::System, inventory::Inventory,
+    EngineError, Machine, PackageState, Plan, Probe, Step, doctor::System, host::Host,
+    inventory::Inventory,
 };
 use helix_toolbox_core::{
     Action, Entry, PackageManager, PackageNames, printable, valid_flatpak_id, valid_id,
@@ -688,21 +689,17 @@ pub fn available(system: &dyn System, manager: Option<PackageManager>) -> Option
     (!found.is_empty()).then_some(found)
 }
 
-/// A migration file read on the machine `system` answers for, its
-/// packages read once.
-pub fn read_here<S>(
-    system: &S,
+/// A migration file read on the machine `host` is, its packages read once.
+pub fn read_here(
+    host: &Host,
     path: &Path,
     entries: &[&Entry],
     platform: &LinuxInfo,
-) -> Result<Translation, MigrationError>
-where
-    S: System + Clone + Send + Sync + 'static,
-{
+) -> Result<Translation, MigrationError> {
     let migration = read(path)?;
-    let inventory = Inventory::gather(system, platform);
+    let inventory = Inventory::gather(host, platform);
     let holds = |probe: &Probe| inventory.holds(probe);
-    let on_path = |tool: &str| system.on_path(tool);
+    let on_path = |tool: &str| host.on_path(tool);
     let machine = Machine {
         holds: &holds,
         on_path: &on_path,
@@ -713,23 +710,20 @@ where
         entries,
         platform,
         machine,
-        available(system, platform.manager).as_ref(),
+        available(host, platform.manager).as_ref(),
     ))
 }
 
-/// `plan` on the machine `system` answers for, its packages read once.
-pub fn plan_here<S>(
-    system: &S,
+/// `plan` on the machine `host` is, its packages read once.
+pub fn plan_here(
+    host: &Host,
     translation: &Translation,
     entries: &[&Entry],
     platform: &LinuxInfo,
-) -> Result<Plan, EngineError>
-where
-    S: System + Clone + Send + Sync + 'static,
-{
-    let inventory = Inventory::gather(system, platform);
+) -> Result<Plan, EngineError> {
+    let inventory = Inventory::gather(host, platform);
     let holds = |probe: &Probe| inventory.holds(probe);
-    let on_path = |tool: &str| system.on_path(tool);
+    let on_path = |tool: &str| host.on_path(tool);
     let machine = Machine {
         holds: &holds,
         on_path: &on_path,
@@ -738,13 +732,10 @@ where
     plan(translation, entries, platform, machine)
 }
 
-/// What the machine `system` answers for has, its packages read once.
-pub fn gather<S>(system: &S, entries: &[&Entry], platform: &LinuxInfo, made: u64) -> Migration
-where
-    S: System + Clone + Send + Sync + 'static,
-{
-    let inventory = Inventory::gather(system, platform);
-    let chosen = chosen(system, platform.manager);
+/// What the machine `host` is has, its packages read once.
+pub fn gather(host: &Host, entries: &[&Entry], platform: &LinuxInfo, made: u64) -> Migration {
+    let inventory = Inventory::gather(host, platform);
+    let chosen = chosen(host, platform.manager);
     export(entries, platform, &inventory, chosen.as_deref(), made)
 }
 
@@ -1120,7 +1111,7 @@ mod tests {
         assert_eq!(available(&fake, Some(PackageManager::Debian)), None);
         let entries = catalog();
         let refs: Vec<&Entry> = entries.iter().collect();
-        let found = gather(&fake, &refs, &arch(), 0);
+        let found = gather(&Host::made_up(fake), &refs, &arch(), 0);
         assert_eq!(found.entries, ["firefox"]);
         assert_eq!(found.packages, ["htop"]);
     }

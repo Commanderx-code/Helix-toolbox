@@ -606,7 +606,7 @@ mod tests {
             finished.checks.iter().all(|check| check.later),
             "{finished:?}"
         );
-        let kept = verification::kept(&crate::doctor::Here, state.path());
+        let kept = verification::kept(state.path());
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].entry, "boot-theme");
 
@@ -623,10 +623,7 @@ mod tests {
             )),
             "{seen:#?}"
         );
-        assert_eq!(
-            verification::kept(&crate::doctor::Here, elsewhere.path()).len(),
-            1
-        );
+        assert_eq!(verification::kept(elsewhere.path()).len(), 1);
 
         // Without a history, nothing is kept anywhere.
         let mut session = RunSession::new(plan(vec![after_a_reboot(&claimed)]));

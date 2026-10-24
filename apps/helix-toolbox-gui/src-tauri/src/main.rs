@@ -172,7 +172,7 @@ fn person_in(passwd: &str, login: &str) -> Option<String> {
 fn about(gui: State<Gui>) -> About {
     About {
         version: VERSION,
-        overview: Overview::gather(&gui.platform),
+        overview: Overview::gather(&gui.host, &gui.platform),
         command_line: gui.this.is_absolute(),
         first_run: gui
             .settings
@@ -1190,8 +1190,8 @@ async fn check_entry(app: AppHandle, id: String) -> Result<String, String> {
             entry,
             &gui.platform,
             rebooted,
-            &helix_toolbox_engine::Probe::holds,
-            &helix_toolbox_platform::binary_exists,
+            &|probe| probe.holds_on(&gui.host),
+            &|tool| gui.host.which(tool).is_some(),
             &gui.host,
         );
         if checks.is_empty() {

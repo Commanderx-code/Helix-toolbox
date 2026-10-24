@@ -938,23 +938,37 @@ pub fn apt(text: &str) -> Vec<Pending> {
         .collect()
 }
 
-/// `name.arch version repository` lines from dnf list --upgrades.
+/// `name.arch version repository` lines from dnf list --upgrades. dnf 4
+/// puts a name too long for its column alone on its line, and the version
+/// and repository, indented, on the next.
 pub fn dnf(text: &str) -> Vec<Pending> {
-    let mut found: Vec<Pending> = text
-        .lines()
-        .filter_map(|line| {
-            let mut words = line.split_whitespace();
-            let package = words.next()?;
-            let version = words.next()?;
-            let (name, arch) = package.rsplit_once('.')?;
-            // Headings such as "Available upgrades" have no architecture.
-            (!arch.is_empty() && version.chars().next()?.is_ascii_digit()).then(|| Pending {
+    let mut found: Vec<Pending> = Vec::new();
+    let mut wrapped: Option<&str> = None;
+    for line in text.lines() {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let (package, version) = match (wrapped.take(), words.as_slice()) {
+            (Some(package), [version, ..]) if line.starts_with(char::is_whitespace) => {
+                (package, *version)
+            }
+            (_, [package]) => {
+                wrapped = Some(package);
+                continue;
+            }
+            (_, [package, version, ..]) => (*package, *version),
+            _ => continue,
+        };
+        let Some((name, arch)) = package.rsplit_once('.') else {
+            continue;
+        };
+        // Headings such as "Available upgrades" have no architecture.
+        if !arch.is_empty() && version.starts_with(|c: char| c.is_ascii_digit()) {
+            found.push(Pending {
                 name: name.to_string(),
                 from: None,
                 to: Some(version.to_string()),
-            })
-        })
-        .collect();
+            });
+        }
+    }
     found.sort_by(|a, b| a.name.cmp(&b.name));
     found.dedup_by(|a, b| a.name == b.name);
     found
@@ -1549,5 +1563,28 @@ mod tests {
         );
         assert_eq!(plan.steps[0].display(), "sudo pacman -Syu");
         assert_eq!(plan.steps[1].display(), "paru -Sua");
+    }
+
+    #[test]
+    fn dnf_reads_a_long_name_wrapped_onto_two_lines() {
+        // dnf 4, as on EL 8 and 9 and Fedora 40 and before.
+        let text = concat!(
+            "Available Upgrades\n",
+            "git.x86_64                           2.47.0-1.fc40                 updates\n",
+            "texlive-collection-fontsrecommended.noarch\n",
+            "                                     11:svn54074-62.fc40           updates\n",
+            "zlib.x86_64                          1.3.1-1.fc40                  updates\n",
+        );
+        let found = dnf(text);
+        let names: Vec<&str> = found.iter().map(|pending| pending.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["git", "texlive-collection-fontsrecommended", "zlib"]
+        );
+        assert_eq!(found[1].to.as_deref(), Some("11:svn54074-62.fc40"));
+        // dnf 5 keeps each package on one line, however long its name.
+        let five = "Available upgrades\n\
+texlive-collection-fontsrecommended.noarch 11:svn54074-62.fc41 updates\n";
+        assert_eq!(dnf(five)[0].to.as_deref(), Some("11:svn54074-62.fc41"));
     }
 }
