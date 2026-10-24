@@ -67,6 +67,18 @@ export type Prepared =
   | { kind: 'nothing' | 'blocked' | 'error'; lines: string[] }
   | { kind: 'ready'; header: string[]; lines: Line[]; risk: string; privileged: boolean };
 
+/** What a run can leave out of date, for the window to read again. */
+export type Reading = 'statuses' | 'updates' | 'tools' | 'history';
+
+/** A closed run, as the engine's run session tells it. */
+export type ClosedView = {
+  /** The queued entries that stay queued: what did not finish. */
+  remaining: string[];
+  read_again: Reading[];
+  /** Why the run was not recorded in the history, if it was not. */
+  not_recorded: string | null;
+};
+
 /** What a plan is expected to change, as the terminal interface's change preview shows it. */
 export type ChangesView = { steps: StepChanges[]; download: boolean };
 

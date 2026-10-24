@@ -42,7 +42,7 @@ and a graphical interface will take the same events.
 helix-toolbox-core      Tab, Group, Entry, Action, Precondition, Risk; name validation
 helix-toolbox-catalog   reads catalog/ and scripts/ (embedded or from a directory), applies preconditions
 helix-toolbox-platform  /etc/os-release, package manager family, PATH lookups
-helix-toolbox-engine    plan() -> Plan of Steps; shell_program(); execution (pty runs as events); Runner (inherited, mock); history
+helix-toolbox-engine    plan() -> Plan of Steps; shell_program(); confirmation; session (one run, through a Runner: pty, inherited, mock) and its execution events; history
 helix-toolbox           clap command line, ratatui interface, tracing setup
 helix-toolbox-gui       the window: Tauri 2 on the same crates, a workspace of its own under apps/helix-toolbox-gui
 ```
@@ -82,18 +82,40 @@ privileged, and the highest risk among them (from the flags: `D`, `K` and
 ## A run, end to end
 
 ```text
-entries ──plan──▶ Plan ──shell_program──▶ sh program ──▶ execution::Execution (interface window)
-                                                         │    pty::Session, ExecutionEvents on a channel
-                                                         └─ Runner
-                                                              ├─ InheritedRunner  (command line)
-                                                              └─ MockRunner       (tests)
-                                                                 │
+entries ──plan──▶ Plan ──confirmation::prepare──▶ Prepared ──yes──▶ RunSession
+                                                                       │ check_requirements, history marker,
+                                                                       │ shell_program_with ──▶ sh program
+                                                                       ├─ Runner
+                                                                       │    ├─ PtyRunner       (terminal interface, window)
+                                                                       │    ├─ InheritedRunner (command line)
+                                                                       │    └─ MockRunner      (tests)
+                                                                       │ ExecutionEvents on a channel
+                                                                       │
                                                           Outcome: Success | Failed{code} | Interrupted | CouldNotStart
-                                                                 │
-                                                          verify() on success ──▶ Finished { outcome, checks }
-                                                                 │
-                                                          history::record
+                                                                       │
+                                                          conclude: Finished { outcome, steps, checks },
+                                                          outcome in the marker, checks for after the reboot kept
+                                                                       │
+                                                          record (with a saved log, processes left running)
+                                                                       │
+                                                          remaining (the queue) and read_again
 ```
+
+`session::RunSession` is the one lifecycle of a run, the same for every
+interface: it holds the plan the confirmation made ready, starts its
+program through a `Runner`, follows it as execution events, concludes it
+once when the program ends, writes the record when the interface is done
+with it, and then answers which queued entries remain (those whose steps
+did not finish) and what an interface should read again (`Reading`: the
+statuses, the updates, the tool screens, the history). The runners differ
+only in where the program runs: `PtyRunner` in a pseudo-terminal of its
+own process group, `InheritedRunner` in the caller's terminal, and
+`MockRunner` nowhere, so tests drive the path every interface runs. The
+checks for after the reboot are kept whenever the run has a history,
+whether or not its marker could be written, and the processes left running
+are recorded whenever the runner can count them. The engine prints
+nothing: what the history could not record comes back as a warning event
+or an error for the interface to show.
 
 Steps run in order and stop at the first failure. An exit status of 128 or
 more, or a kill from the interface, is recorded as interrupted, never as
@@ -141,11 +163,17 @@ blocked run; the interface shows them in the Install Plan's summary and the
 confirmation, and a blocked plan opens "Cannot run yet" instead.
 
 `confirmation::prepare()` is the step between a plan and its run for every
-interface: it adds the snapshot where the run is worth one, runs the checks,
-and returns `Prepared::Nothing` (the notes saying why), `Blocked` (the
-blockers) or `Ready`, the plan with the choice after a failure applied and
-the lines to confirm (risk and password, warnings, how entries were tested,
-the steps). `overview::Overview` is the dashboard's facts about the machine,
+interface, the command line included: given the catalog and the run
+choices in Settings, it asks this machine itself (the snapshot tool,
+`Facts::real()`, the testing record), adds the snapshot where the run is
+worth one, runs the checks, and returns a `Prepared`: the plan as it would
+run, with the choice after a failure applied, the findings, and a
+`Verdict` of `Nothing` (the notes saying why), `Blocked` (the blockers) or
+`Ready` with the lines to confirm (risk and password, warnings, how
+entries were tested, the steps). `prepare_with()` takes those answers
+instead, for tests. `Prepared::session()` turns a ready plan into its run
+session. The command line prints the same lines as text, and its `--json`
+plan is the prepared plan and its findings. `overview::Overview` is the dashboard's facts about the machine,
 and `settings` reads the run choices from `settings.toml` and keeps the
 favorites in `favorites.toml`, so the interfaces share them.
 
@@ -237,8 +265,8 @@ The window (`apps/helix-toolbox-gui`, [GUI.md](GUI.md)) is a second
 interface on the same engine: its Rust side answers the frontend's calls
 with shapes built field by field in `views.rs`, which takes a screen's
 text from the engine's display rows (`rows`), plans and checks through
-`confirmation::prepare()`, and forwards a run's execution events on a
-channel to an xterm.js terminal. Its tool screens call the same engine
+`confirmation::prepare()`, runs through a run session in a pseudo-terminal,
+and forwards its execution events on a channel to an xterm.js terminal. Its tool screens call the same engine
 functions the terminal interface does (`doctor::examine`,
 `updates::overview`, `drift::compare`, `hardware::gather`,
 `desktop::detect` and the rest). It holds no catalog logic of its own.
@@ -267,7 +295,7 @@ ranking is `helix_toolbox_core::search::score`, shared with
 
 ## Graphical interface, later
 
-A Tauri crate uses the same engine: plans for its forms, an `Execution` and
+A Tauri crate uses the same engine: plans for its forms, a run session and
 its events for an embedded terminal panel where entries are interactive
 ([EVENTS.md](EVENTS.md)), and the history for its log view. Nothing in the
 engine assumes a terminal.

@@ -230,7 +230,8 @@ on: an entry that installs a command another step needs (Flatpak / Flathub
 before a Flatpak, an AUR helper before an AUR package), or one it names in
 `needs.after`; otherwise in the order queued. A tool an earlier step installs
 is not reported as missing. When a step fails the run stops, or with **After a
-failed step: continue** in Settings (`--keep-going` on the command line)
+failed step: continue** in Settings (which the command line follows too, or
+`--keep-going` for one run)
 goes on with the steps that do not depend on it, skipping those that do; a
 `Ctrl-C` always stops. Each step's result is shown afterward (done, failed
 with its exit status, skipped, not run), the history records "1 of 3 steps

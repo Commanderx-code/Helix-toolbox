@@ -4,6 +4,7 @@
 mod analyze;
 mod bundle;
 mod configs;
+mod confirm;
 mod docgen;
 mod drift;
 mod home;
@@ -22,16 +23,17 @@ mod tui;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
+use confirm::{confirm_and_run, confirm_and_run_with, print_plan, print_plan_json, run_choices};
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, Item, NativeAction, printable};
 use helix_toolbox_engine::{
-    InheritedRunner, Machine, PackageState, Plan, backups, doctor, execute, history,
+    Machine, PackageState, Plan, backups, doctor, history,
     inventory::{Inventory, Status, which},
-    package_state, plan, plan_removal, preflight, profiles, release, run_native, updates,
+    package_state, plan, plan_removal, profiles, release, run_native, updates,
 };
 use helix_toolbox_platform::LinuxInfo;
 use std::{
-    io::{self, BufRead, IsTerminal, Write},
+    io::{self, IsTerminal},
     path::PathBuf,
 };
 use tui::theme::Theme;
@@ -772,12 +774,16 @@ fn main() -> Result<()> {
             snapshot,
         } => {
             let catalog = load(false)?;
-            let mut planned = plan_ids(&catalog, &platform, &ids)?;
-            planned.keep_going = keep_going;
-            if snapshot {
-                add_snapshot(&catalog, &mut planned);
-            }
-            confirm_and_run(&catalog, &platform, &planned, dry_run, yes, "RUN")
+            let planned = plan_ids(&catalog, &platform, &ids)?;
+            confirm_and_run_with(
+                &catalog,
+                &platform,
+                &planned,
+                run_choices(keep_going, snapshot),
+                dry_run,
+                yes,
+                "RUN",
+            )
         }
         Command::Remove { ids, dry_run, yes } => {
             let catalog = load(false)?;
@@ -1349,112 +1355,6 @@ fn main() -> Result<()> {
     }
 }
 
-/// Put a snapshot step first when the plan changes the system and the
-/// machine can take one; otherwise say why not.
-fn add_snapshot(catalog: &Catalog, planned: &mut Plan) {
-    let flags = |id: &str| catalog.find(id).map(|entry| entry.flags.clone());
-    if !backups::worth_a_snapshot(planned, &flags) {
-        planned.notes.push(
-            "No snapshot: this run does not change system files, the kernel or disks.".into(),
-        );
-        return;
-    }
-    match backups::Snapshots::here() {
-        Some(tool) => backups::with_snapshot(planned, tool),
-        None => planned
-            .notes
-            .push("No snapshot: neither Snapper nor Timeshift is set up here.".into()),
-    }
-}
-
-/// Show a plan, ask for the confirmation word unless told not to, and run it.
-fn confirm_and_run(
-    catalog: &Catalog,
-    platform: &LinuxInfo,
-    planned: &Plan,
-    dry_run: bool,
-    yes: bool,
-    word: &str,
-) -> Result<()> {
-    if JSON.load(std::sync::atomic::Ordering::Relaxed) {
-        if !dry_run {
-            bail!("--json shows plans only: add --dry-run; nothing was changed");
-        }
-        print_plan_json(catalog, platform, planned);
-        return Ok(());
-    }
-    let findings = print_plan(catalog, platform, planned);
-    if planned.is_empty() {
-        println!("Nothing to run.");
-        return Ok(());
-    }
-    if dry_run {
-        println!("Dry run: nothing was changed.");
-        return Ok(());
-    }
-    if preflight::blocked(&findings) {
-        bail!("not run: fix what is blocked above first; nothing was changed");
-    }
-    if !yes && confirm(word)?.trim() != word {
-        bail!("canceled; nothing was changed");
-    }
-    let this = std::env::current_exe().context("cannot find the Helix Toolbox executable")?;
-    let finished = execute(planned, &catalog.lib_dir(), &this, &mut InheritedRunner)?;
-    for check in &finished.checks {
-        println!("{}: {}: {}", check.label(), check.name, check.detail);
-    }
-    let unfinished = finished.unfinished();
-    if !unfinished.is_empty() {
-        println!();
-        for step in &finished.steps {
-            println!("{}: {}", step.name, step.state.describe());
-        }
-        // What to run again: the entries whose steps did not finish.
-        let retry: Vec<&str> = unfinished
-            .iter()
-            .map(|step| step.id.as_str())
-            .filter(|id| catalog.find(id).is_some())
-            .collect();
-        if !retry.is_empty() {
-            println!(
-                "To try the unfinished ones again: helix-toolbox run {}",
-                retry.join(" ")
-            );
-        }
-    }
-    if !finished.outcome.succeeded() {
-        bail!("the run stopped: {}", finished.describe());
-    }
-    if !finished.succeeded() {
-        bail!("the run finished, but not everything it did could be verified");
-    }
-    Ok(())
-}
-
-/// Ask for the confirmation word. When standard input is not a terminal, as
-/// with `curl … | sh -s -- run <entry>`, ask on the controlling terminal.
-fn confirm(word: &str) -> Result<String> {
-    let prompt = format!("Type {word} to continue: ");
-    let mut answer = String::new();
-    if io::stdin().is_terminal() {
-        print!("{prompt}");
-        io::stdout().flush()?;
-        io::stdin().read_line(&mut answer)?;
-        return Ok(answer);
-    }
-    let Ok(mut terminal) = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/dev/tty")
-    else {
-        bail!("confirmation needs a terminal; use --dry-run or --yes");
-    };
-    terminal.write_all(prompt.as_bytes())?;
-    terminal.flush()?;
-    io::BufReader::new(terminal).read_line(&mut answer)?;
-    Ok(answer)
-}
-
 fn list_items(items: &[Item], depth: usize) {
     let indent = "  ".repeat(depth);
     for item in items {
@@ -1661,83 +1561,4 @@ fn effects(
             pinned: &|name| helix_toolbox_engine::preview::pinned_source(&scripts, name),
         },
     )
-}
-
-/// A plan and what the checks before a run found, as JSON.
-fn print_plan_json(catalog: &Catalog, platform: &LinuxInfo, planned: &Plan) {
-    let findings = preflight::check(
-        planned,
-        platform,
-        &|id| catalog.find(id),
-        &preflight::Facts::real(),
-    );
-    let mut value = json::plan(planned, &findings);
-    if EFFECTS.load(std::sync::atomic::Ordering::Relaxed) {
-        value["effects"] = serde_json::to_value(effects(catalog, platform, planned))
-            .unwrap_or(serde_json::Value::Null);
-    }
-    json::print("plan", value);
-}
-
-/// Print a plan and what the checks before a run found; returns the findings.
-fn print_plan(catalog: &Catalog, platform: &LinuxInfo, planned: &Plan) -> Vec<preflight::Finding> {
-    for warning in &planned.warnings {
-        println!("Warning: {warning}");
-    }
-    for note in &planned.notes {
-        println!("{note}");
-    }
-    for blocked in &planned.blocked {
-        println!("Not run: {blocked}");
-    }
-    for (index, step) in planned.steps.iter().enumerate() {
-        println!("{}. {}\n   {}", index + 1, step.name(), step.display());
-        for fallback in step.fallbacks() {
-            println!("   {fallback}");
-        }
-    }
-    if !planned.is_empty() {
-        println!(
-            "Risk: {}{}",
-            planned.risk.label(),
-            if planned.privileged {
-                "; asks for your password"
-            } else {
-                ""
-            }
-        );
-    }
-    let findings = preflight::check(
-        planned,
-        platform,
-        &|id| catalog.find(id),
-        &preflight::Facts::real(),
-    );
-    for finding in &findings {
-        println!("{}", finding.line());
-    }
-    if EFFECTS.load(std::sync::atomic::Ordering::Relaxed) && !planned.is_empty() {
-        println!("\nWhat it changes (✓ known, ~ expected, ? not known in advance):");
-        for step in effects(catalog, platform, planned) {
-            println!("{}", step.name);
-            for change in step.changes {
-                println!("  {} {}", change.certainty.mark(), change.text);
-                if let Some(diff) = change.diff.filter(|diff| diff.changed) {
-                    for line in diff.unified().lines() {
-                        println!("      {line}");
-                    }
-                }
-            }
-        }
-        println!();
-    }
-    let evidence = helix_toolbox_engine::reliability::Evidence::load(catalog.root());
-    for warning in helix_toolbox_engine::reliability::warnings(
-        planned.steps.iter().map(|step| step.id()),
-        &|id| catalog.find(id),
-        &evidence,
-    ) {
-        println!("Validation: {warning}");
-    }
-    findings
 }

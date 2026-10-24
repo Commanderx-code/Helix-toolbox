@@ -32,13 +32,13 @@
   }
 
   $effect(() => {
-    void toolbox.runs;
+    void toolbox.readAgain.tools;
     load();
   });
 
   // After a run, what the file means here has changed too.
   $effect(() => {
-    void toolbox.runs;
+    void toolbox.readAgain.tools;
     const path = untrack(() => opened?.path);
     if (path) read(path);
   });

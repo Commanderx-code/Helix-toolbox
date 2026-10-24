@@ -461,6 +461,8 @@ fn the_mouse_opens_a_screen_and_asks_before_running_what_it_clicks() {
     let mut tui = fixture_menu(home.path());
     tui.wait_until("the mouse to be reported", |_| tui.mouse_reported());
     // The sidebar's Tools, then Marker twice: selected, then asked about.
+    // The mouse is reported before the first frame is drawn in full.
+    tui.wait_for(&["Tools"]);
     let tools = tui.locate("Tools", 0);
     tui.click(tools);
     tui.wait_for(&["Marker", "Sleeper", "Failing"]);

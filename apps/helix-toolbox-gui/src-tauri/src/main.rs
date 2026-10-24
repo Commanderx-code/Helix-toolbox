@@ -9,16 +9,14 @@ mod views;
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, printable};
 use helix_toolbox_engine::{
-    Plan, backups, bundle, configs,
-    confirmation::{self, Prepared},
-    desktop, doctor, drift,
-    execution::{Execution, Options},
+    Plan, PtyRunner, RunSession, backups, bundle, configs, confirmation, desktop, doctor, drift,
+    execution::Options,
     hardware, hardware_report, history, home_manager,
     inventory::{Inventory, which},
     migration::{self, Standing},
     notifications,
     overview::Overview,
-    performance, plan, plan_removal, preflight, preview, profiles, recovery,
+    performance, plan, plan_removal, preview, profiles, recovery,
     reliability::{self, Evidence},
     repositories, restic, services,
     settings::{self, RunChoices, WindowTheme},
@@ -35,9 +33,9 @@ use std::{
 use tauri::{AppHandle, Manager, State, ipc::Channel};
 use tauri_plugin_dialog::DialogExt;
 use views::{
-    AreaView, BackupView, BundleContentsView, BundleView, ChangesView, ChannelView, ComparisonView,
-    DiagnosisView, HardwareView, PerformanceView, PreparedView, RecordView, ServicesView,
-    StatusView, StorageView,
+    AreaView, BackupView, BundleContentsView, BundleView, ChangesView, ChannelView, ClosedView,
+    ComparisonView, DiagnosisView, HardwareView, PerformanceView, PreparedView, RecordView,
+    ServicesView, StatusView, StorageView,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -52,10 +50,10 @@ struct Gui {
     /// Where `settings.toml` is, when there is a home.
     settings: Option<PathBuf>,
     favorites: Mutex<Vec<String>>,
-    /// The plan last confirmed, waiting for its run.
-    pending: Mutex<Option<Plan>>,
+    /// The run session of the plan last prepared, waiting for the yes.
+    pending: Mutex<Option<RunSession>>,
     /// The run in the terminal panel, if any.
-    running: Mutex<Option<Execution>>,
+    running: Mutex<Option<RunSession>>,
     /// What the last status check read, for planning updates and drift.
     inventory: Mutex<Option<Inventory>>,
     /// What the screens last showed, for the actions on their rows.
@@ -250,32 +248,19 @@ fn plan_entries(gui: &Gui, catalog: &Catalog, ids: &[String]) -> Result<Plan, St
     plan(entries, &gui.platform, &lookup).map_err(|error| error.to_string())
 }
 
-/// Get a plan ready to confirm, as the terminal interface does before it
-/// asks: the snapshot, the checks before a run, the lines to show. A plan
-/// ready to run waits for `run`.
+/// Get a plan ready to confirm, as every interface does before it asks,
+/// with the run choices in Settings: the snapshot, the checks before a
+/// run, the lines to show. A plan ready to run waits for `run` as a run
+/// session.
 fn prepare_plan(gui: &Gui, catalog: &Catalog, planned: Plan) -> PreparedView {
     let run_choices = gui
         .settings
         .as_deref()
         .map(settings::run_choices)
         .unwrap_or_default();
-    let choices = confirmation::Choices {
-        snapshot: backups::Snapshots::here().filter(|_| run_choices.snapshots),
-        keep_going: run_choices.keep_going,
-    };
-    let prepared = confirmation::prepare(
-        planned,
-        &gui.platform,
-        &|id| catalog.find(id),
-        choices,
-        &preflight::Facts::real(),
-        &Evidence::load(catalog.root()),
-    );
+    let prepared = confirmation::prepare(planned, catalog, &gui.platform, run_choices);
     let view = views::prepared(&prepared);
-    *gui.pending.lock().unwrap() = match prepared {
-        Prepared::Ready(ready) => Some(ready.plan),
-        _ => None,
-    };
+    *gui.pending.lock().unwrap() = prepared.session();
     view
 }
 
@@ -303,7 +288,8 @@ fn waiting(gui: &Gui) -> Result<Plan, String> {
     gui.pending
         .lock()
         .unwrap()
-        .clone()
+        .as_ref()
+        .map(|session| session.plan().clone())
         .ok_or_else(|| "Nothing is waiting to run; review the plan again.".to_string())
 }
 
@@ -370,7 +356,7 @@ fn run(gui: State<Gui>, rows: u16, cols: u16, events: Channel<Value>) -> Result<
     if running.as_ref().is_some_and(|run| !run.is_finished()) {
         return Err("A run is still going; it has to end first.".to_string());
     }
-    let planned = gui
+    let mut session = gui
         .pending
         .lock()
         .unwrap()
@@ -386,9 +372,10 @@ fn run(gui: State<Gui>, rows: u16, cols: u16, events: Channel<Value>) -> Result<
         ..Options::default()
     };
     let lib_dir = gui.catalog.read().unwrap().lib_dir();
-    let (execution, received) = Execution::start(&planned, &lib_dir, &gui.this, options)
+    let received = session
+        .start(PtyRunner::default(), &lib_dir, &gui.this, options)
         .map_err(|error| error.to_string())?;
-    *running = Some(execution);
+    *running = Some(session);
     std::thread::spawn(move || {
         for event in received {
             if events.send(views::event(&event)).is_err() {
@@ -423,17 +410,24 @@ fn stop(gui: State<Gui>) {
     }
 }
 
-/// The terminal panel closed: record the run in the history.
+/// The terminal panel closed: record the run in the history, and say which
+/// queued entries remain and what to read again.
 #[tauri::command]
-fn close_run(gui: State<Gui>) -> Result<(), String> {
+fn close_run(gui: State<Gui>) -> ClosedView {
     let Some(run) = gui.running.lock().unwrap().take() else {
-        return Ok(());
+        return ClosedView::default();
     };
     if !run.is_finished() {
         run.stop();
     }
-    run.record(None)
-        .map_err(|error| format!("the run could not be recorded: {error}"))
+    let catalog = gui.catalog.read().unwrap();
+    views::closed(
+        &run,
+        &|id| catalog.find(id).is_some(),
+        run.record(None)
+            .err()
+            .map(|error| format!("The run was not recorded in the history: {error}")),
+    )
 }
 
 #[tauri::command]

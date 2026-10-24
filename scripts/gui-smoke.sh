@@ -2,7 +2,8 @@
 
 # Drive a debug build of the window through the setup wizard, the command
 # palette, the theme, the keyboard, every screen, a run with its change
-# preview, the removal of a package entry, a saved profile exported,
+# preview, a failed run from the Install Plan keeping its entries queued,
+# the removal of a package entry, a saved profile exported,
 # deleted and imported again, the offline bundles screen, a migration
 # exported and one read, a scratch repository's diff, stage and task
 # reviewed, a bug report and the update notifications turned on and off,

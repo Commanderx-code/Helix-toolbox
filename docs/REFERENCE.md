@@ -830,7 +830,8 @@ can be restored.
 On Btrfs with Snapper (a `root` configuration) or with Timeshift, a snapshot
 is taken first before runs that change system files, the kernel or disks
 (flags PFM, K, D, SI, or high risk): **Snapshot before system changes** in
-Settings, `--snapshot` on the command line. Helix Toolbox does not roll
+Settings, which the command line follows too; `--snapshot` takes one there
+when Settings turns it off. Helix Toolbox does not roll
 snapshots or packages back itself; the Backups screen says where to (Btrfs
 Assistant, `snapper rollback`, Timeshift).
 
@@ -886,6 +887,18 @@ helix-toolbox report                     # what a bug report needs, to paste int
 helix-toolbox report --worked sddm       # that an entry worked here, for its Hardware Tested record
 helix-toolbox verify sddm grub-dracula   # whether entries left the machine as they should, read-only
 ```
+
+A plan the command line runs (`run`, `remove`, `update`, `restore` and the
+other commands that change the machine) shows the confirmation the menu
+and the window show, as text: each step with its command, the notes and
+what is not run, then `Risk: medium · asks for your password`, what the
+checks before a run found, `Warning:` lines (the plan's own, and how
+entries were tested), and `After a failed step: stop (Settings changes
+it)` when there is more than one step. It follows the run choices in
+Settings, as they do: a snapshot first before system changes, and whether
+a failed step stops the run; `--snapshot` and `--keep-going` turn those on
+for one run. `plan` and `--dry-run` show the same without running
+anything; a blocked plan lists its steps and what blocks it.
 
 `--json` prints one JSON document for other programs instead of text; it
 works with the commands that read and with `--dry-run` plans, and refuses

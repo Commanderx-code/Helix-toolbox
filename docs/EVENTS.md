@@ -1,8 +1,10 @@
 # Execution events
 
 A run of a plan, as the engine reports it to an interface:
-`helix_toolbox_engine::execution`. The terminal interface's running window
-and the window's run panel ([GUI.md](GUI.md)) are both built on it.
+`helix_toolbox_engine::execution`, sent by the run's session
+(`helix_toolbox_engine::session::RunSession`). The terminal interface's
+running window and the window's run panel ([GUI.md](GUI.md)) are both
+built on it, and the command line runs through the same session.
 
 Every change to the machine stays in the engine. It checks the plan's
 requirements, builds and runs the shell program in a pseudo-terminal,
@@ -17,21 +19,31 @@ at schema 1, and the files listed there do not change because of it.
 ## Starting a run
 
 ```rust
-use helix_toolbox_engine::execution::{Execution, ExecutionEvent, HistoryPlace, Options};
+use helix_toolbox_engine::{
+    PtyRunner, confirmation,
+    execution::{ExecutionEvent, HistoryPlace, Options},
+};
 
-let (execution, events) = Execution::start(&plan, &lib_dir, &this, Options::default())?;
+let prepared = confirmation::prepare(plan, &catalog, &platform, run_choices);
+// … shown to the user, who says yes …
+let mut session = prepared.session().expect("ready to run");
+let events = session.start(PtyRunner::default(), &lib_dir, &this, Options::default())?;
 ```
+
+A session comes from the confirmation: `Prepared::session()` gives one for
+a plan that is ready to run (`RunSession::new(plan)` makes one directly,
+for tests). It starts once.
 
 | Argument | Meaning |
 | :--- | :--- |
-| `plan` | a `Plan` from `plan()`, `plan_removal()`, `updates::plan()` and the rest, already confirmed by the user |
+| `runner` | where the program runs: `PtyRunner` in a pseudo-terminal (the terminal interface and the window), `InheritedRunner` in the caller's terminal (the command line, which has no `Output` events), `MockRunner` nowhere (tests: it keeps the program and writes the step lines and output it is given) |
 | `lib_dir` | the catalog's script folder (`Catalog::lib_dir()`), exported to the run as `HELIX_TOOLBOX_LIB` and its old name `HELIXFORGE_LIB` |
 | `this` | the Helix Toolbox executable, which native steps run again (`helix-toolbox native …`) |
 | `options` | below |
 
 It returns an error, and starts nothing, when an executable the plan needs is
-missing (`EngineError::MissingExecutable`) or the pseudo-terminal cannot be
-opened (`EngineError::Spawn`).
+missing (`EngineError::MissingExecutable`), the pseudo-terminal cannot be
+opened or the session has started already (`EngineError::Spawn`).
 
 | `Options` field | Default | Meaning |
 | :--- | :--- | :--- |
@@ -39,12 +51,12 @@ opened (`EngineError::Spawn`).
 | `capacity` | 256 (`DEFAULT_CAPACITY`) | how many events the channel holds; at least 1 |
 | `history` | `HistoryPlace::Default` | where the record goes: `Default` (the user's history, as the terminal interface keeps it), `In(state_dir)`, or `Off` |
 
-## The handle
+## The session
 
-`Execution` is `Send` and `Sync`, and every method takes `&self`, so it can
-live in shared state (in Tauri, managed state behind an `Arc`). The receiver
-is a `std::sync::mpsc::Receiver`: one consumer, which can be moved to its
-own thread.
+`RunSession` is `Send` and `Sync`, and every method but `start` takes
+`&self`, so it can live in shared state (in Tauri, managed state behind a
+`Mutex`). The receiver is a `std::sync::mpsc::Receiver`: one consumer,
+which can be moved to its own thread.
 
 | Method | What it does |
 | :--- | :--- |
@@ -53,14 +65,21 @@ own thread.
 | `stop()` | the first call hangs up (`SIGHUP`) every process in the run's process group, as closing a terminal does; a later call, while any of them is still running, kills them (`SIGKILL`) |
 | `stop_requested()` | whether `stop()` was called |
 | `survivors()` | how many processes of the run are still alive, such as ones that ignored the hangup |
-| `is_finished()`, `finished()` | whether the run has ended and been checked, and its `Finished` (outcome, step results, checks) |
+| `is_finished()`, `finished()` | whether the run has ended and been concluded, and its `Finished` (outcome, step results, checks) |
+| `wait()` | waits for the end and concludes the run, without reading the events, as the command line does |
 | `transcript()` | everything the program has written so far, the same bytes the `Output` events carry |
-| `record(log)` | writes the history record, with the path of a saved log (`history::save_log`) if there is one. Only the first call after the end writes; dropping the handle writes it without a log if nothing did. |
+| `record(log)` | writes the history record, with the path of a saved log (`history::save_log`) if there is one, and "N process(es) left running" when any are. Only the first call after the end writes; dropping the session writes it without a log if nothing did. |
+| `remaining(known)` | the queued entries that stay queued: the ids of the steps that did not finish, each once, of those `known` names. The terminal interface and the window both replace a queue that ran with them. |
+| `read_again()` | what an interface should read again: nothing before the start, the history alone when the program could not start, otherwise the statuses, the updates, the tool screens and the history (`Reading`) |
 
-Until the record is written, the history's marker for the run keeps its
-outcome, so a Helix Toolbox that stops before the record is written still
-leaves an accurate history. Dropping the handle before the run ends hangs
-the run up, as closing the window would.
+When the program ends, the session concludes the run once: it reads how
+each step ended, checks the steps that finished, keeps the outcome in the
+history's marker and keeps the checks that hold only after a reboot
+beside the history (whenever the run has one, even if the marker could not
+be written). Until the record is written, the marker keeps the outcome, so
+a Helix Toolbox that stops before the record is written still leaves an
+accurate history. Dropping the session before the run ends hangs the run
+up, as closing the window would.
 
 ## The events
 
@@ -129,7 +148,7 @@ while let Ok(event) = events.try_recv() {
 It draws the output with a terminal emulator (`vt100`), calls `resize` with
 the size of its terminal panel on every draw, forwards keys with `write`,
 calls `stop` on Ctrl-C, and calls `record` when the window closes, with a
-log if the user saved one.
+log if the user saved one, then `remaining` and `read_again`.
 
 The window moves the receiver to a thread that forwards each event through
 a Tauri channel (`run` in `apps/helix-toolbox-gui/src-tauri/src/main.rs`),
@@ -177,7 +196,8 @@ interface that can pass raw bytes should do so instead.
 
 There is no async runtime: a run has three threads of its own. One waits
 for the shell to exit, one reads the terminal into the transcript, and the
-monitor reads the program's step file, sends the events and verifies the
+monitor reads the program's step file, sends the events and concludes the
 run once it ends. The command line's `helix-toolbox run` does not use the
-pseudo-terminal or the events: it runs the same program in the caller's
-terminal (`InheritedRunner`) and records it the same way.
+pseudo-terminal: its session runs the same program in the caller's
+terminal (`InheritedRunner`), shows only the warning events, waits for the
+end and records it the same way.

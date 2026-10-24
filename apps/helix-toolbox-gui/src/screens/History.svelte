@@ -16,7 +16,11 @@
     }
   }
 
-  load();
+  // Read on opening, and again when a run is recorded.
+  $effect(() => {
+    void toolbox.readAgain.history;
+    load();
+  });
 </script>
 
 <div class="screen">

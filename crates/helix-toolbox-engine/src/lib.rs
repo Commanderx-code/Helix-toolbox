@@ -2,10 +2,10 @@
 //!
 //! Every interface uses this crate the same way: `plan` an entry (or several)
 //! into a [`Plan`] of ordered [`Step`]s with what they need, whether they are
-//! privileged and how risky they are; show it; then run it through a
-//! [`Runner`]. The steps become one POSIX shell program that stops at the
-//! first failure. The shell only ever sees quoted literals from the validated
-//! catalog, never free text. Native operations run back inside Helix Toolbox
+//! privileged and how risky they are; confirm it ([`confirmation`]); then
+//! run it as a [`RunSession`] through a [`Runner`]. The steps become one
+//! POSIX shell program that stops at the first failure. The shell only ever
+//! sees quoted literals from the validated catalog, never free text. Native operations run back inside Helix Toolbox
 //! itself, so even they go through the same program and the same terminal.
 //!
 //! A package step lists its sources in order (the distribution's package,
@@ -41,7 +41,9 @@ pub mod reliability;
 pub mod repositories;
 pub mod restic;
 pub mod rows;
+pub mod runner;
 pub mod services;
+pub mod session;
 pub mod settings;
 pub mod setup;
 pub mod storage;
@@ -57,10 +59,13 @@ use helix_toolbox_core::{
 use helix_toolbox_platform::{LinuxInfo, binary_exists};
 use std::{
     path::{Path, PathBuf},
-    process::{Command, ExitStatus},
+    process::ExitStatus,
 };
 use thiserror::Error;
-use tracing::{info, warn};
+use tracing::info;
+
+pub use runner::{InheritedRunner, MockRunner, PtyRunner, Runner};
+pub use session::RunSession;
 
 /// A day as YYYY-MM-DD in UTC, from Unix seconds, without a time library.
 pub fn date(unix: u64) -> String {
@@ -1863,111 +1868,6 @@ pub fn status_file() -> Option<PathBuf> {
     None
 }
 
-/// Something that can run a shell program: the caller's terminal, a
-/// pseudo-terminal, or a test double.
-pub trait Runner {
-    fn run(&mut self, program: &str, lib_dir: &Path) -> Outcome;
-}
-
-/// Runs in the caller's terminal, inheriting stdin and stdout.
-pub struct InheritedRunner;
-
-impl Runner for InheritedRunner {
-    fn run(&mut self, program: &str, lib_dir: &Path) -> Outcome {
-        match Command::new("sh")
-            .arg("-c")
-            .arg(program)
-            .env(LIB_VARIABLE, lib_dir)
-            .env(OLD_LIB_VARIABLE, lib_dir)
-            .status()
-        {
-            Ok(status) => Outcome::from_status(&status),
-            Err(error) => Outcome::CouldNotStart(error.to_string()),
-        }
-    }
-}
-
-/// Records the program instead of running it, for tests.
-#[derive(Default)]
-pub struct MockRunner {
-    pub programs: Vec<String>,
-    pub outcome: Option<Outcome>,
-}
-
-impl Runner for MockRunner {
-    fn run(&mut self, program: &str, _lib_dir: &Path) -> Outcome {
-        self.programs.push(program.to_string());
-        self.outcome.clone().unwrap_or(Outcome::Success)
-    }
-}
-
-/// Run a plan through a runner and record the outcome in the default history.
-pub fn execute(
-    plan: &Plan,
-    lib_dir: &Path,
-    this: &Path,
-    runner: &mut dyn Runner,
-) -> Result<Finished, EngineError> {
-    let history = history::state_dir();
-    execute_in(plan, lib_dir, this, runner, history.as_deref())
-}
-
-/// Run a plan through a runner and record the outcome in `history_dir`.
-pub fn execute_in(
-    plan: &Plan,
-    lib_dir: &Path,
-    this: &Path,
-    runner: &mut dyn Runner,
-    history_dir: Option<&Path>,
-) -> Result<Finished, EngineError> {
-    check_requirements(plan)?;
-    info!(steps = ?plan.entries(), "run started");
-    let not_recorded = |directory: &Path, error: std::io::Error| {
-        warn!(%error, "the run was not recorded");
-        eprintln!(
-            "Helix Toolbox could not record this run in {}: {error}",
-            directory.display()
-        );
-    };
-    // The marker records the run even if this process dies before it ends.
-    let pending = history_dir.and_then(|directory| {
-        history::begin_in(directory, &plan.entries())
-            .inspect_err(|error| warn!(%error, "the run start was not recorded"))
-            .ok()
-    });
-    let status = status_file();
-    let outcome = runner.run(
-        &shell_program_with(plan, lib_dir, this, status.as_deref()),
-        lib_dir,
-    );
-    let finished = Finished::from_run(plan, outcome, status.as_deref());
-    if let Some(status) = &status {
-        let _ = std::fs::remove_file(status);
-    }
-    if let Some(directory) = history_dir
-        && let Err(error) = verification::keep(directory, plan, &finished, history::now())
-    {
-        warn!(%error, "the checks for after the reboot were not kept");
-    }
-    info!(outcome = finished.describe(), "run finished");
-    if let Some(directory) = history_dir {
-        let written = match pending {
-            Some(pending) => pending.finish(finished.succeeded(), &finished.describe(), None),
-            None => history::record_in(
-                directory,
-                &plan.entries(),
-                finished.succeeded(),
-                &finished.describe(),
-                None,
-            ),
-        };
-        if let Err(error) = written {
-            not_recorded(directory, error);
-        }
-    }
-    Ok(finished)
-}
-
 /// Run a native action and return its text.
 pub fn run_native(action: NativeAction, platform: &LinuxInfo) -> String {
     match action {
@@ -2040,6 +1940,7 @@ mod tests {
 
     use super::*;
     use helix_toolbox_core::PackageNames;
+    use std::process::Command;
 
     /// `plan` with this machine's packages and commands, but without asking
     /// its repositories, so the sample packages here are always tried.
@@ -2897,58 +2798,6 @@ mod tests {
             ),
             Outcome::Interrupted
         );
-    }
-
-    #[test]
-    fn execution_goes_through_the_runner_and_is_recorded() {
-        let state = tempfile::tempdir().unwrap();
-        let plan = Plan {
-            steps: vec![Step::Command {
-                id: "hello".into(),
-                name: "Hello".into(),
-                line: "echo hello".into(),
-            }],
-            ..Default::default()
-        };
-        let mut runner = MockRunner {
-            outcome: Some(Outcome::Failed { exit_code: 4 }),
-            ..Default::default()
-        };
-        let outcome = execute_in(
-            &plan,
-            Path::new("/lib"),
-            Path::new("/bin/helix-toolbox"),
-            &mut runner,
-            Some(state.path()),
-        )
-        .unwrap();
-        assert_eq!(outcome.outcome, Outcome::Failed { exit_code: 4 });
-        assert!(outcome.checks.is_empty());
-        assert_eq!(runner.programs.len(), 1);
-        assert!(runner.programs[0].contains("sh -e -c 'echo hello'"));
-        let records = history::read_in(state.path(), 1).unwrap();
-        assert_eq!(records[0].entries, ["hello"]);
-        assert!(!records[0].success);
-        assert_eq!(records[0].result, "exit 4");
-    }
-
-    #[test]
-    fn missing_requirements_stop_a_run_before_it_starts() {
-        let plan = Plan {
-            requirements: vec!["helix-toolbox-no-such-tool".into()],
-            ..Default::default()
-        };
-        let mut runner = MockRunner::default();
-        assert!(matches!(
-            execute(
-                &plan,
-                Path::new("/lib"),
-                Path::new("/bin/helix-toolbox"),
-                &mut runner
-            ),
-            Err(EngineError::MissingExecutable(_))
-        ));
-        assert!(runner.programs.is_empty());
     }
 
     #[test]
