@@ -942,6 +942,11 @@ impl App {
     fn check_line(&self) -> Option<String> {
         if self.checking.busy() {
             Some("Checking what is installed…".to_string())
+        } else if self.checking.failed() {
+            Some(
+                "The check of what is installed stopped without an answer · Ctrl-R check again"
+                    .to_string(),
+            )
         } else if self.inventory.is_some() || !self.statuses.is_empty() {
             Some(format!(
                 "{} package entries checked · Ctrl-R check again",
@@ -1000,8 +1005,17 @@ impl App {
         if self.with_screens(|screens, cx| screens.bundles.poll(cx)) {
             return true;
         }
-        if let Some(report) = self.reporting.take() {
-            self.show_report(&report);
+        if let Some(answer) = self.reporting.take() {
+            match answer {
+                Ok(report) => self.show_report(&report),
+                Err(_) => {
+                    self.popup = Some(Popup::Text(TextPopup::new(
+                        "Bug report",
+                        "The report could not be gathered: gathering it stopped without an answer.",
+                        true,
+                    )))
+                }
+            }
             return true;
         }
         if self.with_screens(|screens, cx| {
@@ -1017,11 +1031,13 @@ impl App {
         }) {
             return true;
         }
-        if let Some((inventory, statuses)) = self.checking.take() {
-            self.inventory = Some(inventory);
-            self.statuses = statuses;
-            if self.screen == Screen::Drift {
-                self.with_screens(|screens, cx| screens.drift.check(cx));
+        if let Some(answer) = self.checking.take() {
+            if let Ok((inventory, statuses)) = answer {
+                self.inventory = Some(inventory);
+                self.statuses = statuses;
+                if self.screen == Screen::Drift {
+                    self.with_screens(|screens, cx| screens.drift.check(cx));
+                }
             }
             return true;
         }
@@ -1276,12 +1292,13 @@ impl App {
         })
     }
 
-    /// Read again what a run left out of date, where this screen shows it.
+    /// Read again what a run left out of date: now where this screen shows
+    /// it, and on the other screens when they next open.
     fn read_again(&mut self, reading: Reading) {
         if reading == Reading::Statuses {
             self.refresh_statuses();
         } else {
-            self.with_tool(|tool, cx| tool.after_run(cx, reading));
+            self.with_screens(|screens, cx| screens.after_run(cx, reading));
         }
     }
 

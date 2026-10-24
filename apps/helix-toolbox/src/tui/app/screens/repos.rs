@@ -12,10 +12,16 @@ pub(in crate::tui::app) struct Repos {
     pub(in crate::tui::app) workspaces_file: Option<PathBuf>,
     /// Where they were looked for, and what was found there.
     found: Option<(repos::Places, Vec<Summary>)>,
-    reading: Read<(repos::Places, Vec<Summary>)>,
+    pub(in crate::tui::app) reading: Read<(repos::Places, Vec<Summary>)>,
     /// The opened repository, read in full, and its tasks.
     pub(in crate::tui::app) open: Option<(Details, Vec<Task>)>,
     opening: Read<RepoOpened>,
+    /// Why the repository asked for could not be read, answered after the
+    /// screen was left.
+    unread: Option<String>,
+    /// A run while another screen was shown left what it read out of
+    /// date.
+    stale: bool,
     pub(in crate::tui::app) rows: Vec<RepoRow>,
 }
 
@@ -121,25 +127,35 @@ impl Repos {
         self.build_rows(cx);
     }
 
+    /// The repository asked for was read. The selection and the popup are
+    /// the screen shown: when it was left, why it could not be read waits
+    /// until it is shown again.
     fn opened(&mut self, cx: &mut Cx, read: RepoOpened) {
+        let shown = cx.screen == Screen::Repositories;
         match read {
             Ok(open) => {
                 let same = self.open.as_ref().map(|(found, _)| &found.summary.path)
                     == Some(&open.0.summary.path);
                 self.open = Some(open);
-                if !same {
+                if !same && shown {
                     cx.selected.select(Some(0));
                 }
                 self.build_rows(cx);
             }
+            Err(why) if shown => Self::cannot_read(cx, why),
             Err(why) => {
-                *cx.popup = Some(Popup::Text(TextPopup::new(
-                    "Cannot read the repository",
-                    why,
-                    true,
-                )));
+                self.unread = Some(why);
+                self.build_rows(cx);
             }
         }
+    }
+
+    fn cannot_read(cx: &mut Cx, why: String) {
+        *cx.popup = Some(Popup::Text(TextPopup::new(
+            "Cannot read the repository",
+            why,
+            true,
+        )));
     }
 
     /// Back from a repository to the list; false when the list is shown.
@@ -435,6 +451,9 @@ impl Repos {
             rows.push(RepoRow::Heading("Reading the repository…".into()));
         } else {
             match &self.found {
+                None if self.reading.failed() => rows.push(RepoRow::Heading(
+                    "Could not look for repositories: the search stopped without an answer. r looks again.".into(),
+                )),
                 None => rows.push(RepoRow::Heading("Looking for repositories…".into())),
                 Some((places, summaries)) => {
                     let roots = if places.roots.is_empty() {
@@ -473,10 +492,15 @@ impl Repos {
 
 impl ToolScreen for Repos {
     fn open(&mut self, cx: &mut Cx) {
-        if self.found.is_none() {
+        if std::mem::take(&mut self.stale) {
+            self.reload(cx);
+        } else if self.found.is_none() {
             self.read(cx);
         } else {
             self.build_rows(cx);
+        }
+        if let Some(why) = self.unread.take() {
+            Self::cannot_read(cx, why);
         }
     }
 
@@ -572,12 +596,17 @@ impl ToolScreen for Repos {
     }
 
     fn poll(&mut self, cx: &mut Cx) -> bool {
-        if let Some(found) = self.reading.take() {
-            self.found = Some(found);
+        if let Some(answer) = self.reading.take() {
+            if let Ok(found) = answer {
+                self.found = Some(found);
+            }
             self.build_rows(cx);
             return true;
         }
-        if let Some(read) = self.opening.take() {
+        if let Some(answer) = self.opening.take() {
+            let read = answer.unwrap_or_else(|_| {
+                Err("Reading the repository stopped without an answer.".into())
+            });
             self.opened(cx, read);
             return true;
         }
@@ -587,6 +616,12 @@ impl ToolScreen for Repos {
     fn after_run(&mut self, cx: &mut Cx, reading: Reading) {
         if reading == Reading::Tools {
             self.reload(cx);
+        }
+    }
+
+    fn stale(&mut self, reading: Reading) {
+        if reading == Reading::Tools {
+            self.stale = true;
         }
     }
 

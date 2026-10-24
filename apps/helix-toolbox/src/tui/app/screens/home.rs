@@ -9,6 +9,9 @@ pub(in crate::tui::app) struct Home {
     /// Home Manager as last read.
     pub(in crate::tui::app) status: Option<home_manager::Status>,
     reading: Read<home_manager::Status>,
+    /// A run while another screen was shown left what it read out of
+    /// date.
+    stale: bool,
     pub(in crate::tui::app) rows: Vec<HomeRow>,
 }
 
@@ -152,6 +155,8 @@ impl Home {
         let Some(status) = &self.status else {
             rows.push(HomeRow::Text(if self.reading.busy() {
                 "Reading Home Manager…".into()
+            } else if self.reading.failed() {
+                "Could not read Home Manager. r reads again.".into()
             } else {
                 "Press r to read Home Manager.".into()
             }));
@@ -214,7 +219,7 @@ impl Home {
 
 impl ToolScreen for Home {
     fn open(&mut self, cx: &mut Cx) {
-        if self.status.is_none() {
+        if std::mem::take(&mut self.stale) || self.status.is_none() {
             self.read(cx);
         } else {
             self.build_rows(cx);
@@ -271,10 +276,12 @@ impl ToolScreen for Home {
     }
 
     fn poll(&mut self, cx: &mut Cx) -> bool {
-        let Some(found) = self.reading.take() else {
+        let Some(answer) = self.reading.take() else {
             return false;
         };
-        self.status = Some(found);
+        if let Ok(found) = answer {
+            self.status = Some(found);
+        }
         self.build_rows(cx);
         true
     }
@@ -282,6 +289,12 @@ impl ToolScreen for Home {
     fn after_run(&mut self, cx: &mut Cx, reading: Reading) {
         if reading == Reading::Tools {
             self.read(cx);
+        }
+    }
+
+    fn stale(&mut self, reading: Reading) {
+        if reading == Reading::Tools {
+            self.stale = true;
         }
     }
 

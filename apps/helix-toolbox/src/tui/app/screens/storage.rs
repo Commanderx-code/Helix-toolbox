@@ -11,6 +11,9 @@ pub(in crate::tui::app) struct Storage {
     pub(in crate::tui::app) rows: Vec<StorageRow>,
     /// A look at the storage running in the background.
     reading: Read<storage::Storage>,
+    /// A run while another screen was shown left what it read out of
+    /// date.
+    stale: bool,
 }
 
 /// A line of the Storage screen.
@@ -117,9 +120,10 @@ impl Storage {
 
 impl ToolScreen for Storage {
     fn open(&mut self, cx: &mut Cx) {
-        if self.found.is_none() {
+        if std::mem::take(&mut self.stale) || self.found.is_none() {
             self.read(cx);
-        } else {
+        }
+        if self.found.is_some() {
             self.build_rows(cx);
         }
     }
@@ -156,10 +160,12 @@ impl ToolScreen for Storage {
     }
 
     fn poll(&mut self, cx: &mut Cx) -> bool {
-        let Some(found) = self.reading.take() else {
+        let Some(answer) = self.reading.take() else {
             return false;
         };
-        self.found = Some(found);
+        if let Ok(found) = answer {
+            self.found = Some(found);
+        }
         self.build_rows(cx);
         true
     }
@@ -167,6 +173,12 @@ impl ToolScreen for Storage {
     fn after_run(&mut self, cx: &mut Cx, reading: Reading) {
         if reading == Reading::Tools {
             self.read(cx);
+        }
+    }
+
+    fn stale(&mut self, reading: Reading) {
+        if reading == Reading::Tools {
+            self.stale = true;
         }
     }
 
@@ -184,6 +196,8 @@ impl ToolScreen for Storage {
             items.push(Line::styled(
                 if self.reading.busy() {
                     "Reading the storage…"
+                } else if self.reading.failed() {
+                    "Could not read this machine's storage. r reads again."
                 } else {
                     "Press r to read this machine's storage."
                 },

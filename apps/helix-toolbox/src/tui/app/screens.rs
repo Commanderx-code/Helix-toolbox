@@ -137,6 +137,42 @@ impl Screens {
             | Screen::Settings => return None,
         })
     }
+
+    /// Every tool screen, by the screen it is.
+    fn each(&mut self) -> [(Screen, &mut dyn ToolScreen); 18] {
+        [
+            (Screen::History, &mut self.history),
+            (Screen::Backups, &mut self.backups),
+            (Screen::Doctor, &mut self.doctor),
+            (Screen::Updates, &mut self.updates),
+            (Screen::Drift, &mut self.drift),
+            (Screen::Reliability, &mut self.reliability),
+            (Screen::Hardware, &mut self.hardware),
+            (Screen::Desktop, &mut self.desktop),
+            (Screen::Bundles, &mut self.bundles),
+            (Screen::Services, &mut self.services),
+            (Screen::Storage, &mut self.storage),
+            (Screen::Performance, &mut self.performance),
+            (Screen::Recovery, &mut self.recovery),
+            (Screen::Migration, &mut self.migration),
+            (Screen::Restic, &mut self.restic),
+            (Screen::Repositories, &mut self.repos),
+            (Screen::Configs, &mut self.configs),
+            (Screen::HomeManager, &mut self.home),
+        ]
+    }
+
+    /// A run left `reading` out of date: the screen shown reads it again
+    /// now, every other one when it next opens.
+    pub(in crate::tui::app) fn after_run(&mut self, cx: &mut Cx, reading: Reading) {
+        for (screen, tool) in self.each() {
+            if screen == cx.screen {
+                tool.after_run(cx, reading);
+            } else {
+                tool.stale(reading);
+            }
+        }
+    }
 }
 
 impl App {
@@ -278,6 +314,11 @@ pub(in crate::tui::app) trait ToolScreen {
 
     /// Read again what a run left out of date, while it is shown.
     fn after_run(&mut self, _cx: &mut Cx, _reading: Reading) {}
+
+    /// A run left `reading` out of date while another screen was shown:
+    /// read it again when this one next opens. A screen that reads afresh
+    /// each time it opens has nothing to keep.
+    fn stale(&mut self, _reading: Reading) {}
 
     /// The catalog entry at row `at`, for the keys entries have everywhere.
     fn entry<'a>(&self, _view: &View<'a>, _at: Option<usize>) -> Option<&'a Entry> {
@@ -454,11 +495,22 @@ pub(in crate::tui::app) fn toggle_queued(
 }
 
 /// A read of the host in the background, until its answer is taken.
-pub(in crate::tui::app) struct Read<T>(Option<mpsc::Receiver<T>>);
+pub(in crate::tui::app) struct Read<T> {
+    receiver: Option<mpsc::Receiver<T>>,
+    /// Whether the last read ended without an answer.
+    failed: bool,
+}
+
+/// A read that ended without an answer: it panicked.
+#[derive(Debug)]
+pub(in crate::tui::app) struct Unanswered;
 
 impl<T> Default for Read<T> {
     fn default() -> Self {
-        Self(None)
+        Self {
+            receiver: None,
+            failed: false,
+        }
     }
 }
 
@@ -466,7 +518,7 @@ impl<T: Send + 'static> Read<T> {
     /// Start reading, in place of any read under way: on a thread of its
     /// own on this machine, where it can take a while; at once on a made-up
     /// one, whose answers are already there, so the next pass of the event
-    /// loop shows it.
+    /// loop shows it. A read that panics sends nothing, on either.
     pub(in crate::tui::app) fn start(
         &mut self,
         host: &Host,
@@ -474,34 +526,47 @@ impl<T: Send + 'static> Read<T> {
     ) {
         let (sender, receiver) = mpsc::channel();
         let host = host.clone();
-        if host.is_here() {
-            std::thread::spawn(move || {
-                let _ = sender.send(work(host));
-            });
+        let here = host.is_here();
+        let answer = move || {
+            let found = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(host)));
+            if let Ok(found) = found {
+                let _ = sender.send(found);
+            }
+        };
+        if here {
+            std::thread::spawn(answer);
         } else {
-            let _ = sender.send(work(host));
+            answer();
         }
-        self.0 = Some(receiver);
+        self.receiver = Some(receiver);
+        self.failed = false;
     }
 }
 
 impl<T> Read<T> {
     /// Whether a read is under way.
     pub(in crate::tui::app) fn busy(&self) -> bool {
-        self.0.is_some()
+        self.receiver.is_some()
     }
 
-    /// What the read found, once it has; a read that ended without an
-    /// answer is forgotten.
-    pub(in crate::tui::app) fn take(&mut self) -> Option<T> {
-        match self.0.as_ref()?.try_recv() {
+    /// Whether the last read ended without an answer, until the next one
+    /// starts.
+    pub(in crate::tui::app) fn failed(&self) -> bool {
+        self.failed
+    }
+
+    /// What the read found, once it has, or that it ended without an
+    /// answer; nothing while it runs.
+    pub(in crate::tui::app) fn take(&mut self) -> Option<Result<T, Unanswered>> {
+        match self.receiver.as_ref()?.try_recv() {
             Ok(found) => {
-                self.0 = None;
-                Some(found)
+                self.receiver = None;
+                Some(Ok(found))
             }
             Err(mpsc::TryRecvError::Disconnected) => {
-                self.0 = None;
-                None
+                self.receiver = None;
+                self.failed = true;
+                Some(Err(Unanswered))
             }
             Err(mpsc::TryRecvError::Empty) => None,
         }
@@ -511,6 +576,9 @@ impl<T> Read<T> {
 #[cfg(test)]
 impl<T> From<mpsc::Receiver<T>> for Read<T> {
     fn from(receiver: mpsc::Receiver<T>) -> Self {
-        Self(Some(receiver))
+        Self {
+            receiver: Some(receiver),
+            failed: false,
+        }
     }
 }

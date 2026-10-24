@@ -2010,6 +2010,28 @@ fn the_migration_screen_says_what_a_migration_means_here() {
 }
 
 #[test]
+fn a_migration_that_cannot_be_opened_says_so_on_its_own_screen() {
+    let directory = tempfile::tempdir().unwrap();
+    let bad = directory.path().join("bad.toml");
+    std::fs::write(&bad, "packages = 1\n").unwrap();
+    let mut app = app();
+    app.open_screen(Screen::Migration);
+    settle(&mut app);
+    app.with_screens(|screens, cx| screens.migration.open_file(cx, bad));
+    // The user goes on to an area before the file is read.
+    app.open_screen(Screen::Area(app.first_area()));
+    settle(&mut app);
+    assert!(
+        app.popup.is_none(),
+        "the migration's answer popped up over another screen: {}",
+        screen(&mut app, 140, 40)
+    );
+    app.open_screen(Screen::Migration);
+    let shown = screen(&mut app, 140, 40);
+    assert!(shown.contains("Cannot open the migration"), "{shown}");
+}
+
+#[test]
 fn the_migration_screen_installs_what_it_can_after_review() {
     let directory = tempfile::tempdir().unwrap();
     let path = fedora_migration(directory.path());
@@ -2109,6 +2131,36 @@ fn select_repo_row(app: &mut App, wanted: impl Fn(&RepoRow) -> bool) {
     settle(app);
     let index = app.screens.repos.rows.iter().position(wanted).unwrap();
     app.main_state.select(Some(index));
+}
+
+#[test]
+fn a_read_that_panics_ends_without_an_answer() {
+    let host = Host::made_up(made_up());
+    let mut read: screens::Read<u8> = screens::Read::default();
+    read.start(&host, |_| panic!("a read that fails"));
+    assert!(matches!(read.take(), Some(Err(screens::Unanswered))));
+    assert!(!read.busy());
+    assert!(read.failed());
+    read.start(&host, |_| 1);
+    assert!(!read.failed());
+    assert!(matches!(read.take(), Some(Ok(1))));
+}
+
+#[test]
+fn a_repository_read_that_ends_without_an_answer_says_so() {
+    let folder = tempfile::tempdir().unwrap();
+    sample_repository(folder.path());
+    let mut app = repository_app(folder.path());
+    app.open_screen(Screen::Repositories);
+    assert!(screen(&mut app, 160, 40).contains("Looking for repositories…"));
+    // The read panicked: its thread ended without sending anything.
+    let (sender, receiver) = std::sync::mpsc::channel();
+    drop(sender);
+    app.screens.repos.reading = receiver.into();
+    assert!(app.needs_redraw());
+    let shown = screen(&mut app, 160, 40);
+    assert!(!shown.contains("Looking for repositories…"), "{shown}");
+    assert!(shown.contains("Could not look for repositories"), "{shown}");
 }
 
 #[test]
@@ -3634,4 +3686,264 @@ fn checking_an_entry_asks_the_host_for_its_package() {
         "{text}"
     );
     assert!(text.contains("pacman lists lynx"), "{text}");
+}
+
+#[test]
+fn a_doctor_answer_taken_after_leaving_the_screen_waits_for_the_doctor() {
+    let mut app = app();
+    let control_k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+    app.handle_key(&control_k);
+    type_text(&mut app, "dns");
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.screen, Screen::Doctor);
+    assert_eq!(app.screens.doctor.wanted, Some("dns"));
+    // The checks are still running; the user goes on to another screen and
+    // picks a row there before they finish.
+    let area = Screen::Area(app.first_area());
+    app.open_screen(area);
+    app.focus = Focus::Main;
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Down);
+    assert_eq!(app.main_state.selected(), Some(2));
+    settle(&mut app);
+    assert_eq!(app.screen, area);
+    assert_eq!(
+        app.main_state.selected(),
+        Some(2),
+        "the Doctor's answer moved this screen's selection"
+    );
+    assert!(
+        app.popup.is_none(),
+        "the Doctor's check popped up over another screen: {}",
+        screen(&mut app, 120, 40)
+    );
+    // The check asked for shows once the Doctor is opened again.
+    app.open_screen(Screen::Doctor);
+    let dns = app
+        .screens
+        .doctor
+        .diagnoses
+        .iter()
+        .position(|diagnosis| diagnosis.id == "dns");
+    assert!(dns.is_some());
+    assert_eq!(app.main_state.selected(), dns);
+    assert!(matches!(app.popup, Some(Popup::Text(_))));
+    assert_eq!(app.screens.doctor.wanted, None);
+}
+
+#[test]
+fn a_repository_read_after_leaving_the_screen_leaves_the_new_screen_alone() {
+    let folder = tempfile::tempdir().unwrap();
+    sample_repository(folder.path());
+    let mut app = repository_app(folder.path());
+    app.open_screen(Screen::Repositories);
+    app.focus = Focus::Main;
+    select_repo_row(&mut app, |row| matches!(row, RepoRow::Repository(0)));
+    // Enter starts reading the repository; before it is read, the user
+    // goes to an area and picks a row there.
+    press(&mut app, KeyCode::Enter);
+    let area = Screen::Area(app.first_area());
+    app.open_screen(area);
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Down);
+    assert_eq!(app.main_state.selected(), Some(2));
+    settle(&mut app);
+    assert_eq!(app.screen, area);
+    assert_eq!(
+        app.main_state.selected(),
+        Some(2),
+        "the repository's answer moved this screen's selection"
+    );
+    assert!(app.popup.is_none());
+    // The repository is open when the screen is shown again.
+    app.open_screen(Screen::Repositories);
+    assert!(app.screens.repos.open.is_some());
+}
+
+#[test]
+fn the_updates_screen_reads_again_after_a_run_made_elsewhere() {
+    let waiting = |text: &str| {
+        let mut machine = made_up();
+        machine.tools.push("pacman".into());
+        machine
+            .commands
+            .insert("pacman -Qu".into(), (true, text.to_string()));
+        Host::made_up(machine)
+    };
+    let mut app = app_on(waiting("firefox 1.0-1 -> 1.1-1\n"));
+    app.open_screen(Screen::Updates);
+    settle(&mut app);
+    let pending = |app: &App| {
+        app.screens
+            .updates
+            .channels
+            .iter()
+            .find(|channel| channel.id == "pacman")
+            .and_then(|channel| channel.pending.clone())
+            .map(|pending| pending.len())
+    };
+    assert_eq!(pending(&app), Some(1));
+    // From an area, a run updates Firefox; it ends there, and every
+    // reading it left out of date is read again.
+    app.open_screen(Screen::Area(app.first_area()));
+    app.host = waiting("");
+    for reading in [
+        Reading::Statuses,
+        Reading::Updates,
+        Reading::Tools,
+        Reading::History,
+    ] {
+        app.read_again(reading);
+    }
+    settle(&mut app);
+    app.open_screen(Screen::Updates);
+    settle(&mut app);
+    assert_eq!(
+        pending(&app),
+        Some(0),
+        "Updates still shows what the run installed: {}",
+        screen(&mut app, 140, 40)
+    );
+}
+
+#[test]
+fn the_storage_screen_reads_again_after_a_run_made_elsewhere() {
+    let free = |bytes: u64| {
+        let mut machine = made_up();
+        machine.spaces.insert("/".into(), (bytes, 500_000_000_000));
+        Host::made_up(machine)
+    };
+    let mut app = app_on(free(40_000_000_000));
+    app.open_screen(Screen::Storage);
+    settle(&mut app);
+    assert!(screen(&mut app, 140, 40).contains("40.0 GB free of 500 GB"));
+    // A cleanup run from an area frees space; the screen left reads again
+    // when it is opened, not before.
+    app.open_screen(Screen::Area(app.first_area()));
+    app.host = free(90_000_000_000);
+    app.read_again(Reading::Tools);
+    settle(&mut app);
+    assert!(
+        app.screens
+            .storage
+            .found
+            .as_ref()
+            .is_some_and(|found| { found.filesystems[0].free == 40_000_000_000 })
+    );
+    app.open_screen(Screen::Storage);
+    settle(&mut app);
+    let shown = screen(&mut app, 140, 40);
+    assert!(shown.contains("90.0 GB free of 500 GB"), "{shown}");
+}
+
+#[test]
+fn while_the_doctor_checks_the_highlighted_report_is_the_one_enter_runs() {
+    let mut app = app();
+    app.open_screen(Screen::Doctor);
+    app.focus = Focus::Main;
+    // The checks have not answered yet: only the reports are rows.
+    assert!(app.screens.doctor.diagnoses.is_empty());
+    press(&mut app, KeyCode::Down);
+    let shown = screen(&mut app, 140, 50);
+    let highlighted = shown
+        .lines()
+        .find(|line| line.contains("> "))
+        .unwrap_or_default()
+        .to_string();
+    press(&mut app, KeyCode::Enter);
+    let Some(Popup::Confirm(_)) = &app.popup else {
+        panic!("Enter did not run a report: {}", screen(&mut app, 140, 50));
+    };
+    let confirming = app.confirming.as_ref().unwrap().0.clone();
+    let runs = app.pending.as_ref().unwrap().plan().steps[0]
+        .name()
+        .to_string();
+    assert!(
+        highlighted.contains(&runs),
+        "the highlighted row is {highlighted:?} but Enter runs {runs:?} ({confirming:?})"
+    );
+    // The last report is a row too, and a click runs the report it is on.
+    press(&mut app, KeyCode::Char('n'));
+    let last = app
+        .catalog
+        .tabs
+        .iter()
+        .find(|tab| tab.id == "doctor")
+        .and_then(|tab| tab.entries().last().map(|entry| entry.name.clone()))
+        .unwrap();
+    click(&mut app, &last);
+    click(&mut app, &last);
+    let Some(Popup::Confirm(_)) = &app.popup else {
+        panic!("a click did not run {last}: {}", screen(&mut app, 120, 40));
+    };
+    assert_eq!(app.pending.as_ref().unwrap().plan().steps[0].name(), last);
+}
+
+#[test]
+fn without_channels_the_highlighted_update_is_the_one_enter_updates() {
+    let mut app = app();
+    for id in ["fzf", "ripgrep"] {
+        app.statuses.insert(
+            id.to_string(),
+            Status::Update {
+                source: "pacman".to_string(),
+                version: Some("1".to_string()),
+                latest: Some("2".to_string()),
+                shadowed: None,
+            },
+        );
+    }
+    // This made-up machine has no package tool, so no channel is found.
+    app.open_screen(Screen::Updates);
+    settle(&mut app);
+    app.focus = Focus::Main;
+    assert!(app.screens.updates.channels.is_empty());
+    // The line that says so is the first row, and no entry's.
+    assert!(screen(&mut app, 140, 50).contains("> No package manager"));
+    assert!(app.selected_entry().is_none());
+    press(&mut app, KeyCode::Down);
+    let shown = screen(&mut app, 140, 50);
+    let highlighted = shown
+        .lines()
+        .find(|line| line.contains("> "))
+        .unwrap_or_default()
+        .to_string();
+    let selected = app.selected_entry().map(|entry| entry.name.clone());
+    assert!(
+        selected
+            .as_deref()
+            .is_some_and(|name| highlighted.contains(name)),
+        "the highlighted row is {highlighted:?} but the keys act on {selected:?}"
+    );
+    // Enter on the last row updates every entry, not the last one.
+    app.inventory = Some(Inventory::from_parts(
+        Some(helix_toolbox_core::PackageManager::Arch),
+        Some(
+            [
+                ("fzf".to_string(), "1-1".to_string()),
+                ("ripgrep".to_string(), "1-1".to_string()),
+            ]
+            .into(),
+        ),
+        [
+            ("fzf".to_string(), "2-1".to_string()),
+            ("ripgrep".to_string(), "2-1".to_string()),
+        ]
+        .into(),
+        HashMap::new(),
+        Default::default(),
+    ));
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Down);
+    let shown = screen(&mut app, 140, 50);
+    assert!(
+        shown
+            .lines()
+            .any(|line| line.contains("> ▶ Update every entry (2)")),
+        "{shown}"
+    );
+    press(&mut app, KeyCode::Enter);
+    assert!(matches!(app.popup, Some(Popup::Confirm(_))));
+    let plan = app.pending.as_ref().unwrap().plan();
+    assert_eq!(plan.steps[0].name(), "Update the system (for Ripgrep, fzf)");
 }
