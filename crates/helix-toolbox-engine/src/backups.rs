@@ -317,7 +317,7 @@ impl Snapshots {
             .collect::<Vec<_>>()
             .join(" ");
         Step::Shell {
-            id: "snapshot".to_string(),
+            id: SNAPSHOT_STEP.to_string(),
             name: format!("Take a {} snapshot", self.label()),
             program,
             display: words.join(" "),
@@ -334,21 +334,46 @@ impl Snapshots {
     }
 }
 
+/// The id of the snapshot step a plan takes first.
+pub(crate) const SNAPSHOT_STEP: &str = "snapshot";
+
+/// Whether an entry's flags change privileged files, the kernel or disks,
+/// or are high risk.
+fn changes_the_system(flags: &str) -> bool {
+    Risk::from_flags(flags) == Risk::High
+        || flags
+            .split_whitespace()
+            .any(|flag| matches!(flag, "PFM" | "K" | "D" | "SI"))
+}
+
 /// Whether a plan changes the system enough to snapshot first: risk high, or
 /// a step whose entry changes privileged files, the kernel or disks.
 pub fn worth_a_snapshot(plan: &Plan, flags: &dyn Fn(&str) -> Option<String>) -> bool {
     plan.risk == Risk::High
-        || plan.steps.iter().any(|step| {
-            flags(step.id()).is_some_and(|flags| {
-                flags
-                    .split_whitespace()
-                    .any(|flag| matches!(flag, "PFM" | "K" | "D" | "SI"))
-            })
-        })
+        || plan
+            .steps
+            .iter()
+            .any(|step| flags(step.id()).is_some_and(|flags| changes_the_system(&flags)))
 }
 
-/// Put a snapshot step first, taken before the plan's other steps run.
-pub fn with_snapshot(plan: &mut Plan, tool: Snapshots) {
+/// Put a snapshot step first, taken before the plan's other steps run. The
+/// steps it is taken for depend on it, so a failed snapshot skips them even
+/// when the run keeps going after a failure: those whose entry changes the
+/// system as `worth_a_snapshot` reads it, or, in a plan high risk of itself
+/// (a system or firmware update), those that ask for root. The rest run.
+pub fn with_snapshot(plan: &mut Plan, tool: Snapshots, flags: &dyn Fn(&str) -> Option<String>) {
+    let mut needs: Vec<bool> = plan
+        .steps
+        .iter()
+        .map(|step| flags(step.id()).is_some_and(|flags| changes_the_system(&flags)))
+        .collect();
+    if !needs.contains(&true) {
+        needs = plan
+            .steps
+            .iter()
+            .map(|step| step.requirements().iter().any(|tool| tool == "sudo"))
+            .collect();
+    }
     let names: Vec<&str> = plan.steps.iter().map(Step::name).collect();
     let description = format!("Helix Toolbox, before: {}", names.join(", "));
     let step = tool.step(&description);
@@ -357,13 +382,16 @@ pub fn with_snapshot(plan: &mut Plan, tool: Snapshots) {
     plan.requirements.dedup();
     plan.privileged = true;
     plan.steps.insert(0, step);
-    // Every index moves up by one; nothing depends on the snapshot.
+    // Every index moves up by one.
     let mut depends = vec![Vec::new()];
-    depends.extend(
-        plan.depends
-            .iter()
-            .map(|list| list.iter().map(|index| index + 1).collect()),
-    );
+    depends.extend((0..needs.len()).map(|index| {
+        let earlier = plan.depends.get(index).map(Vec::as_slice).unwrap_or(&[]);
+        let mut list: Vec<usize> = earlier.iter().map(|other| other + 1).collect();
+        if needs[index] {
+            list.insert(0, 0);
+        }
+        list
+    }));
     plan.depends = depends;
 }
 
@@ -605,14 +633,38 @@ mod tests {
         let flags = |id: &str| (id == "grub").then(|| "I PFM MP".to_string());
         assert!(worth_a_snapshot(&plan, &flags));
         assert!(!worth_a_snapshot(&plan, &|_| Some("I".to_string())));
-        with_snapshot(&mut plan, Snapshots::Snapper);
+        with_snapshot(&mut plan, Snapshots::Snapper, &flags);
         assert_eq!(plan.steps[0].name(), "Take a Snapper snapshot");
         assert_eq!(
             plan.steps[0].display(),
             "sudo snapper -c root create --cleanup-algorithm number --description Helix Toolbox, before: GRUB Theme, After"
         );
-        assert_eq!(plan.depends, [vec![], vec![], vec![1]]);
+        // The system change needs the snapshot; what needs it follows.
+        assert_eq!(plan.depends, [vec![], vec![0], vec![1]]);
         assert!(plan.privileged);
         assert!(plan.requirements.contains(&"snapper".to_string()));
+
+        // A plan high risk of itself, as a system update is: the steps that
+        // ask for root need the snapshot, the user's own do not.
+        let update = |id: &str, requires: &[&str]| Step::Shell {
+            id: id.into(),
+            name: id.into(),
+            program: "true".into(),
+            display: "true".into(),
+            requires: requires.iter().map(|tool| tool.to_string()).collect(),
+            changes: Vec::new(),
+        };
+        let mut plan = Plan {
+            steps: vec![
+                update("update-pacman", &["pacman", "sudo"]),
+                update("update-flatpak", &["flatpak"]),
+            ],
+            depends: vec![vec![], vec![]],
+            risk: Risk::High,
+            ..Plan::default()
+        };
+        assert!(worth_a_snapshot(&plan, &|_| None));
+        with_snapshot(&mut plan, Snapshots::Timeshift, &|_| None);
+        assert_eq!(plan.depends, [vec![], vec![0], vec![]]);
     }
 }

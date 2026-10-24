@@ -833,8 +833,10 @@ On Btrfs with Snapper (a `root` configuration) or with Timeshift, a snapshot
 is taken first before runs that change system files, the kernel or disks
 (flags PFM, K, D, SI, or high risk): **Snapshot before system changes** in
 Settings, which the command line follows too; `--snapshot` takes one there
-when Settings turns it off. Where such a run gets no snapshot because
-neither is set up, its confirmation says so (`No snapshot: neither Snapper
+when Settings turns it off. If the snapshot fails, the steps it was for
+are not run even when a run continues after a failed step (the rest of
+the run still does), and they stay in the Install Plan to try again.
+Where such a run gets no snapshot because neither is set up, its confirmation says so (`No snapshot: neither Snapper
 nor Timeshift is set up here.`), and `--snapshot` on a run that changes
 none of those says it takes none. Helix Toolbox does not roll
 snapshots or packages back itself; the Backups screen says where to (Btrfs

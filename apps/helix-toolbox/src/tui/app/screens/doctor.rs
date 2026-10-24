@@ -12,6 +12,9 @@ pub(in crate::tui::app) struct Doctor {
     examining: Read<Vec<doctor::Diagnosis>>,
     /// A check to show once the checks finish, from the palette.
     pub(in crate::tui::app) wanted: Option<&'static str>,
+    /// A run while another screen was shown left what it found out of
+    /// date.
+    stale: bool,
 }
 
 /// The Helix Doctor area's entries, shown below the checks.
@@ -149,7 +152,7 @@ impl Doctor {
 
 impl ToolScreen for Doctor {
     fn open(&mut self, cx: &mut Cx) {
-        if self.diagnoses.is_empty() {
+        if std::mem::take(&mut self.stale) || self.diagnoses.is_empty() {
             self.examine(cx);
         } else if let Some(wanted) = self.wanted.take() {
             // Asked for from the palette, but the checks answered after the
@@ -232,6 +235,18 @@ impl ToolScreen for Doctor {
             }
         }
         true
+    }
+
+    fn after_run(&mut self, cx: &mut Cx, reading: Reading) {
+        if reading == Reading::Tools {
+            self.examine(cx);
+        }
+    }
+
+    fn stale(&mut self, reading: Reading) {
+        if reading == Reading::Tools {
+            self.stale = true;
+        }
     }
 
     fn entry<'a>(&self, view: &View<'a>, at: Option<usize>) -> Option<&'a Entry> {

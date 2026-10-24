@@ -1678,6 +1678,8 @@ pub enum StepState {
     Interrupted,
     /// A step it depends on did not finish.
     Skipped,
+    /// Skipped because the snapshot taken for it failed.
+    SnapshotFailed,
     /// The run stopped before it.
     NotRun,
 }
@@ -1689,6 +1691,7 @@ impl StepState {
             StepState::Failed(code) => format!("failed (exit {code})"),
             StepState::Interrupted => "interrupted".to_string(),
             StepState::Skipped => "skipped: a step it needs did not finish".to_string(),
+            StepState::SnapshotFailed => "not run: the snapshot before it failed".to_string(),
             StepState::NotRun => "not run: the run stopped first".to_string(),
         }
     }
@@ -1732,13 +1735,34 @@ pub fn step_results(plan: &Plan, outcome: &Outcome, status: Option<&Path>) -> Ve
     } else {
         StepState::NotRun
     };
+    let states: Vec<StepState> = states
+        .into_iter()
+        .map(|state| state.unwrap_or_else(|| unknown.clone()))
+        .collect();
+    // A step skipped for the snapshot that did not finish says so.
+    let snapshot = plan
+        .steps
+        .iter()
+        .position(|step| matches!(step, Step::Shell { id, .. } if id == backups::SNAPSHOT_STEP));
+    let snapshot_failed = snapshot.filter(|&index| states[index] != StepState::Done);
     plan.steps
         .iter()
         .zip(states)
-        .map(|(step, state)| StepResult {
+        .enumerate()
+        .map(|(index, (step, state))| StepResult {
             id: step.id().to_string(),
             name: step.name().to_string(),
-            state: state.unwrap_or_else(|| unknown.clone()),
+            state: match (state, snapshot_failed) {
+                (StepState::Skipped, Some(snapshot))
+                    if plan
+                        .depends
+                        .get(index)
+                        .is_some_and(|depends| depends.contains(&snapshot)) =>
+                {
+                    StepState::SnapshotFailed
+                }
+                (state, _) => state,
+            },
         })
         .collect()
 }

@@ -178,11 +178,11 @@ pub fn prepare_with<'a>(
     // A snapshot first when the run changes the system, where possible;
     // where a wanted one is not taken, why, when that tells the user
     // something.
-    let worth =
-        backups::worth_a_snapshot(&planned, &|id| lookup(id).map(|entry| entry.flags.clone()));
+    let flags = |id: &str| lookup(id).map(|entry| entry.flags.clone());
+    let worth = backups::worth_a_snapshot(&planned, &flags);
     match choices.snapshot {
         Snapshot::Wanted(tool) | Snapshot::Asked(tool) if worth => match tool {
-            Some(tool) => backups::with_snapshot(&mut planned, tool),
+            Some(tool) => backups::with_snapshot(&mut planned, tool, &flags),
             None => planned
                 .notes
                 .push("No snapshot: neither Snapper nor Timeshift is set up here.".into()),
@@ -376,6 +376,100 @@ mod tests {
             panic!("ready");
         };
         assert!(lines[0].detail.contains("snapper"));
+    }
+
+    /// Run a prepared plan through its run session, its snapshot failing and
+    /// every other step doing nothing, and say how each step ended and which
+    /// entries remain queued.
+    fn run_with_a_failed_snapshot(mut ready: Prepared) -> (Vec<String>, Vec<String>) {
+        use crate::{
+            PtyRunner, Step,
+            execution::{HistoryPlace, Options},
+        };
+        let steps = std::mem::take(&mut ready.plan.steps);
+        ready.plan.steps = steps
+            .into_iter()
+            .map(|step| match step {
+                Step::Shell {
+                    id,
+                    name,
+                    display,
+                    requires,
+                    changes,
+                    ..
+                } => Step::Shell {
+                    id,
+                    name,
+                    program: "exit 1".into(),
+                    display,
+                    requires,
+                    changes,
+                },
+                other => Step::Command {
+                    id: other.id().into(),
+                    name: other.name().into(),
+                    line: "true".into(),
+                },
+            })
+            .collect();
+        ready.plan.requirements.clear();
+        let mut session = ready.session().expect("a session for the yes");
+        let state = tempfile::tempdir().unwrap();
+        let options = Options {
+            history: HistoryPlace::In(state.path().to_path_buf()),
+            ..Options::default()
+        };
+        let lib = std::path::Path::new("/lib");
+        let this = std::path::Path::new("/bin/hf");
+        let _events = session
+            .start(PtyRunner::default(), lib, this, options)
+            .unwrap();
+        let finished = session.wait().expect("the run ends");
+        let states = finished
+            .steps
+            .iter()
+            .map(|step| format!("{}: {}", step.id, step.state.describe()))
+            .collect();
+        (states, session.remaining(&|id| id != "snapshot"))
+    }
+
+    #[test]
+    fn a_failed_snapshot_stops_the_system_changes_after_it_even_when_keeping_going() {
+        let entries = || [package("grub-theme", "I PFM"), package("dotfiles", "")];
+        let snapper = Snapshot::Wanted(Some(backups::Snapshots::Snapper));
+        let going = Choices {
+            snapshot: snapper,
+            keep_going: true,
+        };
+        let ready = prepared(&entries(), going, None);
+        assert!(ready.is_ready());
+        let (states, remaining) = run_with_a_failed_snapshot(ready);
+        assert_eq!(
+            states,
+            [
+                "snapshot: failed (exit 1)",
+                "grub-theme: not run: the snapshot before it failed",
+                "dotfiles: done",
+            ]
+        );
+        // What needed the snapshot stays queued to try again.
+        assert_eq!(remaining, ["grub-theme"]);
+
+        // Without keep-going, the failed snapshot stops the run as before.
+        let stop = Choices {
+            snapshot: snapper,
+            keep_going: false,
+        };
+        let (states, remaining) = run_with_a_failed_snapshot(prepared(&entries(), stop, None));
+        assert_eq!(
+            states,
+            [
+                "snapshot: failed (exit 1)",
+                "grub-theme: not run: the run stopped first",
+                "dotfiles: not run: the run stopped first",
+            ]
+        );
+        assert_eq!(remaining, ["grub-theme", "dotfiles"]);
     }
 
     /// The notes about a snapshot not taken, or None when there is none.

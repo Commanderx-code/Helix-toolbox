@@ -21,7 +21,10 @@
     }
   }
 
-  read();
+  $effect(() => {
+    void toolbox.readAgain.tools;
+    read();
+  });
 
   async function updateFirmware(update: FirmwareUpdate) {
     const device = update.label;
