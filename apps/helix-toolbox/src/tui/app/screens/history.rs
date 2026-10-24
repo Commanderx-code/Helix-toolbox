@@ -4,7 +4,7 @@ use super::super::*;
 
 impl App {
     pub(in crate::tui::app) fn reload_history(&mut self) {
-        self.records = history::read(200).unwrap_or_default();
+        self.records = self.host.history(200);
         self.clamp_main();
     }
 

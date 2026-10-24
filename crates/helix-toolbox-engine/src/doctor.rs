@@ -283,7 +283,21 @@ const PROBE_HOST: &str = "github.com";
 /// What is shown is made printable: journal lines, unit and file names and
 /// error text come from outside Helix Toolbox.
 pub fn examine(system: &dyn System, manager: Option<PackageManager>) -> Vec<Diagnosis> {
-    let mut found = gather(system, manager);
+    examine_in(system, manager, crate::history::state_dir().as_deref())
+}
+
+/// Run every check on a host, with the checks its runs kept for after a
+/// reboot from its state folder.
+pub fn examine_on(host: &crate::host::Host, manager: Option<PackageManager>) -> Vec<Diagnosis> {
+    examine_in(host, manager, host.state())
+}
+
+fn examine_in(
+    system: &dyn System,
+    manager: Option<PackageManager>,
+    state: Option<&Path>,
+) -> Vec<Diagnosis> {
+    let mut found = gather(system, manager, state);
     for diagnosis in &mut found {
         diagnosis.title = printable(&diagnosis.title);
         diagnosis.summary = printable(&diagnosis.summary);
@@ -300,7 +314,11 @@ pub fn examine(system: &dyn System, manager: Option<PackageManager>) -> Vec<Diag
     found
 }
 
-fn gather(system: &dyn System, manager: Option<PackageManager>) -> Vec<Diagnosis> {
+fn gather(
+    system: &dyn System,
+    manager: Option<PackageManager>,
+    state: Option<&Path>,
+) -> Vec<Diagnosis> {
     let mut found = Vec::new();
     let online = network(system, &mut found);
     dns(system, online, &mut found);
@@ -310,8 +328,8 @@ fn gather(system: &dyn System, manager: Option<PackageManager>) -> Vec<Diagnosis
     permissions(system, &mut found);
     boot(system, manager, &mut found);
     space(system, manager, &mut found);
-    if let Some(directory) = crate::history::state_dir() {
-        after_reboot(system, &directory, &mut found);
+    if let Some(directory) = state {
+        after_reboot(system, directory, &mut found);
     }
     found
 }

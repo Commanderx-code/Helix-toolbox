@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use helix_toolbox_catalog::Catalog;
-use helix_toolbox_engine::{doctor, hardware_report, history, inventory::which, updates};
+use helix_toolbox_engine::{doctor, hardware_report, history, host::Host, updates};
 use helix_toolbox_platform::LinuxInfo;
 use serde_json::{Value, json};
 
@@ -26,9 +26,11 @@ fn installed_from(exe: &Path, temp: &Path) -> &'static str {
 }
 
 /// Everything the report says, as one value; the text is made from it.
-pub fn gather(platform: &LinuxInfo, checks: bool) -> Value {
+pub fn gather(host: &Host, platform: &LinuxInfo, checks: bool) -> Value {
     let exe = std::env::current_exe().unwrap_or_default();
-    let look = settings::path().map(|path| settings::load(&path));
+    let look = host
+        .config()
+        .map(|config| settings::load(&config.join("helix-toolbox/settings.toml")));
     let tools: serde_json::Map<String, Value> = [
         "sudo",
         "flatpak",
@@ -40,14 +42,14 @@ pub fn gather(platform: &LinuxInfo, checks: bool) -> Value {
         "timeshift",
     ]
     .into_iter()
-    .map(|tool| (tool.to_string(), Value::Bool(which(tool).is_some())))
+    .map(|tool| (tool.to_string(), Value::Bool(host.which(tool).is_some())))
     .collect();
     let size = crossterm::terminal::size()
         .ok()
         .map(|(columns, rows)| format!("{columns}x{rows}"));
-    let variable = |name: &str| std::env::var(name).ok();
-    let runs: Vec<Value> = history::read(5)
-        .unwrap_or_default()
+    let variable = |name: &str| host.variable(name);
+    let runs: Vec<Value> = host
+        .history(5)
         .iter()
         .map(|record| {
             json!({
@@ -59,7 +61,7 @@ pub fn gather(platform: &LinuxInfo, checks: bool) -> Value {
         })
         .collect();
     let health: Option<Vec<Value>> = checks.then(|| {
-        doctor::examine(&doctor::Here, platform.manager)
+        doctor::examine_on(host, platform.manager)
             .iter()
             .map(|diagnosis| {
                 json!({
@@ -92,7 +94,7 @@ pub fn gather(platform: &LinuxInfo, checks: bool) -> Value {
         "recent_runs": runs,
         "health_checks": health,
     });
-    without_home(report)
+    without_home(report, host.home())
 }
 
 /// A hardware report of an entry's last successful run on this machine,
@@ -117,13 +119,11 @@ pub fn worked(
 }
 
 /// Show the home directory as `~` everywhere in the report.
-fn without_home(report: Value) -> Value {
-    let Some(home) = std::env::var_os("HOME")
-        .map(|home| home.to_string_lossy().trim_end_matches('/').to_string())
-        .filter(|home| home.len() > 1)
-    else {
+fn without_home(report: Value, home: &Path) -> Value {
+    let home = home.to_string_lossy().trim_end_matches('/').to_string();
+    if home.len() <= 1 {
         return report;
-    };
+    }
     let text = serde_json::to_string(&report).unwrap_or_default();
     // JSON escapes nothing in an ordinary path, so the plain text matches.
     serde_json::from_str(&text.replace(&home, "~")).unwrap_or(report)

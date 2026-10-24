@@ -198,7 +198,7 @@ impl App {
                 })
             }
             // Off, every day, every week, then off again.
-            9 if self.examine_here => {
+            9 if self.host.is_here() => {
                 let units = restic::units_here();
                 let next = match units.as_deref().and_then(restic::timer) {
                     None => Some(restic::Every::Day),

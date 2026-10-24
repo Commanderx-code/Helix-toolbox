@@ -100,17 +100,29 @@ pub fn load(root: &Path) -> Result<Setup, String> {
         .map_err(|error| format!("{}: {}", path.display(), printable(error.message())))
 }
 
-/// Whether this machine runs on a battery, by the power supplies the kernel
-/// lists.
-pub fn laptop_here() -> bool {
-    std::fs::read_dir("/sys/class/power_supply")
-        .map(|listing| {
-            listing.flatten().any(|item| {
-                std::fs::read_to_string(item.path().join("type"))
-                    .is_ok_and(|kind| kind.trim() == "Battery")
-            })
-        })
-        .unwrap_or(false)
+/// Whether a machine runs on a battery, by the power supplies it lists.
+pub fn laptop(system: &dyn crate::doctor::System) -> bool {
+    let supplies = Path::new("/sys/class/power_supply");
+    system.list(supplies).iter().any(|item| {
+        system
+            .read(&supplies.join(item).join("type"))
+            .is_some_and(|kind| kind.trim() == "Battery")
+    })
+}
+
+/// What the wizard learns about a host whose desktop is `desktop`.
+pub fn survey_on(
+    host: &crate::host::Host,
+    platform: &LinuxInfo,
+    desktop: &crate::desktop::Desktop,
+) -> Survey {
+    survey(
+        platform,
+        desktop,
+        crate::preflight::gpus_of(host),
+        laptop(host),
+        &|tool| crate::doctor::System::on_path(host, tool),
+    )
 }
 
 /// The survey as labeled lines of text, as both interfaces show it.

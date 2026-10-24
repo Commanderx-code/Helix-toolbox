@@ -5,21 +5,9 @@ use super::super::*;
 impl App {
     /// Read the boot and the machine in the background, recording this boot.
     pub(in crate::tui::app) fn read_performance(&mut self) {
-        if !self.examine_here {
-            self.build_performance_rows();
-            return;
-        }
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
-            let state = history::state_dir();
-            let history = history::read(1000).unwrap_or_default();
-            let found = performance::gather(&doctor::Here, state.as_deref(), &history);
-            let boots = state
-                .map(|state| performance::load(&performance::boots_path(&state)))
-                .unwrap_or_default();
-            let _ = sender.send((found, boots));
-        });
-        self.reading_performance = Some(receiver);
+        self.reading_performance = Some(
+            self.read_host(|host| (performance::gather_on(&host), performance::boots_on(&host))),
+        );
     }
 
     /// The recorded boots before this one, newest first.
@@ -46,12 +34,11 @@ impl App {
             .earlier_boots()
             .get(self.performance_against)
             .copied()?;
-        let history = if self.examine_here {
-            history::read(1000).unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-        Some(performance::compare(before, found.boot.as_ref()?, &history))
+        Some(performance::compare(
+            before,
+            found.boot.as_ref()?,
+            &self.host.history(1000),
+        ))
     }
 
     pub(in crate::tui::app) fn build_performance_rows(&mut self) {
@@ -226,18 +213,7 @@ impl App {
                 };
                 match (&hint.unit, &hint.command, &hint.entry) {
                     (Some(unit), Some(command), _) if command.contains(" disable ") => {
-                        let needed = if self.examine_here {
-                            services::needed_by(&doctor::Here, unit, false)
-                        } else {
-                            Vec::new()
-                        };
-                        match services::plan(
-                            unit,
-                            false,
-                            Verb::Disable,
-                            &needed,
-                            std::env::var_os("SSH_CONNECTION").is_some(),
-                        ) {
+                        match services::plan_on(&self.host, unit, false, Verb::Disable) {
                             Ok(planned) => self.confirm_plan(Ok(planned)),
                             Err(why) => {
                                 self.popup =

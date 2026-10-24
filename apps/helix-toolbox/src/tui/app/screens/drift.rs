@@ -4,7 +4,7 @@ use super::super::*;
 
 impl App {
     pub(in crate::tui::app) fn drift_dir(&self) -> Option<std::path::PathBuf> {
-        self.baselines_dir.clone().or_else(drift::dir)
+        self.host.baselines()
     }
 
     /// Read the baselines and profiles again, keep the chosen one, compare.
@@ -49,44 +49,14 @@ impl App {
             self.drift_report = None;
             return;
         };
-        let home = std::env::var_os("HOME")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_default();
-        let (records, settings) = if self.examine_here {
-            (
-                history::read(1000).unwrap_or_default(),
-                drift::settings_here(&doctor::Here),
-            )
-        } else {
-            (Vec::new(), Default::default())
-        };
-        let settings = move || settings.clone();
-        let scripts = self.catalog.root().join("scripts");
-        let examine_here = self.examine_here;
-        let render = move |arguments: &[String]| {
-            if examine_here {
-                helix_toolbox_engine::preview::render_with(&scripts, arguments)
-            } else {
-                Err("not this machine".to_string())
-            }
-        };
-        let sources = drift::Sources {
-            catalog: &self.catalog,
-            platform: &self.platform,
-            inventory,
-            on_path: if self.examine_here { &which } else { &|_| None },
-            system: &doctor::Here,
-            home: &home,
-            history: &records,
-            settings: &settings,
-            render: &render,
-        };
+        let sources = drift::Sources::of(&self.host, &self.catalog, &self.platform, inventory);
         let report = match &target {
             DriftTarget::Baseline { baseline, .. } => drift::compare(baseline, &sources),
             DriftTarget::Profile { name, entries, .. } => {
                 drift::compare_profile(name, entries, &sources)
             }
         };
+        drop(sources);
         self.drift_report = Some((target.key(), report));
         if self.screen == Screen::Drift {
             self.clamp_main();
@@ -231,39 +201,9 @@ impl App {
             )));
             return;
         };
-        let home = std::env::var_os("HOME")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_default();
-        let (records, settings) = if self.examine_here {
-            (
-                history::read(1000).unwrap_or_default(),
-                drift::settings_here(&doctor::Here),
-            )
-        } else {
-            (Vec::new(), Default::default())
-        };
-        let settings = move || settings.clone();
-        let scripts = self.catalog.root().join("scripts");
-        let examine_here = self.examine_here;
-        let render = move |arguments: &[String]| {
-            if examine_here {
-                helix_toolbox_engine::preview::render_with(&scripts, arguments)
-            } else {
-                Err("not this machine".to_string())
-            }
-        };
-        let sources = drift::Sources {
-            catalog: &self.catalog,
-            platform: &self.platform,
-            inventory,
-            on_path: if self.examine_here { &which } else { &|_| None },
-            system: &doctor::Here,
-            home: &home,
-            history: &records,
-            settings: &settings,
-            render: &render,
-        };
-        let baseline = drift::capture(name, history::now(), &sources, &[]);
+        let sources = drift::Sources::of(&self.host, &self.catalog, &self.platform, inventory);
+        let baseline = drift::capture(name, self.host.now(), &sources, &[]);
+        drop(sources);
         let saved = self
             .drift_dir()
             .ok_or_else(|| "cannot find the configuration folder".to_string())

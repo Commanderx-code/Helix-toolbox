@@ -306,13 +306,19 @@ pub fn gpus() -> Vec<String> {
 
 /// `gpus` under another sysfs directory, for tests.
 pub fn gpus_in(devices: &Path) -> Vec<String> {
+    gpus_at(&crate::doctor::Here, devices)
+}
+
+/// The display controllers' vendors a machine's PCI devices list.
+pub fn gpus_of(system: &dyn crate::doctor::System) -> Vec<String> {
+    gpus_at(system, Path::new("/sys/bus/pci/devices"))
+}
+
+fn gpus_at(system: &dyn crate::doctor::System, devices: &Path) -> Vec<String> {
     let mut found = Vec::new();
-    let Ok(listing) = std::fs::read_dir(devices) else {
-        return found;
-    };
-    for device in listing.flatten() {
-        let read =
-            |name: &str| std::fs::read_to_string(device.path().join(name)).unwrap_or_default();
+    for device in system.list(devices) {
+        let device = devices.join(device);
+        let read = |name: &str| system.read(&device.join(name)).unwrap_or_default();
         if !read("class").trim().starts_with("0x03") {
             continue;
         }

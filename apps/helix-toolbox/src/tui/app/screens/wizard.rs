@@ -15,17 +15,7 @@ impl App {
             }
         };
         let desktop = self.desktop_here();
-        let survey = if self.examine_here {
-            crate::setup::survey_here(&self.platform, &desktop)
-        } else {
-            helix_toolbox_engine::setup::survey(
-                &self.platform,
-                &desktop,
-                Vec::new(),
-                false,
-                &|_| false,
-            )
-        };
+        let survey = helix_toolbox_engine::setup::survey_on(&self.host, &self.platform, &desktop);
         self.wizard_ids = setup
             .workstations
             .iter()
@@ -63,17 +53,7 @@ impl App {
             return Vec::new();
         };
         let desktop = self.desktop_here();
-        let survey = if self.examine_here {
-            crate::setup::survey_here(&self.platform, &desktop)
-        } else {
-            helix_toolbox_engine::setup::survey(
-                &self.platform,
-                &desktop,
-                Vec::new(),
-                false,
-                &|_| false,
-            )
-        };
+        let survey = helix_toolbox_engine::setup::survey_on(&self.host, &self.platform, &desktop);
         let Some(chosen) = self
             .wizard_ids
             .get(index)

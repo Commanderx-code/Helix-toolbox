@@ -8,10 +8,10 @@ use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, printable};
 pub use helix_toolbox_engine::drift::available;
 use helix_toolbox_engine::{
-    doctor,
     drift::{self, Baseline, Report},
     history,
-    inventory::{Inventory, which},
+    host::Host,
+    inventory::Inventory,
     profiles,
 };
 use helix_toolbox_platform::LinuxInfo;
@@ -54,47 +54,11 @@ pub enum DriftCommand {
     Delete { name: String },
 }
 
-/// What a capture or comparison reads from this machine.
-struct Here {
-    inventory: Inventory,
-    home: PathBuf,
-    history: Vec<history::Record>,
-}
-
-impl Here {
-    fn gather(platform: &LinuxInfo) -> Self {
-        Here {
-            inventory: Inventory::gather(&doctor::Here, platform),
-            home: std::env::var_os("HOME")
-                .map(PathBuf::from)
-                .unwrap_or_default(),
-            history: history::read(1000).unwrap_or_default(),
-        }
-    }
-
-    fn sources<'a>(
-        &'a self,
-        catalog: &'a Catalog,
-        platform: &'a LinuxInfo,
-        settings: &'a dyn Fn() -> std::collections::BTreeMap<String, String>,
-        render: &'a dyn Fn(&[String]) -> Result<String, String>,
-    ) -> drift::Sources<'a> {
-        drift::Sources {
-            catalog,
-            platform,
-            inventory: &self.inventory,
-            on_path: &which,
-            system: &doctor::Here,
-            home: &self.home,
-            history: &self.history,
-            settings,
-            render,
-        }
-    }
-}
-
-fn settings() -> std::collections::BTreeMap<String, String> {
-    drift::settings_here(&doctor::Here)
+/// This machine and what is installed on it, for a capture or comparison.
+fn here(platform: &LinuxInfo) -> (Host, Inventory) {
+    let host = Host::here();
+    let inventory = Inventory::gather(&host, platform);
+    (host, inventory)
 }
 
 pub fn run(
@@ -115,12 +79,8 @@ pub fn run(
             profile,
             exit_code,
         } => {
-            let here = Here::gather(platform);
-            let scripts = catalog.root().join("scripts");
-            let render = |arguments: &[String]| {
-                helix_toolbox_engine::preview::render_with(&scripts, arguments)
-            };
-            let sources = here.sources(catalog, platform, &settings, &render);
+            let (host, inventory) = here(platform);
+            let sources = drift::Sources::of(&host, catalog, platform, &inventory);
             let (report, against) = match profile {
                 Some(name) => {
                     let (id, title, entries) = find_profile(catalog, &name)?;
@@ -186,12 +146,8 @@ pub fn run(
             Ok(())
         }
         DriftCommand::Save { name, paths } => {
-            let here = Here::gather(platform);
-            let scripts = catalog.root().join("scripts");
-            let render = |arguments: &[String]| {
-                helix_toolbox_engine::preview::render_with(&scripts, arguments)
-            };
-            let sources = here.sources(catalog, platform, &settings, &render);
+            let (host, inventory) = here(platform);
+            let sources = drift::Sources::of(&host, catalog, platform, &inventory);
             let current = std::env::current_dir().unwrap_or_default();
             let extra: Vec<String> = paths
                 .iter()
@@ -265,13 +221,10 @@ pub fn saved(name: &str) -> Result<(String, Baseline)> {
 
 /// Compare this machine with a baseline, as `drift check` does.
 pub fn compare(catalog: &Catalog, platform: &LinuxInfo, baseline: &Baseline) -> Report {
-    let here = Here::gather(platform);
-    let scripts = catalog.root().join("scripts");
-    let render =
-        |arguments: &[String]| helix_toolbox_engine::preview::render_with(&scripts, arguments);
+    let (host, inventory) = here(platform);
     drift::compare(
         baseline,
-        &here.sources(catalog, platform, &settings, &render),
+        &drift::Sources::of(&host, catalog, platform, &inventory),
     )
 }
 

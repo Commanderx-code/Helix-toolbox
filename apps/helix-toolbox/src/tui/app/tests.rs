@@ -12,7 +12,21 @@ fn clipped_text_ends_at_a_word() {
     assert_eq!(clip("anything", 0), "");
 }
 
+/// A made-up machine with a home and nothing else; tests add what their
+/// screens read.
+fn made_up() -> doctor::Fake {
+    doctor::Fake {
+        home: PathBuf::from("/home/me"),
+        ..doctor::Fake::default()
+    }
+}
+
 fn app() -> App {
+    app_on(Host::made_up(made_up()))
+}
+
+/// The interface on this host, a made-up one.
+fn app_on(host: Host) -> App {
     let args = TuiArgs {
         override_validation: true,
         bypass_root: true,
@@ -21,10 +35,19 @@ fn app() -> App {
     let platform =
         LinuxInfo::from_os_release("ID=garuda\nID_LIKE=arch\nPRETTY_NAME=\"Garuda Linux\"\n")
             .unwrap();
-    let mut app = App::new(Catalog::builtin(false).unwrap(), platform, &args);
+    let mut app = App::new(Catalog::builtin(false).unwrap(), platform, host, &args);
     // Plain text keeps these screen tests readable; one test draws icons.
     app.icons = false;
     app
+}
+
+/// Take what the host's reads sent, as the event loop does between frames.
+fn settle(app: &mut App) {
+    for _ in 0..50 {
+        if !app.needs_redraw() {
+            break;
+        }
+    }
 }
 
 fn screen(app: &mut App, width: u16, height: u16) -> String {
@@ -706,6 +729,7 @@ fn a_blocked_plan_says_why_instead_of_asking() {
     let mut app = App::new(
         Catalog::from_directory(&fixtures, false).unwrap(),
         platform,
+        Host::made_up(made_up()),
         &args,
     );
     app.icons = false;
@@ -1071,7 +1095,6 @@ fn the_updates_screen_lists_channels_and_updates_through_them() {
 #[test]
 fn the_history_screen_lists_records() {
     let state = tempfile::tempdir().unwrap();
-    let mut app = app();
     history::record_in(
         state.path(),
         &[("git".into(), "Git".into())],
@@ -1080,10 +1103,9 @@ fn the_history_screen_lists_records() {
         None,
     )
     .unwrap();
-    app.records = history::read_in(state.path(), 10).unwrap();
-    app.screen = Screen::History;
+    let mut app = app_on(Host::made_up(made_up()).with_state(state.path()));
+    app.open_screen(Screen::History);
     app.focus = Focus::Main;
-    app.clamp_main();
     let text = screen(&mut app, 120, 40);
     assert!(text.contains("failed"));
     assert!(text.contains("Git"));
@@ -1096,15 +1118,19 @@ fn the_history_screen_lists_records() {
 fn a_run_that_worked_becomes_a_hardware_report_to_send() {
     let state = tempfile::tempdir().unwrap();
     let reports = tempfile::tempdir().unwrap();
-    let mut app = app();
+    // The machine the report names, as its firmware says.
+    let mut machine = made_up();
+    for (field, value) in [
+        ("sys_vendor", "LENOVO"),
+        ("product_name", "20Y1S02400"),
+        ("product_version", "ThinkPad T15p Gen 2i"),
+    ] {
+        machine
+            .files
+            .insert(Path::new("/sys/class/dmi/id").join(field), value.into());
+    }
+    let mut app = app_on(Host::made_up(machine).with_state(state.path()));
     app.reports_dir = Some(reports.path().to_path_buf());
-    app.machine = Some(hardware_report::Machine {
-        distribution: "Garuda Linux".into(),
-        model: Some("Lenovo ThinkPad T15p Gen 2i".into()),
-        graphics: vec!["NVIDIA GeForce GTX 1650 Mobile / Max-Q (nvidia)".into()],
-        architecture: "x86_64".into(),
-        ..Default::default()
-    });
     history::record_in(
         state.path(),
         &[("git".into(), "Git".into())],
@@ -1121,9 +1147,7 @@ fn a_run_that_worked_becomes_a_hardware_report_to_send() {
         None,
     )
     .unwrap();
-    app.records = history::read_in(state.path(), 10).unwrap();
     app.open_screen(Screen::History);
-    app.records = history::read_in(state.path(), 10).unwrap();
     app.focus = Focus::Main;
     let successful = app
         .records
@@ -1232,47 +1256,67 @@ fn c_checks_an_entry_now_and_says_when_there_is_nothing_to_check() {
     assert!(screen(&mut app, 140, 40).contains("nothing to check"));
 }
 
-fn stand_in_services() -> services::Services {
-    let unit = |name: &str, enablement: &str, active: &str, user: bool| services::Unit {
-        name: name.into(),
-        description: format!("About {name}"),
-        enablement: Some(enablement.into()),
-        active: Some(active.into()),
-        sub: Some(
-            if active == "active" {
-                "running"
-            } else {
-                "dead"
-            }
-            .into(),
-        ),
-        user,
+/// A machine running systemd with a failed unit, a timer, the login
+/// screen, a user service and Discover started at login.
+fn services_machine() -> doctor::Fake {
+    let mut fake = made_up();
+    fake.folders
+        .insert("/run/systemd/system".into(), Vec::new());
+    let unit = |name: &str, active: &str| {
+        let sub = if active == "active" {
+            "running"
+        } else {
+            "dead"
+        };
+        format!(
+            r#"{{"unit":"{name}","load":"loaded","active":"{active}","sub":"{sub}","description":"About {name}"}}"#
+        )
     };
-    services::Services {
-        systemd: true,
-        session: true,
-        units: vec![
-            unit("broken.service", "enabled", "failed", false),
-            unit("fstrim.timer", "disabled", "inactive", false),
-            unit("sddm.service", "enabled", "active", false),
-            unit("pipewire.service", "indirect", "active", true),
-        ],
-        autostart: vec![services::Autostart {
-            file: "discover.desktop".into(),
-            name: "Discover".into(),
-            exec: "discover --notifier".into(),
-            enabled: true,
-            here: true,
-            system: true,
-            ..Default::default()
-        }],
+    let file = |name: &str, state: &str| format!(r#"{{"unit_file":"{name}","state":"{state}"}}"#);
+    let list = |items: Vec<String>| format!("[{}]", items.join(","));
+    let types = "--type=service,timer,socket --no-pager --output=json";
+    for (scope, files, units) in [
+        (
+            "",
+            vec![
+                file("broken.service", "enabled"),
+                file("fstrim.timer", "disabled"),
+                file("sddm.service", "enabled"),
+            ],
+            vec![
+                unit("broken.service", "failed"),
+                unit("fstrim.timer", "inactive"),
+                unit("sddm.service", "active"),
+            ],
+        ),
+        (
+            "--user ",
+            vec![file("pipewire.service", "indirect")],
+            vec![unit("pipewire.service", "active")],
+        ),
+    ] {
+        fake.commands.insert(
+            format!("systemctl {scope}list-unit-files {types}"),
+            (true, list(files)),
+        );
+        fake.commands.insert(
+            format!("systemctl {scope}list-units --all {types}"),
+            (true, list(units)),
+        );
     }
+    fake.folders
+        .insert("/etc/xdg/autostart".into(), vec!["discover.desktop".into()]);
+    fake.files.insert(
+        "/etc/xdg/autostart/discover.desktop".into(),
+        "[Desktop Entry]\nName=Discover\nComment=Updates in the background\nExec=discover --notifier\n"
+            .into(),
+    );
+    fake
 }
 
 #[test]
 fn the_services_screen_lists_units_and_asks_before_stopping_what_is_needed() {
-    let mut app = app();
-    app.services_found = Some(stand_in_services());
+    let mut app = app_on(Host::made_up(services_machine()));
     app.open_screen(Screen::Services);
     app.focus = Focus::Main;
     let shown = screen(&mut app, 140, 40);
@@ -1322,38 +1366,26 @@ fn the_services_screen_lists_units_and_asks_before_stopping_what_is_needed() {
 
 #[test]
 fn the_storage_screen_shows_what_each_cleanup_frees_and_what_stays() {
-    let mut app = app();
-    app.storage_found = Some(storage::Storage {
-        filesystems: vec![storage::Filesystem {
-            path: "/".into(),
-            free: 40_000_000_000,
-            total: 500_000_000_000,
-        }],
-        items: vec![
-            storage::Item {
-                id: "package-cache".into(),
-                title: "Package cache".into(),
-                detail: "Downloaded packages.".into(),
-                size: Some(2_000_000_000),
-                frees: Some(1_500_000_000),
-                ..Default::default()
-            },
-            storage::Item {
-                id: "trash".into(),
-                title: "The trash".into(),
-                detail: "Deleted files.".into(),
-                size: Some(0),
-                not_offered: Some("the trash is empty".into()),
-                ..Default::default()
-            },
-        ],
-        kept: vec![storage::Kept {
-            title: "Kernels".into(),
-            detail: "2 installed: never removed here.".into(),
-            size: None,
-        }],
-    });
+    // 40 GB free of 500, paccache freeing 1.5 GB, two kernels, no trash.
+    let mut machine = made_up();
+    machine
+        .spaces
+        .insert("/".into(), (40_000_000_000, 500_000_000_000));
+    machine.tools.push("paccache".into());
+    machine.commands.insert(
+        "paccache -dk2".into(),
+        (
+            true,
+            "==> finished dry run: 3 candidates (disk space saved: 1.5 GB)\n".into(),
+        ),
+    );
+    machine.folders.insert(
+        "/usr/lib/modules".into(),
+        vec!["6.17.1-zen1-1-zen".into(), "6.12.50-1-lts".into()],
+    );
+    let mut app = app_on(Host::made_up(machine));
     app.open_screen(Screen::Storage);
+    settle(&mut app);
     app.focus = Focus::Main;
     let shown = screen(&mut app, 140, 40);
     for text in [
@@ -1371,7 +1403,15 @@ fn the_storage_screen_shows_what_each_cleanup_frees_and_what_stays() {
             .position(|row| matches!(row, StorageRow::Item(index) if *index == wanted))
             .unwrap()
     };
-    app.main_state.select(Some(row(&app, 1)));
+    let trash = app
+        .storage_found
+        .as_ref()
+        .unwrap()
+        .items
+        .iter()
+        .position(|item| item.id == "trash")
+        .unwrap();
+    app.main_state.select(Some(row(&app, trash)));
     press(&mut app, KeyCode::Enter);
     assert!(screen(&mut app, 140, 40).contains("not offered"));
     press(&mut app, KeyCode::Esc);
@@ -1383,8 +1423,9 @@ fn the_storage_screen_shows_what_each_cleanup_frees_and_what_stays() {
 
 #[test]
 fn the_performance_screen_sets_this_boot_beside_an_earlier_one() {
-    let mut app = app();
-    let boot = |id: &str, booted: u64, total: u64, waited: u64| performance::Boot {
+    // Two boots recorded before this one.
+    let state = tempfile::tempdir().unwrap();
+    let boot = |id: &str, booted: u64, total: u64| performance::Boot {
         id: id.into(),
         booted,
         kernel: format!("7.2.{booted}"),
@@ -1401,21 +1442,43 @@ fn the_performance_screen_sets_this_boot_beside_an_earlier_one() {
         chain: vec![performance::Link {
             name: "NetworkManager-wait-online.service".into(),
             at: Some(1000),
-            took: Some(waited),
+            took: Some(1000),
         }],
     };
-    let now = boot("now", 3000, 20_000, 6000);
-    let before = boot("before", 2000, 15_000, 1000);
-    let oldest = boot("oldest", 1000, 30_000, 1000);
-    let found = performance::Performance {
-        previous: Some(performance::compare(&before, &now, &[])),
-        hints: performance::hints(Some(&now), &performance::Now::default()),
-        boot: Some(now.clone()),
-        recorded: 3,
-        ..Default::default()
-    };
-    app.performance_found = Some((found, vec![now, before, oldest]));
+    let boots = performance::boots_path(state.path());
+    performance::record(&boots, &boot("oldest", 1000, 30_000));
+    performance::record(&boots, &boot("before", 2000, 15_000));
+    // This boot: 1 s in the kernel, 19 s starting services, 6 s of it
+    // waiting for the network.
+    let mut machine = made_up();
+    machine.commands.insert(
+        "systemctl show --property=FirmwareTimestampMonotonic,LoaderTimestampMonotonic,InitRDTimestampMonotonic,UserspaceTimestampMonotonic,FinishTimestampMonotonic".into(),
+        (
+            true,
+            "UserspaceTimestampMonotonic=1000000\nFinishTimestampMonotonic=20000000\n".into(),
+        ),
+    );
+    machine.commands.insert(
+        "systemd-analyze blame --no-pager".into(),
+        (true, "      4.183s plocate-updatedb.service\n".into()),
+    );
+    machine.commands.insert(
+        "systemd-analyze critical-chain --no-pager".into(),
+        (
+            true,
+            "The time when unit became active or started is printed after the \"@\" character.\nThe time the unit took to start is printed after the \"+\" character.\n\ngraphical.target @20.000s\n└─NetworkManager-wait-online.service @1.000s +6.000s\n".into(),
+        ),
+    );
+    for (file, text) in [
+        ("/proc/sys/kernel/random/boot_id", "now"),
+        ("/proc/sys/kernel/osrelease", "7.2.3000"),
+        ("/proc/stat", "btime 3000"),
+    ] {
+        machine.files.insert(file.into(), format!("{text}\n"));
+    }
+    let mut app = app_on(Host::made_up(machine).with_state(state.path()));
     app.open_screen(Screen::Performance);
+    settle(&mut app);
     app.focus = Focus::Main;
     let shown = screen(&mut app, 140, 50);
     for text in [
@@ -1468,45 +1531,28 @@ fn the_performance_screen_sets_this_boot_beside_an_earlier_one() {
 
 #[test]
 fn the_recovery_screen_says_what_is_ready_and_offers_the_snapshot_check() {
-    let mut app = app();
-    let check =
-        |id: &str, title: &str, health, summary: &str, entry: Option<&str>| doctor::Diagnosis {
-            id: id.into(),
-            title: title.into(),
-            health,
-            summary: summary.into(),
-            evidence: vec!["The root file system is btrfs".into()],
-            advice: None,
-            repair: None,
-            entry: entry.map(str::to_string),
-        };
-    app.recovery_found = vec![
-        check(
-            "snapshots",
-            "System snapshots",
-            doctor::Health::Good,
-            "Snapper has 2 snapshots",
-            None,
+    // Snapper on a btrfs root, with two snapshots and no boot entries
+    // for them.
+    let mut machine = made_up();
+    machine.tools.push("snapper".into());
+    machine
+        .files
+        .insert("/etc/snapper/configs/root".into(), String::new());
+    machine.files.insert(
+        "/proc/mounts".into(),
+        "/dev/nvme0n1p2 / btrfs rw,relatime 0 0\n".into(),
+    );
+    machine.commands.insert(
+        "snapper --jsonout -c root list --disable-used-space".into(),
+        (
+            true,
+            r#"{"root": [{"number": 0, "date": ""}, {"number": 1, "date": "2026-10-20 10:00:00"}, {"number": 2, "date": "2026-10-23 10:00:00"}]}"#.into(),
         ),
-        check(
-            "own-files",
-            "Your own files",
-            doctor::Health::Notice,
-            "Nothing Helix Toolbox knows of backs up your home folder",
-            None,
-        ),
-        check(
-            "second-kernel",
-            "A second kernel",
-            doctor::Health::Notice,
-            "Only one kernel",
-            Some("zram-swap"),
-        ),
-    ];
-    app.snapshot_tool = Some(backups::Snapshots::Snapper);
+    );
+    let mut app = app_on(Host::made_up(machine));
     app.open_screen(Screen::Recovery);
     app.focus = Focus::Main;
-    let shown = screen(&mut app, 140, 40);
+    let shown = screen(&mut app, 240, 40);
     for text in [
         "Recovery",
         "Snapper has 2 snapshots",
@@ -1525,7 +1571,12 @@ fn the_recovery_screen_says_what_is_ready_and_offers_the_snapshot_check() {
     let shown = screen(&mut app, 140, 40);
     assert!(shown.contains("sudo snapper -c root list"), "{shown}");
     press(&mut app, KeyCode::Char('n'));
-    app.main_state.select(Some(2));
+    let boot = app
+        .recovery_found
+        .iter()
+        .position(|check| check.id == "snapshot-boot")
+        .unwrap();
+    app.main_state.select(Some(boot));
     press(&mut app, KeyCode::Char('f'));
     assert!(matches!(app.popup, Some(Popup::Confirm(_))));
 }
@@ -1618,6 +1669,7 @@ fn the_restic_screen_lists_snapshots_browses_them_and_finds_a_files_history() {
         .unwrap();
     app.main_state.select(Some(first));
     press(&mut app, KeyCode::Enter);
+    settle(&mut app);
     let shown = screen(&mut app, 140, 40);
     for text in ["In b6f77f6d at /home/me", "Documents/", "notes.txt", ".."] {
         assert!(shown.contains(text), "{text}: {shown}");
@@ -1629,6 +1681,7 @@ fn the_restic_screen_lists_snapshots_browses_them_and_finds_a_files_history() {
     ));
     type_text(&mut app, "notes.txt");
     press(&mut app, KeyCode::Enter);
+    settle(&mut app);
     let shown = screen(&mut app, 140, 40);
     for text in [
         "History of notes.txt",
@@ -1717,10 +1770,15 @@ fn configs_app(home: &Path) -> App {
         "{ \"modules\": \"os\" }\n",
     )
     .unwrap();
-    let mut app = app();
-    app.config_places = Some((home.to_path_buf(), config));
-    app.config_folder = Some(home.join("copies"));
-    app
+    let fake = doctor::Fake {
+        home: home.to_path_buf(),
+        ..doctor::Fake::default()
+    };
+    app_on(
+        Host::made_up(fake)
+            .with_config(config)
+            .with_state(home.join("state")),
+    )
 }
 
 #[test]
@@ -1800,7 +1858,7 @@ fn the_configs_screen_reviews_a_change_an_edit_and_a_backup_before_anything_is_s
     // E hands a private copy to the editor; what comes back is reviewed.
     press(&mut app, KeyCode::Char('E'));
     let request = app.take_edit().expect("a copy for the editor");
-    assert!(request.copy.starts_with(home.join("copies")));
+    assert!(request.copy.starts_with(home.join("state/configs")));
     std::fs::write(&request.copy, "font-size = 16\n").unwrap();
     let copy = request.copy.clone();
     app.edited(request, Ok(()));
@@ -1838,7 +1896,10 @@ fn the_configs_screen_reviews_a_change_an_edit_and_a_backup_before_anything_is_s
 fn the_migration_screen_says_what_a_migration_means_here() {
     let directory = tempfile::tempdir().unwrap();
     let path = fedora_migration(directory.path());
-    let mut app = app();
+    // Flatpak is installed, nothing else.
+    let mut machine = made_up();
+    machine.tools.push("flatpak".into());
+    let mut app = app_on(Host::made_up(machine));
     app.migration_here = Some(migration::Migration {
         version: migration::VERSION,
         from: "Garuda Linux".into(),
@@ -1866,6 +1927,7 @@ fn the_migration_screen_says_what_a_migration_means_here() {
     ));
     type_text(&mut app, &path.display().to_string());
     press(&mut app, KeyCode::Enter);
+    settle(&mut app);
     assert!(app.popup.is_none());
     let shown = screen(&mut app, 140, 40);
     for text in [
@@ -1909,6 +1971,7 @@ fn the_migration_screen_says_what_a_migration_means_here() {
         &directory.path().join("bad.toml").display().to_string(),
     );
     press(&mut app, KeyCode::Enter);
+    settle(&mut app);
     let shown = screen(&mut app, 140, 40);
     assert!(shown.contains("Cannot open the migration"), "{shown}");
     // The one opened before stays.
@@ -1919,14 +1982,19 @@ fn the_migration_screen_says_what_a_migration_means_here() {
 fn the_migration_screen_installs_what_it_can_after_review() {
     let directory = tempfile::tempdir().unwrap();
     let path = fedora_migration(directory.path());
-    let mut app = app();
+    // Flatpak is installed, nothing else.
+    let mut machine = made_up();
+    machine.tools.push("flatpak".into());
+    let mut app = app_on(Host::made_up(machine));
     app.open_screen(Screen::Migration);
+    settle(&mut app);
     app.focus = Focus::Main;
     // Nothing open yet: a says how to open one.
     press(&mut app, KeyCode::Char('a'));
     assert!(screen(&mut app, 140, 40).contains("No migration open"));
     press(&mut app, KeyCode::Esc);
     app.open_migration(path);
+    settle(&mut app);
     press(&mut app, KeyCode::Char('a'));
     assert!(matches!(app.popup, Some(Popup::Confirm(_))));
     let shown = screen(&mut app, 140, 40);
@@ -2005,6 +2073,7 @@ fn repository_app(folder: &Path) -> App {
 }
 
 fn select_repo_row(app: &mut App, wanted: impl Fn(&RepoRow) -> bool) {
+    settle(app);
     let index = app.repo_rows.iter().position(wanted).unwrap();
     app.main_state.select(Some(index));
 }
@@ -2015,6 +2084,7 @@ fn the_repositories_screen_lists_them_and_opens_one() {
     sample_repository(folder.path());
     let mut app = repository_app(folder.path());
     app.open_screen(Screen::Repositories);
+    settle(&mut app);
     app.focus = Focus::Main;
     let shown = screen(&mut app, 160, 40);
     for text in [
@@ -2029,6 +2099,7 @@ fn the_repositories_screen_lists_them_and_opens_one() {
     }
     select_repo_row(&mut app, |row| matches!(row, RepoRow::Repository(0)));
     press(&mut app, KeyCode::Enter);
+    settle(&mut app);
     let shown = screen(&mut app, 160, 40);
     for text in [
         "sample on main: no upstream",
@@ -2048,9 +2119,11 @@ fn the_repositories_screen_lists_them_and_opens_one() {
     press(&mut app, KeyCode::Esc);
     // f keeps it as a favorite, marked in the list.
     press(&mut app, KeyCode::Char('f'));
+    settle(&mut app);
     let kept = std::fs::read_to_string(folder.path().join("workspaces.toml")).unwrap();
     assert!(kept.contains("favorite = true"), "{kept}");
     press(&mut app, KeyCode::Char('h'));
+    settle(&mut app);
     assert!(app.repo_open.is_none());
     assert!(screen(&mut app, 160, 40).contains("★ sample"));
 }
@@ -2158,11 +2231,13 @@ fn settings_turn_the_update_notifications_on_and_off() {
     let watched = watch::read(&places, app.settings_path.as_deref());
     assert!(watched.health && !watched.updates);
     // Drift: no baseline saved yet, so nothing to choose.
-    let baselines = tempfile::tempdir().unwrap();
-    app.baselines_dir = Some(baselines.path().to_path_buf());
+    let config = tempfile::tempdir().unwrap();
+    app.host = app.host.clone().with_config(config.path());
+    let baselines = app.host.baselines().unwrap();
     assert!(screen(&mut app, 120, 40).contains("no (save one in Drift)"));
+    std::fs::create_dir_all(&baselines).unwrap();
     std::fs::write(
-        baselines.path().join("fresh.toml"),
+        baselines.join("fresh.toml"),
         "name = \"Fresh\"\nsystem = \"Garuda Linux\"\ncreated = 1\n",
     )
     .unwrap();
@@ -2299,9 +2374,9 @@ fn arch_packages(names: &[&str]) -> Inventory {
 
 #[test]
 fn drift_compares_with_a_saved_baseline_and_plans_what_is_missing() {
-    let directory = tempfile::tempdir().unwrap();
-    let mut app = app();
-    app.baselines_dir = Some(directory.path().to_path_buf());
+    let config = tempfile::tempdir().unwrap();
+    let mut app = app_on(Host::made_up(made_up()).with_config(config.path()));
+    let baselines = app.host.baselines().unwrap();
     app.inventory = Some(arch_packages(&["git", "ripgrep"]));
     app.open_screen(Screen::Drift);
     app.focus = Focus::Main;
@@ -2313,7 +2388,7 @@ fn drift_compares_with_a_saved_baseline_and_plans_what_is_missing() {
     type_text(&mut app, "Old box");
     press(&mut app, KeyCode::Enter);
     assert!(screen(&mut app, 140, 40).contains("Baseline saved"));
-    assert!(directory.path().join("old-box.toml").is_file());
+    assert!(baselines.join("old-box.toml").is_file());
     press(&mut app, KeyCode::Esc);
     let text = screen(&mut app, 140, 40);
     assert!(text.contains("Baseline  Old box"), "{text}");
@@ -2423,10 +2498,19 @@ fn the_footer_says_how_the_check_stands_and_ctrl_r_checks_again() {
     let (_sender, receiver) = mpsc::channel();
     app.checking = Some(receiver);
     assert!(screen(&mut app, 120, 40).contains("Checking what is installed…"));
-    // Off in tests, Ctrl-R starts nothing, and the palette offers it too.
+    // Ctrl-R checks the machine again, and the palette offers it too. On
+    // this made-up one nothing is installed.
     app.checking = None;
     app.handle_key(&KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
-    assert!(app.checking.is_none() && app.popup.is_none());
+    assert!(app.checking.is_some() && app.popup.is_none());
+    settle(&mut app);
+    assert!(app.checking.is_none());
+    assert!(app.statuses.len() > 1);
+    assert!(
+        app.statuses
+            .values()
+            .all(|status| matches!(status, Status::Absent { .. }))
+    );
     let (choices, _) = app.palette_choices();
     assert!(
         choices
@@ -2717,7 +2801,17 @@ fn v_inspects_an_entry_and_the_confirmation_warns_of_untested_boot_changes() {
 
 #[test]
 fn the_change_preview_opens_from_the_plan_the_confirmation_and_backups() {
-    let mut app = app();
+    // A file and its backup, on the made-up machine.
+    let original = PathBuf::from("/home/me/.config/app.conf");
+    let copy = PathBuf::from("/home/me/.config/app.conf.helix-toolbox-backup-20261016120000");
+    let mut machine = made_up();
+    machine
+        .files
+        .insert(original.clone(), "color = red\nsize = 2\n".into());
+    machine
+        .files
+        .insert(copy.clone(), "color = blue\nsize = 2\n".into());
+    let mut app = app_on(Host::made_up(machine));
     app.queue
         .push(app.catalog.find("grub-dracula").unwrap().clone());
     app.open_screen(Screen::Plan);
@@ -2745,13 +2839,6 @@ fn the_change_preview_opens_from_the_plan_the_confirmation_and_backups() {
     press(&mut app, KeyCode::Char('n'));
 
     // A backup's restore, side by side with the file there now.
-    let directory = tempfile::tempdir().unwrap();
-    let original = directory.path().join("app.conf");
-    std::fs::write(&original, "color = red\nsize = 2\n").unwrap();
-    let copy = directory
-        .path()
-        .join("app.conf.helix-toolbox-backup-20261016120000");
-    std::fs::write(&copy, "color = blue\nsize = 2\n").unwrap();
     app.backups = vec![backups::Backup {
         backup: copy,
         original,
@@ -2776,41 +2863,50 @@ fn the_change_preview_opens_from_the_plan_the_confirmation_and_backups() {
 
 #[test]
 fn hardware_lists_firmware_disks_and_batteries_and_asks_before_changing() {
-    use helix_toolbox_engine::hardware::{Battery, Disk, Firmware, FirmwareUpdate, Hardware};
-    let found = Hardware {
-        firmware: Firmware {
-            available: true,
-            updates: vec![FirmwareUpdate {
-                device_id: "9ea4da9853eae668f5bd65b10d14e4363f619406".into(),
-                device: "Bolt Receiver".into(),
-                from: Some("MPR05.04".into()),
-                to: "MPR05.06".into(),
-                summary: Some("Fixes pairing".into()),
-                urgency: Some("medium".into()),
-            }],
-            ..Firmware::default()
-        },
-        disks: vec![Disk {
-            name: "nvme0n1".into(),
-            model: Some("Samsung SSD 990 PRO 1TB".into()),
-            bytes: Some(1_000_204_886_016),
-            kind: "NVMe".into(),
-            firmware: Some("8B2QJXD7".into()),
-            celsius: Some(38.0),
-        }],
-        batteries: vec![Battery {
-            name: "BAT0".into(),
-            capacity: Some(100),
-            health: Some(65),
-            cycles: Some(662),
-            ..Battery::default()
-        }],
-        ..Hardware::default()
-    };
-    let mut app = app();
-    app.hardware_rows = hardware_rows(&found);
-    app.hardware = Some(found);
+    // fwupd offers a Bolt Receiver update; one NVMe disk; a worn battery.
+    let device = "9ea4da9853eae668f5bd65b10d14e4363f619406";
+    let mut machine = made_up();
+    machine.tools.push("fwupdmgr".into());
+    machine.commands.insert(
+        "fwupdmgr get-devices --json".into(),
+        (
+            true,
+            format!(r#"{{"Devices": [{{"DeviceId": "{device}", "Name": "Bolt Receiver", "Version": "MPR05.04", "Flags": ["updatable"]}}]}}"#),
+        ),
+    );
+    machine.commands.insert(
+        "fwupdmgr get-updates --json".into(),
+        (
+            true,
+            format!(r#"{{"Devices": [{{"DeviceId": "{device}", "Name": "Bolt Receiver", "Version": "MPR05.04", "Releases": [{{"Version": "MPR05.06", "Summary": "Fixes pairing", "Urgency": "medium"}}]}}]}}"#),
+        ),
+    );
+    for (folder, names) in [
+        ("/sys/block", "nvme0n1"),
+        ("/sys/class/nvme/nvme0", "hwmon3"),
+        ("/sys/class/power_supply", "BAT0"),
+    ] {
+        machine.folders.insert(folder.into(), vec![names.into()]);
+    }
+    for (file, text) in [
+        ("/sys/block/nvme0n1/size", "1953525168"),
+        ("/sys/class/nvme/nvme0/model", "Samsung SSD 990 PRO 1TB"),
+        ("/sys/class/nvme/nvme0/firmware_rev", "8B2QJXD7"),
+        ("/sys/class/nvme/nvme0/hwmon3/temp1_input", "38000"),
+        ("/sys/class/power_supply/BAT0/type", "Battery"),
+        ("/sys/class/power_supply/BAT0/capacity", "100"),
+        ("/sys/class/power_supply/BAT0/energy_full", "44200000"),
+        (
+            "/sys/class/power_supply/BAT0/energy_full_design",
+            "68000000",
+        ),
+        ("/sys/class/power_supply/BAT0/cycle_count", "662"),
+    ] {
+        machine.files.insert(file.into(), format!("{text}\n"));
+    }
+    let mut app = app_on(Host::made_up(machine));
     app.open_screen(Screen::Hardware);
+    settle(&mut app);
     app.focus = Focus::Main;
     let text = screen(&mut app, 140, 40);
     assert!(
@@ -2919,24 +3015,36 @@ fn the_wizard_suggests_a_workstation_and_queues_it_for_review() {
     assert!(app.popup.is_none());
 }
 
+/// A Plasma 6.8 session on Wayland with this color scheme, whose Home
+/// Manager generation runs a Plasma step.
+fn plasma(scheme: &str) -> Host {
+    let mut fake = made_up();
+    let answer = |text: &str| (true, format!("{text}\n"));
+    fake.commands
+        .insert("plasmashell --version".into(), answer("plasmashell 6.8.0"));
+    fake.commands.insert(
+        "kreadconfig6 --file kdeglobals --group General --key ColorScheme".into(),
+        answer(scheme),
+    );
+    let generation = PathBuf::from("/nix/store/0000-home-manager-generation");
+    fake.canonical.insert(
+        "/home/me/.local/state/home-manager/gcroots/current-home".into(),
+        generation.clone(),
+    );
+    fake.files.insert(
+        generation.join("activate"),
+        "plasma-manager: write the configuration\n".into(),
+    );
+    Host::made_up(fake)
+        .with_variable("XDG_CURRENT_DESKTOP", "KDE")
+        .with_variable("XDG_SESSION_TYPE", "wayland")
+}
+
 #[test]
 fn the_desktop_screen_offers_its_entries_and_puts_a_saved_look_back() {
-    use helix_toolbox_engine::desktop::{Desktop, Kind, Value};
     let directory = tempfile::tempdir().unwrap();
-    let mut app = app();
+    let mut app = app_on(plasma("BreezeDark"));
     app.looks_dir = Some(directory.path().to_path_buf());
-    app.desktop = Some(Desktop {
-        kind: Some(Kind::Kde),
-        name: Some("KDE Plasma 6.8.0".into()),
-        session: Some("wayland".into()),
-        appearance: vec![Value {
-            key: "color-scheme".into(),
-            label: "Color scheme".into(),
-            value: Some("BreezeDark".into()),
-        }],
-        owners: vec!["Home Manager runs a Plasma configuration step at every switch".into()],
-        ..Desktop::default()
-    });
     app.open_screen(Screen::Desktop);
     app.focus = Focus::Main;
     let text = screen(&mut app, 140, 40);
@@ -2950,9 +3058,7 @@ fn the_desktop_screen_offers_its_entries_and_puts_a_saved_look_back() {
     assert!(screen(&mut app, 140, 40).contains("Look saved"));
     app.popup = None;
     // The look now differs from the desktop: applying it plans the change.
-    let mut changed = app.desktop.clone().unwrap();
-    changed.appearance[0].value = Some("Sweet".into());
-    app.desktop = Some(changed);
+    app.host = plasma("Sweet");
     app.reload_desktop();
     let look = app
         .desktop_rows
@@ -3268,11 +3374,17 @@ fn reliability_says_what_of_the_record_could_not_be_read() {
 
 #[test]
 fn a_login_application_is_described_before_it_is_switched() {
-    let mut app = app();
-    let mut found = stand_in_services();
-    found.autostart[0].comment = "Updates in the background".into();
-    found.autostart[0].own = Some("/home/me/.config/autostart/discover.desktop".into());
-    app.services_found = Some(found);
+    // The user's own file overrides the system's.
+    let mut machine = services_machine();
+    machine.folders.insert(
+        "/home/me/.config/autostart".into(),
+        vec!["discover.desktop".into()],
+    );
+    machine.files.insert(
+        "/home/me/.config/autostart/discover.desktop".into(),
+        "[Desktop Entry]\nX-GNOME-Autostart-enabled=true\n".into(),
+    );
+    let mut app = app_on(Host::made_up(machine));
     app.open_screen(Screen::Services);
     app.focus = Focus::Main;
     // The view of the applications started at login.
@@ -3348,6 +3460,7 @@ fn restic_restores_what_is_typed_shows_what_it_leaves_out_and_ignores_case() {
     press(&mut app, KeyCode::Char('s'));
     answer(&mut app, "NOTES.txt");
     press(&mut app, KeyCode::Char('i'));
+    settle(&mut app);
     assert!(app.restic_ignore_case);
     assert!(screen(&mut app, 160, 40).contains("ignoring upper and lower case"));
 }
