@@ -240,8 +240,11 @@ the Install Plan (the queue, planned live), Updates (the channels, gathered
 on a background thread), History (the records,
 with saved logs) and Settings. Popups over the current screen show text, the
 confirmation with the plan's risk line, and the running terminal. All of it
-is one `App` in `apps/helix-toolbox/src/tui/app.rs` driven by key events; screen
-tests render it into a test backend. Search ranking is
+is one `App` in `apps/helix-toolbox/src/tui/app/` driven by key events: its
+state, startup and runs in `mod.rs`, the frame every screen shares in
+`layout.rs`, keys and the mouse in `input.rs`, the areas, Favorites, the
+Install Plan and the palette in `areas.rs`, and each other screen's methods in
+`screens/`. Screen tests (`tests.rs`) render it into a test backend. Search ranking is
 `helix_toolbox_core::search::score`, shared with `helix-toolbox search`.
 
 ## Graphical interface, later
