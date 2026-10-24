@@ -30,9 +30,14 @@ use std::time::Duration;
 pub fn run(catalog: Catalog, platform: LinuxInfo, args: TuiArgs) -> Result<()> {
     let path = settings::path();
     let look = path.as_deref().map(settings::load).unwrap_or_default();
-    let app = App::new(catalog, platform, &args)
-        .remembering(look, path, &args)
-        .with_status_checks();
+    let app = App::new(
+        catalog,
+        platform,
+        helix_toolbox_engine::host::Host::here(),
+        &args,
+    )
+    .remembering(look, path, &args)
+    .with_status_checks();
     // Before the terminal is taken over, so a wrong name is said plainly.
     let opens = match args.screen.as_deref() {
         Some(name) => Some(app.screen_named(name).ok_or_else(|| {

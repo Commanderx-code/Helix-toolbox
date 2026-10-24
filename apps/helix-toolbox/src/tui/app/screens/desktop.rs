@@ -4,11 +4,7 @@ use super::super::*;
 
 impl App {
     pub(in crate::tui::app) fn desktop_here(&self) -> helix_toolbox_engine::desktop::Desktop {
-        if self.examine_here {
-            crate::setup::desktop_here()
-        } else {
-            self.desktop.clone().unwrap_or_default()
-        }
+        helix_toolbox_engine::desktop::detect_on(&self.host)
     }
 
     pub(in crate::tui::app) fn selected_desktop_row(&self) -> Option<&DesktopRow> {
@@ -137,7 +133,6 @@ impl App {
                 note: suggestion.note,
             });
         }
-        self.desktop = Some(found);
         self.desktop_rows = rows;
         self.clamp_main();
     }

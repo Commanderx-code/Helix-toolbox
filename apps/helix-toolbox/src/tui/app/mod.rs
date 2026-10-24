@@ -26,10 +26,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use helix_toolbox_catalog::Catalog;
 use helix_toolbox_core::{Action, Entry, Item};
 use helix_toolbox_engine::{
-    EngineError, Machine, Plan, Probe, RunSession, backups, bundle,
+    EngineError, Machine, Plan, RunSession, backups, bundle,
     configs::{self, Checked},
     confirmation::{self, Prepared, Verdict},
     doctor, drift, hardware_report, history, home_manager,
+    host::Host,
     inventory::{Inventory, Status, which},
     migration::{self, Standing, Translation},
     notifications,
@@ -786,7 +787,7 @@ pub struct App {
     keep_going: bool,
     /// Take a snapshot before system changes, where the machine can.
     snapshots: bool,
-    /// The snapshot tool set up here, if any; none in tests.
+    /// The snapshot tool set up on the host, if any, as it was at the start.
     snapshot_tool: Option<backups::Snapshots>,
     /// The backups the Backups screen lists, newest first.
     backups: Vec<backups::Backup>,
@@ -812,8 +813,8 @@ pub struct App {
     channels_online: bool,
     /// A look at the update channels running in the background, if any.
     gathering: Option<mpsc::Receiver<(Vec<updates::Channel>, bool)>>,
-    /// Whether this run of the interface checks the machine; off in tests.
-    examine_here: bool,
+    /// The machine the screens read: this one, or one a test made up.
+    host: Host,
     /// Whether the run in the window started from the Install Plan, whose
     /// unfinished entries then stay queued.
     ran_from_plan: bool,
@@ -828,17 +829,14 @@ pub struct App {
     statuses: HashMap<String, Status>,
     /// The snapshot that check read, for planning updates.
     inventory: Option<Inventory>,
-    /// The check running in the background, if any; off in tests.
+    /// The check running in the background, if any.
     checking: Option<mpsc::Receiver<(Inventory, HashMap<String, Status>)>>,
-    check_statuses: bool,
     /// What Drift can compare with: saved baselines, then profiles.
     drift_targets: Vec<DriftTarget>,
     /// The one chosen.
     drift_target: usize,
     /// The last comparison, with the target's key.
     drift_report: Option<(String, drift::Report)>,
-    /// Where baselines are saved; the user's configuration unless a test says.
-    baselines_dir: Option<std::path::PathBuf>,
     /// What the palette's choices do, by index.
     palette_acts: Vec<Act>,
     /// A health check to show once the checks finish, from the palette.
@@ -857,8 +855,7 @@ pub struct App {
     reading_hardware: Option<mpsc::Receiver<helix_toolbox_engine::hardware::Hardware>>,
     /// The firmware update waiting for its confirming word.
     firmware_pending: Option<Plan>,
-    /// The desktop as last read, and the Desktop screen's rows.
-    desktop: Option<helix_toolbox_engine::desktop::Desktop>,
+    /// The Desktop screen's rows.
     desktop_rows: Vec<DesktopRow>,
     /// Where looks are saved; the user's configuration unless a test says.
     looks_dir: Option<std::path::PathBuf>,
@@ -889,9 +886,6 @@ pub struct App {
     opener: fn(&str) -> Result<(), String>,
     /// Copies a report; tests answer for it.
     copier: fn(&str) -> Result<String, String>,
-    /// The machine a hardware report names, in tests; read each time
-    /// otherwise.
-    machine: Option<hardware_report::Machine>,
     /// The units and autostart entries, as last read.
     services_found: Option<services::Services>,
     service_rows: Vec<ServiceRow>,
@@ -948,13 +942,8 @@ pub struct App {
     repo_rows: Vec<RepoRow>,
     config_parts: Vec<ConfigPart>,
     config_rows: Vec<ConfigRow>,
-    /// The home and configuration folders configurations are found in, for
-    /// tests; this machine's otherwise.
-    config_places: Option<(PathBuf, PathBuf)>,
     /// A configuration waiting to be opened in the user's editor.
     edit_request: Option<EditRequest>,
-    /// The private folder for copies of configurations, for tests.
-    config_folder: Option<PathBuf>,
 }
 
 /// A plan of the queue as it was, from when it was made, with what the
@@ -970,10 +959,11 @@ struct PlanCache {
 const PLAN_KEPT: std::time::Duration = std::time::Duration::from_secs(3);
 
 impl App {
-    pub fn new(catalog: Catalog, platform: LinuxInfo, args: &TuiArgs) -> Self {
+    pub fn new(catalog: Catalog, platform: LinuxInfo, host: Host, args: &TuiArgs) -> Self {
         let menu = build_menu(&catalog);
         let areas = vec![AreaState::default(); catalog.tabs.len()];
         let overview = Overview::gather(&platform);
+        let snapshot_tool = host.snapshots();
         let mut app = Self {
             catalog,
             platform,
@@ -1002,7 +992,7 @@ impl App {
             hits: RefCell::new(Hits::default()),
             keep_going: false,
             snapshots: true,
-            snapshot_tool: None,
+            snapshot_tool,
             backups: Vec::new(),
             diagnoses: Vec::new(),
             profiles_dir: None,
@@ -1012,7 +1002,7 @@ impl App {
             filter: Filter::All,
             before_search: None,
             examining: None,
-            examine_here: false,
+            host,
             channels: Vec::new(),
             channels_online: false,
             gathering: None,
@@ -1023,11 +1013,9 @@ impl App {
             statuses: HashMap::new(),
             inventory: None,
             checking: None,
-            check_statuses: false,
             drift_targets: Vec::new(),
             drift_target: 0,
             drift_report: None,
-            baselines_dir: None,
             palette_acts: Vec::new(),
             doctor_wanted: None,
             evidence: None,
@@ -1038,7 +1026,6 @@ impl App {
             hardware_rows: Vec::new(),
             reading_hardware: None,
             firmware_pending: None,
-            desktop: None,
             desktop_rows: Vec::new(),
             looks_dir: None,
             set_up: true,
@@ -1054,7 +1041,6 @@ impl App {
             reports_dir: None,
             opener: |_| Err("there is no browser here".to_string()),
             copier: |_| Err("there is no clipboard here".to_string()),
-            machine: None,
             services_found: None,
             service_rows: Vec::new(),
             service_view: ServiceView::System,
@@ -1094,9 +1080,7 @@ impl App {
             repo_rows: Vec::new(),
             config_parts: Vec::new(),
             config_rows: Vec::new(),
-            config_places: None,
             edit_request: None,
-            config_folder: None,
         };
         app.update_rows();
         if !args.bypass_root && nix::unistd::Uid::effective().is_root() {
@@ -1134,30 +1118,43 @@ impl App {
         }
         self.snapshots = look.snapshots;
         self.set_up = look.set_up || path.is_none();
-        self.snapshot_tool = backups::Snapshots::here();
         self.settings_path = path;
         self.notices = notifications::Places::here();
         self.systemctl = notifications::systemctl;
-        self.reports_dir = history::state_dir();
+        self.reports_dir = self.host.state().map(Path::to_path_buf);
         self.opener = open_link;
         self.copier = super::clipboard::copy;
         self
     }
 
-    /// Check in the background how package entries stand, now and after
-    /// every run.
+    /// Check in the background how package entries stand, now; runs check
+    /// again after they end.
     pub fn with_status_checks(mut self) -> Self {
-        self.check_statuses = true;
-        self.examine_here = true;
         self.refresh_statuses();
         self
     }
 
+    /// Read something of the host: on a thread of its own on this machine,
+    /// where it can take a while; at once on a made-up one, whose answers
+    /// are already there, so the next pass of the event loop shows it.
+    fn read_host<T: Send + 'static>(
+        &self,
+        work: impl FnOnce(Host) -> T + Send + 'static,
+    ) -> mpsc::Receiver<T> {
+        let (sender, receiver) = mpsc::channel();
+        let host = self.host.clone();
+        if self.host.is_here() {
+            std::thread::spawn(move || {
+                let _ = sender.send(work(host));
+            });
+        } else {
+            let _ = sender.send(work(host));
+        }
+        receiver
+    }
+
     /// Start a fresh status check; the old answers stay shown until it ends.
     fn refresh_statuses(&mut self) {
-        if !self.check_statuses {
-            return;
-        }
         let entries: Vec<Entry> = self
             .catalog
             .entries()
@@ -1166,20 +1163,18 @@ impl App {
             .cloned()
             .collect();
         let platform = self.platform.clone();
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
-            let inventory = Inventory::gather(&doctor::Here, &platform);
+        self.checking = Some(self.read_host(move |host| {
+            let inventory = Inventory::gather(&host, &platform);
             let statuses = entries
                 .iter()
                 .filter_map(|entry| {
                     inventory
-                        .status(entry, &platform, &which)
+                        .status(entry, &platform, &|tool| host.which(tool))
                         .map(|status| (entry.id.clone(), status))
                 })
                 .collect();
-            let _ = sender.send((inventory, statuses));
-        });
-        self.checking = Some(receiver);
+            (inventory, statuses)
+        }));
     }
 
     /// Draw this picture as the header where it fits.
@@ -1492,7 +1487,7 @@ impl App {
     fn check_line(&self) -> Option<String> {
         if self.checking.is_some() {
             Some("Checking what is installed…".to_string())
-        } else if self.check_statuses || !self.statuses.is_empty() {
+        } else if self.inventory.is_some() || !self.statuses.is_empty() {
             Some(format!(
                 "{} package entries checked · Ctrl-R check again",
                 self.statuses.len()
@@ -1933,8 +1928,9 @@ impl App {
 
     /// Call `then` with what the checks before a run ask the machine.
     fn with_facts<R>(&self, then: impl FnOnce(&preflight::Facts) -> R) -> R {
-        if !self.check_statuses {
-            // Tests: no machine questions beyond what planning asked.
+        if !self.host.is_here() {
+            // The checks before a run ask this machine itself; a made-up
+            // one answers no more than planning asked.
             return then(&preflight::Facts {
                 present: &|_| true,
                 free_bytes: &|_| None,
@@ -2015,10 +2011,10 @@ impl App {
             keep_going: self.keep_going,
             snapshots: self.snapshots,
         };
-        if self.check_statuses {
+        if self.host.is_here() {
             return confirmation::prepare(planned, &self.catalog, &self.platform, choices);
         }
-        // Tests: the snapshot tool they set, no machine questions beyond
+        // A made-up host: its snapshot tool, no machine questions beyond
         // what planning asked.
         let evidence = self.evidence();
         let choices = confirmation::Choices {

@@ -4,46 +4,11 @@ use super::super::*;
 
 impl App {
     pub(in crate::tui::app) fn snapshots_here(&self) -> Option<backups::Snapshots> {
-        if self.examine_here {
-            backups::Snapshots::here()
-        } else {
-            self.snapshot_tool
-        }
-    }
-
-    /// The restic repository for the recovery checks, with its newest
-    /// snapshot when the Restic screen read them already.
-    fn restic_repository(&self) -> Option<recovery::Repository> {
-        let reading = self.restic_reading.as_ref();
-        match reading.map(|reading| &reading.found) {
-            Some(restic::Found::Ready(config)) => Some(recovery::Repository {
-                name: config.repository.clone(),
-                newest: reading
-                    .and_then(|reading| reading.snapshots.as_ref().ok()?.first())
-                    .map(restic::Snapshot::when),
-            }),
-            Some(_) => None,
-            None => restic::repository_here(),
-        }
+        self.host.snapshots()
     }
 
     pub(in crate::tui::app) fn reload_recovery(&mut self) {
-        if self.examine_here {
-            let found_backups = backups::discover(&backups::Roots::here());
-            let baselines = drift::dir()
-                .map(|directory| drift::load_all(&directory).0)
-                .unwrap_or_default();
-            self.recovery_found = recovery::examine(
-                &doctor::Here,
-                &recovery::Known {
-                    manager: self.platform.manager,
-                    backups: &found_backups,
-                    baselines: &baselines,
-                    now: history::now(),
-                    restic: self.restic_repository(),
-                },
-            );
-        }
+        self.recovery_found = recovery::examine_on(&self.host, self.platform.manager);
         self.clamp_main();
     }
 
@@ -114,15 +79,5 @@ impl App {
             .highlight_style(self.highlight(focused))
             .highlight_symbol(self.marker(focused));
         bordered_list(frame, list, inner, &mut self.main_state, &self.hits);
-    }
-
-    /// What planning asks of the machine in tests: nothing is installed
-    /// but Flatpak, so what a test sees never depends on this machine.
-    pub(in crate::tui::app) fn test_machine() -> Machine<'static> {
-        Machine {
-            holds: &|_: &Probe| false,
-            on_path: &|tool: &str| tool == "flatpak",
-            ..Machine::blind()
-        }
     }
 }

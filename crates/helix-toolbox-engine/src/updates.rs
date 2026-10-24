@@ -162,6 +162,19 @@ impl Places {
         }
     }
 
+    /// A host's folders and clock, without a running Helix Toolbox.
+    pub fn of(host: &crate::host::Host) -> Self {
+        Places {
+            config: host
+                .config()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| host.home().join(".config")),
+            home: host.home().to_path_buf(),
+            now: host.now(),
+            this: None,
+        }
+    }
+
     /// The same, with the running Helix Toolbox, `version` and at `exe`, for
     /// its own update.
     pub fn with_this(mut self, version: &str, exe: PathBuf) -> Self {

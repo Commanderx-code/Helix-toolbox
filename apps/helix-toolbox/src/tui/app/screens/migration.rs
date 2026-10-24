@@ -5,29 +5,18 @@ use super::super::*;
 impl App {
     /// Read in the background what a migration of this machine would hold.
     pub(in crate::tui::app) fn read_migration(&mut self) {
-        if !self.examine_here {
-            self.build_migration_rows();
-            return;
-        }
         let entries: Vec<Entry> = self.catalog.entries().into_iter().cloned().collect();
         let platform = self.platform.clone();
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
+        self.reading_migration = Some(self.read_host(move |host| {
             let refs: Vec<&Entry> = entries.iter().collect();
             // As migration::gather, keeping whether the packages chosen by
             // hand could be read.
-            let inventory = Inventory::gather(&doctor::Here, &platform);
-            let chosen = migration::chosen(&doctor::Here, platform.manager);
-            let found = migration::export(
-                &refs,
-                &platform,
-                &inventory,
-                chosen.as_deref(),
-                history::now(),
-            );
-            let _ = sender.send((found, chosen.is_some()));
-        });
-        self.reading_migration = Some(receiver);
+            let inventory = Inventory::gather(&host, &platform);
+            let chosen = migration::chosen(&host, platform.manager);
+            let found =
+                migration::export(&refs, &platform, &inventory, chosen.as_deref(), host.now());
+            (found, chosen.is_some())
+        }));
         self.build_migration_rows();
     }
 
@@ -41,31 +30,14 @@ impl App {
 
     /// Read a migration file and what it means here, in the background.
     pub(in crate::tui::app) fn open_migration(&mut self, path: PathBuf) {
-        if !self.examine_here {
-            let read = migration::read(&path)
-                .map(|read| {
-                    migration::translate(
-                        read,
-                        &self.catalog.entries(),
-                        &self.platform,
-                        Self::test_machine(),
-                        None,
-                    )
-                })
-                .map_err(|error| error.to_string());
-            self.opened_migration(path, read);
-            return;
-        }
         let entries: Vec<Entry> = self.catalog.entries().into_iter().cloned().collect();
         let platform = self.platform.clone();
-        let (sender, receiver) = mpsc::channel();
-        std::thread::spawn(move || {
+        self.opening_migration = Some(self.read_host(move |host| {
             let refs: Vec<&Entry> = entries.iter().collect();
-            let read = migration::read_here(&doctor::Here, &path, &refs, &platform)
+            let read = migration::read_here(&host, &path, &refs, &platform)
                 .map_err(|error| error.to_string());
-            let _ = sender.send((path, read));
-        });
-        self.opening_migration = Some(receiver);
+            (path, read)
+        }));
         self.build_migration_rows();
     }
 
@@ -99,13 +71,12 @@ impl App {
         }
         let found = match &self.migration_here {
             Some(found) => found.clone(),
-            None if self.examine_here => migration::gather(
-                &doctor::Here,
+            None => migration::gather(
+                &self.host,
                 &self.catalog.entries(),
                 &self.platform,
-                history::now(),
+                self.host.now(),
             ),
-            None => return Err("What this machine has is still being read.".to_string()),
         };
         migration::write(&path, &found).map_err(|error| error.to_string())?;
         Ok(format!(
@@ -136,11 +107,7 @@ impl App {
             return;
         }
         let entries = self.catalog.entries();
-        let planned = if self.examine_here {
-            migration::plan_here(&doctor::Here, translation, &entries, &self.platform)
-        } else {
-            migration::plan(translation, &entries, &self.platform, Self::test_machine())
-        };
+        let planned = migration::plan_here(&self.host, translation, &entries, &self.platform);
         self.confirm_plan(planned);
     }
 

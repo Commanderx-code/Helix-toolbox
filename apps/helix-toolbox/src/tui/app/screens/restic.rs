@@ -11,10 +11,11 @@ impl App {
         }
     }
 
-    /// Read the repository and its snapshots in the background. Tests set
-    /// what was read themselves, so nothing of this machine's is asked.
+    /// Read the repository and its snapshots in the background. Its
+    /// settings and timer are this machine's own, which a made-up host does
+    /// not stand in for: tests set what was read themselves.
     pub(in crate::tui::app) fn read_restic(&mut self) {
-        if !self.examine_here {
+        if !self.host.is_here() {
             self.build_restic_rows();
             return;
         }
@@ -41,7 +42,7 @@ impl App {
         self.build_restic_rows();
     }
 
-    /// List a folder of a snapshot: in the background, or at once in tests.
+    /// List a folder of a snapshot, in the background.
     fn browse_restic(&mut self, snapshot: restic::Snapshot, folder: String) {
         let Some(config) = self.restic_config().cloned() else {
             return;
@@ -55,15 +56,7 @@ impl App {
                 nodes,
             }
         };
-        if self.examine_here {
-            let (sender, receiver) = mpsc::channel();
-            std::thread::spawn(move || {
-                let _ = sender.send(work());
-            });
-            self.browsing_restic = Some(receiver);
-        } else {
-            self.restic_browse = Some(work());
-        }
+        self.browsing_restic = Some(self.read_host(move |_| work()));
         self.build_restic_rows();
     }
 
@@ -74,22 +67,11 @@ impl App {
         };
         let ignore_case = self.restic_ignore_case;
         let runner = self.restic.clone();
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_default();
-        let work = move || {
-            let found = restic::history(runner.as_ref(), &config, &home, &pattern, ignore_case);
+        self.searching_restic = Some(self.read_host(move |host| {
+            let found =
+                restic::history(runner.as_ref(), &config, host.home(), &pattern, ignore_case);
             (pattern, found)
-        };
-        if self.examine_here {
-            let (sender, receiver) = mpsc::channel();
-            std::thread::spawn(move || {
-                let _ = sender.send(work());
-            });
-            self.searching_restic = Some(receiver);
-        } else {
-            self.restic_search = Some(work());
-        }
+        }));
         self.build_restic_rows();
     }
 
@@ -254,10 +236,7 @@ impl App {
             let config = self
                 .restic_config()
                 .ok_or("No restic repository is set up.")?;
-            let home = std::env::var_os("HOME")
-                .map(PathBuf::from)
-                .ok_or("there is no home folder")?;
-            let target = restic::check_target(&home, &typed_path(text)?)?;
+            let target = restic::check_target(self.host.home(), &typed_path(text)?)?;
             restic::plan_restore(config, snapshot, &target, include)
         })();
         self.confirm_restic(planned);
@@ -338,11 +317,17 @@ impl App {
     }
 
     pub(in crate::tui::app) fn record_baseline(&mut self, text: &str) -> Result<String, String> {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .ok_or("there is no home folder")?;
-        let state = history::state_dir().ok_or("cannot find the state folder")?;
-        let recorded = restic::record(&state, &home, &typed_path(text)?, history::now())?;
+        let state = self
+            .host
+            .state()
+            .ok_or("cannot find the state folder")?
+            .to_path_buf();
+        let recorded = restic::record(
+            &state,
+            self.host.home(),
+            &typed_path(text)?,
+            self.host.now(),
+        )?;
         if let Some(reading) = &mut self.restic_reading {
             reading.baselines = restic::baselines(&state);
         }
@@ -355,7 +340,9 @@ impl App {
 
     /// The timed backup on, every day or every week, or off when it is on.
     pub(in crate::tui::app) fn toggle_restic_timer(&mut self, every: restic::Every) {
-        if !self.examine_here {
+        // The timer is kept with the user's own units, which a made-up host
+        // does not stand in for.
+        if !self.host.is_here() {
             return;
         }
         let on = restic::units_here().and_then(|units| restic::timer(&units));
@@ -364,7 +351,7 @@ impl App {
 
     /// The timed backup's state, for Settings.
     pub(in crate::tui::app) fn restic_timer_label(&self) -> String {
-        if !self.examine_here {
+        if !self.host.is_here() {
             return "not available here".to_string();
         }
         match restic::units_here().and_then(|units| restic::timer(&units)) {

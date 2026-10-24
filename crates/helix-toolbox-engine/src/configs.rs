@@ -403,6 +403,32 @@ pub fn here(kind: Kind) -> Result<Located, String> {
     )
 }
 
+/// The file to edit on a host: its home and configuration folder, with
+/// the `[configs]` table of its `settings.toml` and Command Center's
+/// settings read there.
+pub fn locate_on(host: &crate::host::Host, kind: Kind) -> Result<Located, String> {
+    use crate::doctor::System;
+    let config = host
+        .config()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| host.home().join(".config"));
+    let table = host
+        .read(&config.join("helix-toolbox/settings.toml"))
+        .and_then(|text| text.parse::<toml::Table>().ok())
+        .and_then(|table| table.get("configs")?.as_table().cloned());
+    let command_center = host.read(&config.join("io.helixstack.commandcenter/settings.json"));
+    locate(
+        kind,
+        &Facts {
+            home: host.home(),
+            config_home: &config,
+            settings: table.as_ref(),
+            command_center: command_center.as_deref(),
+            store: Path::new("/nix/store"),
+        },
+    )
+}
+
 /// The folders the edited files are in, so their backups are found with
 /// the others.
 pub fn backup_folders() -> Vec<PathBuf> {

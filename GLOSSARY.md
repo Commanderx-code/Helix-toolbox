@@ -39,3 +39,13 @@ Where a run session's program runs: a pseudo-terminal (`PtyRunner`, for
 the terminal interface and the window), the caller's own terminal
 (`InheritedRunner`, for the command line), or nowhere (`MockRunner`, for
 tests). Everything else about a run is the session's.
+
+**Host**:
+The machine Helix Toolbox reads, as one value: the engine's `host::Host`.
+It answers as a `doctor::System` and holds the user's home, configuration
+and state folders, the environment and the clock. `Host::here()` is the
+machine it runs on; `Host::made_up()` is one a test describes, which reads
+nothing of the real home, `/sys` or environment. Features build their
+sources from a host (`drift::Sources::of`, `recovery::examine_on`), so
+every interface reads the machine the same way.
+_Avoid_: machine (the planning questions), here.
