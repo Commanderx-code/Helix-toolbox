@@ -52,6 +52,15 @@ from the engine's types rather than derived from them, so the engine can
 change without changing what other programs read; the shapes and their
 `schema` version are in [JSON.md](JSON.md).
 
+What a screen shows comes from the engine's `rows` module: engine results
+in, display rows out, with the sizes (decimal, "1.6 GB"), the thresholds
+(a sensor within five degrees of critical, a battery under 70% of its
+design, a disk or memory over nine tenths full, a boot change of a tenth
+of a second) and the sentences decided there once. The terminal interface
+draws the rows and the window's `views.rs` serializes them, so neither
+interface works out display text of its own. `json.rs` stays apart: what
+other programs read does not follow what people read.
+
 ## The operation model
 
 An entry's `Action` is one of:
@@ -226,7 +235,8 @@ panel too.
 
 The window (`apps/helix-toolbox-gui`, [GUI.md](GUI.md)) is a second
 interface on the same engine: its Rust side answers the frontend's calls
-with shapes built field by field in `views.rs`, plans and checks through
+with shapes built field by field in `views.rs`, which takes a screen's
+text from the engine's display rows (`rows`), plans and checks through
 `confirmation::prepare()`, and forwards a run's execution events on a
 channel to an xterm.js terminal. Its tool screens call the same engine
 functions the terminal interface does (`doctor::examine`,

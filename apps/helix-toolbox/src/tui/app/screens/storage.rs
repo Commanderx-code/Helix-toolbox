@@ -18,25 +18,24 @@ impl App {
     }
 
     pub(in crate::tui::app) fn build_storage_rows(&mut self) {
-        let mut rows = Vec::new();
+        let mut list = Vec::new();
         if let Some(found) = &self.storage_found {
-            rows.push(StorageRow::Heading("Space".to_string()));
+            list.push(StorageRow::Heading("Space".to_string()));
             for filesystem in &found.filesystems {
-                rows.push(StorageRow::Filesystem(format!(
-                    "{}: {} free of {}",
-                    filesystem.path,
-                    storage::shown(filesystem.free),
-                    storage::shown(filesystem.total)
+                let space = rows::space(filesystem);
+                list.push(StorageRow::Filesystem(format!(
+                    "{}: {}",
+                    space.path, space.text
                 )));
             }
-            rows.push(StorageRow::Heading("What can be cleaned".to_string()));
-            rows.extend((0..found.items.len()).map(StorageRow::Item));
+            list.push(StorageRow::Heading("What can be cleaned".to_string()));
+            list.extend((0..found.items.len()).map(StorageRow::Item));
             if !found.kept.is_empty() {
-                rows.push(StorageRow::Heading("Kept, never cleaned here".to_string()));
-                rows.extend((0..found.kept.len()).map(StorageRow::Kept));
+                list.push(StorageRow::Heading("Kept, never cleaned here".to_string()));
+                list.extend((0..found.kept.len()).map(StorageRow::Kept));
             }
         }
-        self.storage_rows = rows;
+        self.storage_rows = list;
         self.clamp_main();
     }
 
@@ -133,16 +132,15 @@ impl App {
                     }
                     StorageRow::Item(index) => {
                         let item = &found.items[*index];
-                        let size = item.size.map(storage::shown).unwrap_or_else(|| "?".into());
-                        let (said, color) = match (&item.not_offered, item.frees) {
-                            (Some(why), _) => (why.clone(), self.theme.muted()),
-                            (None, Some(frees)) => (
-                                format!("frees {}", storage::shown(frees)),
-                                self.theme.success(),
-                            ),
-                            (None, None) => {
-                                ("frees what it finds".to_string(), self.theme.success())
-                            }
+                        let rows::CleanRow {
+                            size,
+                            said,
+                            offered,
+                        } = rows::clean(item);
+                        let color = if offered {
+                            self.theme.success()
+                        } else {
+                            self.theme.muted()
                         };
                         Line::from(vec![
                             Span::styled(
@@ -164,7 +162,7 @@ impl App {
                                 Style::default().fg(self.theme.entry()),
                             ),
                             Span::styled(
-                                kept.size.map(storage::shown).unwrap_or_default(),
+                                rows::kept_size(kept).unwrap_or_default(),
                                 Style::default().fg(self.theme.muted()),
                             ),
                         ])

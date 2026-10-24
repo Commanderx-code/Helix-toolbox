@@ -37,6 +37,7 @@ use helix_toolbox_engine::{
     performance, plan_removal, plan_with, preflight, profiles, recovery, reliability,
     repositories::{self as repos, Change, Details, Summary},
     restic::{self, Restic},
+    rows,
     services::{self, Verb},
     storage, updates,
     watch::{self, Watch},
@@ -2041,212 +2042,56 @@ impl App {
     }
 }
 
-/// The Hardware screen's lines, section by section.
+/// The Hardware screen's lines, section by section, from the rows both
+/// interfaces show, with what this screen's keys do.
 fn hardware_rows(found: &helix_toolbox_engine::hardware::Hardware) -> Vec<HardwareRow> {
-    use helix_toolbox_engine::hardware::size;
-    let item = |text: String, attention: bool, details: String, act: Option<HardwareAct>| {
+    let shown = rows::hardware(found);
+    let item = |row: &rows::Row, act: Option<HardwareAct>| {
+        let keys = match &act {
+            Some(HardwareAct::Firmware(_)) => {
+                "\n\nf updates it through fwupd after you type FIRMWARE and confirm the plan. Keep the machine on mains power; some updates finish at the next reboot."
+            }
+            Some(HardwareAct::Smart(_)) => {
+                "\n\nSMART health needs root to read; s checks it after confirmation. It only reads the disk's own health record."
+            }
+            None => "",
+        };
         HardwareRow::Item {
-            text,
-            attention,
-            details,
+            text: row.line.clone(),
+            attention: row.attention,
+            details: format!("{}{keys}", row.more),
             act,
         }
     };
-    let mut rows = vec![HardwareRow::Heading("Firmware".to_string())];
-    if let Some(note) = &found.firmware.note {
-        rows.push(item(note.clone(), false, note.clone(), None));
-    }
-    for (index, update) in found.firmware.updates.iter().enumerate() {
-        rows.push(item(
-            format!(
-                "Update for {}: {} → {}",
-                update.device,
-                update.from.as_deref().unwrap_or("?"),
-                update.to
-            ),
-            true,
-            format!(
-                "{}\nNow: {}\nAvailable: {}\nUrgency: {}\n\n{}\n\nf updates it through fwupd after you type FIRMWARE and confirm the plan. Keep the machine on mains power; some updates finish at the next reboot.",
-                update.device,
-                update.from.as_deref().unwrap_or("unknown"),
-                update.to,
-                update.urgency.as_deref().unwrap_or("not given"),
-                update.summary.as_deref().unwrap_or("No summary.")
-            ),
-            Some(HardwareAct::Firmware(index)),
-        ));
-    }
-    if found.firmware.available {
-        let updatable: Vec<&helix_toolbox_engine::hardware::FirmwareDevice> = found
-            .firmware
-            .devices
+    let mut list = vec![HardwareRow::Heading("Firmware".to_string())];
+    list.extend(shown.note.iter().map(|row| item(row, None)));
+    list.extend(
+        shown
+            .updates
             .iter()
-            .filter(|device| device.updatable)
-            .collect();
-        let listing: Vec<String> = updatable
+            .enumerate()
+            .map(|(index, row)| item(row, Some(HardwareAct::Firmware(index)))),
+    );
+    list.extend(shown.firmware.iter().map(|row| item(row, None)));
+    list.push(HardwareRow::Heading("Disks".to_string()));
+    list.extend(
+        shown
+            .disks
             .iter()
-            .map(|device| {
-                format!(
-                    "{}{}",
-                    device.name,
-                    device
-                        .version
-                        .as_deref()
-                        .map(|version| format!(" {version}"))
-                        .unwrap_or_default()
-                )
-            })
-            .collect();
-        rows.push(item(
-            format!(
-                "{} devices, {} updatable through fwupd{}",
-                found.firmware.devices.len(),
-                updatable.len(),
-                if found.firmware.updates.is_empty() {
-                    "; no updates in the metadata fwupd has"
-                } else {
-                    ""
-                }
-            ),
-            false,
-            format!(
-                "Updatable through fwupd:\n{}\n\nThe updates come from the metadata fwupd already has; fwupdmgr refresh fetches newer metadata.",
-                listing.join("\n")
-            ),
-            None,
-        ));
+            .zip(&found.disks)
+            .map(|(row, disk)| item(row, Some(HardwareAct::Smart(disk.name.clone())))),
+    );
+    list.push(HardwareRow::Heading("Temperatures".to_string()));
+    list.push(item(&shown.temperatures, None));
+    if !shown.batteries.is_empty() {
+        list.push(HardwareRow::Heading("Batteries".to_string()));
     }
-    rows.push(HardwareRow::Heading("Disks".to_string()));
-    for disk in &found.disks {
-        let text = format!(
-            "{}  {}  {}  {}{}",
-            disk.name,
-            disk.kind,
-            disk.bytes.map(size).unwrap_or_default(),
-            disk.model.as_deref().unwrap_or("unknown model"),
-            disk.celsius
-                .map(|celsius| format!("  {celsius:.0} °C"))
-                .unwrap_or_default()
-        );
-        rows.push(item(
-            text.clone(),
-            false,
-            format!(
-                "{text}\nFirmware: {}\n\nSMART health needs root to read; s checks it after confirmation. It only reads the disk's own health record.",
-                disk.firmware.as_deref().unwrap_or("unknown")
-            ),
-            Some(HardwareAct::Smart(disk.name.clone())),
-        ));
+    list.extend(shown.batteries.iter().map(|row| item(row, None)));
+    for (title, devices) in [("PCI devices", &shown.pci), ("USB devices", &shown.usb)] {
+        list.push(HardwareRow::Heading(title.to_string()));
+        list.extend(devices.iter().map(|row| item(row, None)));
     }
-    rows.push(HardwareRow::Heading("Temperatures".to_string()));
-    let hot: Vec<&helix_toolbox_engine::hardware::Sensor> =
-        found.sensors.iter().filter(|sensor| sensor.hot()).collect();
-    let warmest = found
-        .sensors
-        .iter()
-        .max_by(|a, b| a.celsius.total_cmp(&b.celsius));
-    let all: Vec<String> = found
-        .sensors
-        .iter()
-        .map(|sensor| {
-            format!(
-                "{} {}: {:.1} °C{}",
-                sensor.chip,
-                sensor.label,
-                sensor.celsius,
-                sensor
-                    .critical
-                    .map(|critical| format!(" (critical {critical:.0})"))
-                    .unwrap_or_default()
-            )
-        })
-        .collect();
-    match warmest {
-        Some(warmest) => rows.push(item(
-            format!(
-                "{} sensors; the warmest {} {} at {:.0} °C{}",
-                found.sensors.len(),
-                warmest.chip,
-                warmest.label,
-                warmest.celsius,
-                if hot.is_empty() {
-                    String::new()
-                } else {
-                    format!("; {} near their limit", hot.len())
-                }
-            ),
-            !hot.is_empty(),
-            all.join("\n"),
-            None,
-        )),
-        None => rows.push(item(
-            "No temperature sensors found".to_string(),
-            false,
-            String::new(),
-            None,
-        )),
-    }
-    if !found.batteries.is_empty() {
-        rows.push(HardwareRow::Heading("Batteries".to_string()));
-    }
-    for battery in &found.batteries {
-        let text = format!(
-            "{}: {}{}{}",
-            battery.name,
-            battery
-                .capacity
-                .map(|capacity| format!("{capacity}% charged"))
-                .unwrap_or_else(|| "charge unknown".to_string()),
-            battery
-                .health
-                .map(|health| format!(", holds {health}% of its design capacity"))
-                .unwrap_or_default(),
-            battery
-                .cycles
-                .map(|cycles| format!(", {cycles} cycles"))
-                .unwrap_or_default()
-        );
-        rows.push(item(
-            text.clone(),
-            battery.health.is_some_and(|health| health < 70),
-            format!(
-                "{text}\nStatus: {}\nModel: {}\nType: {}\n\nBelow about 70% of its design capacity a battery is usually worth replacing.",
-                battery.status.as_deref().unwrap_or("unknown"),
-                battery.model.as_deref().unwrap_or("unknown"),
-                battery.technology.as_deref().unwrap_or("unknown")
-            ),
-            None,
-        ));
-    }
-    for (title, devices) in [("PCI devices", &found.pci), ("USB devices", &found.usb)] {
-        rows.push(HardwareRow::Heading(title.to_string()));
-        for device in devices {
-            let text = format!(
-                "{}{}",
-                device.name,
-                device
-                    .driver
-                    .as_deref()
-                    .map(|driver| format!("  [{driver}]"))
-                    .unwrap_or_default()
-            );
-            rows.push(item(
-                text.clone(),
-                false,
-                format!(
-                    "{text}\nAddress: {}{}",
-                    device.address,
-                    device
-                        .class
-                        .as_deref()
-                        .map(|class| format!("\nClass or id: {class}"))
-                        .unwrap_or_default()
-                ),
-                None,
-            ));
-        }
-    }
-    rows
+    list
 }
 
 /// Whether queueing a difference's entry would put back what it names.

@@ -25,7 +25,6 @@
   let selected = $state<string | null>(null);
   let details = $state<ServiceDetails | null>(null);
 
-  const kind = (unit: UnitView) => unit.name.split('.').pop();
   const key = (unit: UnitView) => `${unit.user ? 'user' : 'system'}:${unit.name}`;
   const matches = (...texts: string[]) => {
     const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
@@ -35,23 +34,19 @@
     (found?.units ?? []).filter(
       (unit) =>
         (view === 'system'
-          ? !unit.user && kind(unit) === 'service'
+          ? !unit.user && unit.kind === 'service'
           : view === 'timers'
-            ? kind(unit) !== 'service'
+            ? unit.kind !== 'service'
             : view === 'user'
-              ? unit.user && kind(unit) === 'service'
+              ? unit.user && unit.kind === 'service'
               : view === 'failed'
-                ? unit.active === 'failed'
+                ? unit.failed
                 : false) && matches(unit.name, unit.description),
     ),
   );
   const applications = $derived(view === 'login' ? (found?.autostart ?? []).filter((item) => matches(item.name, item.file, item.exec)) : []);
   const unit = $derived(found?.units.find((unit) => key(unit) === selected) ?? null);
   const application = $derived(found?.autostart.find((item) => `login:${item.file}` === selected) ?? null);
-
-  const enabled = (unit: UnitView) => ['enabled', 'enabled-runtime', 'alias', 'linked', 'linked-runtime'].includes(unit.enablement ?? '');
-  const switchable = (unit: UnitView) => ['enabled', 'disabled', 'enabled-runtime', 'indirect', 'linked', 'alias'].includes(unit.enablement ?? '');
-  const running = (unit: UnitView) => unit.active === 'active';
 
   async function load() {
     try {
@@ -124,19 +119,19 @@
         <div class="rows" use:arrows={{ items: '.row-item', follow: '.row-item' }}>
           {#each units as item (key(item))}
             <button class="row-item unit" class:selected={selected === key(item)} onclick={() => (selected = key(item))}>
-              <span class="pill" class:good={running(item)} class:problem={item.active === 'failed'} class:plain={!running(item) && item.active !== 'failed'}>
-                {item.active ?? 'not loaded'}
+              <span class="pill" class:good={item.running} class:problem={item.failed} class:plain={!item.running && !item.failed}>
+                {item.state}
               </span>
               <span>
                 <span class="name">{item.name}</span>
-                <span class="sub">{item.enablement ?? 'no unit file'}{item.description ? ` · ${item.description}` : ''}</span>
+                <span class="sub">{item.detail}</span>
               </span>
             </button>
           {:else}
             {#each applications as item (item.file)}
               <button class="row-item unit" class:selected={selected === `login:${item.file}`} onclick={() => (selected = `login:${item.file}`)}>
                 <span class="pill" class:good={item.enabled && item.here} class:plain={!item.enabled || !item.here}>
-                  {!item.here ? 'not here' : item.enabled ? 'on' : 'off'}
+                  {item.state}
                 </span>
                 <span>
                   <span class="name">{item.name}</span>
@@ -159,26 +154,26 @@
           <dt>Whose</dt>
           <dd>{unit.user ? 'Your session' : 'The machine'}</dd>
           <dt>At boot or login</dt>
-          <dd>{unit.enablement ?? 'no unit file of its own'}</dd>
+          <dd>{unit.enablement}</dd>
           <dt>Now</dt>
-          <dd>{unit.active ?? 'not loaded'}{unit.sub && unit.sub !== unit.active ? ` (${unit.sub})` : ''}</dd>
+          <dd>{unit.now}</dd>
           {#if details && details.needed_by.length > 0}<dt>Needed by</dt><dd>{details.needed_by.join(', ')}</dd>{/if}
         </dl>
         {#if details?.consequence}
           <p class="warning"><Icon name="warning" size={14} /> {details.consequence}</p>
         {/if}
-        {#if !switchable(unit)}
-          <p class="faint">It is not enabled or disabled itself: another unit or a request starts it.</p>
+        {#if unit.note}
+          <p class="faint">{unit.note}</p>
         {/if}
         <div class="actions">
-          {#if running(unit)}
+          {#if unit.running}
             <button class="button" disabled={toolbox.preparing || toolbox.busy} onclick={() => change(unit, 'stop')}><Icon name="stop" size={14} /> Stop…</button>
             <button class="button" disabled={toolbox.preparing || toolbox.busy} onclick={() => change(unit, 'restart')}><Icon name="refresh" size={14} /> Restart…</button>
           {:else}
             <button class="button" disabled={toolbox.preparing || toolbox.busy} onclick={() => change(unit, 'start')}><Icon name="play" size={14} /> Start…</button>
           {/if}
-          {#if switchable(unit)}
-            {#if enabled(unit)}
+          {#if unit.switchable}
+            {#if unit.enabled}
               <button class="button" disabled={toolbox.preparing || toolbox.busy} onclick={() => change(unit, 'disable')}><Icon name="x" size={14} /> Disable…</button>
             {:else}
               <button class="button" disabled={toolbox.preparing || toolbox.busy} onclick={() => change(unit, 'enable')}><Icon name="check" size={14} /> Enable…</button>
@@ -190,11 +185,11 @@
         {#if application.comment}<p>{application.comment}</p>{/if}
         <dl class="kv">
           <dt>Runs</dt>
-          <dd class="mono">{application.exec || 'nothing named'}</dd>
+          <dd class="mono">{application.runs}</dd>
           <dt>From</dt>
-          <dd>{application.system ? 'the system' : 'your own'}{application.own ? ' · your file overrides it' : ''}</dd>
+          <dd>{application.from}</dd>
           <dt>At login</dt>
-          <dd>{!application.here ? 'not in this desktop' : application.enabled ? 'started' : 'not started'}</dd>
+          <dd>{application.at_login}</dd>
         </dl>
         <div class="actions">
           <button

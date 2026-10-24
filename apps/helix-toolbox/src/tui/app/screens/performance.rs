@@ -55,186 +55,107 @@ impl App {
     }
 
     pub(in crate::tui::app) fn build_performance_rows(&mut self) {
-        let mut rows = Vec::new();
+        let mut list = Vec::new();
         let comparison = self.performance_comparison();
         if let Some((found, _)) = &self.performance_found {
-            rows.push(PerformanceRow::Heading("This boot".into()));
-            match &found.boot {
-                Some(boot) => {
-                    rows.push(PerformanceRow::Text(format!(
+            list.push(PerformanceRow::Heading("This boot".into()));
+            let shown = found.boot.as_ref().map(rows::boot);
+            match (&found.boot, &shown) {
+                (Some(boot), Some(shown)) => {
+                    list.push(PerformanceRow::Text(format!(
                         "{}, kernel {}: {}",
                         timestamp(boot.booted),
                         boot.kernel,
-                        performance::shown(boot.phases.total)
+                        shown.total
                     )));
-                    rows.push(PerformanceRow::Text(
-                        boot.phases
-                            .parts()
+                    list.push(PerformanceRow::Text(
+                        shown
+                            .parts
                             .iter()
-                            .map(|(name, took)| format!("{name} {}", performance::shown(*took)))
+                            .map(|part| format!("{} {}", part.name, part.shown))
                             .collect::<Vec<_>>()
                             .join(" · "),
                     ));
                 }
-                None => rows.push(PerformanceRow::Text(
+                _ => list.push(PerformanceRow::Text(
                     found.no_boot.clone().unwrap_or_default(),
                 )),
             }
             match &comparison {
                 Some(compared) => {
-                    rows.push(PerformanceRow::Heading(format!(
+                    let said = rows::comparison(compared);
+                    list.push(PerformanceRow::Heading(format!(
                         "Against the boot of {}: {}",
                         timestamp(compared.before.booted),
-                        performance::shown_change(compared.total())
+                        said.total
                     )));
-                    for change in compared.phases.iter().skip(1).chain(&compared.units) {
-                        let now = change
-                            .after
-                            .map(performance::shown)
-                            .unwrap_or_else(|| "not now".into());
-                        let (how, slower) = match change.difference() {
-                            Some(difference) if difference.unsigned_abs() < 100 => continue,
-                            Some(difference) => {
-                                (performance::shown_change(difference), difference > 0)
-                            }
-                            None if change.before.is_none() => ("new".to_string(), true),
-                            None => ("gone".to_string(), false),
-                        };
-                        rows.push(PerformanceRow::Change(
-                            format!("{:<40} {now:>10}  ({how})", change.name),
-                            slower,
+                    for change in &said.changes {
+                        list.push(PerformanceRow::Change(
+                            format!("{:<40} {:>10}  ({})", change.name, change.now, change.how),
+                            change.slower,
                         ));
                     }
-                    if compared.before.kernel != compared.after.kernel
-                        && !compared.before.kernel.is_empty()
-                    {
-                        rows.push(PerformanceRow::Text(format!(
-                            "The kernel changed: {} to {}",
-                            compared.before.kernel, compared.after.kernel
+                    if let Some((before, after)) = &said.kernel {
+                        list.push(PerformanceRow::Text(format!(
+                            "The kernel changed: {before} to {after}"
                         )));
                     }
-                    if compared.runs.is_empty() {
-                        rows.push(PerformanceRow::Text(
+                    if said.runs.is_empty() {
+                        list.push(PerformanceRow::Text(
                             "No Helix Toolbox runs in between.".into(),
                         ));
                     }
-                    for run in &compared.runs {
-                        rows.push(PerformanceRow::Text(format!(
-                            "Ran in between, {}: {}{}",
-                            timestamp(run.at),
-                            run.names.join(", "),
-                            if run.success { "" } else { " (failed)" }
+                    for (at, ran) in &said.runs {
+                        list.push(PerformanceRow::Text(format!(
+                            "Ran in between, {}: {ran}",
+                            timestamp(*at)
                         )));
                     }
                 }
-                None if found.boot.is_some() => rows.push(PerformanceRow::Text(
+                None if found.boot.is_some() => list.push(PerformanceRow::Text(
                     "No earlier boot is recorded yet; after the next boot, this one is compared with it."
                         .into(),
                 )),
                 None => {}
             }
-            if let Some(boot) = &found.boot {
-                let waited: Vec<&performance::Link> = boot
-                    .chain
-                    .iter()
-                    .filter(|link| link.took.is_some())
-                    .collect();
-                if !waited.is_empty() {
-                    rows.push(PerformanceRow::Heading(
+            if let Some(shown) = shown {
+                if !shown.waited.is_empty() {
+                    list.push(PerformanceRow::Heading(
                         "The login screen waited for".into(),
                     ));
-                    for link in waited {
-                        rows.push(PerformanceRow::Unit(
-                            link.name.clone(),
-                            performance::shown(link.took.unwrap_or(0)),
-                        ));
-                    }
+                    list.extend(
+                        shown
+                            .waited
+                            .into_iter()
+                            .map(|(name, took)| PerformanceRow::Unit(name, took)),
+                    );
                 }
-                if !boot.slowest.is_empty() {
-                    rows.push(PerformanceRow::Heading(
+                if !shown.slowest.is_empty() {
+                    list.push(PerformanceRow::Heading(
                         "Slowest services since the boot".into(),
                     ));
-                    for timed in &boot.slowest {
-                        rows.push(PerformanceRow::Unit(
-                            timed.name.clone(),
-                            performance::shown(timed.took),
-                        ));
-                    }
+                    list.extend(
+                        shown
+                            .slowest
+                            .into_iter()
+                            .map(|(name, took)| PerformanceRow::Unit(name, took)),
+                    );
                 }
             }
-            let now = &found.now;
-            rows.push(PerformanceRow::Heading("Now".into()));
-            if let Some([one, five, fifteen]) = now.load {
-                rows.push(PerformanceRow::Text(format!(
-                    "Load {one:.2} {five:.2} {fifteen:.2} on {} processors",
-                    now.cpus
-                )));
-            }
-            if now.memory_total > 0 {
-                rows.push(PerformanceRow::Text(format!(
-                    "Memory: {} free of {}",
-                    storage::shown(now.memory_available),
-                    storage::shown(now.memory_total)
-                )));
-            }
-            rows.push(PerformanceRow::Text(if now.swaps.is_empty() {
-                "Swap: none".to_string()
-            } else {
-                format!(
-                    "Swap: {} used of {}{}",
-                    storage::shown(now.swap_used()),
-                    storage::shown(now.swap_total()),
-                    if now.swaps.iter().any(|swap| swap.zram) {
-                        " (zram)"
-                    } else {
-                        ""
-                    }
-                )
-            }));
-            let pressure: Vec<String> = [
-                ("processor", now.pressure.cpu),
-                ("memory", now.pressure.memory),
-                ("disk", now.pressure.io),
-            ]
-            .into_iter()
-            .filter_map(|(what, waited)| Some(format!("{what} {:.0}%", waited?)))
-            .collect();
-            if !pressure.is_empty() {
-                rows.push(PerformanceRow::Text(format!(
-                    "Waiting in the last minute: {}",
-                    pressure.join(", ")
-                )));
-            }
-            if let Some(governor) = &now.governor {
-                rows.push(PerformanceRow::Text(format!(
-                    "Governor {governor}{}",
-                    now.power_profile
-                        .as_ref()
-                        .map(|profile| format!(", power profile {profile}"))
-                        .unwrap_or_default()
-                )));
-            }
-            if !now.heaviest.is_empty() {
-                rows.push(PerformanceRow::Text(format!(
-                    "Most memory: {}",
-                    now.heaviest
-                        .iter()
-                        .take(5)
-                        .map(|process| format!(
-                            "{} {}",
-                            helix_toolbox_core::printable(&process.name),
-                            storage::shown(process.memory)
-                        ))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )));
+            list.push(PerformanceRow::Heading("Now".into()));
+            for fact in rows::now(&found.now) {
+                list.push(PerformanceRow::Text(if fact.note.is_empty() {
+                    format!("{}: {}", fact.term, fact.text)
+                } else {
+                    format!("{}: {} {}", fact.term, fact.text, fact.note)
+                }));
             }
             if !found.hints.is_empty() {
-                rows.push(PerformanceRow::Heading("Worth knowing".into()));
-                rows.extend((0..found.hints.len()).map(PerformanceRow::Hint));
+                list.push(PerformanceRow::Heading("Worth knowing".into()));
+                list.extend((0..found.hints.len()).map(PerformanceRow::Hint));
             }
         }
-        self.performance_rows = rows;
+        self.performance_rows = list;
         self.clamp_main();
     }
 

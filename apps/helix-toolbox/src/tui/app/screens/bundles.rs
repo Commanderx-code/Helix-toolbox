@@ -165,7 +165,7 @@ impl App {
                     });
                 self.popup = match found {
                     Ok(found) => {
-                        let mut lines = crate::bundle::contents_lines(&found, self.bundle_complete);
+                        let mut lines = rows::bundle_contents(&found, self.bundle_complete);
                         if !found.entries.iter().any(|entry| entry.offline) {
                             lines.push(String::new());
                             lines.push(
@@ -181,7 +181,7 @@ impl App {
             BundleTask::Check => {
                 let checked = typed_path(&self.bundle_source).and_then(|directory| {
                     bundle::verify(&directory, &self.platform)
-                        .map(|manifest| crate::bundle::manifest_lines(&directory, &manifest))
+                        .map(|manifest| rows::manifest(&directory, &manifest))
                         .map_err(|error| error.to_string())
                 });
                 self.popup = match checked {

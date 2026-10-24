@@ -18,7 +18,7 @@ import type {
   DesktopView,
   Diagnosis,
   DriftView,
-  Hardware,
+  HardwareView,
   HardwareReport,
   PerformanceView,
   PickView,
@@ -155,7 +155,7 @@ export const prepareConfigSave = (kind: ConfigKind, path: string, revision: stri
   call<Prepared>('prepare_config_save', { kind, path, revision, text });
 export const prepareConfigRestore = (kind: ConfigKind, backup: string) => call<Prepared>('prepare_config_restore', { kind, backup });
 
-export const hardware = () => call<Hardware>('read_hardware');
+export const hardware = () => call<HardwareView>('read_hardware');
 export const prepareFirmware = (index: number) => call<Prepared>('prepare_firmware', { index });
 export const prepareSmart = (disk: string) => call<Prepared>('prepare_smart', { disk });
 

@@ -54,21 +54,6 @@
       checking = false;
     }
   }
-
-  /** What gets downloaded, as the command line says it. */
-  function downloads(found: BundleContents): string[] {
-    const every = complete ? 'every dependency' : 'the dependencies this machine lacks';
-    const lines = [];
-    if (found.dnf.length > 0) lines.push(`dnf downloads ${found.dnf.join(', ')} with their dependencies.`);
-    else if (found.zypper.length > 0) lines.push(`zypper downloads ${found.zypper.join(', ')} with ${every}, as you, without root.`);
-    else if (found.files > 0 || found.flatpaks.length === 0)
-      lines.push(`${found.files} package ${found.files === 1 ? 'file' : 'files'} to download, with ${every}.`);
-    if (found.flatpaks.length > 0)
-      lines.push(`flatpak create-usb copies ${found.flatpaks.join(', ')}, with the runtimes they need, from this machine's installation.`);
-    return lines;
-  }
-
-  const megabytes = (bytes: number) => `${(bytes / 1e6).toFixed(1)} MB`;
 </script>
 
 <div class="screen">
@@ -142,7 +127,7 @@
         {#if offline === 0}
           <p class="said bad" role="alert">None of these entries can be bundled; they all need the network.</p>
         {:else}
-          {#each downloads(contents) as line, index (index)}<p class="muted">{line}</p>{/each}
+          {#each contents.downloads as line, index (index)}<p class="muted">{line}</p>{/each}
         {/if}
       {/if}
     </section>
@@ -195,7 +180,7 @@
           <dt>Made</dt>
           <dd>{bundle.created}{bundle.complete ? ', with every dependency' : ''}</dd>
           <dt>Size</dt>
-          <dd>{megabytes(bundle.bytes)}</dd>
+          <dd>{bundle.size}</dd>
         </dl>
         <ul class="entries">
           {#each bundle.entries as entry, index (index)}

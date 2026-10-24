@@ -86,22 +86,16 @@ impl App {
         } else {
             Vec::new()
         };
+        let shown = rows::unit(&unit);
         let mut text = format!(
-            "{}\n\nEnabled: {}\nRunning: {}{}\n",
+            "{}\n\nEnabled: {}\nRunning: {}\n",
             if unit.description.is_empty() {
                 "No description."
             } else {
                 unit.description.as_str()
             },
-            unit.enablement
-                .as_deref()
-                .unwrap_or("no unit file of its own"),
-            unit.active.as_deref().unwrap_or("not loaded"),
-            unit.sub
-                .as_deref()
-                .filter(|sub| Some(*sub) != unit.active.as_deref())
-                .map(|sub| format!(" ({sub})"))
-                .unwrap_or_default()
+            shown.enablement,
+            shown.now
         );
         if !needed.is_empty() {
             text.push_str(&format!("Needed by: {}\n", needed.join(", ")));
@@ -113,10 +107,8 @@ impl App {
         ) {
             text.push_str(&format!("\nBefore stopping or disabling it: {cost}\n"));
         }
-        if !unit.switchable() {
-            text.push_str(
-                "\nIt is not enabled or disabled itself: another unit or a request starts it.\n",
-            );
+        if let Some(note) = shown.note {
+            text.push_str(&format!("\n{note}\n"));
         }
         text.push_str(
             "\ns starts or stops it, e enables or disables it, R restarts it; each asks first.",
@@ -161,34 +153,14 @@ impl App {
         else {
             return;
         };
+        let shown = rows::autostart(item);
         let mut text = String::new();
         if !item.comment.is_empty() {
             text.push_str(&format!("{}\n\n", item.comment));
         }
         text.push_str(&format!(
-            "Runs: {}\nFrom: {}{}\nAt login: {}\n\n",
-            if item.exec.is_empty() {
-                "nothing named"
-            } else {
-                &item.exec
-            },
-            if item.system {
-                "the system"
-            } else {
-                "your own"
-            },
-            if item.own.is_some() && item.system {
-                " · your file overrides it"
-            } else {
-                ""
-            },
-            if !item.here {
-                "not in this desktop"
-            } else if item.enabled {
-                "started"
-            } else {
-                "not started"
-            }
+            "Runs: {}\nFrom: {}\nAt login: {}\n\n",
+            shown.runs, shown.from, shown.at_login
         ));
         text.push_str(&format!(
             "Enter plans {}, reviewed before it changes anything. For you only: the system's file stays as it is.",
@@ -280,10 +252,11 @@ impl App {
                         }
                         ServiceRow::Autostart(index) => {
                             let item = &found.autostart[*index];
-                            let (word, color) = match (item.here, item.enabled) {
-                                (false, _) => ("not here", self.theme.muted()),
-                                (true, true) => ("on", self.theme.success()),
-                                (true, false) => ("off", self.theme.warning()),
+                            let word = rows::autostart(item).state;
+                            let color = match (item.here, item.enabled) {
+                                (false, _) => self.theme.muted(),
+                                (true, true) => self.theme.success(),
+                                (true, false) => self.theme.warning(),
                             };
                             Line::from(vec![
                                 Span::styled(format!("  {:<36} ", item.name), Style::default().fg(self.theme.entry())),

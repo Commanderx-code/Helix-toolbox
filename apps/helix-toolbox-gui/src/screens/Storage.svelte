@@ -27,21 +27,6 @@
     void toolbox.runs;
     load();
   });
-
-  /** A size for people, as the command line writes it. */
-  function size(bytes: number | null): string {
-    if (bytes === null) return '?';
-    for (const [unit, scale] of [
-      ['TB', 1e12],
-      ['GB', 1e9],
-      ['MB', 1e6],
-      ['KB', 1e3],
-    ] as const) {
-      const value = bytes / scale;
-      if (value >= 1) return `${value >= 100 ? value.toFixed(0) : value.toFixed(1)} ${unit}`;
-    }
-    return `${bytes} B`;
-  }
 </script>
 
 <div class="screen">
@@ -64,13 +49,12 @@
     <section class="card part">
       <h2>Space</h2>
       {#each found.filesystems as filesystem (filesystem.path)}
-        {@const used = 1 - filesystem.free / Math.max(filesystem.total, 1)}
         <div class="space">
           <span class="mono">{filesystem.path}</span>
-          <span class="bar" role="meter" aria-label="Used on {filesystem.path}" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(used * 100)}>
-            <span class="fill" class:full={used > 0.9} style="width: {Math.round(used * 100)}%"></span>
+          <span class="bar" role="meter" aria-label="Used on {filesystem.path}" aria-valuemin={0} aria-valuemax={100} aria-valuenow={filesystem.meter.percent}>
+            <span class="fill" class:full={filesystem.meter.full} style="width: {filesystem.meter.percent}%"></span>
           </span>
-          <span>{size(filesystem.free)} free of {size(filesystem.total)}</span>
+          <span>{filesystem.text}</span>
         </div>
       {/each}
     </section>
@@ -85,12 +69,12 @@
               <span class="sub">{item.detail}</span>
               {#if item.packages.length > 0}<span class="sub mono">{item.packages.join(', ')}</span>{/if}
             </span>
-            <span class="size">{size(item.size)}</span>
+            <span class="size">{item.size}</span>
             <span class="act">
-              {#if item.not_offered}
-                <span class="faint">{item.not_offered}</span>
+              {#if !item.offered}
+                <span class="faint">{item.said}</span>
               {:else}
-                <span class="frees">{item.frees === null ? 'frees what it finds' : `frees ${size(item.frees)}`}</span>
+                <span class="frees">{item.said}</span>
                 <button
                   class="button"
                   disabled={toolbox.preparing || toolbox.busy}
@@ -111,7 +95,7 @@
         <dl class="kv">
           {#each found.kept as kept (kept.title)}
             <dt>{kept.title}</dt>
-            <dd>{kept.detail}{kept.size !== null ? ` (${size(kept.size)})` : ''}</dd>
+            <dd>{kept.detail}{kept.size !== null ? ` (${kept.size})` : ''}</dd>
           {/each}
         </dl>
       </section>

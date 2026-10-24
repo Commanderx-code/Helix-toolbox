@@ -261,7 +261,7 @@ apps/helix-toolbox-gui/
   tests/drive/         the smoke test's drive script and its workstations
   src-tauri/           the Rust side, a Cargo workspace of its own
     src/main.rs        the commands, and the run's events forwarded on a Tauri channel
-    src/views.rs       what the window reads, built field by field from the engine's types
+    src/views.rs       what the window reads, built field by field from the engine's types and display rows
     tauri.conf.json    the window, the content security policy, the bundles
     icons/             the icon in the sizes the bundles ship, written by scripts/icons.sh
 ```
@@ -311,7 +311,13 @@ Its commands:
 Every `prepare_*` command answers like `prepare`, with a plan waiting for
 `run`, so one confirmation dialog serves them all. The frontend only
 draws what the commands return and sends back what the user chose; it
-holds no catalog logic of its own.
+holds no catalog logic of its own. The Hardware, Services, Storage,
+Performance and Offline bundles screens get their text as display rows
+from the engine's `rows` module, the same rows the terminal interface
+draws: sizes, temperatures, durations and what wants attention arrive
+worked out, and the screen lays them out. The search ranking in
+`lib/search.ts` stays a port of the engine's, since the palette ranks its
+own screens and actions on every key typed.
 
 ### Working on it
 

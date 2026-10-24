@@ -208,31 +208,30 @@ export type ReliabilityView = {
   rows: { id: string; name: string; level: string; explain: string; assessment: Assessment }[];
 };
 
+// Display rows: the engine's text for a screen, laid out by the screen.
+
+/** A row as both interfaces show it: the label over the detail, the name beside them. */
+export type DisplayRow = { name: string; label: string; detail: string; attention: boolean };
+
+/** How full something is, for a bar. */
+export type Meter = { percent: number; full: boolean };
+
 // Hardware
 
-export type Hardware = {
-  firmware: {
-    available: boolean;
-    devices: { id: string; name: string; vendor: string | null; version: string | null; updatable: boolean }[];
-    updates: { device_id: string; device: string; from: string | null; to: string; summary: string | null; urgency: string | null }[];
-    note: string | null;
-  };
-  disks: { name: string; model: string | null; bytes: number | null; kind: string; firmware: string | null; celsius: number | null }[];
-  sensors: { chip: string; label: string; celsius: number; high: number | null; critical: number | null }[];
-  batteries: {
-    name: string;
-    status: string | null;
-    capacity: number | null;
-    health: number | null;
-    cycles: number | null;
-    model: string | null;
-    technology: string | null;
-  }[];
+export type HardwareView = {
+  /** Why fwupd could not be read, and what it lists. */
+  firmware: string[];
+  /** By their place in the list, which prepare_firmware takes. */
+  updates: DisplayRow[];
+  disks: DisplayRow[];
+  sensors: DisplayRow[];
+  batteries: DisplayRow[];
   pci: Device[];
   usb: Device[];
 };
 
-export type Device = { address: string; class: string | null; name: string; driver: string | null };
+/** Empty where it is not known. */
+export type Device = { address: string; name: string; class: string; driver: string };
 
 // Desktop
 
@@ -277,10 +276,22 @@ export type SettingsView = {
 export type UnitView = {
   name: string;
   description: string;
-  enablement: string | null;
-  active: string | null;
-  sub: string | null;
   user: boolean;
+  /** service, timer or socket. */
+  kind: string;
+  /** active, inactive, failed or "not loaded". */
+  state: string;
+  /** Its enablement and description, for the list. */
+  detail: string;
+  enablement: string;
+  /** How it is now: "active (running)". */
+  now: string;
+  /** Why enable and disable do not apply, when they do not. */
+  note: string | null;
+  running: boolean;
+  failed: boolean;
+  enabled: boolean;
+  switchable: boolean;
 };
 
 export type AutostartView = {
@@ -290,13 +301,15 @@ export type AutostartView = {
   exec: string;
   enabled: boolean;
   here: boolean;
-  system: boolean;
-  own: string | null;
+  /** on, off or "not here". */
+  state: string;
+  runs: string;
+  from: string;
+  at_login: string;
 };
 
 export type ServicesView = {
   systemd: boolean;
-  session: boolean;
   units: UnitView[];
   autostart: AutostartView[];
 };
@@ -309,74 +322,62 @@ export type StorageItem = {
   id: string;
   title: string;
   detail: string;
-  size: number | null;
-  frees: number | null;
   packages: string[];
-  not_offered: string | null;
+  /** What it takes now, "?" when not known. */
+  size: string;
+  /** What cleaning it frees, or why it is not offered. */
+  said: string;
+  offered: boolean;
 };
 
 export type StorageView = {
-  filesystems: { path: string; free: number; total: number }[];
+  filesystems: { path: string; text: string; meter: Meter }[];
   items: StorageItem[];
-  kept: { title: string; detail: string; size: number | null }[];
+  kept: { title: string; detail: string; size: string | null }[];
 };
 
 // Performance
 
-/** How long each part of a boot took, in milliseconds. */
-export type Phases = {
-  firmware: number | null;
-  loader: number | null;
-  kernel: number;
-  initrd: number | null;
-  userspace: number;
-  total: number;
-};
+/** A recorded boot: when, and how long it took in all. */
+export type BootSummary = { id: string; booted: number; total: string };
 
-export type Boot = {
+export type BootView = {
   id: string;
   /** Seconds since 1970. */
   booted: number;
   kernel: string;
-  phases: Phases;
-  slowest: { name: string; took: number }[];
-  chain: { name: string; at: number | null; took: number | null }[];
+  total: string;
+  /** took in milliseconds, for its share of the bar. */
+  parts: { name: string; took: number; shown: string; tone: string }[];
+  /** What the login screen waited for. */
+  waited: { name: string; took: string }[];
+  slowest: { name: string; took: string }[];
 };
 
-export type BootChange = { name: string; before: number | null; after: number | null };
-
 export type Comparison = {
-  before: Boot;
-  after: Boot;
-  phases: BootChange[];
-  units: BootChange[];
-  runs: { at: number; names: string[]; success: boolean }[];
+  before: BootSummary;
+  /** The whole boot's change: "+5.0 s". */
+  total: string;
+  /** Positive when the later boot was slower, negative when faster. */
+  sign: number;
+  changes: { name: string; now: string; how: string; slower: boolean }[];
+  /** The kernels before and after, when they differ. */
+  kernel: [string, string] | null;
+  runs: { at: number; ran: string }[];
 };
 
 export type PerformanceHint = { title: string; detail: string; command: string | null; unit: string | null; entry: string | null };
 
-export type MachineNow = {
-  cpus: number;
-  load: [number, number, number] | null;
-  memory_total: number;
-  memory_available: number;
-  swaps: { name: string; zram: boolean; size: number; used: number }[];
-  pressure: { cpu: number | null; memory: number | null; io: number | null };
-  governor: string | null;
-  power_profile: string | null;
-  heaviest: { pid: number; name: string; memory: number }[];
-};
+export type Fact = { term: string; text: string; note: string; meter: Meter | null };
 
 export type PerformanceView = {
-  found: {
-    boot: Boot | null;
-    no_boot: string | null;
-    now: MachineNow;
-    previous: Comparison | null;
-    recorded: number;
-    hints: PerformanceHint[];
-  };
-  boots: Boot[];
+  boot: BootView | null;
+  no_boot: string | null;
+  previous: Comparison | null;
+  /** The recorded boots before this one. */
+  earlier: BootSummary[];
+  now: Fact[];
+  hints: PerformanceHint[];
 };
 
 // Recovery
@@ -458,10 +459,8 @@ export type BundledEntry = { name: string; offline: boolean; network: string | n
 /** What a bundle of some entries would hold, before anything is downloaded. */
 export type BundleContents = {
   entries: BundledEntry[];
-  files: number;
-  dnf: string[];
-  zypper: string[];
-  flatpaks: string[];
+  /** How it is downloaded, as `bundle create` says it. */
+  downloads: string[];
 };
 
 /** A bundle that matched its checksums. */
@@ -473,7 +472,8 @@ export type BundleView = {
   created: string;
   complete: boolean;
   files: number;
-  bytes: number;
+  /** What its files take: "48.2 MB". */
+  size: string;
   flatpaks: string[];
   entries: BundledEntry[];
 };

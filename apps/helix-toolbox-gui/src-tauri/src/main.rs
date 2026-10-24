@@ -35,8 +35,9 @@ use std::{
 use tauri::{AppHandle, Manager, State, ipc::Channel};
 use tauri_plugin_dialog::DialogExt;
 use views::{
-    AreaView, BackupView, BundleContentsView, BundleView, ChangesView, ChannelView, DiagnosisView,
-    PreparedView, RecordView, StatusView,
+    AreaView, BackupView, BundleContentsView, BundleView, ChangesView, ChannelView, ComparisonView,
+    DiagnosisView, HardwareView, PerformanceView, PreparedView, RecordView, ServicesView,
+    StatusView, StorageView,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -1271,10 +1272,10 @@ async fn check_entry(app: AppHandle, id: String) -> Result<String, String> {
 
 /// The machine's and the session's units and what starts at login.
 #[tauri::command]
-async fn read_services(app: AppHandle) -> Result<services::Services, String> {
+async fn read_services(app: AppHandle) -> Result<ServicesView, String> {
     blocking(app, |_| {
         let desktop = std::env::var("XDG_CURRENT_DESKTOP").ok();
-        services::gather(&doctor::Here, desktop.as_deref())
+        views::services(&services::gather(&doctor::Here, desktop.as_deref()))
     })
     .await
 }
@@ -1365,9 +1366,9 @@ async fn prepare_autostart(app: AppHandle, file: String, on: bool) -> Result<Pre
 
 /// Where the space goes and what can be cleaned.
 #[tauri::command]
-async fn read_storage(app: AppHandle) -> Result<storage::Storage, String> {
+async fn read_storage(app: AppHandle) -> Result<StorageView, String> {
     blocking(app, |gui| {
-        storage::gather(&doctor::Here, gui.platform.manager)
+        views::storage(&storage::gather(&doctor::Here, gui.platform.manager))
     })
     .await
 }
@@ -1398,12 +1399,6 @@ async fn prepare_clean(app: AppHandle, id: String) -> Result<PreparedView, Strin
 
 /// The boot, the machine now, and the boots recorded so far; this boot is
 /// recorded on the way.
-#[derive(Serialize)]
-struct PerformanceView {
-    found: performance::Performance,
-    boots: Vec<performance::Boot>,
-}
-
 #[tauri::command]
 async fn read_performance(app: AppHandle) -> Result<PerformanceView, String> {
     blocking(app, |_| {
@@ -1413,7 +1408,7 @@ async fn read_performance(app: AppHandle) -> Result<PerformanceView, String> {
         let boots = state
             .map(|state| performance::load(&performance::boots_path(&state)))
             .unwrap_or_default();
-        PerformanceView { found, boots }
+        views::performance(&found, &boots)
     })
     .await
 }
@@ -1424,7 +1419,7 @@ async fn compare_boots(
     app: AppHandle,
     before: String,
     after: String,
-) -> Result<performance::Comparison, String> {
+) -> Result<ComparisonView, String> {
     blocking(app, move |_| {
         let boots = history::state_dir()
             .map(|state| performance::load(&performance::boots_path(&state)))
@@ -1434,7 +1429,9 @@ async fn compare_boots(
             return Err("That boot is no longer recorded.".to_string());
         };
         let history = history::read(1000).unwrap_or_default();
-        Ok(performance::compare(before, after, &history))
+        Ok(views::comparison(&performance::compare(
+            before, after, &history,
+        )))
     })
     .await?
 }
@@ -2426,11 +2423,12 @@ async fn prepare_home_manager(
 
 /// Firmware, disks, sensors, batteries and devices, read from this machine.
 #[tauri::command]
-async fn read_hardware(app: AppHandle) -> Result<hardware::Hardware, String> {
+async fn read_hardware(app: AppHandle) -> Result<HardwareView, String> {
     blocking(app, |gui| {
         let found = hardware::gather(&doctor::Here);
-        *gui.hardware.lock().unwrap() = Some(found.clone());
-        found
+        let view = views::hardware(&found);
+        *gui.hardware.lock().unwrap() = Some(found);
+        view
     })
     .await
 }
@@ -2737,7 +2735,7 @@ async fn bundle_contents(
         );
         let _ = std::fs::remove_dir_all(&scratch);
         found
-            .map(|found| views::bundle_contents(&found))
+            .map(|found| views::bundle_contents(&found, complete))
             .map_err(|error| error.to_string())
     })
     .await?

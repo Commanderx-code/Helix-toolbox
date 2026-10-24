@@ -1,7 +1,7 @@
 // Sample answers for working on the interface in a browser, where there is
 // no Tauri side. Nothing here reads or changes the machine.
 
-import type { AreaView, ChangesView, ConfigView, EntryView, HomeManagerView, ItemView, Migration, MigrationExportView, PerformanceView, Prepared, RecordView, RecoveryView, RepositoryView, ReposView, ResticView, ResticNode, ResticHistory, RunEvent, TranslationView, ServicesView, StatusView, StorageView, WindowTheme } from './types';
+import type { AreaView, BundleContents, ChangesView, Comparison, ConfigView, EntryView, HardwareView, HomeManagerView, ItemView, Migration, MigrationExportView, PerformanceView, Prepared, RecordView, RecoveryView, RepositoryView, ReposView, ResticView, ResticNode, ResticHistory, RunEvent, TranslationView, ServicesView, StatusView, StorageView, WindowTheme } from './types';
 
 const entry = (id: string, name: string, description: string, flags = 'I', extra: Partial<EntryView> = {}): ItemView => ({
   type: 'entry',
@@ -311,7 +311,15 @@ export async function call(command: string, args: Record<string, unknown> = {}):
     case 'trust':
       return `${args.id}\n\nInstaller   built in\nValidation  Tested in containers`;
     case 'read_hardware':
-      return { firmware: { available: true, devices: [], updates: [], note: null }, disks: [{ name: 'nvme0n1', model: 'Sample SSD', bytes: 1000204886016, kind: 'NVMe', firmware: '1.0', celsius: 38 }], sensors: [{ chip: 'coretemp', label: 'Package', celsius: 52, high: 100, critical: 100 }], batteries: [{ name: 'BAT0', status: 'Charging', capacity: 80, health: 91, cycles: 120, model: null, technology: 'Li-ion' }], pci: [], usb: [] };
+      return {
+        firmware: ['0 devices, 0 updatable through fwupd; no updates in the metadata fwupd has'],
+        updates: [],
+        disks: [{ name: 'nvme0n1', label: 'Sample SSD', detail: 'NVMe · 1.0 TB · firmware 1.0 · 38 °C', attention: false }],
+        sensors: [{ name: 'coretemp Package', label: '52 °C', detail: 'critical 100', attention: false }],
+        batteries: [{ name: 'BAT0', label: '80% charged, charging', detail: 'holds 91% of its design capacity · 120 cycles · Li-ion', attention: false }],
+        pci: [],
+        usb: [],
+      } satisfies HardwareView;
     case 'read_desktop':
       return { desktop: { kind: 'kde', name: 'KDE Plasma 6.8.0', session: 'Wayland', display_manager: { name: 'SDDM', files: [], theme: 'breeze' }, appearance: [{ key: 'theme', label: 'Global theme', value: 'Breeze Dark' }], owners: [], blocked: null }, looks: [], suggestions: [] };
     case 'save_look':
@@ -348,11 +356,8 @@ export async function call(command: string, args: Record<string, unknown> = {}):
           const offline = known?.kind === 'package';
           return { name: known?.name ?? id, offline, network: offline ? null : 'a script, which downloads as it runs', flatpak: null };
         }),
-        files: args.complete ? 41 : 7,
-        dnf: [],
-        zypper: [],
-        flatpaks: [],
-      };
+        downloads: [args.complete ? '41 package files to download, every dependency.' : '7 package files to download, with the dependencies this machine lacks.'],
+      } satisfies BundleContents;
     case 'prepare_bundle_create':
       return {
         kind: 'ready',
@@ -371,7 +376,7 @@ export async function call(command: string, args: Record<string, unknown> = {}):
         created: '2026-10-20 18:30',
         complete: false,
         files: 9,
-        bytes: 48_200_000,
+        size: '48.2 MB',
         flatpaks: [],
         entries: [
           { name: 'Ripgrep', offline: true, network: null, flatpak: null },
@@ -386,22 +391,51 @@ export async function call(command: string, args: Record<string, unknown> = {}):
         header: ['Risk: medium · asks for your password', 'Note: The packages are checked against the bundle\'s checksums and signatures first.'],
         lines: [{ name: 'Install the bundle\'s packages', detail: 'sudo pacman -U --needed packages/*.pkg.tar.zst' }],
       } satisfies Prepared;
-    case 'read_services':
+    case 'read_services': {
+      const unit = (name: string, description: string, enablement: string, active: string, sub: string, user: boolean, kind = 'service') => {
+        const switchable = ['enabled', 'disabled', 'enabled-runtime', 'indirect', 'linked', 'alias'].includes(enablement);
+        return {
+          name,
+          description,
+          user,
+          kind,
+          state: active,
+          detail: `${enablement} · ${description}`,
+          enablement,
+          now: sub === active ? active : `${active} (${sub})`,
+          note: switchable ? null : 'It is not enabled or disabled itself: another unit or a request starts it.',
+          running: active === 'active',
+          failed: active === 'failed',
+          enabled: enablement === 'enabled',
+          switchable,
+        };
+      };
       return {
         systemd: true,
-        session: true,
         units: [
-          { name: 'bluetooth.service', description: 'Bluetooth service', enablement: 'enabled', active: 'active', sub: 'running', user: false },
-          { name: 'cups.service', description: 'CUPS Scheduler', enablement: 'disabled', active: 'inactive', sub: 'dead', user: false },
-          { name: 'logrotate.service', description: 'Rotate log files', enablement: 'static', active: 'failed', sub: 'failed', user: false },
-          { name: 'sddm.service', description: 'Simple Desktop Display Manager', enablement: 'enabled', active: 'active', sub: 'running', user: false },
-          { name: 'fstrim.timer', description: 'Discard unused filesystem blocks once a week', enablement: 'enabled', active: 'active', sub: 'waiting', user: false },
-          { name: 'pipewire.service', description: 'PipeWire Multimedia Service', enablement: 'indirect', active: 'active', sub: 'running', user: true },
+          unit('bluetooth.service', 'Bluetooth service', 'enabled', 'active', 'running', false),
+          unit('cups.service', 'CUPS Scheduler', 'disabled', 'inactive', 'dead', false),
+          unit('logrotate.service', 'Rotate log files', 'static', 'failed', 'failed', false),
+          unit('sddm.service', 'Simple Desktop Display Manager', 'enabled', 'active', 'running', false),
+          unit('fstrim.timer', 'Discard unused filesystem blocks once a week', 'enabled', 'active', 'waiting', false, 'timer'),
+          unit('pipewire.service', 'PipeWire Multimedia Service', 'indirect', 'active', 'running', true),
         ],
         autostart: [
-          { file: 'org.kde.discover.notifier.desktop', name: 'Discover', comment: 'Update notifier', exec: '/usr/lib/DiscoverNotifier --check-delay 20', enabled: true, here: true, system: true, own: null },
+          {
+            file: 'org.kde.discover.notifier.desktop',
+            name: 'Discover',
+            comment: 'Update notifier',
+            exec: '/usr/lib/DiscoverNotifier --check-delay 20',
+            enabled: true,
+            here: true,
+            state: 'on',
+            runs: '/usr/lib/DiscoverNotifier --check-delay 20',
+            from: 'the system',
+            at_login: 'started',
+          },
         ],
       } satisfies ServicesView;
+    }
     case 'service_details':
       return args.name === 'sddm.service'
         ? { needed_by: ['graphical.target'], consequence: 'It runs the login screen: stopped, your desktop session ends now; disabled, the next boot stops at a text console, where you log in and enable it again.' }
@@ -417,11 +451,11 @@ export async function call(command: string, args: Record<string, unknown> = {}):
       } satisfies Prepared;
     case 'read_storage':
       return {
-        filesystems: [{ path: '/', free: 588_000_000_000, total: 1_000_000_000_000 }],
+        filesystems: [{ path: '/', text: '588 GB free of 1.0 TB', meter: { percent: 41, full: false } }],
         items: [
-          { id: 'package-cache', title: 'Package cache', detail: 'Downloaded packages pacman keeps: the two newest versions of each installed package stay.', size: 2_000_000_000, frees: 34_200_000, packages: [], not_offered: null },
-          { id: 'unused-packages', title: 'Unused packages', detail: 'Packages nothing needs now. Kernels are never among them.', size: 184_000_000, frees: 184_000_000, packages: ['libfoo', 'python-old'], not_offered: null },
-          { id: 'trash', title: 'The trash', detail: 'Files you deleted to the trash, deleted for good.', size: 0, frees: 0, packages: [], not_offered: 'the trash is empty' },
+          { id: 'package-cache', title: 'Package cache', detail: 'Downloaded packages pacman keeps: the two newest versions of each installed package stay.', packages: [], size: '2.0 GB', said: 'frees 34.2 MB', offered: true },
+          { id: 'unused-packages', title: 'Unused packages', detail: 'Packages nothing needs now. Kernels are never among them.', packages: ['libfoo', 'python-old'], size: '184 MB', said: 'frees 184 MB', offered: true },
+          { id: 'trash', title: 'The trash', detail: 'Files you deleted to the trash, deleted for good.', packages: [], size: '0 B', said: 'the trash is empty', offered: false },
         ],
         kept: [{ title: 'Kernels', detail: '2 installed: the kernels the machine can boot are never removed here.', size: null }],
       } satisfies StorageView;
@@ -434,65 +468,63 @@ export async function call(command: string, args: Record<string, unknown> = {}):
         lines: [{ name: `Clean: ${String(args.id)}`, detail: 'sudo paccache -rk2; then sudo paccache -ruk0' }],
       } satisfies Prepared;
     case 'read_performance': {
-      const boot = (id: string, booted: number, userspace: number, waited: number) => ({
-        id,
-        booted,
-        kernel: '7.2.11-1-garuda',
-        phases: { firmware: 10_458, loader: 12_297, kernel: 1065, initrd: 2661, userspace, total: 26_481 + userspace },
-        slowest: [
-          { name: 'plocate-updatedb.service', took: 4183 },
-          { name: 'NetworkManager-wait-online.service', took: waited },
+      const comparison: Comparison = {
+        before: { id: '1b7c', booted: 1_792_500_000, total: '31.9 s' },
+        total: '+3.0 s',
+        sign: 1,
+        changes: [
+          { name: 'Services', now: '8.4 s', how: '+3.0 s', slower: true },
+          { name: 'NetworkManager-wait-online.service', now: '4.3 s', how: '+3.0 s', slower: true },
         ],
-        chain: [
-          { name: 'graphical.target', at: userspace, took: null },
-          { name: 'NetworkManager-wait-online.service', at: 1003, took: waited },
-          { name: 'plymouth-quit.service', at: 3010, took: 2344 },
-        ],
-      });
-      const now = boot('3f2a', 1_792_600_000, 8394, 4344);
-      const before = boot('1b7c', 1_792_500_000, 5394, 1344);
-      const comparison = {
-        before,
-        after: now,
-        phases: [
-          { name: 'Whole boot', before: before.phases.total, after: now.phases.total },
-          { name: 'Services', before: 5394, after: 8394 },
-        ],
-        units: [{ name: 'NetworkManager-wait-online.service', before: 1344, after: 4344 }],
-        runs: [{ at: 1_792_550_000, names: ['Docker'], success: true }],
+        kernel: null,
+        runs: [{ at: 1_792_550_000, ran: 'Docker' }],
       };
       return {
-        found: {
-          boot: now,
-          no_boot: null,
-          now: {
-            cpus: 16,
-            load: [0.52, 0.61, 0.7],
-            memory_total: 16_000_000_000,
-            memory_available: 9_200_000_000,
-            swaps: [{ name: '/dev/zram0', zram: true, size: 8_000_000_000, used: 120_000_000 }],
-            pressure: { cpu: 0, memory: 0, io: 1.2 },
-            governor: 'powersave',
-            power_profile: 'balanced',
-            heaviest: [{ pid: 2001, name: 'firefox', memory: 2_400_000_000 }],
-          },
-          previous: comparison,
-          recorded: 2,
-          hints: [
-            {
-              title: 'The boot waited 4.3 s for NetworkManager-wait-online.service',
-              detail: 'It holds back what asks for a working network until one is up.',
-              command: 'helix-toolbox services disable NetworkManager-wait-online.service',
-              unit: 'NetworkManager-wait-online.service',
-              entry: null,
-            },
+        boot: {
+          id: '3f2a',
+          booted: 1_792_600_000,
+          kernel: '7.2.11-1-garuda',
+          total: '34.9 s',
+          parts: [
+            { name: 'Firmware', took: 10_458, shown: '10.5 s', tone: 'firmware' },
+            { name: 'Boot loader', took: 12_297, shown: '12.3 s', tone: 'loader' },
+            { name: 'Kernel', took: 1065, shown: '1.1 s', tone: 'kernel' },
+            { name: 'Initial RAM disk', took: 2661, shown: '2.7 s', tone: 'initrd' },
+            { name: 'Services', took: 8394, shown: '8.4 s', tone: 'services' },
+          ],
+          waited: [
+            { name: 'NetworkManager-wait-online.service', took: '4.3 s' },
+            { name: 'plymouth-quit.service', took: '2.3 s' },
+          ],
+          slowest: [
+            { name: 'plocate-updatedb.service', took: '4.2 s' },
+            { name: 'NetworkManager-wait-online.service', took: '4.3 s' },
           ],
         },
-        boots: [now, before],
+        no_boot: null,
+        previous: comparison,
+        earlier: [comparison.before],
+        now: [
+          { term: 'Load', text: '0.52 0.61 0.70', note: '(1, 5 and 15 minutes) on 16 processors', meter: null },
+          { term: 'Memory', text: '9.2 GB free of 16.0 GB', note: '', meter: { percent: 43, full: false } },
+          { term: 'Swap', text: '120 MB used of 8.0 GB (zram)', note: '', meter: null },
+          { term: 'Waiting, last minute', text: 'processor 0%, memory 0%, disk 1%', note: '', meter: null },
+          { term: 'Processor', text: 'governor powersave, power profile balanced', note: '', meter: null },
+          { term: 'Most memory', text: 'firefox 2.4 GB', note: '', meter: null },
+        ],
+        hints: [
+          {
+            title: 'The boot waited 4.3 s for NetworkManager-wait-online.service',
+            detail: 'It holds back what asks for a working network until one is up.',
+            command: 'helix-toolbox services disable NetworkManager-wait-online.service',
+            unit: 'NetworkManager-wait-online.service',
+            entry: null,
+          },
+        ],
       } satisfies PerformanceView;
     }
     case 'compare_boots':
-      return (await call('read_performance') as PerformanceView).found.previous;
+      return (await call('read_performance') as PerformanceView).previous;
     case 'read_recovery':
       return {
         snapshots: 'Snapper',
