@@ -772,6 +772,7 @@ name = "helix-toolbox-platform"
 version = "1.24.0"
 dependencies = [
  "helix-toolbox-core",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 

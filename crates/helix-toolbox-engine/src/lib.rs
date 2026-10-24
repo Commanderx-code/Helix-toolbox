@@ -646,8 +646,10 @@ pub fn package_state(
     Some(PackageState::Absent { replaces })
 }
 
-/// Plan one or more entries. Profiles expand into their members; a package
-/// that is already installed becomes a note instead of a step.
+/// Plan one or more entries. Profiles expand into their members, and an
+/// entry named more than once (two profiles sharing a member, or a profile
+/// queued with one of its members) is planned where it first comes; a
+/// package that is already installed becomes a note instead of a step.
 pub fn plan<'a>(
     entries: impl IntoIterator<Item = &'a Entry>,
     platform: &LinuxInfo,
@@ -664,6 +666,7 @@ pub fn plan_with<'a>(
     machine: Machine,
 ) -> Result<Plan, EngineError> {
     let mut result = Plan::default();
+    let mut planned = Vec::new();
     for entry in entries {
         add_entry(
             entry,
@@ -672,6 +675,7 @@ pub fn plan_with<'a>(
             machine,
             &mut result,
             &mut Vec::new(),
+            &mut planned,
         )?;
     }
     result.requirements.sort();
@@ -693,7 +697,16 @@ fn add_entry<'a>(
     machine: Machine,
     into: &mut Plan,
     trail: &mut Vec<String>,
+    planned: &mut Vec<String>,
 ) -> Result<(), EngineError> {
+    // Each entry once, where it first comes. A profile always expands, and
+    // each of its members is checked here in turn.
+    if !matches!(entry.action, Action::Profile { .. }) {
+        if planned.contains(&entry.id) {
+            return Ok(());
+        }
+        planned.push(entry.id.clone());
+    }
     let step = match &entry.action {
         Action::Package {
             binary,
@@ -791,7 +804,7 @@ fn add_entry<'a>(
             for member in entries {
                 let found = lookup(member)
                     .ok_or_else(|| EngineError::UnknownMember(entry.id.clone(), member.clone()))?;
-                add_entry(found, platform, lookup, machine, into, trail)?;
+                add_entry(found, platform, lookup, machine, into, trail, planned)?;
             }
             trail.pop();
             return Ok(());
@@ -3161,5 +3174,61 @@ mod tests {
             .output()
             .unwrap();
         assert_eq!(String::from_utf8(output.stdout).unwrap(), value);
+    }
+
+    #[test]
+    fn two_profiles_sharing_a_member_plan_it_once() {
+        let rg = entry(
+            "ripgrep",
+            "I",
+            Action::Package {
+                binary: Some("helix-toolbox-nonexistent-rg-12345".into()),
+                packages: PackageNames {
+                    arch: Some("ripgrep".into()),
+                    ..Default::default()
+                },
+                aur: None,
+                flatpak: None,
+                conflicts: Vec::new(),
+                removable: true,
+                release: None,
+            },
+        );
+        let one = entry(
+            "developer-basics",
+            "I",
+            Action::Profile {
+                entries: vec!["ripgrep".into()],
+            },
+        );
+        let two = entry(
+            "terminal-power-user",
+            "I",
+            Action::Profile {
+                entries: vec!["ripgrep".into()],
+            },
+        );
+        let all = [&rg, &one, &two];
+        let lookup = |id: &str| all.iter().copied().find(|entry| entry.id == id);
+        let planned = plan_with(
+            [&one, &two],
+            &platform(Some(PackageManager::Arch)),
+            &lookup,
+            Machine::blind(),
+        )
+        .unwrap();
+        let ids: Vec<&str> = planned.steps.iter().map(Step::id).collect();
+        assert_eq!(ids, ["ripgrep"]);
+        // A profile queued with one of its members, either way round.
+        for queue in [[&rg, &one], [&one, &rg]] {
+            let planned = plan_with(
+                queue,
+                &platform(Some(PackageManager::Arch)),
+                &lookup,
+                Machine::blind(),
+            )
+            .unwrap();
+            assert_eq!(planned.steps.len(), 1);
+        }
     }
 }

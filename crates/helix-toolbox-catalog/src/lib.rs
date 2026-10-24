@@ -473,6 +473,7 @@ fn load_tabs(root: &Path, validate: bool) -> Result<Vec<Tab>, CatalogError> {
     let installers = root.join("scripts/installers");
     let index: TabsFile = read(&catalog.join("tabs.toml"))?;
     let mut ids = HashSet::new();
+    let mut hidden = HashSet::new();
     let mut tabs = Vec::new();
     for id in index.tabs {
         if !valid_id(&id) {
@@ -482,7 +483,14 @@ fn load_tabs(root: &Path, validate: bool) -> Result<Vec<Tab>, CatalogError> {
         }
         let directory = catalog.join(&id);
         let tab: TabFile = read(&directory.join("tab.toml"))?;
-        let items = load_items(&directory, &installers, validate, true, &mut ids)?;
+        let items = load_items(
+            &directory,
+            &installers,
+            validate,
+            true,
+            &mut ids,
+            &mut hidden,
+        )?;
         tabs.push(Tab {
             id,
             name: tab.name,
@@ -492,17 +500,30 @@ fn load_tabs(root: &Path, validate: bool) -> Result<Vec<Tab>, CatalogError> {
     if tabs.is_empty() {
         return Err(CatalogError::Invalid("tabs.toml names no tabs".into()));
     }
-    check_profiles(&tabs)?;
+    check_profiles(&tabs, &hidden)?;
+    // A member hidden on this machine is left out of its profile, and a
+    // profile with none left is hidden too, as a group with no entries is.
+    loop {
+        let mut hid = false;
+        for tab in &mut tabs {
+            hid |= drop_hidden_members(&mut tab.items, &mut hidden);
+        }
+        if !hid {
+            break;
+        }
+    }
     Ok(tabs)
 }
 
-/// Profiles may only name entries that exist, and may not include themselves
-/// directly or through other profiles.
-fn check_profiles(tabs: &[Tab]) -> Result<(), CatalogError> {
+/// Profiles may only name entries that exist, here or hidden on this
+/// machine, and may not include themselves directly or through other
+/// profiles.
+fn check_profiles(tabs: &[Tab], hidden: &HashSet<String>) -> Result<(), CatalogError> {
     let entries: Vec<&Entry> = tabs.iter().flat_map(Tab::entries).collect();
     fn visit(
         entry: &Entry,
         entries: &[&Entry],
+        hidden: &HashSet<String>,
         trail: &mut Vec<String>,
     ) -> Result<(), CatalogError> {
         if let Action::Profile { entries: members } = &entry.action {
@@ -515,31 +536,84 @@ fn check_profiles(tabs: &[Tab]) -> Result<(), CatalogError> {
             trail.push(entry.id.clone());
             for member in members {
                 let Some(found) = entries.iter().find(|candidate| &candidate.id == member) else {
+                    if hidden.contains(member) {
+                        continue;
+                    }
                     return Err(CatalogError::Invalid(format!(
                         "profile {} names an unknown entry: {member}",
                         entry.id
                     )));
                 };
-                visit(found, entries, trail)?;
+                visit(found, entries, hidden, trail)?;
             }
             trail.pop();
         }
         Ok(())
     }
     for entry in &entries {
-        visit(entry, &entries, &mut Vec::new())?;
+        visit(entry, &entries, hidden, &mut Vec::new())?;
     }
     Ok(())
 }
 
+/// Leave the members hidden on this machine out of each profile in `items`,
+/// and hide (and add to `hidden`) a profile left with none, then a group
+/// left with nothing. Whether a profile was hidden, since another profile
+/// may name it.
+fn drop_hidden_members(items: &mut Vec<Item>, hidden: &mut HashSet<String>) -> bool {
+    let mut hid = false;
+    items.retain_mut(|item| match item {
+        Item::Group(group) => {
+            let had = group.items.len();
+            hid |= drop_hidden_members(&mut group.items, hidden);
+            had == 0 || !group.items.is_empty()
+        }
+        Item::Entry(entry) => {
+            let Action::Profile { entries } = &mut entry.action else {
+                return true;
+            };
+            entries.retain(|member| !hidden.contains(member));
+            if entries.is_empty() {
+                hidden.insert(entry.id.clone());
+                hid = true;
+            }
+            !entries.is_empty()
+        }
+    });
+    hid
+}
+
+/// Add the id of every entry under `directory`, a group hidden on this
+/// machine, to `hidden`.
+fn hide_entries_under(directory: &Path, hidden: &mut HashSet<String>) {
+    let Ok(listing) = fs::read_dir(directory) else {
+        return;
+    };
+    for child in listing.flatten() {
+        let path = child.path();
+        if path.is_dir() {
+            if path.join("group.toml").is_file() {
+                hide_entries_under(&path, hidden);
+            }
+        } else if let Some(stem) = child.file_name().to_string_lossy().strip_suffix(".toml")
+            && stem != "tab"
+            && stem != "group"
+        {
+            hidden.insert(stem.to_string());
+        }
+    }
+}
+
 /// Groups are subdirectories with a group.toml; entries are the other TOML
-/// files. Both sort by their `order`, then by name.
+/// files. Both sort by their `order`, then by name. The ids of entries
+/// hidden on this machine go into `hidden`.
 fn load_items(
     directory: &Path,
     installers: &Path,
     validate: bool,
     parent_multi_select: bool,
     ids: &mut HashSet<String>,
+    hidden: &mut HashSet<String>,
 ) -> Result<Vec<Item>, CatalogError> {
     // (0 for a group or 1 for an entry, order, name, item)
     let mut found: Vec<(u8, i64, String, Item)> = Vec::new();
@@ -562,10 +636,11 @@ fn load_items(
             }
             let group: GroupFile = read(&group_file)?;
             if validate && !group.preconditions.iter().all(holds) {
+                hide_entries_under(&path, hidden);
                 continue;
             }
             let multi_select = parent_multi_select && group.multi_select;
-            let items = load_items(&path, installers, validate, multi_select, ids)?;
+            let items = load_items(&path, installers, validate, multi_select, ids, hidden)?;
             if validate && items.is_empty() {
                 continue;
             }
@@ -593,15 +668,18 @@ fn load_items(
             }
             let entry: EntryFile = read(&path)?;
             if validate && !entry.preconditions.iter().all(holds) {
+                hidden.insert(stem.to_string());
                 continue;
             }
             let Some(action) = action_of(&entry, &path, installers, validate)? else {
+                hidden.insert(stem.to_string());
                 continue;
             };
             let detect = detect_of(&entry, &path)?;
             let needs = needs_of(&entry, &path)?;
             // For other processors, like a failed precondition.
             if validate && !needs.runs_on(std::env::consts::ARCH) {
+                hidden.insert(stem.to_string());
                 continue;
             }
             let mut effects = effects_of(&entry, &path)?;
@@ -1692,5 +1770,60 @@ mod tests {
         assert!(catalog.find("neovim-titus").is_some());
         assert!(catalog.entries().len() >= 230);
         assert!(catalog.lib_dir().join("common-script.sh").is_file());
+    }
+
+    #[test]
+    fn a_profile_leaves_out_members_hidden_here() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        write(root, "catalog/tabs.toml", "tabs = [\"t\"]\n");
+        write(root, "catalog/t/tab.toml", "name = \"T\"\n");
+        write(
+            root,
+            "catalog/t/deck.toml",
+            "name = \"Deck\"\n\n[[preconditions]]\nmatches = true\ncheck = \"command_exists\"\nvalues = [\"no-such-command-helix-toolbox\"]\n\n[command]\nline = \"true\"\n",
+        );
+        write(
+            root,
+            "catalog/t/git.toml",
+            "name = \"Git\"\n[package]\narch = \"git\"\n",
+        );
+        write(
+            root,
+            "catalog/t/kit.toml",
+            "name = \"Kit\"\n[profile]\nentries = [\"git\", \"deck\"]\n",
+        );
+        // A profile of hidden members only is hidden, and so is one naming
+        // only that.
+        write(
+            root,
+            "catalog/t/decks.toml",
+            "name = \"Decks\"\n[profile]\nentries = [\"deck\"]\n",
+        );
+        write(
+            root,
+            "catalog/t/more-decks.toml",
+            "name = \"More decks\"\n[profile]\nentries = [\"decks\"]\n",
+        );
+        let members = |catalog: &Catalog, id: &str| match &catalog.find(id)?.action {
+            Action::Profile { entries } => Some(entries.clone()),
+            _ => None,
+        };
+        let everything = Catalog::from_directory(root, false).unwrap();
+        assert_eq!(members(&everything, "kit").unwrap(), ["git", "deck"]);
+        // On a machine without the command, Deck is hidden and Kit loads
+        // without it.
+        let here = Catalog::from_directory(root, true).unwrap();
+        assert!(here.find("deck").is_none());
+        assert_eq!(members(&here, "kit").unwrap(), ["git"]);
+        assert!(here.find("decks").is_none());
+        assert!(here.find("more-decks").is_none());
+        // A member that is nowhere is still an error.
+        write(
+            root,
+            "catalog/t/kit.toml",
+            "name = \"Kit\"\n[profile]\nentries = [\"git\", \"nope\"]\n",
+        );
+        assert!(Catalog::from_directory(root, true).is_err());
     }
 }

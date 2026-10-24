@@ -97,6 +97,12 @@ check = "command_exists"         # or "file_exists", { containing_file = "..." }
 values = ["sddm"]
 ```
 
+A profile names entries anywhere in the catalog, hidden here or not. On a
+machine where a member is hidden (by its preconditions, its processor, or a
+tool it needs, such as Nix), the profile is shown without it, and a profile
+with no member left is hidden too. Planning several profiles that share a
+member, or a profile with one of its members, installs that member once.
+
 Scripts source the shared helpers with `. "$HELIX_TOOLBOX_LIB/common-script.sh"`. The installers brought across use its name before 1.7, `HELIXFORGE_LIB`, which every run sets too.
 The catalog and scripts are embedded into the binary at build time and
 unpacked to a private temporary directory when it starts, so scripts run as

@@ -83,7 +83,9 @@ color at all, only bold and reverse video. With `NO_COLOR` set, Helix Toolbox
 starts in monochrome without changing the theme it remembers. Settings also turns the icons
 off for terminals without a Nerd Font. Both choices are remembered in
 `~/.config/helix-toolbox/settings.toml`, which the Settings screen names;
-`--theme` and `--plain` override them for one run.
+`--theme` and `--plain` override them for one run. A `settings.toml` that
+does not parse is copied to `settings.toml.unreadable` beside it before a
+setting is next saved, since the new file holds only what was saved.
 
 ## Status and updates
 
