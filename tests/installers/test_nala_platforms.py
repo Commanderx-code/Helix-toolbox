@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -18,30 +19,47 @@ class NalaPlatformTests(unittest.TestCase):
             ('zorin', 'ubuntu debian', '(none)', 1),
         ]:
             with self.subTest(distro=distro, candidate=candidate), tempfile.TemporaryDirectory() as tmp:
+                # The script runs from its own directory inside a copy of the
+                # installers tree, as the engine runs it, and reaches the real
+                # Commander configure.py through its relative path.
                 root = Path(tmp)
-                (root / 'os-release').write_text(f'ID={distro}\nID_LIKE="{family}"\n')
-                (root / 'common.sh').write_text('''checkEnv() { ESCALATION_TOOL=env; }
+                installers = root / 'scripts/installers'
+                directory = installers / 'system-setup/debian'
+                directory.mkdir(parents=True)
+                (installers / 'commander').mkdir()
+                shutil.copy(ROOT / 'scripts/installers/commander/configure.py', installers / 'commander')
+                (installers / 'common-script.sh').write_text('''checkEnv() { ESCALATION_TOOL=env; }
 checkCommandRequirements() { :; }
 command_exists() { [ -f "$HOME/installed" ]; }
 id() { printf '1000\\n'; }
 ''')
-                (root / 'script.sh').write_text(script.replace('../../common-script.sh', './common.sh').replace('/etc/os-release', './os-release'))
+                (root / 'os-release').write_text(f'ID={distro}\nID_LIKE="{family}"\n')
+                (directory / 'nala-setup.sh').write_text(script.replace('/etc/os-release', str(root / 'os-release')))
+                home = root / 'home'
+                home.mkdir()
+                bin_directory = root / 'bin'
+                bin_directory.mkdir()
                 mocks = {
                     'apt-get': '#!/bin/sh\necho "$*" >> "$HOME/operations"\n[ "$1" != install ] || touch "$HOME/installed"\n',
                     'apt-cache': '#!/bin/sh\nprintf "Candidate: %s\\n" "$CANDIDATE"\n',
-                    'python3': '#!/bin/sh\necho "$*" >> "$HOME/python-calls"\n',
                 }
                 for name, content in mocks.items():
-                    path = root / name
+                    path = bin_directory / name
                     path.write_text(content)
                     path.chmod(0o755)
-                result = subprocess.run(['sh', '-e', './script.sh'], cwd=root, input='APPLY\n',
-                    text=True, capture_output=True,
-                    env=dict(os.environ, HOME=tmp, SHELL='/bin/bash', CANDIDATE=candidate,
-                             PATH=tmp + ':' + os.environ['PATH']))
+                env = dict(os.environ, HOME=str(home), SHELL='/bin/bash', CANDIDATE=candidate,
+                           XDG_CONFIG_HOME=str(home / '.config'), XDG_DATA_HOME=str(home / '.local/share'),
+                           PATH=str(bin_directory) + ':' + os.environ['PATH'])
+                env.pop('ZDOTDIR', None)
+                result = subprocess.run(['sh', '-e', './nala-setup.sh'], cwd=directory, input='APPLY\n',
+                    text=True, capture_output=True, env=env)
                 self.assertEqual(result.returncode, expected, result.stderr)
-                calls = (root / 'python-calls').read_text() if (root / 'python-calls').exists() else ''
-                self.assertEqual('nala-alias' in calls, expected == 0)
-                self.assertEqual((root / 'installed').exists(), expected == 0)
+                self.assertEqual((home / 'installed').exists(), expected == 0)
+                bashrc = home / '.bashrc'
+                self.assertEqual(bashrc.exists(), expected == 0)
+                if expected == 0:
+                    self.assertIn("alias apt='nala'", bashrc.read_text())
                 if distro == 'fedora':
-                    self.assertFalse((root / 'operations').exists())
+                    self.assertFalse((home / 'operations').exists())
+                else:
+                    self.assertIn(f'Alias destination: {bashrc}', result.stdout)
