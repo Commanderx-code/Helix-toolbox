@@ -3837,6 +3837,79 @@ fn the_storage_screen_reads_again_after_a_run_made_elsewhere() {
 }
 
 #[test]
+fn the_doctor_checks_again_after_a_run() {
+    let free = |bytes: u64| {
+        let mut machine = made_up();
+        machine.spaces.insert("/".into(), (bytes, 500 << 30));
+        Host::made_up(machine)
+    };
+    let disk_space = |app: &App| {
+        app.screens
+            .doctor
+            .diagnoses
+            .iter()
+            .find(|diagnosis| diagnosis.id == "disk-space")
+            .map(|diagnosis| diagnosis.summary.clone())
+            .unwrap_or_default()
+    };
+    let mut app = app_on(free(40 << 30));
+    app.open_screen(Screen::Doctor);
+    settle(&mut app);
+    assert_eq!(disk_space(&app), "40.0 GiB free of 500.0 GiB on /");
+    // A run while the Doctor is shown: it checks again at once.
+    app.host = free(90 << 30);
+    app.read_again(Reading::Tools);
+    settle(&mut app);
+    assert_eq!(disk_space(&app), "90.0 GiB free of 500.0 GiB on /");
+    // A run made elsewhere: it checks again when opened, not before.
+    app.open_screen(Screen::Area(app.first_area()));
+    app.host = free(120 << 30);
+    app.read_again(Reading::Tools);
+    settle(&mut app);
+    assert_eq!(disk_space(&app), "90.0 GiB free of 500.0 GiB on /");
+    app.open_screen(Screen::Doctor);
+    settle(&mut app);
+    assert_eq!(disk_space(&app), "120.0 GiB free of 500.0 GiB on /");
+}
+
+#[test]
+fn the_hardware_screen_reads_again_after_a_run() {
+    let with_fwupd = |installed: bool| {
+        let mut machine = made_up();
+        if installed {
+            machine.tools.push("fwupdmgr".into());
+        }
+        Host::made_up(machine)
+    };
+    let shows =
+        |app: &App, text: &str| {
+            app.screens.hardware.rows.iter().any(
+                |row| matches!(row, HardwareRow::Item { text: line, .. } if line.contains(text)),
+            )
+        };
+    let missing = "fwupd is not installed";
+    let silent = "fwupd's service did not answer";
+    let mut app = app_on(with_fwupd(false));
+    app.open_screen(Screen::Hardware);
+    settle(&mut app);
+    assert!(shows(&app, missing));
+    // A run while Hardware is shown installs fwupd: it reads again at once.
+    app.host = with_fwupd(true);
+    app.read_again(Reading::Tools);
+    settle(&mut app);
+    assert!(shows(&app, silent));
+    // A run made elsewhere removes it: read again when opened, not before.
+    app.open_screen(Screen::Area(app.first_area()));
+    app.host = with_fwupd(false);
+    app.read_again(Reading::Tools);
+    settle(&mut app);
+    assert!(shows(&app, silent));
+    app.open_screen(Screen::Hardware);
+    settle(&mut app);
+    assert!(shows(&app, missing));
+}
+
+#[test]
 fn while_the_doctor_checks_the_highlighted_report_is_the_one_enter_runs() {
     let mut app = app();
     app.open_screen(Screen::Doctor);

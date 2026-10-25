@@ -525,7 +525,7 @@ impl<'a> From<&'a Finished> for WireResult<'a> {
                         StepState::Done => ("done", None),
                         StepState::Failed(code) => ("failed", Some(*code)),
                         StepState::Interrupted => ("interrupted", None),
-                        StepState::Skipped => ("skipped", None),
+                        StepState::Skipped | StepState::SnapshotFailed => ("skipped", None),
                         StepState::NotRun => ("not_run", None),
                     };
                     WireStepResult {
