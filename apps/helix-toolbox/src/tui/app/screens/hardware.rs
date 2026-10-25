@@ -14,6 +14,9 @@ pub(in crate::tui::app) struct Hardware {
     reading: Read<hardware::Hardware>,
     /// The firmware update waiting for its confirming word.
     firmware: Option<Plan>,
+    /// A run while another screen was shown left what it read out of
+    /// date.
+    stale: bool,
 }
 
 /// A line of the Hardware screen.
@@ -121,7 +124,7 @@ impl Hardware {
 
 impl ToolScreen for Hardware {
     fn open(&mut self, cx: &mut Cx) {
-        if self.found.is_none() {
+        if std::mem::take(&mut self.stale) || self.found.is_none() {
             self.read(cx);
         }
     }
@@ -204,6 +207,18 @@ impl ToolScreen for Hardware {
             cx.clamp();
         }
         true
+    }
+
+    fn after_run(&mut self, cx: &mut Cx, reading: Reading) {
+        if reading == Reading::Tools {
+            self.read(cx);
+        }
+    }
+
+    fn stale(&mut self, reading: Reading) {
+        if reading == Reading::Tools {
+            self.stale = true;
+        }
     }
 
     fn draw(&self, view: &View, frame: &mut Frame, area: Rect, state: &mut ListState) {

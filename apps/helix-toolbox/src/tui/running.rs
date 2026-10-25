@@ -63,7 +63,7 @@ impl From<&StepState> for Standing {
             StepState::Done => Standing::Done,
             StepState::Failed(code) => Standing::Failed(*code),
             StepState::Interrupted => Standing::Interrupted,
-            StepState::Skipped => Standing::Skipped,
+            StepState::Skipped | StepState::SnapshotFailed => Standing::Skipped,
             StepState::NotRun => Standing::NotRun,
         }
     }

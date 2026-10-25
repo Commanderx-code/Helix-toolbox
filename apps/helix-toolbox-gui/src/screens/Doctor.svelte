@@ -36,7 +36,10 @@
     }
   }
 
-  examine();
+  $effect(() => {
+    void toolbox.readAgain.tools;
+    examine();
+  });
 </script>
 
 <div class="screen">
