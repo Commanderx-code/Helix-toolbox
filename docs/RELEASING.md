@@ -24,11 +24,15 @@ dotfiles or Myfish repositories report new sources. Nobody tags by hand.
    `tauri build`, after `scripts/stamp-version.py` on its own `Cargo.toml`.
 5. The GitHub release `vX.Y.Z` is created as a draft, the files are
    uploaded, and only then is it published.
-6. With a crates.io token set up (below), `scripts/stamp-version.py` writes
-   the version into the checkout's `Cargo.toml` and the five crates are
-   published to crates.io in dependency order: `helix-toolbox-core`,
-   `helix-toolbox-platform`, `helix-toolbox-catalog`, `helix-toolbox-engine`, then
-   `helix-toolbox`. Nothing of this is committed.
+6. With a crates.io token set up (below), the `crates` job runs
+   `scripts/stamp-version.py` to write the version into the checkout's
+   `Cargo.toml` and publishes the five crates to crates.io in dependency
+   order: `helix-toolbox-core`, `helix-toolbox-platform`,
+   `helix-toolbox-catalog`, `helix-toolbox-engine`, then `helix-toolbox`.
+   Nothing of this is committed. Nothing waits for this job, so when
+   crates.io refuses a version (it limits how many versions a crate gets in
+   24 hours), the release and the Arch repository are out regardless; the
+   crates catch up with a later release.
 
 ## The Arch repository
 
