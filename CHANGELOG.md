@@ -4,6 +4,64 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.25.0
+
+- **A failed snapshot stops the system changes after it.** The snapshot
+  taken before system changes is now something those changes wait for:
+  when it fails, they are not run, even with keep-going on, and say "not
+  run: the snapshot before it failed". They stay in the Install Plan, and
+  the rest of the run goes on.
+- **The command line follows Settings.** `helix-toolbox run` takes keep-going
+  and the snapshot before system changes from Settings, as the terminal
+  interface and the window do, so that snapshot is on by default there too;
+  `--keep-going` and `--snapshot` still turn them on. It says again why it
+  took no snapshot, when that informs.
+- **One run, the same everywhere.** The command line, the terminal
+  interface and the window run every plan through the same confirmation
+  and run session. A migration keeps going past a failure in every
+  interface, as its plan asks. A run stopped from the window is recorded
+  in History as interrupted, and no longer leaves its marker behind.
+- **The Install Plan keeps what did not finish.** After a run, the window
+  keeps the entries that did not finish, as the terminal interface does,
+  and a run that never started leaves the plan as it was.
+- **Screens read again after a run.** Updates, History, Doctor, Hardware,
+  Storage, Home Manager, Migration, Restic and Repositories read again
+  after a run, at once while shown or when next opened.
+- **The same text in every interface.** The window's Hardware, Services,
+  Storage, Performance and Offline bundles screens show what the terminal
+  interface does: decimal sizes (1.0 TB), a sensor marked hot within five
+  degrees of critical, and the command line's bundle lines. Sizes under
+  1 GB read in MB, sizes no longer round to "1000 GB", durations under a
+  minute no longer read "60.0 s", and one sensor, device or file is
+  singular.
+- **openSUSE updates.** The inventory reads zypper's waiting updates, so
+  openSUSE entries show an update and can be updated. Long package names
+  in dnf 4's list (EL 8 and 9, Fedora 40 and before) are no longer dropped.
+- **Fixes:**
+  - A package queued twice (in two profiles, or a profile and one of its
+    members) is planned once.
+  - One damaged line no longer makes the whole History unreadable.
+  - Package names that apt, dnf or zypper would read as something else (a
+    trailing "-", a leading "@", a ".rpm" ending) are refused.
+  - The scripts no longer stop a user in no wheel or sudo group, whom
+    openSUSE's sudo lets in with the root password.
+  - A profile naming an entry hidden on this machine no longer stops the
+    catalog from loading.
+  - An os-release without an ID, or only in `/usr/lib`, is read.
+  - Saving a setting over a `settings.toml` that does not parse keeps the
+    old file as `settings.toml.unreadable`.
+  - A firmware update or backup restore in the window acts on the row
+    clicked, even if the list was read again meanwhile.
+  - In the terminal interface, Enter on Doctor and Updates acts on the row
+    highlighted, an answer arriving after its screen was left waits for
+    that screen, and a read that fails says so.
+  - The window's search ranks a word with vowel signs (Devanagari, for
+    one) as the terminal interface does, and queuing an entry named twice
+    adds it once.
+- **The window's TypeScript is tested.** `npm test` runs Vitest over the
+  window's state, search, keys and other modules, in `scripts/verify.sh`
+  and the Checks workflow.
+
 ## v1.24.0
 
 - **Tools from their GitHub releases.** A catalog entry can install a tool
