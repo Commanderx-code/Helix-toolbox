@@ -83,11 +83,12 @@ jobs:
           cache-dependency-path: apps/helix-toolbox-gui/package-lock.json
       - name: Install WebKitGTK and the other libraries Tauri needs
         run: scripts/ci-apt-install.sh libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb
-      - name: The frontend type-checks and builds
+      - name: The frontend type-checks, passes its tests and builds
         working-directory: apps/helix-toolbox-gui
         run: |
           npm ci --no-fund --no-audit
           npm run check
+          npm test
           npm run build
       # With the smoke test's feature throughout, so the tests and its build
       # share one compiled Tauri rather than building it twice.

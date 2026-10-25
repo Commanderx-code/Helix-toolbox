@@ -43,6 +43,7 @@ if command -v npm >/dev/null && pkg-config --exists webkit2gtk-4.1 2>/dev/null; 
         cd apps/helix-toolbox-gui
         npm ci --no-fund --no-audit
         npm run check
+        npm test
         npm run build
         cd src-tauri
         cargo fmt --all -- --check
