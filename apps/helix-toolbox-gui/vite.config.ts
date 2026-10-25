@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
@@ -16,5 +17,13 @@ export default defineConfig({
     target: 'safari16',
     outDir: 'dist',
     emptyOutDir: true,
+  },
+  // `npm test`: the tests beside the modules in src/lib, in Node. A test
+  // file that needs a document says `@vitest-environment jsdom` on its
+  // first line; there the Svelte plugin also compiles runes as the window
+  // runs them, not as a server renders them.
+  test: {
+    include: ['src/**/*.test.ts'],
+    environment: 'node',
   },
 });

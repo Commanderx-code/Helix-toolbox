@@ -172,7 +172,10 @@ class Toolbox {
 
   /** Queue these entries, those not queued yet; how many were added. */
   enqueue(ids: string[]): number {
-    const added = ids.filter((id) => !this.isQueued(id) && this.entry(id)?.queueable);
+    // Each once, though a profile or Drift's list names one twice.
+    const added = ids.filter(
+      (id, index) => ids.indexOf(id) === index && !this.isQueued(id) && this.entry(id)?.queueable,
+    );
     this.queue = [...this.queue, ...added];
     return added.length;
   }
