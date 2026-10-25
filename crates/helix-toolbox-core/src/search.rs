@@ -143,4 +143,11 @@ mod tests {
         );
         assert!(score("telemetry", "VS Codium", "", "Code without telemetry").unwrap() < 100);
     }
+
+    // The window's lib/search.ts has the same cases.
+    #[test]
+    fn vowel_signs_are_part_of_a_word() {
+        assert_eq!(score("हिन", "Editor हिन्दी", "", ""), Some(800));
+        assert_eq!(score("नद", "हिन्दी", "", ""), Some(390));
+    }
 }

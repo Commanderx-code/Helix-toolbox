@@ -260,6 +260,7 @@ apps/helix-toolbox-gui/
     lib/api.ts         the commands of the Rust side, and sample answers for a browser
     lib/state.svelte.ts  the window's state: catalog, statuses, queue, pins
     lib/search.ts      the search ranking, the same as the engine's
+    lib/*.test.ts      the tests of the modules beside them (`npm test`)
     components/        header, sidebar, entry rows and details, the confirmation, the run panel (xterm.js), the wizard, the palette
     screens/           Dashboard, Area, Favorites, Plan, History and the other tools
   tests/drive/         the smoke test's drive script and its workstations
@@ -332,8 +333,21 @@ npm install
 npm run dev          # the frontend in a browser, with sample data: nothing on the machine is read or changed
 npm run tauri dev    # the real window on this machine (needs WebKitGTK 4.1 and its development files)
 npm run check        # the TypeScript and Svelte check
+npm test             # the tests of src/lib, with Vitest; nothing on the machine is read or changed
 npm run build        # the frontend into dist/
 ```
+
+The tests sit beside the modules in `src/lib`, as `name.test.ts`, and
+run in Node. There `api.ts` answers from `mock.ts`, as in a browser, so a
+test drives the window's state through the same calls the screens make:
+the mock plans, runs (and stops) the sample entries and closes a run as
+the Tauri side does, keeping the Install Plan when nothing ran. Keep the
+mock in step when a command's answer changes. A test file that needs a
+document (the state, the theme, the keyboard helpers) starts with
+`// @vitest-environment jsdom`; in it the Svelte plugin also compiles
+the runes of `state.svelte.ts` as the window runs them. The search
+tests compare the scores of `helix_toolbox_core::search::score` case by
+case; a change to either ranking changes both, with a case for it.
 
 In `src-tauri`, `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and
 `cargo test` as in the other crates; `scripts/verify.sh` runs all of these

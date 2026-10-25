@@ -126,6 +126,23 @@ function find(id: string, items: ItemView[] = AREAS.flatMap((area) => area.items
 }
 
 let planned: EntryView[] = [];
+/** The pretend run since the last close: the steps that finished. */
+let ran: { done: string[] } | null = null;
+let stopping = false;
+
+/** The steps a plan of these entries has: a profile's are its entries'. */
+function planOf(ids: string[]): EntryView[] {
+  const out: EntryView[] = [];
+  for (const id of ids) {
+    const found = find(id);
+    const members = found?.kind === 'profile' ? found.runs.map((run) => find(run)) : [found];
+    for (const member of members) {
+      if (member && !out.includes(member)) out.push(member);
+    }
+  }
+  return out;
+}
+
 let theme: WindowTheme = 'system';
 let notifications = false;
 let health = false;
@@ -169,7 +186,7 @@ export async function call(command: string, args: Record<string, unknown> = {}):
       return pinned;
     }
     case 'prepare': {
-      planned = (args.ids as string[]).map((id) => find(id)).filter((e): e is EntryView => !!e);
+      planned = planOf(args.ids as string[]);
       const result: Prepared = {
         kind: 'ready',
         risk: 'medium',
@@ -788,9 +805,21 @@ export async function call(command: string, args: Record<string, unknown> = {}):
       return notifications || health || watched
         ? 'Helix Toolbox checks every 6 hours, and soon after you log in, and shows a notification when something is new; a click on it opens the screen here. It never updates, repairs or puts back anything itself.'
         : 'Notifications are off.';
-    case 'close_run':
-      // Every pretend run finishes.
-      return { remaining: [], read_again: ['statuses', 'updates', 'tools', 'history'], not_recorded: null };
+    case 'stop':
+      stopping = true;
+      return undefined;
+    case 'close_run': {
+      // As the Tauri side answers: when nothing ran, the queue stays as it
+      // was; otherwise the steps that did not finish remain.
+      const closed = ran;
+      ran = null;
+      if (!closed) return { remaining: args.queue, read_again: [], not_recorded: null };
+      return {
+        remaining: planned.filter((entry) => !closed.done.includes(entry.id)).map((entry) => entry.id),
+        read_again: ['statuses', 'updates', 'tools', 'history'],
+        not_recorded: null,
+      };
+    }
     case 'read_settings':
     case 'save_settings':
       return { keep_going: args.keepGoing ?? false, snapshots: args.snapshots ?? true, snapshot_tool: 'Snapper', path: '/home/me/.config/helix-toolbox/settings.toml', theme, notifications, health, drift: watched, baselines: [['fresh-install', 'Fresh install']], restic_timer: null, restic_ready: true };
@@ -799,9 +828,13 @@ export async function call(command: string, args: Record<string, unknown> = {}):
   }
 }
 
-/** A pretend run of what was last prepared. */
+/** A pretend run of what was last prepared; a stop interrupts the step
+ * going on, and the rest do not run. */
 export async function run(onEvent: (event: RunEvent) => void) {
   const steps = planned.map((entry, index) => ({ index, id: entry.id, name: entry.name }));
+  const session = { done: [] as string[] };
+  ran = session;
+  stopping = false;
   let offset = 0;
   const output = (text: string) => {
     const terminal = text.replace(/\n/g, '\r\n');
@@ -816,8 +849,25 @@ export async function run(onEvent: (event: RunEvent) => void) {
     output(`resolving dependencies...\nlooking for conflicting packages...\n\n`);
     output(`Packages (1) ${step.id}-1.0-1\n\nTotal Installed Size:  4.20 MiB\n\n`);
     await wait(500);
+    if (stopping) {
+      onEvent({ event: 'step_failed', step, exit_code: 130, interrupted: true });
+      onEvent({
+        event: 'interrupted',
+        outcome: { kind: 'interrupted' },
+        description: 'stopped',
+        succeeded: false,
+        verified: false,
+        steps: steps.map((other) => ({
+          ...other,
+          state: session.done.includes(other.id) ? ('done' as const) : other === step ? ('interrupted' as const) : ('not_run' as const),
+        })),
+        checks: [],
+      });
+      return;
+    }
     output(`(1/1) installing ${step.id}                       [####################] 100%\n`);
     await wait(300);
+    session.done.push(step.id);
     onEvent({ event: 'step_completed', step });
     onEvent({ event: 'progress', ended: step.index + 1, total: steps.length });
   }
