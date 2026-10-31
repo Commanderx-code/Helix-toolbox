@@ -4,6 +4,12 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## v1.25.9
+
+- **The terminal interface's lists stand in columns.** A row's status,
+  source and flags now start at the same place on every row, whatever each
+  one holds, and a description always stops two columns short of them.
+
 ## v1.25.0
 
 - **A failed snapshot stops the system changes after it.** The snapshot

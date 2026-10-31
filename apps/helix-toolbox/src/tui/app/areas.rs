@@ -98,6 +98,7 @@ impl App {
             (block.inner(area).width as usize).saturating_sub(marker.chars().count());
         let group = self.glyph(Icon::Group);
         let searching = self.searching();
+        let columns = self.status_columns(content_width);
         let lines: Vec<Line> = self
             .rows
             .iter()
@@ -158,38 +159,26 @@ impl App {
                     let suffix =
                         format!("{}{pinned}", if queued && !self.icons { " *" } else { "" });
                     let left = format!("{icon}  {}{suffix}", entry.name);
-                    let flags = format!("  {} ", entry.flags);
-                    // The status word, then where from, dropped first when short of room.
-                    let (word, detail, color) = match self.statuses.get(&entry.id) {
-                        Some(status) => (
-                            status.label().to_string(),
-                            status.detail(),
-                            self.status_color(status),
-                        ),
-                        None => (String::new(), String::new(), self.theme.muted()),
-                    };
-                    let room = content_width.saturating_sub(left.chars().count() + 2);
-                    let mut detail = if detail.is_empty() {
-                        detail
+                    let (word, detail, color) = self.status_words(entry);
+                    let word = pad(&word, columns.word);
+                    let detail = if columns.detail == 0 {
+                        String::new()
                     } else {
-                        format!("  {detail}")
+                        format!(
+                            "  {}",
+                            pad(&clipped(&detail, columns.detail), columns.detail)
+                        )
                     };
-                    let width = |detail: &str| {
-                        word.chars().count() + detail.chars().count() + flags.chars().count()
-                    };
-                    if width(&detail) > room {
-                        detail.clear();
-                    }
-                    let flags = if width(&detail) > room {
+                    let flags = if columns.flags == 0 {
                         " ".to_string()
                     } else {
-                        flags
+                        format!("  {} ", pad(&entry.flags, columns.flags))
                     };
-                    let right =
-                        word.chars().count() + detail.chars().count() + flags.chars().count();
-                    // Between them, where it fits: where a search result is
-                    // listed, then the description, as the window's rows show.
-                    let room = content_width.saturating_sub(left.chars().count() + right + 3);
+                    let right = columns.width();
+                    // Between them, where it fits, two columns clear of the
+                    // status: where a search result is listed, then the
+                    // description, as the window's rows show.
+                    let room = content_width.saturating_sub(left.chars().count() + right + 4);
                     let place = if searching {
                         self.place_label(&entry.id)
                     } else {
@@ -228,6 +217,47 @@ impl App {
             .highlight_symbol(marker)
             .scroll_padding(1);
         bordered_list(frame, list, area, &mut self.main_state, &self.hits);
+    }
+
+    /// An entry's status word, where it came from, and the word's color.
+    fn status_words(&self, entry: &Entry) -> (String, String, Color) {
+        match self.statuses.get(&entry.id) {
+            Some(status) => (
+                status.label().to_string(),
+                status.detail(),
+                self.status_color(status),
+            ),
+            None => (String::new(), String::new(), self.theme.muted()),
+        }
+    }
+
+    /// The list's status columns, as wide as their widest rows so every row
+    /// lines up. Short of room, the source goes first, then the flags.
+    fn status_columns(&self, content_width: usize) -> StatusColumns {
+        let mut name = 0;
+        let mut columns = StatusColumns {
+            word: 0,
+            detail: 0,
+            flags: 0,
+        };
+        for row in &self.rows {
+            let Row::Entry(entry) = row else { continue };
+            let (word, detail, _) = self.status_words(entry);
+            name = name.max(entry.name.chars().count());
+            columns.word = columns.word.max(word.chars().count());
+            columns.detail = columns.detail.max(detail.chars().count());
+            columns.flags = columns.flags.max(entry.flags.chars().count());
+        }
+        columns.detail = columns.detail.min(content_width / 3);
+        // The icon and two spaces in front of the name, and two after it.
+        let room = content_width.saturating_sub(name + 3 + 2);
+        if columns.width() > room {
+            columns.detail = 0;
+        }
+        if columns.width() > room {
+            columns.flags = 0;
+        }
+        columns
     }
 
     pub(in crate::tui::app) fn draw_plan(&mut self, frame: &mut Frame, area: Rect) {

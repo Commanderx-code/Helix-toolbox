@@ -1441,6 +1441,27 @@ fn flag_meanings(field: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// How wide a list's status columns are; 0 for one left out.
+struct StatusColumns {
+    word: usize,
+    detail: usize,
+    flags: usize,
+}
+
+impl StatusColumns {
+    /// The columns together, with the spaces around them.
+    fn width(&self) -> usize {
+        let detail = if self.detail == 0 { 0 } else { self.detail + 2 };
+        let flags = if self.flags == 0 { 1 } else { self.flags + 3 };
+        self.word + detail + flags
+    }
+}
+
+/// The text filled with spaces to `width` characters.
+fn pad(text: &str, width: usize) -> String {
+    format!("{text:<width$}")
+}
+
 /// The text cut to `width` characters, ending in "…" when it was cut.
 fn clipped(text: &str, width: usize) -> String {
     if text.chars().count() <= width {
