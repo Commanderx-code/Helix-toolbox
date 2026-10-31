@@ -624,6 +624,66 @@ fn the_doctor_shows_evidence_and_repairs_with_their_own_confirmation() {
 }
 
 #[test]
+fn a_lists_status_source_and_flags_stand_in_columns() {
+    fn cells(text: &str, name: &str) -> Vec<char> {
+        text.lines()
+            .find(|line| line.contains(name))
+            .unwrap_or_else(|| panic!("no {name} in {text}"))
+            .chars()
+            .collect()
+    }
+    fn at(row: &[char], word: &str) -> usize {
+        let word: Vec<char> = word.chars().collect();
+        row.windows(word.len())
+            .position(|window| window == word.as_slice())
+            .unwrap_or_else(|| panic!("no {word:?} in {row:?}"))
+    }
+    let mut app = app();
+    app.statuses.insert(
+        "ghostty".into(),
+        Status::Installed {
+            source: "pacman".into(),
+            version: Some("1.4.0-1".into()),
+            shadowed: None,
+        },
+    );
+    app.statuses.insert(
+        "tmux".into(),
+        Status::Managed {
+            by: "Home Manager".into(),
+            version: Some("3.5".into()),
+        },
+    );
+    app.statuses.insert(
+        "alacritty".into(),
+        Status::Absent {
+            replaces: Vec::new(),
+        },
+    );
+    press(&mut app, KeyCode::Char('/'));
+    type_text(&mut app, "terminal");
+    let text = screen(&mut app, 180, 80);
+    let ghostty = cells(&text, "Ghostty");
+    let tmux = cells(&text, "tmux");
+    let alacritty = cells(&text, "Alacritty");
+    // Whatever each row holds, its words start at the same place.
+    let word = at(&alacritty, "Not installed");
+    assert_eq!(word, at(&ghostty, "Installed"), "{text}");
+    assert_eq!(word, at(&tmux, "Managed"), "{text}");
+    let source = word + "Not installed  ".len();
+    assert_eq!(source, at(&ghostty, "pacman"), "{text}");
+    assert_eq!(source, at(&tmux, "Home Manager"), "{text}");
+    // The first flag too, whether a row has one or several.
+    let flag = at(&alacritty, "I FM");
+    assert_eq!(ghostty[flag..flag + 4], ['I', ' ', 'F', 'M'], "{text}");
+    assert_eq!(tmux[flag..flag + 2], ['I', ' '], "{text}");
+    // However long a description is, it stops short of the status.
+    for row in [&ghostty, &tmux, &alacritty] {
+        assert_eq!(row[word - 2..word], [' ', ' '], "{text}");
+    }
+}
+
+#[test]
 fn entries_show_how_they_stand() {
     let mut app = app();
     app.statuses.insert(
