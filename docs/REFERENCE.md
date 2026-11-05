@@ -152,7 +152,11 @@ or `zypper install`; the window's package (`helix-toolbox-gui`) is fetched and
 installed with it when the package tool says it is installed. On Arch with
 the helix-toolbox repository in `pacman.conf` (INSTALL.md), the row runs
 `pacman -Syu --needed helix-toolbox` (and `helix-toolbox-gui`) instead, which
-updates the system with them. A copy from `cargo install` runs `cargo install
+updates the system with them. Installed from the AUR (`helix-toolbox-bin`,
+with `helix-toolbox-gui-bin` for the window), the row runs `paru -S --needed
+helix-toolbox-bin` (or `yay`), with the window's package when it is
+installed, and without an AUR helper leaves the update to whatever built it.
+A copy from `cargo install` runs `cargo install
 --locked helix-toolbox` again. A build in a checkout fast-forwards it from
 GitHub and builds it, and leaves a checkout with local changes alone. A copy
 anywhere else that the user owns (`~/.local/bin`, say) is replaced by the

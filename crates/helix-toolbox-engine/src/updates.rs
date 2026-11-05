@@ -306,6 +306,18 @@ pub fn window_asset_for(version: &str, architecture: &str) -> Option<String> {
     Some(format!("helix-toolbox-gui_{version}_{name}.AppImage"))
 }
 
+/// Whether pacman has a package of this name installed.
+fn pacman_has(system: &dyn System, package: &str) -> bool {
+    system
+        .run(&["pacman", "-Q", package])
+        .is_some_and(|(ok, _)| ok)
+}
+
+/// The AUR's helix-toolbox-bin (packaging/aur), which an AUR helper builds
+/// and updates rather than the release's own package.
+const AUR_PACKAGE: &str = "helix-toolbox-bin";
+const AUR_WINDOW_PACKAGE: &str = "helix-toolbox-gui-bin";
+
 /// Whether the window's package is installed, by the family's package tool.
 fn window_installed(system: &dyn System, manager: PackageManager) -> bool {
     let command: &[&str] = match manager {
@@ -436,7 +448,12 @@ fn this_channel(
                         ));
                     }
                 } else if let Some(manager) = platform.manager {
-                    let window = window_installed(system, manager);
+                    let aur = manager == PackageManager::Arch && pacman_has(system, AUR_PACKAGE);
+                    let window = if aur {
+                        pacman_has(system, AUR_WINDOW_PACKAGE)
+                    } else {
+                        window_installed(system, manager)
+                    };
                     if window && let Some(pending) = &mut channel.pending {
                         pending.push(Pending {
                             name: "helix-toolbox-gui".into(),
@@ -444,7 +461,32 @@ fn this_channel(
                             to: Some(newest.clone()),
                         });
                     }
-                    if manager == PackageManager::Arch && repository(system) {
+                    if aur {
+                        // Installed from the AUR: its helper builds the newer
+                        // PKGBUILD; a release package would replace it.
+                        channel.note.push_str(", from the AUR");
+                        match ["paru", "yay"]
+                            .into_iter()
+                            .find(|tool| system.on_path(tool))
+                        {
+                            Some(helper) => {
+                                let mut command = words(&[helper, "-S", "--needed", AUR_PACKAGE]);
+                                if window {
+                                    command.push(AUR_WINDOW_PACKAGE.into());
+                                }
+                                channel.commands = vec![command];
+                                channel.requires = strings(&[helper]);
+                                channel.caveat = Some(format!(
+                                    "builds {AUR_PACKAGE} from its AUR PKGBUILD, which installs the release's own packages; read it when asked"
+                                ));
+                            }
+                            None => {
+                                channel.note.push_str(
+                                    "; update it with the AUR helper or makepkg you installed it with",
+                                );
+                            }
+                        }
+                    } else if manager == PackageManager::Arch && repository(system) {
                         // The repository updates them with the system.
                         let mut command =
                             words(&["sudo", "pacman", "-Syu", "--needed", "helix-toolbox"]);
@@ -1324,6 +1366,48 @@ mod tests {
             )
         );
         assert!(channel.caveat.as_deref().unwrap().contains("packages"));
+    }
+
+    #[test]
+    fn an_aur_install_is_updated_by_the_aur_helper() {
+        let mut fake = machine();
+        latest(&mut fake, "v1.0.4");
+        fake.commands.insert(
+            "pacman -Q helix-toolbox-bin".into(),
+            (true, "helix-toolbox-bin 1.0.3-1\n".into()),
+        );
+        // The repository too: the AUR package still decides.
+        fake.commands.insert(
+            "pacman-conf --repo-list".into(),
+            (true, "core\nextra\nhelix-toolbox\n".into()),
+        );
+        let channel = only_this(&fake, Install::Package, true);
+        assert_eq!(channel.summary(), "1 update");
+        assert_eq!(channel.command_line(), "paru -S --needed helix-toolbox-bin");
+        assert_eq!(channel.requires, vec!["paru"]);
+        assert!(channel.note.ends_with("from the AUR"), "{}", channel.note);
+        assert!(channel.caveat.as_deref().unwrap().contains("PKGBUILD"));
+        // The window from the AUR comes with it.
+        fake.commands.insert(
+            "pacman -Q helix-toolbox-gui-bin".into(),
+            (true, "helix-toolbox-gui-bin 1.0.3-1\n".into()),
+        );
+        let both = only_this(&fake, Install::Package, true);
+        assert_eq!(both.summary(), "2 updates");
+        assert_eq!(
+            both.command_line(),
+            "paru -S --needed helix-toolbox-bin helix-toolbox-gui-bin"
+        );
+        // Without a helper, nothing is run in its place.
+        fake.tools.retain(|tool| tool != "paru");
+        let bare = only_this(&fake, Install::Package, true);
+        assert_eq!(bare.summary(), "2 updates");
+        assert!(bare.commands.is_empty());
+        assert!(bare.note.contains("AUR helper or makepkg"), "{}", bare.note);
+        // Up to date: nothing to run.
+        fake.tools.push("paru".into());
+        latest(&mut fake, "v1.0.3");
+        assert!(only_this(&fake, Install::Package, true).commands.is_empty());
     }
 
     #[test]

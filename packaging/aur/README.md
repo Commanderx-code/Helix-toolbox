@@ -18,6 +18,9 @@ cd packaging/aur
 makepkg -si    # builds and installs both packages
 ```
 
+Helix Toolbox's Updates screen sees `helix-toolbox-bin` and updates it with
+`paru` or `yay`, the window's package with it.
+
 The [pacman repository](../../docs/INSTALL.md#the-arch-repository) installs
 the same packages and keeps them updated with the system; this is for those
 who would rather take them from the AUR.

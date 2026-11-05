@@ -4,6 +4,19 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## Unreleased
+
+- **A package for the AUR.** `packaging/aur` holds `helix-toolbox-bin`, a
+  PKGBUILD that installs the release's own Arch packages, the window's as
+  `helix-toolbox-gui-bin`, and `update.sh`, which moves it to a new release.
+- **The Updates screen knows an AUR install.** A copy installed as
+  `helix-toolbox-bin` is updated by the AUR helper (`paru` or `yay`), the
+  window's package with it, instead of being replaced by the release's
+  package.
+- **The install guide says what Cargo leaves out.** `cargo install` gives
+  the command line and terminal interface; the window comes from the
+  AppImage or the packages.
+
 ## v1.25.9
 
 - **The terminal interface's lists stand in columns.** A row's status,
