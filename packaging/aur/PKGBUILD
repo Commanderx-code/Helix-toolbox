@@ -1,0 +1,50 @@
+# Maintainer: Commanderx-code <Commanderx-code@users.noreply.github.com>
+#
+# The release's own Arch packages, unpacked as they are: the same tested
+# builds, checksums and attestations as on the releases page and in the
+# helix-toolbox pacman repository. packaging/aur/update.sh VERSION moves this
+# file and .SRCINFO to a new release.
+
+pkgbase=helix-toolbox-bin
+pkgname=(helix-toolbox-bin helix-toolbox-gui-bin)
+pkgver=1.25.18
+pkgrel=1
+pkgdesc='Build, configure and look after a Linux machine from a terminal menu, with every change planned first'
+arch=(x86_64 aarch64)
+url='https://github.com/Commanderx-code/Helix-toolbox'
+license=(MIT)
+options=(!strip !debug)
+_release="$url/releases/download/v$pkgver"
+source_x86_64=("$_release/helix-toolbox-$pkgver-1-x86_64.pkg.tar.zst"
+               "$_release/helix-toolbox-gui-$pkgver-1-x86_64.pkg.tar.zst")
+source_aarch64=("$_release/helix-toolbox-$pkgver-1-aarch64.pkg.tar.zst"
+                "$_release/helix-toolbox-gui-$pkgver-1-aarch64.pkg.tar.zst")
+noextract=("${source_x86_64[@]##*/}" "${source_aarch64[@]##*/}")
+sha256sums_x86_64=('2d484de53f8b9c542c4f2669a88ee293993cdd29dc56c9bcf57dabfc8ce8cba5'
+                   'd709ffa029c5e9a5646fa70e6f3e0e81acdda8db499c071b118213e5642946a2')
+sha256sums_aarch64=('09bdc1b6f5119793f2a738e598a22cb7101f71830d73eb75aea5ba7cf9acdcba'
+                    '969d95aacf27e9e5c153bd0b2b3fc8f40de16d93c7c5e14c252175efedca0230')
+
+# Unpack one release package into $pkgdir, leaving out pacman's own metadata.
+_unpack() {
+  bsdtar -xf "$srcdir/$1-$pkgver-1-$CARCH.pkg.tar.zst" -C "$pkgdir" \
+    --exclude .PKGINFO --exclude .BUILDINFO --exclude .MTREE --exclude .INSTALL
+}
+
+package_helix-toolbox-bin() {
+  depends=(glibc bash)
+  optdepends=('sudo: system changes'
+              'curl: downloads in installer scripts'
+              'git: dotfiles and installer scripts')
+  provides=("helix-toolbox=$pkgver" "helixforge=$pkgver")
+  conflicts=(helix-toolbox helixforge)
+  _unpack helix-toolbox
+}
+
+package_helix-toolbox-gui-bin() {
+  pkgdesc='Helix Toolbox in a window: the same catalog, plans and runs, drawn by WebKitGTK'
+  depends=(helix-toolbox webkit2gtk-4.1 gtk3)
+  provides=("helix-toolbox-gui=$pkgver")
+  conflicts=(helix-toolbox-gui)
+  _unpack helix-toolbox-gui
+}

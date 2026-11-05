@@ -1,0 +1,41 @@
+pkgbase = helix-toolbox-bin
+	pkgdesc = Build, configure and look after a Linux machine from a terminal menu, with every change planned first
+	pkgver = 1.25.18
+	pkgrel = 1
+	url = https://github.com/Commanderx-code/Helix-toolbox
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	noextract = helix-toolbox-1.25.18-1-x86_64.pkg.tar.zst
+	noextract = helix-toolbox-gui-1.25.18-1-x86_64.pkg.tar.zst
+	noextract = helix-toolbox-1.25.18-1-aarch64.pkg.tar.zst
+	noextract = helix-toolbox-gui-1.25.18-1-aarch64.pkg.tar.zst
+	options = !strip
+	options = !debug
+	source_x86_64 = https://github.com/Commanderx-code/Helix-toolbox/releases/download/v1.25.18/helix-toolbox-1.25.18-1-x86_64.pkg.tar.zst
+	source_x86_64 = https://github.com/Commanderx-code/Helix-toolbox/releases/download/v1.25.18/helix-toolbox-gui-1.25.18-1-x86_64.pkg.tar.zst
+	sha256sums_x86_64 = 2d484de53f8b9c542c4f2669a88ee293993cdd29dc56c9bcf57dabfc8ce8cba5
+	sha256sums_x86_64 = d709ffa029c5e9a5646fa70e6f3e0e81acdda8db499c071b118213e5642946a2
+	source_aarch64 = https://github.com/Commanderx-code/Helix-toolbox/releases/download/v1.25.18/helix-toolbox-1.25.18-1-aarch64.pkg.tar.zst
+	source_aarch64 = https://github.com/Commanderx-code/Helix-toolbox/releases/download/v1.25.18/helix-toolbox-gui-1.25.18-1-aarch64.pkg.tar.zst
+	sha256sums_aarch64 = 09bdc1b6f5119793f2a738e598a22cb7101f71830d73eb75aea5ba7cf9acdcba
+	sha256sums_aarch64 = 969d95aacf27e9e5c153bd0b2b3fc8f40de16d93c7c5e14c252175efedca0230
+
+pkgname = helix-toolbox-bin
+	depends = glibc
+	depends = bash
+	optdepends = sudo: system changes
+	optdepends = curl: downloads in installer scripts
+	optdepends = git: dotfiles and installer scripts
+	provides = helix-toolbox=1.25.18
+	provides = helixforge=1.25.18
+	conflicts = helix-toolbox
+	conflicts = helixforge
+
+pkgname = helix-toolbox-gui-bin
+	pkgdesc = Helix Toolbox in a window: the same catalog, plans and runs, drawn by WebKitGTK
+	depends = helix-toolbox
+	depends = webkit2gtk-4.1
+	depends = gtk3
+	provides = helix-toolbox-gui=1.25.18
+	conflicts = helix-toolbox-gui
