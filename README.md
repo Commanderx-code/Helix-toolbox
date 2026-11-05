@@ -142,7 +142,7 @@ then:
 | Debian, Ubuntu, Raspberry Pi OS on ARM64 | `sudo apt install ./helix-toolbox_*_arm64.deb` |
 | Fedora, Fedora Asahi Remix on ARM64 | `sudo dnf install ./helix-toolbox-*.aarch64.rpm` |
 | openSUSE on ARM64 | `sudo zypper install --allow-unsigned-rpm ./helix-toolbox-*.aarch64.rpm` |
-| Any distribution, with Rust | `cargo install --locked helix-toolbox` |
+| Any distribution, with Rust | `cargo install --locked helix-toolbox` (the command line and terminal interface; the window is the AppImage below) |
 | The window, beside one of the above | `helix-toolbox-gui-*.pkg.tar.zst`, `helix-toolbox-gui_*.deb`, `helix-toolbox-gui-*.rpm` or the `.AppImage` ([the window](https://github.com/Commanderx-code/Helix-toolbox/blob/main/docs/GUI.md)) |
 
 The packages add shell completions, manual pages and a menu entry. On Arch,
