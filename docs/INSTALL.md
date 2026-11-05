@@ -174,6 +174,15 @@ A build from GitHub reports the version in `Cargo.toml`, which can be a
 patch behind the tag it was built from; the crates.io and release builds
 report the release's own.
 
+Cargo installs the command line and its terminal interface only, not the
+window: `helix-toolbox-gui` is not published to crates.io, since it needs
+WebKitGTK and a built frontend that Cargo cannot provide. For the window
+beside a Cargo install, take the AppImage from the release
+([the window](#the-window)); it finds `helix-toolbox` in `~/.cargo/bin` on
+the PATH. On Arch and its derivatives, the
+[repository](#the-arch-repository) has both packages instead; run
+`cargo uninstall helix-toolbox` first, so that only one copy is on the PATH.
+
 ## Coming from HelixForge
 
 HelixForge is Helix Toolbox from 1.7. A HelixForge package updates to the
