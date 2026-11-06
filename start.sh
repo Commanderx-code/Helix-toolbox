@@ -5,8 +5,13 @@
 # checked against its published SHA-256 sum. Prevent execution if only
 # partially downloaded.
 {
-rc='\033[0m'
-red='\033[0;31m'
+# Colours only on a terminal, as the escape characters themselves.
+rc=''
+red=''
+if [ -t 1 ]; then
+    rc=$(printf '\033[0m')
+    red=$(printf '\033[0;31m')
+fi
 
 check() {
     exit_code=$1

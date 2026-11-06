@@ -40,20 +40,20 @@ Download the file for your distribution from the release, check it (below),
 then:
 
 ```sh
-sudo pacman -U helix-toolbox-1.7.0-1-x86_64.pkg.tar.zst     # Arch, Garuda, CachyOS, Manjaro
-sudo apt install ./helix-toolbox_1.7.0-1_amd64.deb          # Debian, Ubuntu, Mint, Pop!_OS
-sudo dnf install ./helix-toolbox-1.7.0-1.x86_64.rpm         # Fedora
-sudo zypper install --allow-unsigned-rpm ./helix-toolbox-1.7.0-1.x86_64.rpm   # openSUSE
+sudo pacman -U helix-toolbox-1.25.18-1-x86_64.pkg.tar.zst   # Arch, Garuda, CachyOS, Manjaro
+sudo apt install ./helix-toolbox_1.25.18-1_amd64.deb        # Debian, Ubuntu, Mint, Pop!_OS
+sudo dnf install ./helix-toolbox-1.25.18-1.x86_64.rpm       # Fedora
+sudo zypper install --allow-unsigned-rpm ./helix-toolbox-1.25.18-1.x86_64.rpm   # openSUSE
 ```
 
 On ARM64 (a Raspberry Pi 4 or 5 with a 64-bit system, an Apple Silicon Mac
 with Fedora Asahi Remix, an ARM laptop or server):
 
 ```sh
-sudo pacman -U helix-toolbox-1.7.0-1-aarch64.pkg.tar.zst    # Arch Linux ARM
-sudo apt install ./helix-toolbox_1.7.0-1_arm64.deb          # Debian, Ubuntu, Raspberry Pi OS
-sudo dnf install ./helix-toolbox-1.7.0-1.aarch64.rpm        # Fedora, Fedora Asahi Remix
-sudo zypper install --allow-unsigned-rpm ./helix-toolbox-1.7.0-1.aarch64.rpm  # openSUSE
+sudo pacman -U helix-toolbox-1.25.18-1-aarch64.pkg.tar.zst  # Arch Linux ARM
+sudo apt install ./helix-toolbox_1.25.18-1_arm64.deb        # Debian, Ubuntu, Raspberry Pi OS
+sudo dnf install ./helix-toolbox-1.25.18-1.aarch64.rpm      # Fedora, Fedora Asahi Remix
+sudo zypper install --allow-unsigned-rpm ./helix-toolbox-1.25.18-1.aarch64.rpm  # openSUSE
 ```
 
 Entries for programs built only for x86_64, such as Steam, Google Chrome,
@@ -107,11 +107,11 @@ first: the window runs the command line for the built-in steps, and the
 packages require it.
 
 ```sh
-sudo pacman -U helix-toolbox-gui-1.10.0-1-x86_64.pkg.tar.zst   # Arch and derivatives (aarch64 on ARM64), or the repository above
-sudo apt install ./helix-toolbox-gui_1.10.0_amd64.deb          # Debian, Ubuntu (arm64 on ARM64)
-sudo dnf install ./helix-toolbox-gui-1.10.0-1.x86_64.rpm       # Fedora (aarch64 on ARM64)
-sudo zypper install --allow-unsigned-rpm ./helix-toolbox-gui-1.10.0-1.x86_64.rpm   # openSUSE
-chmod +x helix-toolbox-gui_1.10.0_amd64.AppImage && ./helix-toolbox-gui_1.10.0_amd64.AppImage   # any distribution
+sudo pacman -U helix-toolbox-gui-1.25.18-1-x86_64.pkg.tar.zst  # Arch and derivatives (aarch64 on ARM64), or the repository above
+sudo apt install ./helix-toolbox-gui_1.25.18_amd64.deb         # Debian, Ubuntu (arm64 on ARM64)
+sudo dnf install ./helix-toolbox-gui-1.25.18-1.x86_64.rpm      # Fedora (aarch64 on ARM64)
+sudo zypper install --allow-unsigned-rpm ./helix-toolbox-gui-1.25.18-1.x86_64.rpm  # openSUSE
+chmod +x helix-toolbox-gui_1.25.18_amd64.AppImage && ./helix-toolbox-gui_1.25.18_amd64.AppImage   # any distribution
 ```
 
 The Updates screen's **Helix Toolbox** row updates the window's package with
@@ -180,7 +180,7 @@ That takes the latest release from [crates.io](https://crates.io/crates/helix-to
 Straight from GitHub instead, a release by its tag or the newest code:
 
 ```sh
-cargo install --locked --git https://github.com/Commanderx-code/Helix-toolbox --tag v1.7.0 helix-toolbox
+cargo install --locked --git https://github.com/Commanderx-code/Helix-toolbox --tag v1.25.18 helix-toolbox
 cargo install --locked --git https://github.com/Commanderx-code/Helix-toolbox helix-toolbox
 ```
 

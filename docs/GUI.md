@@ -29,11 +29,11 @@ or on the PATH and runs it for the built-in steps, such as the system
 report, and the Debian and RPM packages require it.
 
 ```sh
-sudo pacman -U helix-toolbox-gui-1.10.0-1-x86_64.pkg.tar.zst   # Arch and derivatives (aarch64 on ARM64)
-sudo apt install ./helix-toolbox-gui_1.10.0_amd64.deb          # Debian, Ubuntu (arm64 on ARM64)
-sudo dnf install ./helix-toolbox-gui-1.10.0-1.x86_64.rpm       # Fedora (aarch64 on ARM64)
-sudo zypper install --allow-unsigned-rpm ./helix-toolbox-gui-1.10.0-1.x86_64.rpm   # openSUSE
-chmod +x helix-toolbox-gui_1.10.0_amd64.AppImage && ./helix-toolbox-gui_1.10.0_amd64.AppImage   # any distribution
+sudo pacman -U helix-toolbox-gui-1.25.18-1-x86_64.pkg.tar.zst  # Arch and derivatives (aarch64 on ARM64)
+sudo apt install ./helix-toolbox-gui_1.25.18_amd64.deb         # Debian, Ubuntu (arm64 on ARM64)
+sudo dnf install ./helix-toolbox-gui-1.25.18-1.x86_64.rpm      # Fedora (aarch64 on ARM64)
+sudo zypper install --allow-unsigned-rpm ./helix-toolbox-gui-1.25.18-1.x86_64.rpm  # openSUSE
+chmod +x helix-toolbox-gui_1.25.18_amd64.AppImage && ./helix-toolbox-gui_1.25.18_amd64.AppImage   # any distribution
 ```
 
 On Arch, the pacman repository in [INSTALL.md](INSTALL.md#the-arch-repository)
