@@ -34,3 +34,8 @@ ubuntu:24.04 atuin
 ubuntu:24.04 glow
 ubuntu:24.04 lazygit
 ubuntu:24.04 starship
+# Fedora 45 dropped these; Pinta comes from Flathub there, procs and
+# tealdeer from their GitHub releases.
+fedora:latest pinta
+fedora:latest procs
+fedora:latest tealdeer
