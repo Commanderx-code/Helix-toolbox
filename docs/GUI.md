@@ -14,6 +14,14 @@ draws the events of the run ([EVENTS.md](EVENTS.md)).
 
 ## Installing
 
+The quickest way installs the window and the command line together, from the
+latest release, with your package manager
+([INSTALL.md](INSTALL.md#in-one-command)):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/install.sh | sh
+```
+
 Each release has the window for x86_64 and aarch64 (ARM64) as a Debian
 package, an RPM and an AppImage. Install the `helix-toolbox` package first
 ([INSTALL.md](INSTALL.md)): the window finds the command line beside itself

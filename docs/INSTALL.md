@@ -9,6 +9,27 @@ Fedora and openSUSE, and the bare program, and the window beside them
 instead (below). It needs glibc 2.35 or newer (Debian 12, Ubuntu 22.04, Fedora 36,
 current Arch and openSUSE Tumbleweed, or later).
 
+## In one command
+
+`install.sh` in this repository installs the latest release's packages, the
+command line's and the window's, with the package manager it finds: pacman,
+apt, zypper or dnf, in that order. It takes the files for this machine's
+processor, checks each against the release's `SHA256SUMS` before the package
+manager sees it, and installs both in one run, through `sudo` (or `doas`)
+unless it runs as root:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/install.sh | sh -s -- --no-window   # the command line only
+curl -fsSL https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/install.sh | sh -s -- --yes         # no confirmation
+```
+
+The package manager asks for confirmation on the terminal as usual; without
+a terminal, or with `--yes`, it does not ask. What it installs is the same as
+the downloads below, so updating and removing them work the same way. On
+Arch it installs the files and leaves `/etc/pacman.conf` alone; add
+[the repository](#the-arch-repository) to have the system update them.
+
 ## A package
 
 A package puts `helix-toolbox` in `/usr/bin`, with shell completions for bash,
