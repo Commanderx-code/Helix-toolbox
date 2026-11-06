@@ -12,6 +12,8 @@ dotfiles or Myfish sources raises the patch number and is not listed here.
   against `SHA256SUMS`, and installs both:
   `curl -fsSL https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/install.sh | sh`.
   `--no-window` installs the command line only; `--yes` does not ask.
+- **Android Debloater and Dank Shell show whether they are installed.**
+  Their rows had no status; they now look for `uad` and `dms`.
 - **`start.sh` prints its errors in colour.** It printed the colour codes
   as text, so an error began with `\033[0;31m`.
 - **A package for the AUR.** `packaging/aur` holds `helix-toolbox-bin`, a

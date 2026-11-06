@@ -5,3 +5,7 @@ order = 114
 
 [script]
 id = "applications-setup/android-debloat"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "uad"

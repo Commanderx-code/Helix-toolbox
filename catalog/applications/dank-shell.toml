@@ -5,3 +5,7 @@ order = 115
 
 [script]
 id = "applications-setup/dank-shell"
+
+# What the script installs, so its status can be shown.
+[detect]
+binary = "dms"
