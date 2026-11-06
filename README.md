@@ -128,9 +128,21 @@ settings, profiles and history over ([what changed](https://github.com/Commander
 
 ## Install
 
-Download the package for your distribution from the
-[latest release](https://github.com/Commanderx-code/Helix-toolbox/releases/latest),
-then:
+One command installs Helix Toolbox and its window on Arch, Debian, Ubuntu,
+Fedora, openSUSE and their derivatives, on x86_64 or ARM64:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/install.sh | sh
+```
+
+It picks the latest release's packages for your package manager and
+processor, checks them against the release's `SHA256SUMS`, and installs them
+with `sudo`. Add `-s -- --no-window` after `sh` for the command line and
+terminal interface only.
+
+Or download the package for your distribution from the
+[latest release](https://github.com/Commanderx-code/Helix-toolbox/releases/latest)
+yourself, then:
 
 | System | Command |
 | :--- | :--- |
