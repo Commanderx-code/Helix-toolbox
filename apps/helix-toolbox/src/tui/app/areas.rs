@@ -2,6 +2,10 @@
 
 use super::*;
 
+/// The headings over the list's status columns.
+const STATUS: &str = "STATUS";
+const FLAGS: &str = "FLAGS";
+
 impl App {
     pub(in crate::tui::app) fn draw_area(&mut self, frame: &mut Frame, area: Rect) {
         let Some(index) = self.current_area() else {
@@ -89,16 +93,14 @@ impl App {
             Filter::All => title.to_string(),
             filter => format!("{title} · {}", filter.label()),
         };
-        let block = self.card(&title).title(
-            Line::styled(" STATUS · FLAGS ", Style::default().fg(self.theme.muted()))
-                .right_aligned(),
-        );
+        let block = self.card(&title);
         let marker = self.marker(focused);
         let content_width =
             (block.inner(area).width as usize).saturating_sub(marker.chars().count());
         let group = self.glyph(Icon::Group);
         let searching = self.searching();
         let columns = self.status_columns(content_width);
+        let block = block.title(self.column_heading(&columns).right_aligned());
         let lines: Vec<Line> = self
             .rows
             .iter()
@@ -224,10 +226,58 @@ impl App {
         match self.statuses.get(&entry.id) {
             Some(status) => (
                 status.label().to_string(),
-                status.detail(),
+                status.short_detail(),
                 self.status_color(status),
             ),
             None => (String::new(), String::new(), self.theme.muted()),
+        }
+    }
+
+    /// The heading over the list's status columns, in the card's top border:
+    /// STATUS over the status word and FLAGS over the flags, each where its
+    /// column starts, with the border running between them.
+    fn column_heading(&self, columns: &StatusColumns) -> Line<'static> {
+        let detail = if columns.detail == 0 {
+            0
+        } else {
+            columns.detail + 2
+        };
+        // The heading ends over the card's right padding, as the rows end
+        // just before it.
+        let status = columns.word + detail + 2;
+        let flags = if columns.flags == 0 {
+            0
+        } else {
+            columns.flags + 2
+        };
+        let mut spans = Vec::new();
+        if columns.word > 0 {
+            spans.extend(self.labelled(STATUS, status));
+        } else {
+            spans.extend(self.labelled("", status));
+        }
+        if flags > 0 {
+            spans.extend(self.labelled(FLAGS, flags));
+        }
+        Line::from(spans)
+    }
+
+    /// `label` in `width` characters of the top border: the label, then the
+    /// border's line, with a space between.
+    fn labelled(&self, label: &str, width: usize) -> Vec<Span<'static>> {
+        let label: String = label.chars().take(width).collect();
+        let used = label.chars().count();
+        let muted = Style::default().fg(self.theme.muted());
+        let line = Style::default().fg(self.theme.line());
+        match width.saturating_sub(used) {
+            0 => vec![Span::styled(label, muted)],
+            1 => vec![Span::styled(format!("{label} "), muted)],
+            rest if used == 0 => vec![Span::styled("─".repeat(rest), line)],
+            rest => vec![
+                Span::styled(format!("{label} "), muted),
+                Span::styled("─".repeat(rest - 2), line),
+                Span::raw(" "),
+            ],
         }
     }
 
@@ -249,6 +299,10 @@ impl App {
             columns.flags = columns.flags.max(entry.flags.chars().count());
         }
         columns.detail = columns.detail.min(content_width / 3);
+        // Room under the heading for its word.
+        if columns.flags > 0 {
+            columns.flags = columns.flags.max(FLAGS.chars().count() - 2);
+        }
         // The icon and two spaces in front of the name, and two after it.
         let room = content_width.saturating_sub(name + 3 + 2);
         if columns.width() > room {

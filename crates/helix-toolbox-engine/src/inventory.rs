@@ -52,17 +52,23 @@ impl Status {
 
     /// Where it came from and at which version, as one phrase, printable.
     pub fn detail(&self) -> String {
-        helix_toolbox_core::printable(&self.raw_detail())
+        helix_toolbox_core::printable(&self.raw_detail(true))
     }
 
-    fn raw_detail(&self) -> String {
+    /// The same phrase for a list row: where it came from and at which
+    /// version, without which other copy runs first, which `detail` adds.
+    pub fn short_detail(&self) -> String {
+        helix_toolbox_core::printable(&self.raw_detail(false))
+    }
+
+    fn raw_detail(&self, with_shadow: bool) -> String {
         let with = |source: &str, version: &Option<String>| match version {
             Some(version) => format!("{source} {version}"),
             None => source.to_string(),
         };
         let shadow = |text: String, shadowed: &Option<String>| match shadowed {
-            Some(shadowed) => format!("{text}; {shadowed} runs first"),
-            None => text,
+            Some(shadowed) if with_shadow => format!("{text}; {shadowed} runs first"),
+            _ => text,
         };
         match self {
             Status::Installed {
@@ -1018,6 +1024,7 @@ mod tests {
             both.detail(),
             "pacman 15.2.0-1 → 15.3.0-1; Nix's 15.2.0 runs first"
         );
+        assert_eq!(both.short_detail(), "pacman 15.2.0-1 → 15.3.0-1");
         // From somewhere Helix Toolbox cannot place.
         let local = |binary: &str| {
             (binary == "tool").then(|| PathBuf::from("/opt/helix-toolbox-test/tool"))

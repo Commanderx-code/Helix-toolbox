@@ -644,7 +644,7 @@ fn a_lists_status_source_and_flags_stand_in_columns() {
         Status::Installed {
             source: "pacman".into(),
             version: Some("1.4.0-1".into()),
-            shadowed: None,
+            shadowed: Some("Home Manager's 1.4.0".into()),
         },
     );
     app.statuses.insert(
@@ -681,6 +681,13 @@ fn a_lists_status_source_and_flags_stand_in_columns() {
     for row in [&ghostty, &tmux, &alacritty] {
         assert_eq!(row[word - 2..word], [' ', ' '], "{text}");
     }
+    // The heading names each column where it starts.
+    let heading = cells(&text, "STATUS");
+    assert_eq!(at(&heading, "STATUS"), word, "{text}");
+    assert_eq!(at(&heading, "FLAGS"), flag, "{text}");
+    // Which other copy runs first is for the description, not the row, so
+    // it does not widen the source column.
+    assert!(!text.contains("runs first"), "{text}");
 }
 
 #[test]
@@ -710,7 +717,7 @@ fn entries_show_how_they_stand() {
         row.contains("Update  pacman 15.2.0-1 → 15.3.0-1  I"),
         "{row}"
     );
-    assert!(wide.contains("STATUS · FLAGS"));
+    assert!(wide.contains("STATUS") && wide.contains("FLAGS"), "{wide}");
     // Short of room, the detail goes first and the word stays.
     app.size_bypass = true;
     let narrow = screen(&mut app, 70, 30);

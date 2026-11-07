@@ -4,6 +4,15 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
+## Unreleased
+
+- **The list's headings stand over their columns.** STATUS starts where
+  the status words do and FLAGS where the flags do, in the list's top
+  border, instead of both at its right edge.
+- **A row's source stays short.** Which Nix copy runs first is in the
+  details (`d`) and `helix-toolbox status`, no longer in the row, where it
+  widened the source column for every row and cut the descriptions short.
+
 ## v1.26.0
 
 - **Installed in one command.** `install.sh` finds the package manager
