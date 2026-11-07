@@ -4,8 +4,18 @@ Each release is tagged `vMAJOR.MINOR.PATCH` on GitHub, with the program, its
 packages and their checksums. A release whose workflow only adopted updated
 dotfiles or Myfish sources raises the patch number and is not listed here.
 
-## Unreleased
+## v1.26.0
 
+- **Installed in one command.** `install.sh` finds the package manager
+  (pacman, apt, zypper or dnf) and the processor, takes the latest
+  release's packages for the command line and the window, checks each
+  against `SHA256SUMS`, and installs both:
+  `curl -fsSL https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/install.sh | sh`.
+  `--no-window` installs the command line only; `--yes` does not ask.
+- **Android Debloater and Dank Shell show whether they are installed.**
+  Their rows had no status; they now look for `uad` and `dms`.
+- **`start.sh` prints its errors in colour.** It printed the colour codes
+  as text, so an error began with `\033[0;31m`.
 - **A package for the AUR.** `packaging/aur` holds `helix-toolbox-bin`, a
   PKGBUILD that installs the release's own Arch packages, the window's as
   `helix-toolbox-gui-bin`, and `update.sh`, which moves it to a new release.
