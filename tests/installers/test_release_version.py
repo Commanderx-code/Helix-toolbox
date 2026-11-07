@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -30,6 +31,41 @@ class ReleaseVersionTests(unittest.TestCase):
         self.assertEqual(release.release_for('bbb', tags, '0.1.0'), ('0.1.1', True))
         self.assertEqual(release.release_for('ccc', tags, '0.1.0'), ('0.1.2', False))
         self.assertEqual(release.release_for('bbb', tags, '0.1.0', changed=True), ('0.1.2', False))
+
+    def test_only_documentation_since_the_last_release(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            def git(*arguments):
+                return subprocess.run(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', *arguments],
+                                      cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+
+            def commit(path, text):
+                (root / path).parent.mkdir(parents=True, exist_ok=True)
+                (root / path).write_text(text)
+                git('add', '-A')
+                git('commit', '-q', '-m', path)
+                return git('rev-parse', 'HEAD')
+
+            git('init', '-q')
+            first = commit('src/main.rs', 'fn main() {}\n')
+            # Before any release, there is nothing to compare with.
+            self.assertFalse(release.documentation_only(first, [], root))
+            tags = [('v1.0.0', first), ('helixforge-x', first)]
+            self.assertTrue(release.documentation_only(first, tags, root))
+            commit('README.md', 'banner\n')
+            commit('docs/GUIDE.md', 'guide\n')
+            readme = commit('assets/banner.png', 'png\n')
+            self.assertTrue(release.documentation_only(readme, tags, root))
+            code = commit('src/main.rs', 'fn main() { }\n')
+            self.assertFalse(release.documentation_only(code, tags, root))
+            # Released, then documentation again.
+            tags.append(('v1.0.1', code))
+            self.assertTrue(release.documentation_only(commit('CHANGELOG.md', 'log\n'), tags, root))
+            # A Markdown file below the top is not documentation.
+            self.assertFalse(release.documentation_only(commit('catalog/notes.md', 'x\n'), tags, root))
+            # A tag on a commit this checkout does not have counts for nothing.
+            self.assertFalse(release.documentation_only(code, [('v9.9.9', '0' * 40)], root))
 
     def test_the_workspace_version_must_be_semantic(self):
         with tempfile.TemporaryDirectory() as tmp:

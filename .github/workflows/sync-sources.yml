@@ -15,6 +15,9 @@ on:
         options: [manual, source-updated]
   push:
     branches: [main]
+    # Documentation alone is not released; scripts/release-version.py
+    # DOCUMENTATION names the same paths for the scheduled runs.
+    paths-ignore: ['*.md', 'docs/**', 'assets/**']
 
 permissions:
   contents: read
@@ -68,12 +71,16 @@ jobs:
           fi
           version=$(sed -n 's/^version=//p' "$RUNNER_TEMP/release.txt")
           released=$(sed -n 's/^released=//p' "$RUNNER_TEMP/release.txt")
+          documentation=$(sed -n 's/^documentation_only=//p' "$RUNNER_TEMP/release.txt")
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if [ "$CHANGED" = true ] || [ "$released" = false ] || [ "$ROUTINE" != true ]; then
+          # A commit that only changed documentation since the last release
+          # is not published by a schedule; a push of one does not start this.
+          if [ "$CHANGED" = true ] || [ "$ROUTINE" != true ] ||
+              { [ "$released" = false ] && [ "$documentation" != true ]; }; then
             echo 'build=true' >> "$GITHUB_OUTPUT"
           else
             echo 'build=false' >> "$GITHUB_OUTPUT"
-            echo "Nothing changed and v$version is published."
+            echo "Nothing to publish: no source changed, and v$version or the release before this documentation is published."
           fi
       - name: Install validation tools
         if: steps.release.outputs.build == 'true'
