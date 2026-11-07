@@ -1,6 +1,6 @@
 <p align="center">
   <br>
-  <img src="https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/assets/banner.png" width="820" alt="Helix Toolbox: build, configure, optimize">
+  <img src="https://raw.githubusercontent.com/Commanderx-code/Helix-toolbox/main/assets/readme-banner.png" width="820" alt="Helix Toolbox: build, configure, optimize">
   <br>
 </p>
 
