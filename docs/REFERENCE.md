@@ -97,9 +97,10 @@ repository metadata already on the machine has a newer version (`pacman
 pins a newer release than the one installed (`GitHub release 0.65.0 →
 0.66.2`), **Managed** when the command comes from Nix (`Home
 Manager 1.4.7`, `Nix`, `NixOS`), or **Not installed**. When a package is
-installed but a Nix copy of its command comes first on the PATH, the status
-says so (`; Home Manager's 0.12.5 runs first`). The check runs in the
-background when the menu opens, after every run and on `Ctrl-R`; `d`
+installed but a Nix copy of its command comes first on the PATH, the
+details (`d`) and `helix-toolbox status` say so (`; Home Manager's 0.12.5
+runs first`); the list's row keeps to where it came from. The check runs in
+the background when the menu opens, after every run and on `Ctrl-R`; `d`
 repeats it in the details.
 
 `u` updates the selected entry and `U` every entry with an update, after
