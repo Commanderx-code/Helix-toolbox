@@ -256,8 +256,14 @@ and what the reporter checked as the note, and adds the records to
 ## Release checks
 
 Every push to `main` runs the Checks, Distributions and Sync sources
-workflows; the last waits for Distributions on the same commit, then
-publishes the next release, tagged `vMAJOR.MINOR.PATCH`,
+workflows, except a push that changes only documentation (Markdown at the
+top, `docs/` and `assets/`), which runs the Checks alone and is not
+released. On a push, Distributions runs the containers but not the virtual
+machines, which take up to twenty minutes each: those run in its weekly
+run and when it is started by hand, and a push's record lists no virtual
+machine. Sync sources waits for Distributions on the same commit, or, for a
+commit with no run of its own, on the newest commit before it that has one,
+which must have passed; then it publishes the next release, tagged `vMAJOR.MINOR.PATCH`,
 with `helix-toolbox-linux-x86_64`, `helix-toolbox-linux-aarch64`, the packages and
 `SHA256SUMS`, and checks that
 `helix-toolbox --version` reports that version. `scripts/release-version.py`

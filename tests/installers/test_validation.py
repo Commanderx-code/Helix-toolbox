@@ -69,6 +69,26 @@ class ValidationRecordTest(unittest.TestCase):
         for entry in named:
             self.assertIn(entry, known)
 
+    def test_an_ancestors_run_stands_in_only_when_it_passed(self):
+        def run(number, status='completed', conclusion='success', event='push'):
+            return {'id': number, 'status': status, 'conclusion': conclusion, 'event': event, 'head_sha': 'a' * 40}
+        downloaded = []
+        original = validation_record.download
+        validation_record.download = lambda found, out: downloaded.append(found['id'])
+        self.addCleanup(setattr, validation_record, 'download', original)
+        head, commit = 'b' * 40, 'a' * 40
+        # No run of its own: the next ancestor is asked.
+        self.assertFalse(validation_record.ancestor_record(head, commit, [], 'out.json'))
+        self.assertFalse(validation_record.ancestor_record(head, commit, [run(1, event='pull_request')], 'out.json'))
+        # Its latest run decides, never an older passing one.
+        with self.assertRaisesRegex(SystemExit, 'did not pass'):
+            validation_record.ancestor_record(head, commit, [run(1), run(2, conclusion='failure')], 'out.json')
+        with self.assertRaisesRegex(SystemExit, 'still running'):
+            validation_record.ancestor_record(head, commit, [run(3, status='in_progress', conclusion=None)], 'out.json')
+        self.assertEqual(downloaded, [])
+        self.assertTrue(validation_record.ancestor_record(head, commit, [run(4, conclusion='failure'), run(5)], 'out.json'))
+        self.assertEqual(downloaded, [5])
+
     def test_the_record_of_a_release_is_never_committed(self):
         ignored = (ROOT / '.gitignore').read_text().splitlines()
         self.assertIn('/catalog/validation-results.json', ignored)

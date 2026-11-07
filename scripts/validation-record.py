@@ -106,17 +106,35 @@ def fetch(out, patience=3600, appear=180):
         if time.time() - started > patience:
             raise SystemExit('Distributions did not finish on this commit in time; not publishing.')
         time.sleep(20)
-    # No run for this commit (a source update pushed by the workflow itself):
-    # the newest successful one on an ancestor.
+    # No run for this commit (a source update pushed by the workflow itself,
+    # or a change to documentation alone): the run of the newest ancestor
+    # that has one, which must have passed. An older passing run never stands
+    # in for a newer failing one.
     ancestors = subprocess.run(['git', 'rev-list', '--max-count=50', 'HEAD^'], check=True,
                                capture_output=True, text=True).stdout.split()
     for commit in ancestors:
-        passed = [run for run in runs_for(commit)
-                  if run['status'] == 'completed' and run['conclusion'] == 'success']
-        if passed:
-            print(f'No Distributions run for {head[:12]}; using the one on its ancestor {commit[:12]}.')
-            return download(max(passed, key=lambda run: run['id']), out)
-    raise SystemExit('no successful Distributions run on this commit or the 50 before it')
+        if ancestor_record(head, commit, runs_for(commit), out):
+            return
+    raise SystemExit('no Distributions run on this commit or the 50 before it')
+
+
+def ancestor_record(head, commit, runs, out):
+    """The record of `commit`'s latest Distributions run, standing in for
+    `head`'s, written to `out`; False when `commit` has no run, so the next
+    ancestor is asked."""
+    runs = [run for run in runs if run['event'] in ('push', 'workflow_dispatch', 'schedule')]
+    if not runs:
+        return False
+    latest = max(runs, key=lambda run: (run['id'], run.get('run_attempt', 1)))
+    if latest['status'] != 'completed':
+        raise SystemExit(f'Distributions is still running on {commit[:12]}, which this commit builds on; '
+                         'not publishing yet.')
+    if latest['conclusion'] != 'success':
+        raise SystemExit(f'Distributions run {latest["id"]} on {commit[:12]}, which this commit builds on, '
+                         'did not pass; not publishing.')
+    print(f'No Distributions run for {head[:12]}; using the one on its ancestor {commit[:12]}.')
+    download(latest, out)
+    return True
 
 
 def main(arguments):
