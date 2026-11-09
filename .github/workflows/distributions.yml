@@ -25,14 +25,14 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           toolchain: stable
       - run: cargo build --locked --release -p helix-toolbox
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: helix-toolbox
           path: target/release/helix-toolbox
@@ -41,7 +41,7 @@ jobs:
           scripts/install-nfpm.sh "$RUNNER_TEMP/bin"
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
           PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$version" target/release/helix-toolbox dist
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: packages
           path: dist/
@@ -51,7 +51,7 @@ jobs:
   build-arm64:
     runs-on: ubuntu-22.04-arm
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
@@ -59,7 +59,7 @@ jobs:
           toolchain: stable
       - run: cargo test --locked --workspace --no-fail-fast
       - run: cargo build --locked --release -p helix-toolbox
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: helix-toolbox-aarch64
           path: target/release/helix-toolbox
@@ -68,7 +68,7 @@ jobs:
           scripts/install-nfpm.sh "$RUNNER_TEMP/bin"
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
           PATH="$RUNNER_TEMP/bin:$PATH" scripts/package.sh "$version" target/release/helix-toolbox dist
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: packages-aarch64
           path: dist/
@@ -86,13 +86,13 @@ jobs:
     runs-on: ${{ matrix.runner }}
     name: build-window ${{ matrix.arch }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           toolchain: stable
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Install WebKitGTK and the other libraries Tauri needs
@@ -107,7 +107,7 @@ jobs:
           ../../scripts/install-nfpm.sh "$RUNNER_TEMP/bin"
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' ../../Cargo.toml | head -n 1)
           PATH="$RUNNER_TEMP/bin:$PATH" ../../scripts/package-gui.sh "$version" src-tauri/target/release/helix-toolbox-gui "$RUNNER_TEMP/window"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: window-${{ matrix.arch }}
           path: ${{ runner.temp }}/window/
@@ -120,14 +120,14 @@ jobs:
     runs-on: ubuntu-24.04-arm
     name: archlinuxarm on aarch64
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: helix-toolbox-aarch64
           path: bin
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: packages-aarch64
           path: packages
@@ -148,7 +148,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo archlinuxarm:checked \
             /bin/bash -e scripts/arch-arm-tests.sh validation-arch-arm64.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: validation-arch-arm64
           path: validation-arch-arm64.json
@@ -249,10 +249,10 @@ jobs:
               printf '#!/bin/sh\nexec /usr/bin/zypper.real --non-interactive "$@"\n' > /usr/bin/zypper
               chmod +x /usr/bin/zypper ;;
           esac
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ matrix.arch && 'helix-toolbox-aarch64' || 'helix-toolbox' }}
           path: bin
@@ -861,7 +861,7 @@ jobs:
         run: |
           ls -l /bin/sh
           python3 -B -m unittest discover -s tests/installers -t tests/installers
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ matrix.arch && 'packages-aarch64' || 'packages' }}
           path: packages
@@ -922,7 +922,7 @@ jobs:
           python3 -B scripts/validation-record.py record "${{ matrix.image }}${{ matrix.arch && ' on aarch64' || '' }}" history.json catalog \
             > "validation-${{ strategy.job-index }}.json"
           cat "validation-${{ strategy.job-index }}.json"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: validation-${{ strategy.job-index }}
           path: validation-${{ strategy.job-index }}.json
@@ -985,15 +985,15 @@ jobs:
             Fedora) dnf install -y xorg-x11-server-Xvfb xorg-x11-xauth xdotool which ;;
             openSUSE) zypper --non-interactive install xvfb-run xauth xdotool which ;;
           esac
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         id: packages
         with:
           name: ${{ matrix.arch && 'packages-aarch64' || 'packages' }}
           path: packages
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         id: window
         with:
           name: window-${{ matrix.arch || 'x86_64' }}
@@ -1087,10 +1087,10 @@ jobs:
         distro: [arch, arch-bundle, arch-themes, arch-ctt-themes, debian, fedora, opensuse, arch-uefi, arch-iso, steamdeck]
     name: vm ${{ matrix.distro }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: helix-toolbox
           path: bin
@@ -1107,13 +1107,13 @@ jobs:
           chmod +x bin/helix-toolbox
           python3 -B scripts/vm-tests.py --distro "${{ matrix.distro }}" --binary bin/helix-toolbox \
             --work "$RUNNER_TEMP/vm" --out "validation-vm-${{ matrix.distro }}.json" --shots screens
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: vm-screens-${{ matrix.distro }}
           path: screens
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: validation-vm-${{ matrix.distro }}
           path: validation-vm-${{ matrix.distro }}.json
@@ -1133,10 +1133,10 @@ jobs:
         distro: [debian-arm64, fedora-arm64]
     name: vm ${{ matrix.distro }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: helix-toolbox-aarch64
           path: bin
@@ -1149,13 +1149,13 @@ jobs:
           chmod +x bin/helix-toolbox
           python3 -B scripts/vm-tests.py --distro "${{ matrix.distro }}" --binary bin/helix-toolbox \
             --work "$RUNNER_TEMP/vm" --out "arm-vm-${{ matrix.distro }}.json" --shots screens
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: vm-screens-${{ matrix.distro }}
           path: screens
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: arm-vm-${{ matrix.distro }}
@@ -1173,10 +1173,10 @@ jobs:
       && (needs.vm.result == 'success' || (needs.vm.result == 'skipped' && github.event_name == 'push'))
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: validation-*
           path: parts
@@ -1189,7 +1189,7 @@ jobs:
             "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$GITHUB_SHA" parts/*.json
           python3 -c 'import json; d = json.load(open("validation.json")); assert len(d["images"]) == 12, d; assert all(i["entries"].get("htop") == "verified" for i in d["images"].values()), d; import os; assert sorted(d["vms"]) == json.loads(os.environ["VMS"]), d'
           cat validation.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: validation
           path: validation.json
