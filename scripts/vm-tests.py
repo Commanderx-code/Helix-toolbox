@@ -276,8 +276,10 @@ class Machine:
             # memory unless the machine names another, which UEFI hands to any
             # kernel; a virtio GPU's goes dark unless the kernel has that driver,
             # and cloud kernels do not.
+            # Emulated, a named core: with `-cpu max`, QEMU 10.2 and the 2025.11 firmware on
+            # GitHub's runners stop after the UEFI banner and never reach the boot loader.
             processor = (['-enable-kvm', '-cpu', 'host', '-smp', '2'] if self.native else
-                         ['-accel', 'tcg,thread=multi', '-cpu', 'max,pauth-impdef=on', '-smp', '2'])
+                         ['-accel', 'tcg,thread=multi', '-cpu', 'cortex-a72', '-smp', '2'])
             command = ['qemu-system-aarch64', '-machine', 'virt', *processor,
                        '-device', self.spec.get('display', 'ramfb')]
         else:
