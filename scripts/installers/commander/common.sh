@@ -45,8 +45,8 @@ fetch_source() {
         grub-ctt) source_repo=ChrisTitusTech/bootloader-themes; revision=e3d1b5a3fce186000b628aaa12062cb31701842a ;;
         silentsddm) source_repo=uiriansan/SilentSDDM; revision=d477613b07ca13729af20cb4699b308ac7348d2f ;;
         grub-vince) source_repo=vinceliuice/grub2-themes; revision=4c5a77125b93f833edc9bf7b14a899faa8ac79c6 ;;
-        Myfish) revision=6315ff08b0bc984bdd1aea46f9a6f14866d697b6 ;;
-        dotfiles) revision=32bf87635762d711397d06e06bb15fbd7af31092 ;;
+        Myfish) revision=1bdf3a1c21c9d34e2e31af377d16bc20f258421f ;;
+        dotfiles) revision=63ea36532c4d446e508e3b7e9185864824b4e579 ;;
         *) exit 1 ;;
     esac
     source_base="${XDG_DATA_HOME:-$HOME/.local/share}/helixforge/sources"
