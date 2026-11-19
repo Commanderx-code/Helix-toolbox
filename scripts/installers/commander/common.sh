@@ -45,7 +45,7 @@ fetch_source() {
         grub-ctt) source_repo=ChrisTitusTech/bootloader-themes; revision=e3d1b5a3fce186000b628aaa12062cb31701842a ;;
         silentsddm) source_repo=uiriansan/SilentSDDM; revision=d477613b07ca13729af20cb4699b308ac7348d2f ;;
         grub-vince) source_repo=vinceliuice/grub2-themes; revision=4c5a77125b93f833edc9bf7b14a899faa8ac79c6 ;;
-        Myfish) revision=1bdf3a1c21c9d34e2e31af377d16bc20f258421f ;;
+        Myfish) revision=a5564dd162161bf2b5b26533d529a394088e7d3f ;;
         dotfiles) revision=63ea36532c4d446e508e3b7e9185864824b4e579 ;;
         *) exit 1 ;;
     esac
